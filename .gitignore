@@ -1,0 +1,75 @@
+# Flutter
+.dart_tool/
+build/
+.flutter-plugins
+.flutter-plugins-dependencies
+pubspec.lock
+*.dill
+flutter_*.log
+.version
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.env
+
+# Virtual environments
+venv/
+backend/venv/
+ENV/
+env/
+
+# Build / dist
+dist/
+build/
+*.egg-info/
+
+# OS / IDE
+.idea/
+.vscode/
+.DS_Store
+
+
+frontend/lib/config/api_config.dart
+
+formatify/backend/ML/dataset_sources/formatted
+formatify/backend/ML/dataset_sources/unformatted
+
+backend/ML/dataset_sources/
+
+# Python
+__pycache__/
+*.pyc
+
+# Generated / uploads
+backend/uploads/
+backend/formatted/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Flutter
+frontend/build/
+frontend/.dart_tool/
+frontend/.flutter-plugins
+frontend/.flutter-plugins-dependencies
+
+# Python
+backend/venv/
+__pycache__/
+*.pyc
+
+# macOS
+.DS_Store
+
+# Git
+.git
+
+# IDE
+.vscode/
+.idea/
+
+backend/dataset.csv

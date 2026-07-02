@@ -1,0 +1,36 @@
+[
+  {
+    "type": "heading",
+    "text": "Architecture Diagram of computer",
+    "level": 1,
+    "index": 0,
+    "metadata": {
+      "style": "Heading 1",
+      "is_bold": false,
+      "is_italic": false,
+      "is_underline": false,
+      "font_size": null,
+      "font_name": null,
+      "alignment": null,
+      "list_level": 0,
+      "page": null
+    }
+  },
+  {
+    "type": "paragraph",
+    "text": "Below is the image. Your model should detect it as irrelevant.",
+    "level": null,
+    "index": 1,
+    "metadata": {
+      "style": "Normal",
+      "is_bold": false,
+      "is_italic": false,
+      "is_underline": false,
+      "font_size": null,
+      "font_name": null,
+      "alignment": null,
+      "list_level": 0,
+      "page": null
+    }
+  }
+]
