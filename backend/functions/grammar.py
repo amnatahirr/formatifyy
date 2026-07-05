@@ -14,7 +14,8 @@ import anthropic
 
 from models import Batch, Issue
 
-MODEL = "claude-haiku-4-5-20251001"
+# Import centralized model config — never hardcode the model string
+from config import ANALYSIS_MODEL
 
 
 async def check_grammar(
@@ -56,11 +57,13 @@ Return this exact structure:
 {{"issues": [...]}}
 
 If no errors are found, return:
-{{"issues": []}}"""
+{{"issues": []}}
+
+Return ONLY a valid JSON object. No markdown, no explanation, no code fences. Just the raw JSON."""
 
     try:
         response = await client.messages.create(
-            model=MODEL,
+            model=ANALYSIS_MODEL,
             max_tokens=4096,
             messages=[{"role": "user", "content": prompt}],
         )

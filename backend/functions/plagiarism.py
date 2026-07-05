@@ -1,7 +1,7 @@
 """
 functions/plagiarism.py — Pattern-based plagiarism / AI-writing detector.
 
-Model: claude-opus-4-7
+
 
 NO INTERNET access. Detects plagiarism indicators purely from text patterns:
 - Writing style shifts
@@ -21,7 +21,8 @@ import anthropic
 
 from models import Batch
 
-MODEL = "claude-opus-4-7"
+# Import centralized model config — never hardcode the model string
+from config import ANALYSIS_MODEL
 
 
 async def check_plagiarism(
@@ -77,11 +78,13 @@ Return this exact structure:
 {{"issues": [...], "overall_risk": 0-100}}
 
 If no issues are found, return:
-{{"issues": [], "overall_risk": 0}}"""
+{{"issues": [], "overall_risk": 0}}
+
+Return ONLY a valid JSON object. No markdown, no explanation, no code fences. Just the raw JSON."""
 
     try:
         response = await client.messages.create(
-            model=MODEL,
+            model=ANALYSIS_MODEL,
             max_tokens=4096,
             messages=[{"role": "user", "content": prompt}],
         )

@@ -124,6 +124,11 @@ def _parse_docx(file_path: str, filename: str) -> DocumentModel:
                 try:
                     img_bytes = rel_images[embed]
                     b64 = base64.b64encode(img_bytes).decode("utf-8")
+                    print("=" * 60)
+                    print(f"Image extracted: img{img_counter}")
+                    print(f"Length: {len(b64)}")
+                    print(f"Starts with: {b64[:50]}")
+                    print("=" * 60)
                     # Infer a caption from the next text run or leave empty
                     caption = _extract_caption_near(doc.paragraphs, para_idx)
                     images.append(

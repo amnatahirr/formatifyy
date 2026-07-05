@@ -2155,10 +2155,10 @@ class _TableMeta {
     final rawIssues = j['issues'] as List<dynamic>? ?? [];
     final rawPreview = j['preview_rows'] as List<dynamic>? ?? [];
     return _TableMeta(
-      index: j['index'] as int? ?? 0,
+      index: (j['index'] as num?)?.toInt() ?? 0,
       label: j['label'] as String? ?? 'Table',
-      rowCount: j['row_count'] as int? ?? 0,
-      colCount: j['col_count'] as int? ?? 0,
+      rowCount: (j['row_count'] as num?)?.toInt() ?? 0,
+      colCount: (j['col_count'] as num?)?.toInt() ?? 0,
       hasHeaderRow: j['has_header_row'] as bool? ?? false,
       source: j['source'] as String? ?? 'docx',
       issues:
@@ -2696,7 +2696,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
         final data = jsonDecode(resp.body) as Map<String, dynamic>;
         setState(() {
           _contentIssues = data['issues'] as List<dynamic>? ?? [];
-          _totalSections = data['total_sections'] as int? ?? 0;
+          _totalSections = (data['total_sections'] as num?)?.toInt() ?? 0;
           _contentLoaded = true;
         });
       } else {
@@ -3234,7 +3234,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
     final structure = data['structure'] as Map<String, dynamic>? ?? {};
     final oldIssues = data['issues'] as List<dynamic>? ?? [];
     final score =
-        structure['score'] as int? ?? data['compliance_score'] as int? ?? 0;
+        (structure['score'] as num?)?.toInt() ?? (data['compliance_score'] as num?)?.toInt() ?? 0;
     final status = structure['status'] as String? ?? 'unknown';
     final summary = structure['summary'] as Map<String, dynamic>? ?? {};
     final sectionResults = structure['section_results'] as List<dynamic>? ?? [];
@@ -3672,9 +3672,9 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
   Widget _buildHeadingStyleCard(Map<String, dynamic> result) {
     final status = result['status'] as String? ?? 'ok';
     final name = result['heading'] as String? ?? '';
-    final paraIdx = result['paraIndex'] as int?;
+    final paraIdx = (result['paraIndex'] as num?)?.toInt();
     final matchedTxt = result['matched_text'] as String?;
-    final level = result['heading_level'] as int? ?? 1;
+    final level = (result['heading_level'] as num?)?.toInt() ?? 1;
     final expected = result['expected_style'] as Map? ?? {};
     final actual = result['actual_style'] as Map? ?? {};
     final mismatches = (result['mismatches'] as List?)?.cast<String>() ?? [];
@@ -4181,12 +4181,12 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
 
   Widget _buildSectionRow(int index, Map<String, dynamic> sec) {
     final name = sec['name'] as String? ?? '';
-    final order = sec['order'] as int? ?? 0;
+    final order = (sec['order'] as num?)?.toInt() ?? 0;
     final required = sec['required'] as bool? ?? true;
     final status = sec['status'] as String? ?? 'missing';
     final matched = sec['matched_heading'] as String?;
     final layer = sec['match_layer'] as String?;
-    final docPos = sec['document_position'] as int?;
+    final docPos = (sec['document_position'] as num?)?.toInt();
     final expanded = _expandedSections.contains(index);
     final statusC = _statusColor(status);
     final layerC = _layerColor(layer);
@@ -5242,7 +5242,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
-                        if ((issue['line'] as int? ?? 0) > 0)
+                        if (((issue['line'] as num?)?.toInt() ?? 0) > 0)
                           Text(
                             'Line ${issue['line']}',
                             style: const TextStyle(
@@ -6314,7 +6314,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
         final block = blocks[i] as Map<String, dynamic>;
         final type = block['type'] as String? ?? 'paragraph';
         final text = block['text'] as String? ?? '';
-        final level = block['level'] as int?;
+        final level = (block['level'] as num?)?.toInt();
         Color typeColor;
         IconData typeIcon;
         double leftPad = 0;

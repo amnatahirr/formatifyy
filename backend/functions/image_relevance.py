@@ -18,7 +18,8 @@ import anthropic
 
 from models import Batch
 
-MODEL = "claude-sonnet-4-6"
+# Import centralized model config — never hardcode the model string
+from config import VISION_MODEL
 
 
 async def check_image_relevance(
@@ -94,10 +95,12 @@ Instructions:
 Return ONLY valid JSON. Do NOT return markdown. Do NOT wrap JSON inside code fences.
 
 Return this exact structure:
-{{"verdict": "relevant" or "irrelevant", "reason": "detailed explanation quoting the surrounding text", "confidence": 0-100}}"""
+{{"verdict": "relevant" or "irrelevant", "reason": "detailed explanation quoting the surrounding text", "confidence": 0-100}}
+
+Return ONLY a valid JSON object. No markdown, no explanation, no code fences. Just the raw JSON."""
 
     response = await client.messages.create(
-        model=MODEL,
+        model=VISION_MODEL,
         max_tokens=1024,
         messages=[
             {

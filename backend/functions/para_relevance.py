@@ -1,7 +1,6 @@
 """
 functions/para_relevance.py — Paragraph relevance checker.
 
-Model: claude-opus-4-7
 
 Checks whether each paragraph belongs under its current heading context.
 If a paragraph is misplaced, returns the correct heading it should be under.
@@ -17,8 +16,8 @@ import anthropic
 
 from models import Batch
 
-MODEL = "claude-opus-4-7"
-
+# Import centralized model config — never hardcode the model string
+from config import ANALYSIS_MODEL
 
 async def check_para_relevance(
     client: anthropic.AsyncAnthropic,
@@ -75,11 +74,13 @@ Return this exact structure:
 {{"issues": [...]}}
 
 If all paragraphs are correctly placed, return:
-{{"issues": []}}"""
+{{"issues": []}}
+
+Return ONLY a valid JSON object. No markdown, no explanation, no code fences. Just the raw JSON."""
 
     try:
         response = await client.messages.create(
-            model=MODEL,
+            model=ANALYSIS_MODEL,
             max_tokens=4096,
             messages=[{"role": "user", "content": prompt}],
         )

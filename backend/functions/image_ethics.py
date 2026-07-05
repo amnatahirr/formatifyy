@@ -17,7 +17,8 @@ import anthropic
 
 from models import Batch
 
-MODEL = "claude-sonnet-4-6"
+# Import centralized model config — never hardcode the model string
+from config import VISION_MODEL
 
 
 async def check_image_ethics(
@@ -77,11 +78,13 @@ Return this exact structure:
 {"verdict": "ethical" or "unethical", "reason": "explanation", "confidence": 0-100}
 
 If the image is appropriate for academic use, set verdict to "ethical".
-If the image is inappropriate, set verdict to "unethical" and explain why."""
+If the image is inappropriate, set verdict to "unethical" and explain why.
+
+Return ONLY a valid JSON object. No markdown, no explanation, no code fences. Just the raw JSON."""
 
     response = await client.messages.create(
-        model=MODEL,
-        max_tokens=1024,
+        model=VISION_MODEL,
+        max_tokens=256,
         messages=[
             {
                 "role": "user",

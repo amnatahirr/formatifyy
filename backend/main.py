@@ -65,9 +65,11 @@ from templates import (
 # ═══════════════════════════════════════════════════════════════════════════════
 
 load_dotenv()
+from config import ANALYSIS_MODEL
 
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+
 UPLOAD_DIR = "uploads"
 OUTPUT_DIR = "outputs"
 ALLOWED_EXTENSIONS = {".docx", ".pdf", ".txt"}

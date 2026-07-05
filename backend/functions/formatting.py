@@ -17,7 +17,8 @@ import anthropic
 
 from models import Batch
 
-MODEL = "claude-haiku-4-5-20251001"
+# Import centralized model config — never hardcode the model string
+from config import ANALYSIS_MODEL
 
 
 async def check_formatting(
@@ -67,11 +68,13 @@ Return this exact structure:
 {{"issues": [...], "compliance_score": 85}}
 
 If no issues are found, return:
-{{"issues": [], "compliance_score": 100}}"""
+{{"issues": [], "compliance_score": 100}}
+
+Return ONLY a valid JSON object. No markdown, no explanation, no code fences. Just the raw JSON."""
 
     try:
         response = await client.messages.create(
-            model=MODEL,
+            model=ANALYSIS_MODEL,
             max_tokens=4096,
             messages=[{"role": "user", "content": prompt}],
         )

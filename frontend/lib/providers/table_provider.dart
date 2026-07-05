@@ -62,10 +62,10 @@ class TableMeta {
     final rawPreview = json['preview_rows'] as List<dynamic>? ?? [];
 
     return TableMeta(
-      index:        json['index']          as int?    ?? 0,
+      index:        (json['index']     as num?)?.toInt() ?? 0,
       label:        json['label']          as String? ?? 'Table',
-      rowCount:     json['row_count']      as int?    ?? 0,
-      colCount:     json['col_count']      as int?    ?? 0,
+      rowCount:     (json['row_count'] as num?)?.toInt() ?? 0,
+      colCount:     (json['col_count'] as num?)?.toInt() ?? 0,
       hasHeaderRow: json['has_header_row'] as bool?   ?? false,
       source:       json['source']         as String? ?? 'docx',
       issues: rawIssues
