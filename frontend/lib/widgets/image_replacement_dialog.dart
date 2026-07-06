@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'dart:io';
-import 'package:image_picker/image_picker.dart';
 import 'package:file_picker/file_picker.dart';
+import '../models/json_parse.dart';
 import '../services/image_replacement_service.dart';
 
 const _bg = Color(0xFF0D1117);
@@ -20,18 +20,21 @@ class ImageReplacementDialog extends StatefulWidget {
   final int imageIndex;
   final String currentImagePath;
   final ImageReplacementService service;
-  final VoidCallback onSuccess;
+  final void Function(Map<String, dynamic> result) onSuccess;
   final Function(String) onError;
 
+  final int? userId;
+
   const ImageReplacementDialog({
-    Key? key,
+    super.key,
     required this.documentId,
     required this.imageIndex,
     required this.currentImagePath,
     required this.service,
     required this.onSuccess,
     required this.onError,
-  }) : super(key: key);
+    this.userId,
+  });
 
   @override
   State<ImageReplacementDialog> createState() => _ImageReplacementDialogState();
@@ -65,6 +68,10 @@ class _ImageReplacementDialogState extends State<ImageReplacementDialog> {
     }
   }
 
+  bool _isSuccessResponse(Map<String, dynamic> result) {
+    return result['success'] == true || result['status'] == 'success';
+  }
+
   Future<void> _uploadImage() async {
     if (_selectedImage == null) {
       setState(() => _uploadStatus = 'Please select an image first');
@@ -81,29 +88,27 @@ class _ImageReplacementDialogState extends State<ImageReplacementDialog> {
         documentId: widget.documentId,
         imageIndex: widget.imageIndex,
         imageFile: _selectedImage!,
+        userId: widget.userId,
       );
 
-      if (result['success'] == true) {
-        final isRelevant = result['is_relevant'] ?? false;
-        final confidence = (result['confidence'] ?? 0.0) as num;
+      if (_isSuccessResponse(result)) {
+        final cleared = result['cleared'] == true;
+        final isRelevant = result['is_relevant'] ?? true;
+        final isEthical = result['is_ethical'] ?? true;
+
+        if (cleared || (isRelevant == true && isEthical == true)) {
+          if (mounted) {
+            widget.onSuccess(result);
+            Navigator.of(context).pop();
+          }
+          return;
+        }
 
         setState(() {
-          _uploadStatus = isRelevant
-              ? '✓ Image replaced and validated successfully!'
-              : '⚠ Image replaced but shows relevance concerns';
+          _uploadStatus =
+              'Image replaced but still flagged — try a more relevant academic image.';
         });
-
-        // Show validation result
-        if (mounted) {
-          _showValidationResult(result);
-        }
-
-        // Notify parent after brief delay
-        await Future.delayed(const Duration(milliseconds: 1500));
-        if (mounted) {
-          widget.onSuccess();
-          Navigator.pop(context);
-        }
+        widget.onError('Replacement image still appears irrelevant or inappropriate.');
       }
     } catch (e) {
       setState(() => _uploadStatus = 'Error: $e');
@@ -113,102 +118,6 @@ class _ImageReplacementDialogState extends State<ImageReplacementDialog> {
         setState(() => _isLoading = false);
       }
     }
-  }
-
-  void _showValidationResult(Map<String, dynamic> result) {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: _surface,
-        title: Row(
-          children: [
-            Icon(
-              result['is_relevant'] ? Icons.check_circle : Icons.warning,
-              color: result['is_relevant'] ? _green : _yellow,
-              size: 24,
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                result['is_relevant']
-                    ? 'Validation Passed'
-                    : 'Validation Complete',
-                style: TextStyle(
-                  color: result['is_relevant'] ? _green : _yellow,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _buildResultRow(
-              'Status',
-              result['is_relevant'] ? 'Relevant' : 'Needs Review',
-              result['is_relevant'] ? _green : _yellow,
-            ),
-            const SizedBox(height: 8),
-            _buildResultRow(
-              'Confidence',
-              '${((result['confidence'] ?? 0.0) * 100).toStringAsFixed(1)}%',
-              _textSec,
-            ),
-            const SizedBox(height: 12),
-            if (result['analysis_details'] != null) ...[
-              Text(
-                'Details:',
-                style: TextStyle(
-                  color: _textSec,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                result['analysis_details']['recommendation'] ?? '',
-                style: const TextStyle(
-                  color: _textSec,
-                  fontSize: 11,
-                ),
-              ),
-            ],
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text(
-              'Close',
-              style: TextStyle(color: _blue),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildResultRow(String label, String value, Color color) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Text(
-          label,
-          style: const TextStyle(color: _textSec, fontSize: 12),
-        ),
-        Text(
-          value,
-          style: TextStyle(
-            color: color,
-            fontSize: 12,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-      ],
-    );
   }
 
   @override
@@ -226,14 +135,11 @@ class _ImageReplacementDialogState extends State<ImageReplacementDialog> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // Header
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
                 color: _surface2,
-                border: Border(
-                  bottom: BorderSide(color: _border, width: 1),
-                ),
+                border: Border(bottom: BorderSide(color: _border, width: 1)),
                 borderRadius: const BorderRadius.only(
                   topLeft: Radius.circular(12),
                   topRight: Radius.circular(12),
@@ -263,15 +169,12 @@ class _ImageReplacementDialogState extends State<ImageReplacementDialog> {
                 ],
               ),
             ),
-
-            // Body
             Padding(
               padding: const EdgeInsets.all(20),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Info text
                   Container(
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
@@ -280,171 +183,61 @@ class _ImageReplacementDialogState extends State<ImageReplacementDialog> {
                       borderRadius: BorderRadius.circular(6),
                     ),
                     child: const Text(
-                      'Select a new image. It will be automatically checked for relevance to the document section.',
-                      style: TextStyle(
-                        color: _textSec,
-                        fontSize: 12,
-                      ),
+                      'Select a new image. It will be embedded in your document and checked for relevance.',
+                      style: TextStyle(color: _textSec, fontSize: 12),
                     ),
                   ),
                   const SizedBox(height: 16),
-
-                  // Current image info
-                  if (_selectedImagePath == null)
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 16,
+                  if (_showPreview && _selectedImage != null) ...[
+                    const Text(
+                      'New Image',
+                      style: TextStyle(
+                        color: _textPri,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
                       ),
+                    ),
+                    const SizedBox(height: 8),
+                    Container(
+                      height: 200,
+                      width: double.infinity,
                       decoration: BoxDecoration(
-                        color: _surface2,
                         border: Border.all(color: _border, width: 1),
                         borderRadius: BorderRadius.circular(8),
                       ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            'Current Image',
-                            style: const TextStyle(
-                              color: _textSec,
-                              fontSize: 11,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            widget.currentImagePath,
-                            style: const TextStyle(
-                              color: _textSec,
-                              fontSize: 10,
-                              fontFamily: 'monospace',
-                            ),
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ],
+                      child: Image.file(_selectedImage!, fit: BoxFit.contain),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      _selectedImagePath ?? 'Unknown file',
+                      style: const TextStyle(
+                        color: _textSec,
+                        fontSize: 10,
+                        fontFamily: 'monospace',
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                  if (_uploadStatus.isNotEmpty) ...[
+                    const SizedBox(height: 16),
+                    Text(
+                      _uploadStatus,
+                      style: TextStyle(
+                        color: _uploadStatus.contains('Error') || _uploadStatus.contains('irrelevant')
+                            ? _red
+                            : _textSec,
+                        fontSize: 12,
                       ),
                     ),
-
-                  // Selected image preview
-                  if (_showPreview && _selectedImage != null)
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'New Image',
-                          style: const TextStyle(
-                            color: _textPri,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Container(
-                          height: 200,
-                          width: double.infinity,
-                          decoration: BoxDecoration(
-                            border: Border.all(color: _border, width: 1),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Image.file(
-                            _selectedImage!,
-                            fit: BoxFit.contain,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          _selectedImagePath ?? 'Unknown file',
-                          style: const TextStyle(
-                            color: _textSec,
-                            fontSize: 10,
-                            fontFamily: 'monospace',
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ],
-                    ),
-
-                  const SizedBox(height: 16),
-
-                  // Status message
-                  if (_uploadStatus.isNotEmpty)
-                    Container(
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        color: _uploadStatus.contains('✓')
-                            ? _green.withOpacity(0.1)
-                            : _uploadStatus.contains('⚠')
-                                ? _yellow.withOpacity(0.1)
-                                : _red.withOpacity(0.1),
-                        border: Border.all(
-                          color: _uploadStatus.contains('✓')
-                              ? _green.withOpacity(0.3)
-                              : _uploadStatus.contains('⚠')
-                                  ? _yellow.withOpacity(0.3)
-                                  : _red.withOpacity(0.3),
-                          width: 1,
-                        ),
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: Row(
-                        children: [
-                          if (_isLoading)
-                            SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                valueColor: AlwaysStoppedAnimation(
-                                  _uploadStatus.contains('✓') ? _green : _yellow,
-                                ),
-                              ),
-                            )
-                          else
-                            Icon(
-                              _uploadStatus.contains('✓')
-                                  ? Icons.check_circle
-                                  : _uploadStatus.contains('⚠')
-                                      ? Icons.warning
-                                      : Icons.error,
-                              size: 16,
-                              color: _uploadStatus.contains('✓')
-                                  ? _green
-                                  : _uploadStatus.contains('⚠')
-                                      ? _yellow
-                                      : _red,
-                            ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              _uploadStatus,
-                              style: TextStyle(
-                                color: _uploadStatus.contains('✓')
-                                    ? _green
-                                    : _uploadStatus.contains('⚠')
-                                        ? _yellow
-                                        : _red,
-                                fontSize: 12,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
+                  ],
                 ],
               ),
             ),
-
-            // Footer buttons
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                border: Border(
-                  top: BorderSide(color: _border, width: 1),
-                ),
+                border: Border(top: BorderSide(color: _border, width: 1)),
               ),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.end,
@@ -452,10 +245,7 @@ class _ImageReplacementDialogState extends State<ImageReplacementDialog> {
                   if (!_isLoading)
                     TextButton(
                       onPressed: () => Navigator.pop(context),
-                      child: const Text(
-                        'Cancel',
-                        style: TextStyle(color: _textSec),
-                      ),
+                      child: const Text('Cancel', style: TextStyle(color: _textSec)),
                     ),
                   const SizedBox(width: 8),
                   if (_selectedImage == null)
@@ -471,7 +261,7 @@ class _ImageReplacementDialogState extends State<ImageReplacementDialog> {
                   else
                     ElevatedButton.icon(
                       icon: _isLoading
-                          ? SizedBox(
+                          ? const SizedBox(
                               width: 16,
                               height: 16,
                               child: CircularProgressIndicator(

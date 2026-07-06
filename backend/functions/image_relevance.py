@@ -18,8 +18,7 @@ import anthropic
 
 from models import Batch
 
-# Import centralized model config — never hardcode the model string
-from config import VISION_MODEL
+from config import ANALYSIS_MODEL
 
 
 async def check_image_relevance(
@@ -81,16 +80,16 @@ async def _evaluate_relevance(
     elif b64.startswith("R0lGOD"):
         media_type = "image/gif"
 
-    prompt = f"""You are an academic document reviewer. Determine whether the provided image is relevant to the surrounding text in the document.
+    prompt = f"""You are a strict academic document reviewer. Determine whether the provided image is relevant to the surrounding text in the document.
 
 SURROUNDING TEXT:
 \"\"\"{surrounding_text[:2000]}\"\"\"
 
 Instructions:
-1. First, quote the most relevant portion of the surrounding text.
+1. Quote the most relevant portion of the surrounding text.
 2. Describe what the image shows.
-3. Explain whether the image is relevant or irrelevant to the quoted text.
-4. If irrelevant, explain WHY the image does not belong.
+3. Compare the image subject to the section topic — flag as irrelevant if they are clearly different domains (e.g. house photo in a computer architecture section, random stock photo, unrelated diagram).
+4. When the image does not directly support or illustrate the surrounding text, set verdict to "irrelevant".
 
 Return ONLY valid JSON. Do NOT return markdown. Do NOT wrap JSON inside code fences.
 
@@ -100,7 +99,7 @@ Return this exact structure:
 Return ONLY a valid JSON object. No markdown, no explanation, no code fences. Just the raw JSON."""
 
     response = await client.messages.create(
-        model=VISION_MODEL,
+        model=ANALYSIS_MODEL,
         max_tokens=1024,
         messages=[
             {
@@ -130,7 +129,7 @@ Return ONLY a valid JSON object. No markdown, no explanation, no code fences. Ju
     if verdict == "irrelevant":
         return {
             "function": "image_relevance",
-            "type": "irrelevant_image",
+            "type": "image_relevance",
             "severity": "major",
             "paragraph_id": "",
             "image_id": image_id,
@@ -141,13 +140,64 @@ Return ONLY a valid JSON object. No markdown, no explanation, no code fences. Ju
             "original": "",
             "current_heading": "",
             "content_belongs_to": "",
+            "surrounding_text": surrounding_text[:200],
             "text_preview": surrounding_text[:120],
             "verdict": "irrelevant",
-            "confidence": parsed.get("confidence", 0),
+            "confidence": int(float(parsed.get("confidence", 0) or 0)),
             "_replace_image": True,
         }
 
     return None
+
+
+async def evaluate_image_relevance(
+    client: anthropic.AsyncAnthropic,
+    b64: str,
+    surrounding_text: str,
+) -> Dict[str, Any]:
+    """Return relevance verdict for a single image (used after replacement)."""
+    if not b64:
+        return {
+            "verdict": "relevant",
+            "is_relevant": True,
+            "confidence": 0.5,
+            "reason": "Could not read image bytes for validation.",
+        }
+
+    media_type = "image/png"
+    if b64.startswith("/9j/"):
+        media_type = "image/jpeg"
+
+    prompt = f"""You are a strict academic document reviewer. Determine whether the provided image is relevant to the surrounding text.
+
+SURROUNDING TEXT:
+\"\"\"{surrounding_text[:2000]}\"\"\"
+
+Return ONLY valid JSON:
+{{"verdict": "relevant" or "irrelevant", "reason": "brief explanation", "confidence": 0-100}}"""
+
+    response = await client.messages.create(
+        model=ANALYSIS_MODEL,
+        max_tokens=512,
+        messages=[{
+            "role": "user",
+            "content": [
+                {"type": "image", "source": {"type": "base64", "media_type": media_type, "data": b64}},
+                {"type": "text", "text": prompt},
+            ],
+        }],
+    )
+    parsed = _safe_parse(response.content[0].text)
+    verdict = str(parsed.get("verdict", "relevant")).lower()
+    conf = float(parsed.get("confidence", 80) or 80)
+    if conf > 1.0:
+        conf = conf / 100.0
+    return {
+        "verdict": verdict,
+        "is_relevant": verdict != "irrelevant",
+        "confidence": conf,
+        "reason": parsed.get("reason", ""),
+    }
 
 
 def _safe_parse(text: str) -> dict:
@@ -155,4 +205,27 @@ def _safe_parse(text: str) -> dict:
     try:
         return json.loads(cleaned)
     except json.JSONDecodeError:
-        return {"issues": [], "error": True}
+        return {"verdict": "relevant", "reason": "Parse error", "confidence": 0}
+
+
+async def recheck_image(
+    client: anthropic.AsyncAnthropic,
+    b64: str,
+    surrounding_text: str,
+    image_id: str = "",
+) -> Dict[str, Any]:
+    """Run ethics + relevance on a single replacement image."""
+    from functions.image_ethics import evaluate_image_ethics
+
+    ethics = await evaluate_image_ethics(client, b64)
+    relevance = await evaluate_image_relevance(client, b64, surrounding_text)
+    cleared = bool(ethics.get("is_ethical")) and bool(relevance.get("is_relevant"))
+    return {
+        "image_id": image_id,
+        "ethics": ethics,
+        "relevance": relevance,
+        "cleared": cleared,
+        "is_relevant": relevance.get("is_relevant", False),
+        "is_ethical": ethics.get("is_ethical", True),
+        "confidence": relevance.get("confidence", 0),
+    }

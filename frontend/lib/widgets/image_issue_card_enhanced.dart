@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../models/json_parse.dart';
 import '../services/image_replacement_service.dart';
 import 'image_replacement_dialog.dart';
 
@@ -18,7 +19,7 @@ class ImageIssueCardEnhanced extends StatefulWidget {
   final Map<String, dynamic> issue;
   final String imageBaseUrl;
   final int documentId;
-  final Function(int) onImageReplaced; // Callback when image is replaced
+  final void Function(Map<String, dynamic> result) onImageReplaced;
   final Function(String) onError; // Error callback
 
   const ImageIssueCardEnhanced({
@@ -56,19 +57,9 @@ class _ImageIssueCardEnhancedState extends State<ImageIssueCardEnhanced> {
         imageIndex: widget.issue['image_index'] ?? 0,
         currentImagePath: filename,
         service: _replacementService,
-        onSuccess: () {
-          // Mark as replaced and hide error
+        onSuccess: (result) {
           setState(() => _showReplacedBadge = true);
-          widget.onImageReplaced(widget.issue['image_index'] ?? 0);
-          
-          // Show success notification
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: const Text('✓ Image replaced successfully'),
-              backgroundColor: _green,
-              duration: const Duration(seconds: 3),
-            ),
-          );
+          widget.onImageReplaced(result);
         },
         onError: (error) {
           widget.onError(error);
@@ -88,10 +79,10 @@ class _ImageIssueCardEnhancedState extends State<ImageIssueCardEnhanced> {
   Widget build(BuildContext context) {
     final rawPath = widget.issue['image_path'] as String? ?? '';
     final filename = widget.issue['current'] as String? ?? '';
-    final rawConf = widget.issue['confidence'];
-    final confidence = rawConf is int
-        ? (rawConf as int).toDouble()
-        : (rawConf as double? ?? 0.0);
+    final reason = widget.issue['description'] as String? ??
+        widget.issue['reason'] as String? ??
+        '';
+    final confidence = normalizedConfidence(widget.issue['confidence']);
     final pct = (confidence * 100).toInt();
 
     // Build image URL
@@ -275,6 +266,16 @@ class _ImageIssueCardEnhancedState extends State<ImageIssueCardEnhanced> {
                   ],
                 ),
                 const SizedBox(height: 8),
+
+                if (reason.isNotEmpty) ...[
+                  Text(
+                    reason,
+                    style: const TextStyle(color: _textSec, fontSize: 11, height: 1.4),
+                    maxLines: 4,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 8),
+                ],
 
                 // Confidence bar
                 Row(

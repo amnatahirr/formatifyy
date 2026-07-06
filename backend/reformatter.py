@@ -22,6 +22,7 @@ import tempfile
 from typing import Any, Dict, List, Optional
 
 from models import AnalysisReport
+from docx_styles import force_heading_style
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -53,6 +54,83 @@ _DEFAULT_STYLES = {
 }
 
 
+def _normalize_margin_inches(value: float, unit: str = "mm") -> float:
+    """Convert stored margin/length values to inches."""
+    v = float(value)
+    if unit == "mm":
+        return round(v / 25.4, 4)
+    if v > 3.0:
+        return round(v / 25.4, 4)
+    return v
+
+
+def _normalize_length_inches(value: float, unit: str = "mm") -> float:
+    """Convert indent/length fields to inches."""
+    return _normalize_margin_inches(value, unit)
+
+
+def _parse_section_map(required_sections: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
+    """Build lookup: normalized section name → section config."""
+    mapping: Dict[str, Dict[str, Any]] = {}
+    for idx, sec in enumerate(required_sections or []):
+        if isinstance(sec, str):
+            name = sec.strip()
+            mapping[name.lower()] = {"name": name, "order": idx + 1, "heading_level": 1}
+        elif isinstance(sec, dict):
+            name = (sec.get("name") or "").strip()
+            if name:
+                entry = dict(sec)
+                entry.setdefault("order", idx + 1)
+                entry.setdefault("heading_level", sec.get("headingLevel", 1))
+                if "heading_level" in sec:
+                    entry["heading_level"] = sec["heading_level"]
+                mapping[name.lower()] = entry
+    return mapping
+
+
+def _normalize_section_title(text: str) -> str:
+    """Strip numbering/colons for section title comparison."""
+    cleaned = text.strip().rstrip(":").strip()
+    cleaned = re.sub(r"^[\d]+(?:\.[\d]+)*\.?\s+", "", cleaned).strip()
+    return cleaned.lower()
+
+
+def _match_required_section(text: str, section_map: Dict[str, Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    normalized = _normalize_section_title(text)
+    if not normalized:
+        return None
+    if normalized in section_map:
+        return section_map[normalized]
+    for key, sec in section_map.items():
+        order = sec.get("order")
+        if order:
+            numbered = f"{order}. {key}"
+            if normalized == numbered or normalized == f"{order} {key}":
+                return sec
+        if normalized == key or normalized.endswith(f" {key}"):
+            return sec
+        if key in normalized and len(normalized) <= len(key) + 8:
+            return sec
+    return None
+
+
+def _apply_word_heading(doc, para, level: int, spec: dict, align_map: dict) -> None:
+    """Assign built-in Word Heading style plus template font specs."""
+    level = max(1, min(4, level))
+    force_heading_style(para, doc, level)
+    _apply_style(para, spec, align_map)
+
+    from docx.oxml.ns import qn
+
+    pf = para.paragraph_format
+    pf.first_line_indent = None
+    pf.left_indent = None
+    try:
+        pf.keep_with_next = True
+    except Exception:
+        pass
+
+
 def parse_template_styles(rules_input: str | Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
     """
     Parse the template markdown rules or mapping dictionary to extract heading, margin, and body styles.
@@ -61,6 +139,7 @@ def parse_template_styles(rules_input: str | Dict[str, Any]) -> Dict[str, Dict[s
     styles = {k: dict(v) for k, v in _DEFAULT_STYLES.items()}
 
     if isinstance(rules_input, dict):
+        unit = rules_input.get("spacing_unit", "mm")
         # Read from dictionary directly
         for lvl in (1, 2, 3):
             prefix = f"heading{lvl}"
@@ -91,14 +170,18 @@ def parse_template_styles(rules_input: str | Dict[str, Any]) -> Dict[str, Dict[s
         if "body_space_after" in rules_input:
             styles["body"]["space_after"] = float(rules_input["body_space_after"])
         if "first_line_indent" in rules_input:
-            styles["body"]["first_line_indent"] = float(rules_input["first_line_indent"])
+            styles["body"]["first_line_indent"] = _normalize_length_inches(
+                rules_input["first_line_indent"], unit
+            )
 
-        # Margins
+        # Margins (stored as mm in admin UI)
         for side in ("top", "bottom", "left", "right"):
             key = f"margin_{side}"
             if key in rules_input:
-                styles["margins"][side] = float(rules_input[key])
+                styles["margins"][side] = _normalize_margin_inches(rules_input[key], unit)
 
+        styles["_spacing_unit"] = unit
+        styles["_heading_numbering"] = rules_input.get("heading_numbering_style", "none")
         return styles
 
     # If it is a string containing markdown_rules
@@ -181,6 +264,7 @@ def reformat_document(
     output_path: str,
     report: AnalysisReport,
     rules_input: str | Dict[str, Any],
+    required_sections: Optional[List[Dict[str, Any]]] = None,
 ) -> str:
     """
     Apply formatting corrections to a DOCX file based on the analysis report
@@ -191,7 +275,7 @@ def reformat_document(
     ext = os.path.splitext(input_path)[1].lower()
 
     if ext == ".docx":
-        return _reformat_docx(input_path, output_path, report, rules_input)
+        return _reformat_docx(input_path, output_path, report, rules_input, required_sections)
     else:
         # For PDF/TXT → create a basic formatted DOCX
         return _create_formatted_docx(input_path, output_path, report, rules_input)
@@ -202,11 +286,15 @@ def _reformat_docx(
     output_path: str,
     report: AnalysisReport,
     rules_input: str | Dict[str, Any],
+    required_sections: Optional[List[Dict[str, Any]]] = None,
 ) -> str:
-    """Reformat an existing DOCX file in-place."""
+    """Reformat an existing DOCX — copy first, then apply styles without altering text."""
+    import shutil
     from docx import Document
-    from docx.shared import Pt, RGBColor, Inches
+    from docx.shared import Pt, Inches
     from docx.enum.text import WD_ALIGN_PARAGRAPH
+
+    shutil.copy2(input_path, output_path)
 
     ALIGN_MAP = {
         "left": WD_ALIGN_PARAGRAPH.LEFT,
@@ -216,7 +304,12 @@ def _reformat_docx(
     }
 
     styles = parse_template_styles(rules_input)
-    doc = Document(input_path)
+    numbering_style = str(styles.pop("_heading_numbering", "none"))
+    styles.pop("_spacing_unit", None)
+    section_map = _parse_section_map(required_sections or [])
+    doc = Document(output_path)
+
+    prev_was_heading = False
 
     # ── Apply page margins ───────────────────────────────────────────────────
     margins = styles["margins"]
@@ -226,34 +319,48 @@ def _reformat_docx(
         section.left_margin = Inches(margins["left"])
         section.right_margin = Inches(margins["right"])
 
-    # ── Apply styles to paragraphs ───────────────────────────────────────────
+    # ── Apply styles to paragraphs (never rewrite paragraph text) ────────────
     for para in doc.paragraphs:
         text = para.text.strip()
         if not text:
+            prev_was_heading = False
             continue
 
-        style_name = (para.style.name or "").lower()
-        spec = None
+        matched = _match_required_section(text, section_map)
+        is_heading = False
+        styled = False
 
-        # Detect heading level
-        for lvl in (1, 2, 3):
-            if f"heading {lvl}" in style_name or f"heading{lvl}" in style_name:
-                spec = styles.get(f"heading{lvl}")
-                break
+        if matched:
+            level = int(matched.get("heading_level", 1) or 1)
+            level = max(1, min(4, level))
+            spec = styles.get(f"heading{min(level, 3)}", styles["heading1"])
+            is_heading = True
+            order = matched.get("order")
+            name = matched.get("name", text)
+            if numbering_style == "decimal" and order:
+                desired = f"{order}. {name}"
+                if not text.lower().startswith(f"{order}."):
+                    _set_paragraph_text_preserve_style(para, desired)
+            _apply_word_heading(doc, para, level, spec, ALIGN_MAP)
+            styled = True
+        else:
+            # Only preserve existing Word heading styles — no guessing from bold/colons
+            style_name = (para.style.name or "").lower()
+            for lvl in (1, 2, 3, 4):
+                if f"heading {lvl}" in style_name or style_name == f"heading{lvl}":
+                    spec = styles.get(f"heading{min(lvl, 3)}")
+                    is_heading = True
+                    _apply_word_heading(doc, para, lvl, spec, ALIGN_MAP)
+                    styled = True
+                    break
 
-        if spec is None:
-            # Heuristic detection
-            word_count = len(text.split())
-            ends_sentence = text.endswith((".", "?", "!"))
-            if word_count <= 10 and text.isupper():
-                spec = styles["heading1"]
-            elif word_count <= 10 and not ends_sentence and any(r.bold for r in para.runs if r.text.strip()):
-                spec = styles["heading2"]
-            else:
-                spec = styles["body"]
+            if not styled:
+                spec = dict(styles["body"])
+                if prev_was_heading:
+                    spec["first_line_indent"] = 0
+                _apply_style(para, spec, ALIGN_MAP)
 
-        # Apply the spec
-        _apply_style(para, spec, ALIGN_MAP)
+        prev_was_heading = is_heading
 
     doc.save(output_path)
     return output_path
@@ -328,22 +435,33 @@ def _create_formatted_docx(
     return output_path
 
 
-def _apply_style(para, spec: dict, align_map: dict) -> None:
-    """Apply a style specification to a paragraph and all its runs."""
-    from docx.shared import Pt, RGBColor, Inches
+def _set_paragraph_text_preserve_style(para, new_text: str) -> None:
+    """Set paragraph text without splitting across runs unnecessarily."""
+    if para.runs:
+        para.runs[0].text = new_text
+        for run in para.runs[1:]:
+            run.text = ""
+    else:
+        para.add_run(new_text)
 
-    # Ensure at least one run
-    if not para.runs and para.text.strip():
-        run = para.add_run(para.text)
-        # Clear original text elements
-        for child in list(para._element):
-            tag = child.tag.split("}")[-1] if "}" in child.tag else child.tag
-            if tag == "r" and child != para.runs[-1]._element:
-                continue
+
+def _apply_style(para, spec: dict, align_map: dict) -> None:
+    """Apply a style specification to a paragraph and its runs — text is never replaced."""
+    from docx.shared import Pt, Inches
+    from docx.oxml.ns import qn
+
+    if not para.runs:
+        return
 
     for run in para.runs:
+        if not run.text:
+            continue
         if spec.get("font"):
             run.font.name = spec["font"]
+            r_pr = run._element.get_or_add_rPr()
+            r_fonts = r_pr.get_or_add_rFonts()
+            r_fonts.set(qn("w:ascii"), spec["font"])
+            r_fonts.set(qn("w:hAnsi"), spec["font"])
         if spec.get("size"):
             run.font.size = Pt(spec["size"])
         if "bold" in spec:
@@ -361,7 +479,11 @@ def _apply_style(para, spec: dict, align_map: dict) -> None:
     if spec.get("alignment") in align_map:
         pf.alignment = align_map[spec["alignment"]]
     if spec.get("first_line_indent") is not None:
-        pf.first_line_indent = Inches(spec["first_line_indent"])
+        indent = float(spec["first_line_indent"])
+        if indent > 0:
+            pf.first_line_indent = Inches(indent)
+        else:
+            pf.first_line_indent = None
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

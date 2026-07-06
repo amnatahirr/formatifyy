@@ -43,6 +43,7 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile, Query, Body
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from aggregator import aggregate
@@ -50,14 +51,28 @@ from batcher import create_batches
 from database import get_db, hash_password, init_db, verify_password
 
 from dispatcher import dispatch_all
-from models import AnalysisReport, UserLoginRequest, UserSignupRequest, TemplateCreateRequest
+from models import AnalysisReport, UserLoginRequest, UserSignupRequest, TemplateCreateRequest, TemplateUpdateRequest
 from parser import parse_file, parse_text
 from reformatter import reformat_document
+from issue_utils import (
+    build_document_blocks,
+    normalize_issues,
+    save_document_images,
+)
+from image_formatter import format_document_images, fix_image_captions
+from content_fixer import (
+    apply_text_fix,
+    apply_all_text_fixes,
+    apply_heading_fix,
+    apply_template_reformat,
+    _is_instruction_suggestion,
+)
 from templates import (
     get_all_templates,
     get_template_by_id,
     get_templates_by_university,
     get_templates_by_user,
+    update_template,
 )
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -99,6 +114,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 
 # In-memory job store: job_id → {report, output_path, filename}
 _jobs: Dict[str, Dict] = {}
@@ -293,12 +310,13 @@ async def create_template(payload: TemplateCreateRequest, created_by: int = 1, u
 
     cursor.execute(
         """
-        INSERT INTO templates (university_id, name, required_sections, formatting_rules, created_by)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO templates (university_id, name, description, required_sections, formatting_rules, created_by)
+        VALUES (?, ?, ?, ?, ?, ?)
         """,
         (
             university_id,
             payload.name,
+            payload.description or "",
             json.dumps(payload.required_sections),
             json.dumps(payload.formatting_rules),
             created_by,
@@ -309,6 +327,20 @@ async def create_template(payload: TemplateCreateRequest, created_by: int = 1, u
     conn.close()
 
     tmpl = get_template_by_id(new_id)
+    return {"success": True, "template": tmpl}
+
+
+@app.put("/api/admin/templates/{template_id}", tags=["Admin"])
+async def edit_template(template_id: int, payload: TemplateUpdateRequest, user_id: int = 1):
+    """Admin: update an existing formatting template."""
+    updates = payload.model_dump(exclude_unset=True)
+    if not updates:
+        raise HTTPException(status_code=400, detail="No fields to update.")
+
+    tmpl = update_template(template_id, updates)
+    if not tmpl:
+        raise HTTPException(status_code=404, detail="Template not found.")
+
     return {"success": True, "template": tmpl}
 
 
@@ -402,7 +434,10 @@ async def _run_analysis(
             source_path = tmp_txt
 
         # Pass the dict formatting_rules directly for precise control
-        reformat_document(source_path, output_path, report, tmpl["formatting_rules"])
+        reformat_document(
+            source_path, output_path, report,
+            tmpl["formatting_rules"], tmpl.get("required_sections", []),
+        )
     except Exception as exc:
         print(f"[main] reformatter error (non-fatal): {exc}")
         output_path = ""
@@ -495,19 +530,77 @@ async def download(job_id: str):
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# WORKING DOCUMENT — formatted copy that accumulates all applied fixes
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _working_copy_path(document_id: int) -> str:
+    return os.path.join(UPLOAD_DIR, "working", f"doc_{document_id}_working.docx")
+
+
+def _export_copy_path(document_id: int) -> str:
+    return os.path.join(OUTPUT_DIR, f"export_{document_id}.docx")
+
+
+def _ensure_formatted_working_copy(doc: Any, tmpl: Dict[str, Any]) -> str:
+    """
+    Return the working DOCX path, creating it from the template if needed.
+    All Apply Fix operations run on this file so the downloadable document matches.
+    """
+    if not str(doc["file_path"]).endswith(".docx"):
+        raise HTTPException(status_code=400, detail="Working fixes require a DOCX document.")
+
+    working_copy = _working_copy_path(doc["id"])
+    os.makedirs(os.path.dirname(working_copy), exist_ok=True)
+
+    if not os.path.exists(working_copy):
+        report = AnalysisReport(issues=[], stats={})
+        reformat_document(
+            doc["file_path"],
+            working_copy,
+            report,
+            tmpl["formatting_rules"],
+            tmpl.get("required_sections", []),
+        )
+    return working_copy
+
+
+def _commit_working_document(document_id: int, working_copy: str, doc: Any) -> Dict[str, Any]:
+    """Sync export file and rebuild preview blocks from the working document."""
+    export_path = _export_copy_path(document_id)
+    shutil.copy2(working_copy, export_path)
+
+    document_blocks: List[Dict[str, Any]] = []
+    try:
+        norm_filename = doc["filename"]
+        if not os.path.splitext(norm_filename)[1]:
+            norm_filename = os.path.basename(working_copy)
+        doc_model = parse_file(working_copy, norm_filename)
+        image_paths = save_document_images(doc_model, document_id, UPLOAD_DIR)
+        document_blocks = build_document_blocks(doc_model, image_paths)
+    except Exception as exc:
+        print(f"[commit_working] preview refresh error: {exc}")
+
+    return {
+        "document_blocks": document_blocks,
+        "export_path": export_path,
+        "working_copy": working_copy,
+    }
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # DOCUMENT MANIPULATION & BULLET HELPERS
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def _detect_missing_bullet_issues(docx_path: str) -> list:
     """
     Search docx for paragraphs that look like bullet lists but missing w:numPr.
+    Also detects implicit lists (e.g. Abstract feature lines, Label: paragraphs).
     """
     try:
         from docx import Document as DocxDoc
         from docx.oxml.ns import qn
         docx = DocxDoc(docx_path)
-        
-        # Build paragraph blocks
+
         blocks = []
         for idx, p in enumerate(docx.paragraphs):
             text = p.text.strip()
@@ -525,51 +618,109 @@ def _detect_missing_bullet_issues(docx_path: str) -> list:
                 "index": idx,
                 "type": btype,
                 "text": text,
-                "style": style_name
+                "style": style_name,
+                "has_numpr": has_numpr,
             })
-            
+
         bullet_groups = []
         current_group = []
         import re
-        
+
         bullet_pattern = re.compile(r"^[•*○■▪\-–→»*]|\(?\d+[.)]|\(?[A-Za-z][.)]")
-        
+        label_pattern = re.compile(r"^[A-Z][A-Za-z0-9\s/&()-]{1,50}:")
+
+        def _flush_group():
+            nonlocal current_group
+            if len(current_group) >= 2:
+                bullet_groups.append(list(current_group))
+            current_group = []
+
         for block in blocks:
             btype = block["type"]
             text = block["text"]
             if btype == "heading":
-                if current_group:
-                    bullet_groups.append(current_group)
-                    current_group = []
+                _flush_group()
                 continue
-                
-            is_bullet_like = bullet_pattern.match(text) is not None or "list" in block["style"]
-            
-            if is_bullet_like:
+
+            is_bullet_like = (
+                bullet_pattern.match(text) is not None
+                or "list" in block["style"]
+                or label_pattern.match(text) is not None
+            )
+
+            if is_bullet_like and not block["has_numpr"]:
                 current_group.append(block)
             else:
-                if current_group:
-                    bullet_groups.append(current_group)
-                    current_group = []
-                    
-        if current_group:
-            bullet_groups.append(current_group)
-            
-        issues = []
+                _flush_group()
+
+        _flush_group()
+
+        # Implicit lists under Abstract (short consecutive lines)
+        in_abstract = False
+        abstract_group: list = []
+        for block in blocks:
+            if block["type"] == "heading" and "abstract" in block["text"].lower():
+                in_abstract = True
+                abstract_group = []
+                continue
+            if in_abstract:
+                if block["type"] == "heading":
+                    if len(abstract_group) >= 2:
+                        bullet_groups.append(list(abstract_group))
+                    in_abstract = False
+                    abstract_group = []
+                    continue
+                text = block["text"]
+                if (
+                    block["type"] == "paragraph"
+                    and not block["has_numpr"]
+                    and 3 <= len(text.split()) <= 30
+                    and not text.endswith(".")
+                ) or label_pattern.match(text):
+                    abstract_group.append(block)
+                else:
+                    if len(abstract_group) >= 2:
+                        bullet_groups.append(list(abstract_group))
+                    abstract_group = []
+                    if block["type"] == "heading":
+                        in_abstract = False
+        if len(abstract_group) >= 2:
+            bullet_groups.append(abstract_group)
+
+        # Deduplicate groups by index sets
+        seen = set()
+        unique_groups = []
         for group in bullet_groups:
+            key = tuple(sorted(g["index"] for g in group))
+            if key in seen:
+                continue
+            seen.add(key)
+            unique_groups.append(group)
+
+        issues = []
+        for gi, group in enumerate(unique_groups):
             para_indices = [g["index"] for g in group]
             preview_items = [g["text"][:60] for g in group[:3]]
-            
+            first_idx = para_indices[0]
+
             issues.append({
+                "issue_id": f"missing_bullets_{gi}_{first_idx}",
+                "paragraph_id": f"p{first_idx}",
+                "function": "formatting",
+                "category": "Formatting",
                 "type": "missing_bullets",
                 "code": "MISSING_BULLETS",
-                "severity": "WARNING",
+                "severity": "minor",
+                "reason": f"List items starting with '{preview_items[0]}' need Word bullet styling.",
+                "description": f"List items starting with '{preview_items[0]}' appear to be missing formal Word bullet styling.",
                 "message": f"List items starting with '{preview_items[0]}' appear to be missing formal Word bullet styling.",
                 "heading": "List formatting",
                 "para_indices": para_indices,
+                "para_index": first_idx,
                 "preview_items": preview_items,
+                "suggestion": "Apply Word bullet list formatting",
                 "fix_type": "apply_section_bullets",
-                "fix_details": {"para_indices": para_indices}
+                "fix_details": {"para_indices": para_indices},
             })
         return issues
     except Exception as exc:
@@ -886,9 +1037,13 @@ async def analyze_document_endpoint(document_id: int, user_id: int = Query(...))
     
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
-        
-    working_copy = os.path.join(UPLOAD_DIR, "working", f"doc_{document_id}_working.docx")
-    file_path = working_copy if os.path.exists(working_copy) else doc["file_path"]
+
+    tmpl = get_template_by_id(doc["template_id"])
+    if tmpl and str(doc["file_path"]).endswith(".docx"):
+        file_path = _ensure_formatted_working_copy(doc, tmpl)
+    else:
+        working_copy = _working_copy_path(document_id)
+        file_path = working_copy if os.path.exists(working_copy) else doc["file_path"]
     
     job_id = str(document_id)
     report_dict = await _run_analysis(
@@ -904,60 +1059,162 @@ async def analyze_document_endpoint(document_id: int, user_id: int = Query(...))
     cursor.execute("UPDATE documents SET status = 'completed', updated_at = CURRENT_TIMESTAMP WHERE id = ?", (document_id,))
     conn.commit()
     conn.close()
-    
-    paragraphs = []
+
+    # Build structured blocks + normalized issues for the Flutter preview UI
+    doc_model = None
+    document_blocks: List[Dict[str, Any]] = []
+    image_paths: Dict[str, str] = {}
     try:
-        if file_path.endswith(".docx"):
-            from docx import Document as DocxDoc
-            paragraphs = [p.text for p in DocxDoc(file_path).paragraphs]
-        else:
-            with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
-                paragraphs = f.read().splitlines()
-    except Exception:
-        pass
+        norm_filename = doc["filename"]
+        if not os.path.splitext(norm_filename)[1]:
+            norm_filename = os.path.basename(file_path)
+        doc_model = parse_file(file_path, norm_filename)
+        image_paths = save_document_images(doc_model, document_id, UPLOAD_DIR)
+        document_blocks = build_document_blocks(doc_model, image_paths)
+    except Exception as exc:
+        print(f"[analyze] block build error (non-fatal): {exc}")
+
+    raw_issues = report_dict.get("issues", [])
+    normalized_issues = normalize_issues(raw_issues, image_paths)
+    stats = report_dict.get("stats", {})
         
     content_issues = []
     style_issues = []
     
-    for issue in report_dict.get("issues", []):
-        func = issue.get("function", "").lower()
+    for issue in normalized_issues:
+        func = (issue.get("function") or "").lower()
         if func in ("grammar", "para_relevance", "plagiarism"):
             content_issues.append(issue)
-        else:
+        elif func == "formatting":
             style_issues.append(issue)
             
     if file_path.endswith(".docx"):
         bullets = _detect_missing_bullet_issues(file_path)
+        for b in bullets:
+            b["category"] = "Formatting"
+            b["function"] = "formatting"
         style_issues.extend(bullets)
+        normalized_issues.extend(bullets)
+
+    major_count = len([i for i in normalized_issues if (i.get("severity") or "").lower() == "major"])
+    minor_count = len([i for i in normalized_issues if (i.get("severity") or "").lower() == "minor"])
+    critical_count = len([i for i in normalized_issues if (i.get("severity") or "").upper() == "CRITICAL"])
+    warning_count = len([i for i in normalized_issues if (i.get("severity") or "").upper() in ("WARNING", "MINOR")])
         
-    critical_count = len([i for i in report_dict.get("issues", []) if i.get("severity") == "CRITICAL"])
-    warning_count = len([i for i in report_dict.get("issues", []) if i.get("severity") == "WARNING"])
-    total_issues = len(report_dict.get("issues", [])) + len(content_issues) + len(style_issues)
-    
-    score = report_dict.get("stats", {}).get("avg_formatting_compliance", 100.0)
+    score = stats.get("avg_formatting_compliance", 100.0)
     if score is None:
         score = 100.0
+
+    # Legacy flat paragraph list for backward compatibility
+    paragraphs = [b["text"] for b in document_blocks if b.get("type") != "image" and b.get("text")]
+    if not paragraphs:
+        try:
+            if file_path.endswith(".docx"):
+                from docx import Document as DocxDoc
+                paragraphs = [p.text for p in DocxDoc(file_path).paragraphs]
+            else:
+                with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+                    paragraphs = f.read().splitlines()
+        except Exception:
+            pass
         
     return {
         "document_id": document_id,
         "filename": doc["filename"],
         "document_content": paragraphs,
-        "issues": report_dict.get("issues", []),
+        "document_blocks": document_blocks,
+        "issues": normalized_issues,
         "content_issues": content_issues,
         "style_issues": style_issues,
+        "stats": stats,
         "structure": {
             "score": score,
+            "status": "good" if score >= 80 else "needs_work" if score >= 50 else "poor",
             "sections": [],
-            "issues": []
+            "issues": [],
+            "summary": {
+                "missing": stats.get("formatting_issues", 0),
+                "content_issues": len(content_issues),
+                "style_issues": len(style_issues),
+                "grammar": stats.get("grammar_issues", 0),
+                "plagiarism": stats.get("plagiarism_issues", 0),
+                "image_ethics": stats.get("image_ethics_issues", 0),
+                "image_relevance": stats.get("image_relevance_issues", 0),
+            },
         },
         "content_checker_mode": "ensemble_with_learning",
         "content_checker_version": "perfect",
         "template_heading_matches": [],
         "compliance_score": score,
-        "total_issues": total_issues,
+        "total_issues": len(normalized_issues),
+        "major_issues": major_count,
+        "minor_issues": minor_count,
         "critical_issues": critical_count,
-        "warning_issues": warning_count
+        "warning_issues": warning_count,
     }
+
+
+async def _get_ai_client():
+    if GEMINI_API_KEY:
+        from gemini_adapter import GeminiClientAdapter
+        return GeminiClientAdapter(api_key=GEMINI_API_KEY)
+    return anthropic.AsyncAnthropic(api_key=ANTHROPIC_API_KEY)
+
+
+@app.post("/api/format-images/{document_id}", tags=["Documents"])
+async def format_images_endpoint(document_id: int, user_id: int = Query(...)):
+    """Auto-format images: center, resize, add AI captions."""
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM documents WHERE id = ? AND user_id = ?", (document_id, user_id))
+    doc = cursor.fetchone()
+    conn.close()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    tmpl = get_template_by_id(doc["template_id"])
+    if not tmpl:
+        raise HTTPException(status_code=400, detail="Template not found")
+
+    working_copy = os.path.join(UPLOAD_DIR, "working", f"doc_{document_id}_working.docx")
+    file_path = working_copy if os.path.exists(working_copy) else doc["file_path"]
+    if not file_path.endswith(".docx"):
+        raise HTTPException(status_code=400, detail="Only DOCX files support image formatting.")
+
+    output_path = os.path.join(OUTPUT_DIR, f"images_formatted_{document_id}.docx")
+    client = await _get_ai_client()
+    result = await format_document_images(
+        file_path, output_path, client, tmpl.get("formatting_rules", {}),
+    )
+    os.makedirs(os.path.dirname(working_copy) or ".", exist_ok=True)
+    shutil.copy2(output_path, working_copy)
+    result["download_url"] = f"/api/format-images/download/{document_id}"
+    return result
+
+
+@app.get("/api/format-images/download/{document_id}", tags=["Documents"])
+async def download_formatted_images(document_id: int, user_id: int = Query(...), file: str = Query(None)):
+    """Download image-formatted document."""
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM documents WHERE id = ? AND user_id = ?", (document_id, user_id))
+    doc = cursor.fetchone()
+    conn.close()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    path = os.path.join(OUTPUT_DIR, f"images_formatted_{document_id}.docx")
+    working_copy = os.path.join(UPLOAD_DIR, "working", f"doc_{document_id}_working.docx")
+    if os.path.exists(working_copy):
+        path = working_copy
+    elif not os.path.exists(path):
+        raise HTTPException(status_code=404, detail="Formatted file not found. Run image formatting first.")
+
+    return FileResponse(
+        path=path,
+        filename=f"formatted_images_{doc['filename']}",
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    )
 
 
 @app.get("/api/documents/analyze-bullets/{document_id}", tags=["Documents"])
@@ -1091,39 +1348,43 @@ async def preview_document(document_id: int, user_id: int = Query(...)):
 
 @app.get("/api/format-document/export/{document_id}", tags=["Documents"])
 def export_formatted_document(document_id: int, user_id: int = Query(...)):
-    """Export and download a fully reformatted DOCX version of the saved document."""
+    """Download the formatted DOCX — uses working copy with all applied fixes."""
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM documents WHERE id = ? AND user_id = ?", (document_id, user_id))
     doc = cursor.fetchone()
     conn.close()
-    
+
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
-        
+
     tmpl = get_template_by_id(doc["template_id"])
     if not tmpl:
         raise HTTPException(status_code=400, detail="Document has no valid template assigned.")
-        
-    working_copy = os.path.join(UPLOAD_DIR, "working", f"doc_{document_id}_working.docx")
-    file_path = working_copy if os.path.exists(working_copy) else doc["file_path"]
-    
-    output_filename = f"export_{document_id}.docx"
-    output_path = os.path.join(OUTPUT_DIR, output_filename)
-    
-    from models import AnalysisReport
-    report = AnalysisReport(issues=[], stats={})
-    
-    reformat_document(file_path, output_path, report, tmpl["formatting_rules"])
-    
+
+    working_copy = _working_copy_path(document_id)
+    output_path = _export_copy_path(document_id)
+
+    if os.path.exists(working_copy):
+        shutil.copy2(working_copy, output_path)
+    else:
+        report = AnalysisReport(issues=[], stats={})
+        reformat_document(
+            doc["file_path"],
+            output_path,
+            report,
+            tmpl["formatting_rules"],
+            tmpl.get("required_sections", []),
+        )
+
     download_name = f"formatted_{doc['filename']}"
     if not download_name.endswith(".docx"):
         download_name += ".docx"
-        
+
     return FileResponse(
         path=output_path,
         filename=download_name,
-        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     )
 
 
@@ -1151,7 +1412,10 @@ def apply_all_style_fixes(document_id: int, user_id: int = Query(...)):
     from models import AnalysisReport
     report = AnalysisReport(issues=[], stats={})
     
-    reformat_document(file_path, working_copy, report, tmpl["formatting_rules"])
+    reformat_document(
+        file_path, working_copy, report,
+        tmpl["formatting_rules"], tmpl.get("required_sections", []),
+    )
     
     return {"status": "success", "message": "All style fixes applied to working copy"}
 
@@ -1172,23 +1436,325 @@ async def apply_fix(
     
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
-        
-    working_dir = os.path.join(UPLOAD_DIR, "working")
-    os.makedirs(working_dir, exist_ok=True)
-    working_copy = os.path.join(working_dir, f"doc_{document_id}_working.docx")
-    
-    if not os.path.exists(working_copy):
-        shutil.copy2(doc["file_path"], working_copy)
-        
+
+    tmpl = get_template_by_id(doc["template_id"])
+    if not tmpl:
+        raise HTTPException(status_code=400, detail="Template not found")
+
+    working_copy = _ensure_formatted_working_copy(doc, tmpl)
+
     para_indices = payload.get("para_indices", [])
     if not para_indices and "para_index" in payload:
         para_indices = [payload["para_index"]]
-        
+
     if fix_type == "apply_section_bullets":
         applied, skipped = apply_section_bullets_to_file(working_copy, para_indices)
-        return {"status": "success", "applied": applied, "skipped": skipped}
+        commit = _commit_working_document(document_id, working_copy, doc)
+        return {"status": "success", "applied": applied, "skipped": skipped, **commit}
     else:
         raise HTTPException(status_code=400, detail=f"Unsupported fix_type: {fix_type}")
+
+
+@app.post("/api/documents/apply-content-fix/{document_id}", tags=["Documents"])
+async def apply_content_fix(
+    document_id: int,
+    user_id: int = Query(...),
+    payload: Dict[str, Any] = Body(...),
+):
+    """Apply a single fix to the template-formatted working document and sync export."""
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM documents WHERE id = ? AND user_id = ?", (document_id, user_id))
+    doc = cursor.fetchone()
+    conn.close()
+
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    tmpl = get_template_by_id(doc["template_id"])
+    if not tmpl:
+        raise HTTPException(status_code=400, detail="Template not found")
+
+    working_copy = _ensure_formatted_working_copy(doc, tmpl)
+
+    fix_type = payload.get("fix_type", "text")
+    if fix_type == "heading":
+        level = int(payload.get("heading_level", 1) or 1)
+        ok, msg = apply_heading_fix(working_copy, payload.get("paragraph_id", ""), level)
+        if ok:
+            apply_template_reformat(
+                working_copy,
+                tmpl["formatting_rules"],
+                tmpl.get("required_sections", []),
+            )
+    elif fix_type in ("bullets", "apply_section_bullets"):
+        para_indices = payload.get("para_indices", [])
+        if not para_indices and payload.get("paragraph_id"):
+            m = re.match(r"p(\d+)", str(payload.get("paragraph_id", "")))
+            if m:
+                para_indices = [int(m.group(1))]
+        if payload.get("fix_details") and isinstance(payload["fix_details"], dict):
+            para_indices = payload["fix_details"].get("para_indices", para_indices)
+        applied, skipped = apply_section_bullets_to_file(working_copy, para_indices)
+        ok = len(applied) > 0
+        msg = f"Bullets applied to {len(applied)} paragraph(s)." if ok else "No bullets applied."
+    elif fix_type == "formatting":
+        ok, msg = apply_template_reformat(
+            working_copy,
+            tmpl["formatting_rules"],
+            tmpl.get("required_sections", []),
+        )
+    else:
+        suggestion = payload.get("suggestion", "")
+        if _is_instruction_suggestion(suggestion):
+            raise HTTPException(
+                status_code=400,
+                detail="This issue requires a structural fix (heading/style), not text replacement.",
+            )
+        ok, msg = apply_text_fix(
+            working_copy,
+            payload.get("paragraph_id", ""),
+            payload.get("original", ""),
+            suggestion,
+        )
+
+    if not ok:
+        raise HTTPException(status_code=400, detail=msg)
+
+    commit = _commit_working_document(document_id, working_copy, doc)
+    return {
+        "status": "success",
+        "message": msg,
+        **commit,
+    }
+
+
+@app.post("/api/documents/apply-all-fixes/{document_id}", tags=["Documents"])
+async def apply_all_fixes(
+    document_id: int,
+    user_id: int = Query(...),
+    payload: Dict[str, Any] = Body(default={}),
+):
+    """Apply template styles plus all provided text fixes."""
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM documents WHERE id = ? AND user_id = ?", (document_id, user_id))
+    doc = cursor.fetchone()
+    conn.close()
+
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    tmpl = get_template_by_id(doc["template_id"])
+    if not tmpl:
+        raise HTTPException(status_code=400, detail="Template not found")
+
+    working_copy = _ensure_formatted_working_copy(doc, tmpl)
+
+    text_result = {"applied": 0, "skipped": 0, "errors": []}
+    fixes = payload.get("fixes", [])
+    if fixes and working_copy.endswith(".docx"):
+        text_result = apply_all_text_fixes(working_copy, fixes)
+
+    apply_template_reformat(
+        working_copy,
+        tmpl["formatting_rules"],
+        tmpl.get("required_sections", []),
+    )
+
+    image_result = {"status": "skipped"}
+    if working_copy.endswith(".docx"):
+        try:
+            client = await _get_ai_client()
+            output_path = os.path.join(OUTPUT_DIR, f"images_formatted_{document_id}.docx")
+            image_result = await format_document_images(
+                working_copy, output_path, client, tmpl.get("formatting_rules", {}),
+            )
+            shutil.copy2(output_path, working_copy)
+        except Exception as exc:
+            image_result = {"status": "error", "message": str(exc)}
+
+    commit = _commit_working_document(document_id, working_copy, doc)
+
+    return {
+        "status": "success",
+        "message": "All fixes applied to formatted working document",
+        "text_fixes": text_result,
+        "image_formatting": image_result,
+        **commit,
+    }
+
+
+@app.post("/api/documents/recheck-image/{document_id}", tags=["Documents"])
+async def recheck_image_endpoint(
+    document_id: int,
+    user_id: int = Query(...),
+    payload: Dict[str, Any] = Body(...),
+):
+    """Re-run ethics + relevance on a single image after user replacement."""
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM documents WHERE id = ? AND user_id = ?", (document_id, user_id))
+    doc = cursor.fetchone()
+    conn.close()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    b64 = payload.get("image_base64", "")
+    image_id = payload.get("image_id", "")
+    surrounding = payload.get("surrounding_text", "")
+
+    if not b64:
+        raise HTTPException(status_code=400, detail="image_base64 is required")
+
+    try:
+        from functions.image_relevance import recheck_image
+        client = await _get_ai_client()
+        result = await recheck_image(client, b64, surrounding, image_id)
+        return {"status": "success", **result}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.post("/api/documents/{document_id}/replace-image", tags=["Documents"])
+async def replace_image(
+    document_id: int,
+    image_index: int = Form(...),
+    file: UploadFile = File(...),
+    user_id: int = Query(None),
+):
+    """Replace an image in the working DOCX, validate relevance, return preview path."""
+    conn = get_db()
+    cursor = conn.cursor()
+    if user_id:
+        cursor.execute("SELECT * FROM documents WHERE id = ? AND user_id = ?", (document_id, user_id))
+    else:
+        cursor.execute("SELECT * FROM documents WHERE id = ?", (document_id,))
+    doc = cursor.fetchone()
+    conn.close()
+
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    if not doc["file_path"].endswith(".docx"):
+        raise HTTPException(status_code=400, detail="Image replacement is only supported for DOCX files.")
+
+    img_dir = os.path.join(UPLOAD_DIR, "images", f"doc_{document_id}")
+    os.makedirs(img_dir, exist_ok=True)
+
+    ext = os.path.splitext(file.filename or "")[1].lower() or ".png"
+    image_id = f"img{image_index}"
+    rel_path = f"images/doc_{document_id}/{image_id}{ext}"
+    full_path = os.path.join(UPLOAD_DIR, rel_path)
+
+    content = await file.read()
+    with open(full_path, "wb") as f:
+        f.write(content)
+
+    tmpl = get_template_by_id(doc["template_id"])
+    if not tmpl:
+        raise HTTPException(status_code=400, detail="Template not found")
+
+    working_copy = _ensure_formatted_working_copy(doc, tmpl)
+
+    surrounding_text = ""
+    validation = {"is_relevant": True, "confidence": 0.8, "verdict": "relevant", "reason": ""}
+    commit: Dict[str, Any] = {}
+
+    try:
+        import base64 as b64mod
+        from docx import Document as DocxDoc
+        from functions.image_relevance import evaluate_image_relevance
+
+        docx = DocxDoc(working_copy)
+        blip_ns = "{http://schemas.openxmlformats.org/drawingml/2006/main}blip"
+        r_ns = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}embed"
+        found = 0
+        img_para_idx = None
+        for pi, para in enumerate(docx.paragraphs):
+            blips = list(para._element.iter(blip_ns))
+            if not blips:
+                continue
+            if found == image_index:
+                img_para_idx = pi
+                embed = blips[0].get(r_ns)
+                if embed and embed in docx.part.related_parts:
+                    part = docx.part.related_parts[embed]
+                    part._blob = content
+                break
+            found += 1
+
+        if img_para_idx is not None:
+            parts = []
+            for j in range(max(0, img_para_idx - 3), min(len(docx.paragraphs), img_para_idx + 4)):
+                t = docx.paragraphs[j].text.strip()
+                if t:
+                    parts.append(t)
+            surrounding_text = "\n".join(parts)
+
+        docx.save(working_copy)
+
+        try:
+            client = await _get_ai_client()
+            await fix_image_captions(working_copy, client, {})
+            from functions.image_relevance import recheck_image
+            recheck = await recheck_image(
+                client,
+                b64mod.b64encode(content).decode("utf-8"),
+                surrounding_text or doc["filename"],
+                image_id,
+            )
+            validation = {
+                "is_relevant": recheck.get("is_relevant", True),
+                "is_ethical": recheck.get("is_ethical", True),
+                "confidence": recheck.get("confidence", 0.8),
+                "verdict": recheck.get("relevance", {}).get("verdict", "relevant"),
+                "reason": recheck.get("relevance", {}).get("reason", ""),
+                "cleared": recheck.get("cleared", False),
+                "ethics": recheck.get("ethics", {}),
+                "relevance": recheck.get("relevance", {}),
+            }
+        except Exception as cap_exc:
+            print(f"[replace-image] validation/caption warning: {cap_exc}")
+
+        # Refresh extracted preview image from working document
+        try:
+            from parser import parse_file
+            from issue_utils import save_document_images
+            doc_model = parse_file(working_copy, doc["filename"])
+            save_document_images(doc_model, document_id, UPLOAD_DIR)
+        except Exception as img_exc:
+            print(f"[replace-image] preview refresh warning: {img_exc}")
+
+        commit = _commit_working_document(document_id, working_copy, doc)
+
+    except Exception as exc:
+        print(f"[replace-image] docx update warning: {exc}")
+        raise HTTPException(status_code=500, detail=f"Failed to update document image: {exc}")
+
+    is_relevant = bool(validation.get("is_relevant", True))
+    is_ethical = bool(validation.get("is_ethical", True))
+    cleared = bool(validation.get("cleared", is_relevant and is_ethical))
+    confidence = float(validation.get("confidence", 0.8) or 0.8)
+
+    return {
+        "success": True,
+        "status": "success",
+        "cleared": cleared,
+        "is_relevant": is_relevant,
+        "is_ethical": is_ethical,
+        "confidence": confidence,
+        "image_id": image_id,
+        "image_index": image_index,
+        "image_path": rel_path,
+        "message": "Image replaced and validated successfully" if is_relevant else "Image replaced but may still be irrelevant",
+        "analysis_details": {
+            "verdict": validation.get("verdict", "relevant"),
+            "reason": validation.get("reason", ""),
+            "recommendation": validation.get("reason", ""),
+        },
+        "document_blocks": commit.get("document_blocks", []),
+    }
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

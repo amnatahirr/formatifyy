@@ -18,13 +18,19 @@ import 'package:flutter/material.dart';
 class RequiredSectionItem {
   String name;
   bool required;
+  int headingLevel;
 
-  RequiredSectionItem({required this.name, this.required = true});
+  RequiredSectionItem({
+    required this.name,
+    this.required = true,
+    this.headingLevel = 1,
+  });
 
   factory RequiredSectionItem.fromJson(Map<String, dynamic> json) {
     return RequiredSectionItem(
       name: json['name'] as String? ?? '',
       required: json['required'] as bool? ?? true,
+      headingLevel: (json['heading_level'] as num?)?.toInt() ?? 1,
     );
   }
 
@@ -32,6 +38,7 @@ class RequiredSectionItem {
         'name': name,
         'order': order,
         'required': required,
+        'heading_level': headingLevel,
       };
 }
 
@@ -135,6 +142,11 @@ class _RequiredSectionsCardState extends State<RequiredSectionsCard> {
     final trimmed = newName.trim();
     if (trimmed.isEmpty) return;
     setState(() => _sections[index].name = trimmed);
+    _notify();
+  }
+
+  void _setHeadingLevel(int index, int level) {
+    setState(() => _sections[index].headingLevel = level);
     _notify();
   }
 
@@ -330,6 +342,7 @@ class _RequiredSectionsCardState extends State<RequiredSectionsCard> {
           onToggleRequired: () => _toggleRequired(index),
           onRemove: () => _removeSection(index),
           onRename: () => _showRenameDialog(index),
+          onHeadingLevelChanged: (lvl) => _setHeadingLevel(index, lvl),
         );
       },
     );
@@ -441,8 +454,10 @@ class _SectionTile extends StatelessWidget {
   final VoidCallback onToggleRequired;
   final VoidCallback onRemove;
   final VoidCallback onRename;
+  final ValueChanged<int> onHeadingLevelChanged;
 
   static const _cardBg      = Color(0xFF1A2332);
+  static const _surfaceBg   = Color(0xFF0F1419);
   static const _borderCol   = Color(0xFF2A3F5F);
   static const _accent       = Color(0xFF4A9EFF);
   static const _accentGreen  = Color(0xFF4ADE80);
@@ -457,6 +472,7 @@ class _SectionTile extends StatelessWidget {
     required this.onToggleRequired,
     required this.onRemove,
     required this.onRename,
+    required this.onHeadingLevelChanged,
   });
 
   @override
@@ -507,6 +523,34 @@ class _SectionTile extends StatelessWidget {
                 decoration: section.required ? null : TextDecoration.none,
               ),
               overflow: TextOverflow.ellipsis,
+            ),
+          ),
+
+          const SizedBox(width: 8),
+
+          // Heading level selector
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 6),
+            decoration: BoxDecoration(
+              color: _surfaceBg,
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(color: _borderCol),
+            ),
+            child: DropdownButtonHideUnderline(
+              child: DropdownButton<int>(
+                value: section.headingLevel.clamp(1, 4),
+                dropdownColor: _cardBg,
+                style: const TextStyle(color: _textPrimary, fontSize: 11),
+                items: const [
+                  DropdownMenuItem(value: 1, child: Text('H1')),
+                  DropdownMenuItem(value: 2, child: Text('H2')),
+                  DropdownMenuItem(value: 3, child: Text('H3')),
+                  DropdownMenuItem(value: 4, child: Text('H4')),
+                ],
+                onChanged: (v) {
+                  if (v != null) onHeadingLevelChanged(v);
+                },
+              ),
             ),
           ),
 

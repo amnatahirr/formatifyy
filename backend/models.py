@@ -113,6 +113,7 @@ class AnalysisReport(BaseModel):
     """The complete JSON response returned by POST /analyze."""
     issues: List[Issue] = Field(default_factory=list)
     stats: Stats = Field(default_factory=Stats)
+    document_info: Optional[DocumentInfo] = None
 # ═══════════════════════════════════════════════════════════════════════════════
 # AUTH & TEMPLATE CRUD MODELS — for signup, login and admin settings
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -131,5 +132,13 @@ class UserLoginRequest(BaseModel):
 
 class TemplateCreateRequest(BaseModel):
     name: str
+    description: str = ""
     required_sections: List[Any] = Field(default_factory=list)
     formatting_rules: Dict[str, Any] = Field(default_factory=dict)
+
+
+class TemplateUpdateRequest(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    required_sections: Optional[List[Any]] = None
+    formatting_rules: Optional[Dict[str, Any]] = None

@@ -2053,6 +2053,10 @@ import '../widgets/export_dialog.dart';
 import '../providers/document_provider.dart';
 import 'package:frontend/providers/qr_service.dart';
 import '../widgets/image_issue_card_enhanced.dart';
+import '../widgets/document_preview_panel.dart';
+import '../widgets/image_replacement_dialog.dart';
+import '../models/json_parse.dart';
+import '../services/image_replacement_service.dart';
 import ' image_formatter_screen.dart';
 import '../widgets/reference_formatter_widget.dart';
 
@@ -2218,6 +2222,13 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
   List<dynamic> _styleIssues = [];
   bool _styleIssuesInitialized = false;
 
+  // Document review preview state
+  List<Map<String, dynamic>> _previewBlocks = [];
+  List<Map<String, dynamic>> _pipelineIssues = [];
+  final Map<String, String> _appliedFixes = {};
+  final Set<String> _ignoredIssueIds = {};
+  final Set<String> _resolvedIssueIds = {};
+
   // ── Heading style check state ─────────────────────────────────────────────
   List<dynamic> _headingStyleResults = [];
   bool _headingStyleLoading = false;
@@ -2272,37 +2283,294 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 10, vsync: this);
+    _tabController = TabController(length: 7, vsync: this);
     _baseUrl = ApiConfig.getBaseUrl();
     _analysisFuture = _fetchAnalysis();
-
-    // Load tables eagerly so the tab-bar count is correct on first render.
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _loadTables();
-    });
-
-    // Safety net: re-load if user re-enters the tab after a clear.
-    _tabController.addListener(() {
-      final idx = _tabController.index;
-      if (idx == 0 && !_headingStyleLoaded && !_headingStyleLoading) {
-        _loadHeadingStyleCheck();
-      }
-      if (idx == 7 && !_tocLoaded && !_tocLoading) {
-        _loadTocCheck();
-      }
-      if (idx == 6 && _tables.isEmpty && !_tablesLoading) {
-        _loadTables();
-      }
-      if (idx == 9 && !_contentLoaded && !_contentLoading) {
-        _loadContentCheck();
-      }
-    });
   }
 
   @override
   void dispose() {
     _tabController.dispose();
     super.dispose();
+  }
+
+  String get _imageHostBase {
+    final uri = Uri.tryParse(_baseUrl);
+    if (uri != null) return '${uri.scheme}://${uri.host}:${uri.port}';
+    return _baseUrl.split('/api').first;
+  }
+
+  String _issueCategory(Map<dynamic, dynamic> issue) {
+    return (issue['category'] as String? ??
+            issue['function'] as String? ??
+            '')
+        .toLowerCase();
+  }
+
+  bool _isImageRelevanceIssue(Map<dynamic, dynamic> issue) {
+    final cat = _issueCategory(issue);
+    return cat == 'image relevance' || cat == 'image_relevance';
+  }
+
+  bool _isImageEthicsIssue(Map<dynamic, dynamic> issue) {
+    final cat = _issueCategory(issue);
+    return cat == 'image ethics' || cat == 'image_ethics';
+  }
+
+  List<dynamic> _issuesForFunction(List<dynamic> issues, String func) {
+    return issues
+        .where((i) => (i as Map)['function'] == func)
+        .toList();
+  }
+
+  List<Map<String, dynamic>> _asBlockList(List<dynamic> raw) {
+    if (raw.isEmpty) return [];
+    if (raw.first is Map) {
+      return raw.map((b) => Map<String, dynamic>.from(b as Map)).toList();
+    }
+    return raw.asMap().entries.map((e) {
+      return {
+        'paragraph_id': 'p${e.key}',
+        'type': 'paragraph',
+        'text': e.value.toString(),
+        'page': 1,
+      };
+    }).toList();
+  }
+
+  void _seedPreviewData(Map<String, dynamic> data) {
+    final blocks = _asBlockList(
+      data['document_blocks'] as List<dynamic>? ??
+          data['document_content'] as List<dynamic>? ??
+          [],
+    );
+    final issues =
+        (data['issues'] as List<dynamic>? ?? [])
+            .map((i) => Map<String, dynamic>.from(i as Map))
+            .toList();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      setState(() {
+        _previewBlocks = blocks;
+        _pipelineIssues = issues;
+      });
+    });
+  }
+
+  void _mergeWorkingDocumentState(
+    Map<String, dynamic> data, {
+    String? pid,
+    String? suggestion,
+    String? issueId,
+  }) {
+    if (!mounted) return;
+    setState(() {
+      if (issueId != null && issueId.isNotEmpty) {
+        _resolvedIssueIds.add(issueId);
+      }
+      if (pid != null && pid.isNotEmpty && suggestion != null && suggestion.isNotEmpty) {
+        _appliedFixes[pid] = suggestion;
+      }
+      final blocks = data['document_blocks'] as List<dynamic>?;
+      if (blocks != null && blocks.isNotEmpty) {
+        _previewBlocks = blocks
+            .map((b) => Map<String, dynamic>.from(b as Map))
+            .toList();
+      }
+      _isFixApplied = true;
+    });
+  }
+
+  Future<bool> _applyContentFixToBackend(
+    Map<String, dynamic> issue,
+    String correctedText,
+  ) async {
+    final auth = context.read<AuthProvider>();
+    final pid = issue['paragraph_id'] as String? ?? '';
+    final issueId = issue['issue_id'] as String? ?? '';
+    final fn = (issue['function'] as String? ?? issue['category'] as String? ?? '').toLowerCase();
+    final issueType = (issue['type'] as String? ?? '').toLowerCase();
+    final isHeadingFix = fn.contains('format') && issueType == 'heading_style';
+    final isBulletFix = issueType == 'missing_bullets';
+    final isParaRel = fn.contains('para') && fn.contains('relevance');
+
+    if (isParaRel) {
+      _showSnack(
+        'Paragraph moves are structural — reformat in Word or use Apply All Fixes for styles.',
+        _yellow,
+      );
+      return false;
+    }
+
+    if (!isBulletFix && pid.isEmpty) return false;
+
+    final body = <String, dynamic>{
+      'paragraph_id': pid,
+      'original': issue['original'] ?? issue['current'] ?? '',
+      'suggestion': issue['suggestion'] ?? correctedText,
+    };
+    if (isHeadingFix) {
+      body['fix_type'] = 'heading';
+      body['heading_level'] = issue['heading_level'] ?? _inferHeadingLevel(issue['suggestion'] as String? ?? correctedText);
+    } else if (isBulletFix) {
+      body['fix_type'] = 'bullets';
+      body['para_indices'] = issue['para_indices'] ??
+          (issue['fix_details'] as Map<String, dynamic>?)?['para_indices'] ??
+          [];
+    }
+    try {
+      final resp = await http.post(
+        Uri.parse(
+          '$_baseUrl/documents/apply-content-fix/${widget.documentId}?user_id=${auth.userId}',
+        ),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode(body),
+      );
+      if (resp.statusCode == 200) {
+        final data = json.decode(resp.body) as Map<String, dynamic>;
+        _mergeWorkingDocumentState(
+          data,
+          pid: pid,
+          suggestion: issue['suggestion'] as String? ?? correctedText,
+          issueId: issueId,
+        );
+        return true;
+      }
+      _showSnack('Fix failed: ${resp.body}', _red);
+      return false;
+    } catch (e) {
+      _showSnack('Error applying fix: $e', _red);
+      return false;
+    }
+  }
+
+  void _handleImageReplaceSuccess(Map<String, dynamic> result, {String? issueId}) {
+    final imageIndex = jsonIntOr(result['image_index'], -1);
+    final imageId = result['image_id'] as String? ?? '';
+    final newPath = result['image_path'] as String? ?? '';
+    final cleared = result['cleared'] == true;
+    final cacheBust = DateTime.now().millisecondsSinceEpoch;
+
+    final blocks = result['document_blocks'] as List<dynamic>?;
+    if (blocks != null && blocks.isNotEmpty) {
+      _mergeWorkingDocumentState(result, issueId: issueId);
+    }
+
+    setState(() {
+      if (cleared) {
+        for (final i in _pipelineIssues) {
+          final fn = (i['function'] as String? ?? i['category'] as String? ?? '').toLowerCase();
+          final idx = jsonInt(i['image_index']);
+          final iid = i['image_id'] as String? ?? '';
+          final matchesImage = (imageIndex >= 0 && idx == imageIndex) ||
+              (imageId.isNotEmpty && iid == imageId);
+          if (matchesImage &&
+              (fn.contains('image_relevance') || fn.contains('image_ethics'))) {
+            final id = i['issue_id'] as String? ?? '';
+            if (id.isNotEmpty) _resolvedIssueIds.add(id);
+          }
+        }
+      } else if (issueId != null && issueId.isNotEmpty) {
+        _resolvedIssueIds.add(issueId);
+      }
+      for (final block in _previewBlocks) {
+        if (jsonIntOr(block['image_index'], -1) == imageIndex && newPath.isNotEmpty) {
+          block['image_path'] = '$newPath?v=$cacheBust';
+        }
+      }
+      _isFixApplied = true;
+    });
+    _showSnack(
+      cleared ? 'Image verified — issue cleared' : 'Image replaced successfully',
+      _green,
+    );
+  }
+
+  int _inferHeadingLevel(String text) {
+    final match = RegExp(r'heading\s*(\d)', caseSensitive: false).firstMatch(text);
+    if (match != null) return int.tryParse(match.group(1)!) ?? 1;
+    return 1;
+  }
+
+  void _handlePreviewApplyFix(String issueId, String correctedText) {
+    final issue = _pipelineIssues.firstWhere(
+      (i) => i['issue_id'] == issueId,
+      orElse: () => {},
+    );
+    if (issue.isEmpty) return;
+    final pid = issue['paragraph_id'] as String? ?? '';
+    setState(() {
+      if (pid.isNotEmpty) _appliedFixes[pid] = correctedText;
+      _ignoredIssueIds.remove(issueId);
+      _isFixApplied = true;
+    });
+    _applyContentFixToBackend(issue, correctedText).then((ok) {
+      if (!ok && mounted) {
+        setState(() => _resolvedIssueIds.remove(issueId));
+      }
+    });
+  }
+
+  void _handlePreviewIgnore(String issueId) {
+    setState(() => _ignoredIssueIds.add(issueId));
+  }
+
+  Future<void> _applyAllFixesAndStyles() async {
+    setState(() => _isApplyingFix = true);
+    try {
+      final auth = context.read<AuthProvider>();
+      final fixes = _pipelineIssues
+          .where((i) {
+            final pid = i['paragraph_id'] as String? ?? '';
+            final issueId = i['issue_id'] as String? ?? '';
+            if (pid.isEmpty || _ignoredIssueIds.contains(issueId) || _resolvedIssueIds.contains(issueId)) return false;
+            final fn = (i['function'] as String? ?? i['category'] as String? ?? '').toLowerCase();
+            if (fn.contains('format') && (i['type'] as String? ?? '') == 'heading_style') {
+              return true;
+            }
+            return fn.contains('grammar') && (i['suggestion'] as String? ?? '').isNotEmpty;
+          })
+          .map(
+            (i) {
+              final fn = (i['function'] as String? ?? i['category'] as String? ?? '').toLowerCase();
+              if (fn.contains('format') && (i['type'] as String? ?? '') == 'heading_style') {
+                return {
+                  'paragraph_id': i['paragraph_id'],
+                  'fix_type': 'heading',
+                  'heading_level': i['heading_level'] ?? _inferHeadingLevel(i['suggestion'] as String? ?? ''),
+                };
+              }
+              return {
+                'paragraph_id': i['paragraph_id'],
+                'original': i['original'] ?? i['current'] ?? '',
+                'suggestion': _appliedFixes[i['paragraph_id']] ?? i['suggestion'],
+              };
+            },
+          )
+          .toList();
+
+      final resp = await http.post(
+        Uri.parse(
+          '$_baseUrl/documents/apply-all-fixes/${widget.documentId}?user_id=${auth.userId}',
+        ),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'fixes': fixes}),
+      );
+      if (resp.statusCode == 200) {
+        final data = json.decode(resp.body) as Map<String, dynamic>;
+        _mergeWorkingDocumentState(data);
+        _showSnack('All fixes applied!', _green);
+        setState(() {
+          _styleIssues = [];
+        });
+      } else {
+        _showSnack('Apply-all failed: ${resp.body}', _red);
+      }
+    } catch (e) {
+      _showSnack('Error: $e', _red);
+    } finally {
+      setState(() => _isApplyingFix = false);
+    }
   }
 
   // ── API — analysis ────────────────────────────────────────────────────────
@@ -2866,9 +3134,15 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
         body: jsonEncode(details),
       );
       if (resp.statusCode == 200) {
+        final data = json.decode(resp.body) as Map<String, dynamic>;
+        _mergeWorkingDocumentState(data);
         _showSnack('Fix applied!', _green);
         setState(() {
-          _analysisFuture = _fetchAnalysis();
+          if (fixType == 'apply_section_bullets') {
+            _styleIssues.removeWhere(
+              (i) => (i as Map)['type'] == 'missing_bullets',
+            );
+          }
         });
       } else {
         _showSnack('Fix failed: ${resp.body}', _red);
@@ -3237,79 +3511,14 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
         (structure['score'] as num?)?.toInt() ?? (data['compliance_score'] as num?)?.toInt() ?? 0;
     final status = structure['status'] as String? ?? 'unknown';
     final summary = structure['summary'] as Map<String, dynamic>? ?? {};
-    final sectionResults = structure['section_results'] as List<dynamic>? ?? [];
-    final allIssues = structure['issues'] as List<dynamic>? ?? [];
-    final docBlocks = data['document_content'] as List<dynamic>? ?? [];
+    _seedPreviewData(data);
 
-    final structureIssues =
-        allIssues
-            .where(
-              (i) =>
-                  ![
-                    'content_mismatch',
-                    'wrong_font_size',
-                    'wrong_bold',
-                    'wrong_font',
-                    'wrong_line_spacing',
-                  ].contains((i as Map)['type']),
-            )
-            .toList();
-
-    final contentIssues =
-        (data['content_issues'] as List<dynamic>?)?.toList() ??
-        allIssues
-            .where((i) => (i as Map)['type'] == 'content_mismatch')
-            .toList();
-
-    // ── Seed _styleIssues exactly once when fresh analysis data arrives ───────
-    // After that, fix buttons mutate _styleIssues in-place — no re-fetch needed.
-    if (!_styleIssuesInitialized) {
-      final fresh =
-          (data['style_issues'] as List<dynamic>?)?.toList() ??
-          allIssues
-              .where(
-                (i) => [
-                  'wrong_font_size',
-                  'wrong_bold',
-                  'wrong_font',
-                  'wrong_line_spacing',
-                ].contains((i as Map)['type']),
-              )
-              .toList();
-      // Use post-frame callback so we don't call setState during build
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) {
-          setState(() {
-            _styleIssues = List<dynamic>.from(fresh);
-            _styleIssuesInitialized = true;
-          });
-        }
-      });
-    }
-
-    final imageIssues =
-        oldIssues
-            .where((i) => (i as Map)['category'] == 'Image Relevance')
-            .toList();
-    final imageEthicsIssues =
-        oldIssues
-            .where((i) => (i as Map)['category'] == 'Image Ethics')
-            .toList();
-    final formattingIssues =
-        oldIssues
-            .where(
-              (i) =>
-                  (i as Map)['category'] != 'Image Relevance' &&
-                  (i as Map)['category'] != 'Image Ethics',
-            )
-            .toList();
-
-    // Table issues count for tab label (from analyze response)
-    final tableIssuesList = data['table_issues'] as List<dynamic>? ?? [];
-    final totalTableIssues = tableIssuesList.fold<int>(
-      0,
-      (s, t) => s + (((t as Map)['issues'] as List?)?.length ?? 0),
-    );
+    final grammarIssues = _issuesForFunction(oldIssues, 'grammar');
+    final formattingIssues = _issuesForFunction(oldIssues, 'formatting');
+    final imageEthicsIssues = _issuesForFunction(oldIssues, 'image_ethics');
+    final imageIssues = _issuesForFunction(oldIssues, 'image_relevance');
+    final paraRelevanceIssues = _issuesForFunction(oldIssues, 'para_relevance');
+    final plagiarismIssues = _issuesForFunction(oldIssues, 'plagiarism');
 
     return Column(
       children: [
@@ -3329,16 +3538,13 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
             unselectedLabelColor: _textSec,
             isScrollable: true,
             tabs: [
-              Tab(text: 'Structure  (${summary['missing'] ?? 0} missing)'),
-              Tab(text: 'Content Check  (${contentIssues.length})'),
-              Tab(text: 'Style Check  (${_styleIssues.length})'),
-              Tab(text: 'Image Relevancy  (${imageIssues.length})'),
+              Tab(text: 'Review  (${oldIssues.length})'),
+              Tab(text: 'Grammar  (${grammarIssues.length})'),
+              Tab(text: 'Formatting  (${formattingIssues.length})'),
               Tab(text: 'Image Ethics  (${imageEthicsIssues.length})'),
-              Tab(text: 'Bullets'),
-              Tab(text: 'Tables  ($totalTableIssues issues)'),
-              const Tab(text: 'Table of Contents'),
-              Tab(text: 'Document Blocks  (${docBlocks.length})'),
-              const Tab(text: 'Content Check'),
+              Tab(text: 'Image Relevance  (${imageIssues.length})'),
+              Tab(text: 'Para Relevance  (${paraRelevanceIssues.length})'),
+              Tab(text: 'Plagiarism  (${plagiarismIssues.length})'),
             ],
           ),
         ),
@@ -3346,21 +3552,72 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
           child: TabBarView(
             controller: _tabController,
             children: [
-              _buildStructureTab(sectionResults, structureIssues, summary),
-              _buildContentMismatchTab(contentIssues),
-              _buildStyleTab(_styleIssues), // ← uses state, not derived var
-              _buildImageRelevancyTab(imageIssues, formattingIssues),
+              _buildReviewTab(),
+              _buildFunctionTab(
+                'Grammar',
+                grammarIssues,
+                Icons.spellcheck,
+                'Checks spelling, punctuation, and grammar errors.',
+              ),
+              _buildFunctionTab(
+                'Formatting',
+                formattingIssues,
+                Icons.format_shapes,
+                'Checks heading hierarchy, spacing, and template structure.',
+              ),
               _buildImageEthicsTab(imageEthicsIssues),
-              _buildBulletsTab(),
-              _buildTablesTab(),
-              _buildTocTab(),
-              _buildBlocksTab(docBlocks),
-              _buildContentCheckTab(),
+              _buildImageRelevancyTab(imageIssues, const []),
+              _buildFunctionTab(
+                'Paragraph Relevance',
+                paraRelevanceIssues,
+                Icons.account_tree_outlined,
+                'Detects paragraphs placed under the wrong heading.',
+              ),
+              _buildFunctionTab(
+                'Plagiarism',
+                plagiarismIssues,
+                Icons.gpp_maybe_outlined,
+                'Pattern-based detection of style shifts and unattributed quotes.',
+              ),
             ],
           ),
         ),
-        _buildActionBar(allIssues, oldIssues),
+        _buildActionBar(oldIssues),
       ],
+    );
+  }
+
+  Widget _buildFunctionTab(
+    String title,
+    List<dynamic> issues,
+    IconData icon,
+    String description,
+  ) {
+    final visible = issues.where((i) {
+      final id = (i as Map)['issue_id'] as String? ?? '';
+      return !_ignoredIssueIds.contains(id) && !_resolvedIssueIds.contains(id);
+    }).toList();
+
+    if (visible.isEmpty) {
+      return _buildEmptyState(
+        icon,
+        'No $title issues',
+        description,
+        color: _green,
+      );
+    }
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildInfoBanner(title, description, _blue),
+          const SizedBox(height: 16),
+          ...visible.map(
+            (i) => _buildPipelineIssueCard(i as Map<String, dynamic>),
+          ),
+        ],
+      ),
     );
   }
 
@@ -3460,6 +3717,28 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
             _SummaryPill('Ethics', '$imageEthicsCount', _red),
           ],
         ],
+      ),
+    );
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Tab 0: Document Review (side-by-side preview)
+  // ─────────────────────────────────────────────────────────────────────────
+
+  Widget _buildReviewTab() {
+    return DocumentPreviewPanel(
+      blocks: _previewBlocks,
+      issues: _pipelineIssues,
+      imageBaseUrl: _imageHostBase,
+      documentId: widget.documentId,
+      appliedFixes: _appliedFixes,
+      ignoredIssueIds: _ignoredIssueIds,
+      resolvedIssueIds: _resolvedIssueIds,
+      onApplyFix: _handlePreviewApplyFix,
+      onIgnoreIssue: _handlePreviewIgnore,
+      onImageReplaced: (result, issue) => _handleImageReplaceSuccess(
+        result,
+        issueId: issue['issue_id'] as String?,
       ),
     );
   }
@@ -4514,11 +4793,8 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
     if (issues.isEmpty) {
       return _buildEmptyState(
         Icons.psychology_outlined,
-        'No content mismatches detected',
-        modelMode == 'trained_model'
-            ? '✓  Trained ML model found no content mismatches.'
-            : 'Zero-shot semantic check found no obvious mismatches.\n\n'
-                'Train the model for higher accuracy:\npython checker/clean_and_retrain.py',
+        'No content issues detected',
+        'Grammar, paragraph relevance, and plagiarism checks found no issues.',
         color: _green,
       );
     }
@@ -4561,6 +4837,11 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
   }
 
   Widget _buildContentIssueCard(Map<String, dynamic> issue) {
+    final func = issue['function'] as String? ?? '';
+    if (func.isNotEmpty) {
+      return _buildPipelineIssueCard(issue);
+    }
+
     final heading = issue['heading'] as String? ?? '';
     final message = issue['message'] as String? ?? '';
     final mode =
@@ -4725,6 +5006,95 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
     );
   }
 
+  Widget _buildPipelineIssueCard(Map<String, dynamic> issue) {
+    final issueId = issue['issue_id'] as String? ?? '';
+    final category = issue['category'] as String? ?? issue['function'] as String? ?? 'Issue';
+    final severity = (issue['severity'] as String? ?? 'minor').toLowerCase();
+    final borderColor = severity == 'major' ? _red : _yellow;
+    final description = issue['description'] as String? ?? issue['reason'] as String? ?? '';
+    final original = issue['original'] as String? ?? issue['current'] as String? ?? '';
+    final suggestion = issue['suggestion'] as String? ?? '';
+    final pid = issue['paragraph_id'] as String? ?? '';
+    final fn = (issue['function'] as String? ?? issue['category'] as String? ?? '').toLowerCase();
+    final issueType = (issue['type'] as String? ?? '').toLowerCase();
+    final isParaRel = fn.contains('para') && fn.contains('relevance');
+    final isHeadingFix = fn.contains('format') && issueType == 'heading_style';
+    final isBulletFix = issueType == 'missing_bullets';
+    final canFix = !isParaRel &&
+        (isBulletFix || (pid.isNotEmpty && (suggestion.isNotEmpty || isHeadingFix)));
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: _surface,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: borderColor.withOpacity(0.35)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              _Tag(severity.toUpperCase(), borderColor),
+              const SizedBox(width: 8),
+              _Tag(category.toUpperCase(), _blue),
+              if ((issue['page'] as num?) != null && (issue['page'] as num) > 0) ...[
+                const Spacer(),
+                Text('Page ${issue['page']}', style: const TextStyle(color: _textSec, fontSize: 11)),
+              ],
+            ],
+          ),
+          if (description.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Text(description, style: const TextStyle(color: _textSec, fontSize: 12, height: 1.4)),
+          ],
+          if (original.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 10),
+              child: _DiffRow(label: 'Original', text: original, color: _red),
+            ),
+          if (suggestion.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: _DiffRow(label: 'Suggestion', text: suggestion, color: _green),
+            ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: () {
+                    setState(() => _ignoredIssueIds.add(issueId));
+                    _showSnack('Issue ignored', _textSec);
+                  },
+                  child: const Text('Ignore'),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: canFix ? _green : _surface2,
+                  ),
+                  onPressed: canFix
+                      ? () async {
+                          await _applyContentFixToBackend(issue, suggestion);
+                          if (mounted && _resolvedIssueIds.contains(issueId)) {
+                            _showSnack('Fix applied', _green);
+                          }
+                        }
+                      : null,
+                  child: Text(isBulletFix ? 'Apply Bullets' : 'Apply Fix'),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildInfoBanner(String title, String body, Color color) {
     return Container(
       padding: const EdgeInsets.all(14),
@@ -4790,6 +5160,10 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
         issues
             .where((i) => (i as Map)['type'] == 'wrong_line_spacing')
             .toList();
+    final aiFormattingIssues =
+        issues
+            .where((i) => (i as Map)['function'] == 'formatting')
+            .toList();
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
@@ -4803,6 +5177,19 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
             _blue,
           ),
           const SizedBox(height: 16),
+          if (aiFormattingIssues.isNotEmpty) ...[
+            _StyleGroupHeader(
+              'AI Formatting Check',
+              aiFormattingIssues.length,
+              Icons.rule,
+              _purple,
+            ),
+            const SizedBox(height: 8),
+            ...aiFormattingIssues.map(
+              (i) => _buildPipelineIssueCard(i as Map<String, dynamic>),
+            ),
+            const SizedBox(height: 16),
+          ],
           if (fontSizeIssues.isNotEmpty) ...[
             _StyleGroupHeader(
               'Font Size',
@@ -5026,7 +5413,11 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
     List<dynamic> imageIssues,
     List<dynamic> formattingIssues,
   ) {
-    if (imageIssues.isEmpty && formattingIssues.isEmpty) {
+    final visible = imageIssues.where((i) {
+      final id = (i as Map)['issue_id'] as String? ?? '';
+      return !_ignoredIssueIds.contains(id) && !_resolvedIssueIds.contains(id);
+    }).toList();
+    if (visible.isEmpty && formattingIssues.isEmpty) {
       return SingleChildScrollView(
         padding: const EdgeInsets.all(24),
         child: Column(
@@ -5051,24 +5442,27 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
         children: [
           _buildImageFormatterButton(),
           const SizedBox(height: 20),
-          if (imageIssues.isNotEmpty) ...[
+          if (visible.isNotEmpty) ...[
             _buildInfoBanner(
               '🖼  AI Image Relevancy Check',
               'These images were flagged as potentially irrelevant to the surrounding document content.',
               _red,
             ),
             const SizedBox(height: 16),
-            ...imageIssues.map(
-              (i) => ImageIssueCardEnhanced(
-                issue: i as Map<String, dynamic>,
-                imageBaseUrl: _baseUrl,
-                documentId: widget.documentId,
-                onImageReplaced:
-                    (_) => setState(() {
-                          _analysisFuture = _fetchAnalysis();
-                        }),
-                onError: (e) => debugPrint('Image replacement error: $e'),
-              ),
+            ...visible.map(
+              (i) {
+                final issue = i as Map<String, dynamic>;
+                return ImageIssueCardEnhanced(
+                  issue: issue,
+                  imageBaseUrl: _imageHostBase,
+                  documentId: widget.documentId,
+                  onImageReplaced: (result) => _handleImageReplaceSuccess(
+                    result,
+                    issueId: issue['issue_id'] as String?,
+                  ),
+                  onError: (e) => _showSnack('Image replacement error: $e', _red),
+                );
+              },
             ),
             if (formattingIssues.isNotEmpty) const SizedBox(height: 28),
           ],
@@ -5254,7 +5648,10 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      issue['description'] as String? ?? '',
+                      issue['description'] as String? ??
+                          issue['reason'] as String? ??
+                          issue['message'] as String? ??
+                          '',
                       style: const TextStyle(color: _textSec, fontSize: 12),
                     ),
                   ],
@@ -5288,7 +5685,11 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
   // ─────────────────────────────────────────────────────────────────────────
 
   Widget _buildImageEthicsTab(List<dynamic> ethicsIssues) {
-    if (ethicsIssues.isEmpty) {
+    final visible = ethicsIssues.where((i) {
+      final id = (i as Map)['issue_id'] as String? ?? '';
+      return !_ignoredIssueIds.contains(id) && !_resolvedIssueIds.contains(id);
+    }).toList();
+    if (visible.isEmpty) {
       return _buildEmptyState(
         Icons.verified_user_outlined,
         'No ethical issues detected',
@@ -5308,7 +5709,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
             _red,
           ),
           const SizedBox(height: 16),
-          ...ethicsIssues.map(
+          ...visible.map(
             (i) => _buildImageEthicsCard(i as Map<String, dynamic>),
           ),
         ],
@@ -5329,7 +5730,6 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
         'Unethical Content';
     final confidence = _safeDouble(issue['confidence']) ?? 1.0;
     final pct = (confidence * 100).toInt();
-    final imageUrl = _buildImageUrl(rawPath);
 
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
@@ -5381,23 +5781,21 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
               ],
             ),
           ),
-          Image.network(
-            imageUrl,
+          Container(
             height: 200,
-            fit: BoxFit.contain,
-            color: Colors.black.withOpacity(0.55),
-            colorBlendMode: BlendMode.darken,
-            errorBuilder:
-                (_, __, ___) => Container(
-                  height: 100,
-                  color: _surface2,
-                  alignment: Alignment.center,
-                  child: const Icon(
-                    Icons.broken_image,
-                    color: _textSec,
-                    size: 28,
-                  ),
+            color: _surface2,
+            alignment: Alignment.center,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: const [
+                Icon(Icons.block, color: _red, size: 48),
+                SizedBox(height: 10),
+                Text(
+                  'Image blocked for ethical reasons',
+                  style: TextStyle(color: _red, fontSize: 12, fontWeight: FontWeight.w600),
                 ),
+              ],
+            ),
           ),
           Padding(
             padding: const EdgeInsets.all(14),
@@ -5462,8 +5860,51 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
                 const SizedBox(height: 10),
                 _buildAlertBanner(
                   'Action Required',
-                  'Remove or replace this image immediately.',
+                  'Replace this image with appropriate academic content.',
                   _red,
+                ),
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    icon: const Icon(Icons.image_search, size: 16),
+                    label: const Text('Replace Image'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: _blue,
+                      foregroundColor: _textPri,
+                    ),
+                    onPressed: () {
+                      final auth = context.read<AuthProvider>();
+                      final service = ImageReplacementService(imageBaseUrl: _imageHostBase);
+                      showDialog(
+                        context: context,
+                        builder: (ctx) => ImageReplacementDialog(
+                          documentId: widget.documentId,
+                          imageIndex: jsonIntOr(issue['image_index'], 0),
+                          currentImagePath: rawPath,
+                          service: service,
+                          userId: auth.userId,
+                          onSuccess: (result) => _handleImageReplaceSuccess(
+                            result,
+                            issueId: issue['issue_id'] as String?,
+                          ),
+                          onError: (e) => _showSnack('Error: $e', _red),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+                const SizedBox(height: 8),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton(
+                    onPressed: () {
+                      final issueId = issue['issue_id'] as String? ?? '';
+                      setState(() => _ignoredIssueIds.add(issueId));
+                      _showSnack('Issue ignored', _textSec);
+                    },
+                    child: const Text('Ignore'),
+                  ),
                 ),
               ],
             ),
@@ -6463,10 +6904,15 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
 
   // ── Action bar ────────────────────────────────────────────────────────────
 
-  Widget _buildActionBar(List<dynamic> allIssues, List<dynamic> oldIssues) {
-    final total = allIssues.length + oldIssues.length;
-    final errors =
-        allIssues.where((i) => (i as Map)['severity'] == 'error').length;
+  Widget _buildActionBar(List<dynamic> oldIssues) {
+    final activeIssues = oldIssues.where((i) {
+      final id = (i as Map)['issue_id'] as String? ?? '';
+      return !_ignoredIssueIds.contains(id) && !_resolvedIssueIds.contains(id);
+    }).length;
+    final majorCount = oldIssues.where((i) {
+      final sev = ((i as Map)['severity'] as String? ?? '').toLowerCase();
+      return sev == 'major' || sev == 'critical' || sev == 'error';
+    }).length;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
       decoration: const BoxDecoration(
@@ -6479,11 +6925,11 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                '$total issues  ·  $errors errors',
+                '$activeIssues issues  ·  $majorCount major',
                 style: const TextStyle(color: _textPri, fontSize: 13),
               ),
               const Text(
-                'Fix all issues to improve your score',
+                'Review highlights, apply fixes, then download',
                 style: TextStyle(color: _textSec, fontSize: 11),
               ),
             ],
@@ -6523,7 +6969,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
                 ),
               )
               : ElevatedButton.icon(
-                onPressed: _isApplyingFix ? null : _applyAllStyleFixes,
+                onPressed: _isApplyingFix ? null : _applyAllFixesAndStyles,
                 icon:
                     _isApplyingFix
                         ? const SizedBox(
@@ -6537,8 +6983,8 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
                         : const Icon(Icons.auto_fix_high, size: 16),
                 label: Text(
                   _isApplyingFix
-                      ? 'Applying template styles...'
-                      : 'Apply Template Styles',
+                      ? 'Applying all fixes...'
+                      : 'Apply All Fixes',
                 ),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: _purple,

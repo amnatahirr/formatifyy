@@ -38,28 +38,32 @@ async def check_grammar(
         for p in batch.paragraphs
     ]
 
-    prompt = f"""You are a professional proofreader. Analyze the following paragraphs for grammar, spelling, and punctuation errors.
+    prompt = f"""You are a professional proofreader for academic documents. Find grammar, spelling, and punctuation errors.
 
 PARAGRAPHS:
 {json.dumps(paragraphs_payload, indent=2)}
 
-For each error found, return a JSON object with these fields:
-- "paragraph_id": the paragraph_id where the error occurs
-- "page": the page number
-- "original": the exact text that contains the error
-- "suggestion": the corrected version
-- "reason": brief explanation of the error
-- "severity": "major" if the error changes meaning or is very noticeable, "minor" otherwise
+RULES:
+1. "original" MUST be an exact verbatim substring copied from the paragraph's "text" field (character-for-character).
+2. "suggestion" is the same substring with only the error corrected.
+3. If an entire sentence is wrong, set "original" to the full sentence and "suggestion" to the corrected sentence.
+4. Every issue MUST include the correct paragraph_id from the input.
+5. Do not flag stylistic preferences — only clear errors.
 
-Return ONLY valid JSON. Do NOT return markdown. Do NOT wrap JSON inside code fences.
+For each error return:
+- "paragraph_id": from input
+- "page": page number
+- "original": exact substring from paragraph text
+- "suggestion": corrected substring
+- "reason": brief explanation
+- "severity": "major" if meaning changes, else "minor"
 
-Return this exact structure:
+Return ONLY valid JSON:
 {{"issues": [...]}}
 
-If no errors are found, return:
-{{"issues": []}}
+If no errors: {{"issues": []}}
 
-Return ONLY a valid JSON object. No markdown, no explanation, no code fences. Just the raw JSON."""
+No markdown, no code fences — raw JSON only."""
 
     try:
         response = await client.messages.create(

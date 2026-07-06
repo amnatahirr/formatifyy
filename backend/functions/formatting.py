@@ -39,36 +39,41 @@ async def check_formatting(
             "page": p.page_number,
             "style": p.style,
             "heading_context": p.heading_context,
-            "text": p.text[:300],
+            "text": p.text[:400],
         }
         for p in batch.paragraphs
     ]
 
-    prompt = f"""You are a document formatting expert. Compare the following paragraphs against the provided formatting template and identify any violations.
+    prompt = f"""You are a strict academic document formatting auditor. Compare each paragraph against the template specification below.
 
-TEMPLATE RULES:
+TEMPLATE SPECIFICATION (authoritative — every rule must be enforced):
 {template_rules}
 
-DOCUMENT PARAGRAPHS:
+DOCUMENT PARAGRAPHS (from the student's file):
 {json.dumps(paragraphs_payload, indent=2)}
 
-For each formatting violation found, return a JSON object with:
-- "paragraph_id": the paragraph_id where the violation occurs
-- "page": the page number
-- "type": the type of violation (e.g., "heading_style", "spacing", "font", "section_order", "missing_section", "alignment", "margin")
-- "reason": what rule is violated and why
-- "suggestion": how to fix it
-- "severity": "major" if it significantly deviates from the template, "minor" otherwise
+AUDIT RULES:
+1. You must NEVER rewrite, summarize, or replace paragraph content. Only identify structural issues. The original text is sacred.
+2. The "suggestion" field must describe WHAT TO DO (e.g. "Apply Heading 1 style") — NEVER put replacement paragraph text in suggestion.
+3. Section titles MUST use Word style "Heading 1/2/3" — NOT just bold Normal text.
+4. Every issue MUST reference an existing paragraph_id from the input.
+5. For heading_style issues, include heading_level (1-4) from the template.
 
-Also return a "compliance_score" from 0 to 100 representing overall formatting compliance for this batch.
+For each violation return:
+- "paragraph_id": exact paragraph_id from input (required)
+- "page": page number
+- "type": one of heading_style, section_order, missing_section, font, spacing, alignment, margin
+- "problem": what rule is violated (do NOT repeat paragraph text as a fix)
+- "reason": same as problem — what is wrong structurally
+- "suggestion": instruction only (e.g. "Apply Heading 1 style to this section title")
+- "heading_level": integer 1-4 (required when type is heading_style)
+- "original": copy of paragraph text exactly as-is
+- "severity": "major" or "minor"
 
-Return ONLY valid JSON. Do NOT return markdown. Do NOT wrap JSON inside code fences.
+Return ONLY valid JSON:
+{{"issues": [...], "compliance_score": 72, "summary": "Document is 72% compliant with template"}}
 
-Return this exact structure:
-{{"issues": [...], "compliance_score": 85}}
-
-If no issues are found, return:
-{{"issues": [], "compliance_score": 100}}
+If no issues: {{"issues": [], "compliance_score": 100, "summary": "Fully compliant"}}
 
 Return ONLY a valid JSON object. No markdown, no explanation, no code fences. Just the raw JSON."""
 
@@ -85,23 +90,31 @@ Return ONLY a valid JSON object. No markdown, no explanation, no code fences. Ju
 
         result = []
         for iss in issues:
+            issue_type = iss.get("type", "formatting")
+            heading_level = int(float(iss.get("heading_level", 1) or 1))
+            suggestion = iss.get("suggestion", "") or iss.get("problem", "")
+            reason = iss.get("reason", "") or iss.get("problem", "")
+            if issue_type == "heading_style" and not suggestion:
+                suggestion = f"Apply Heading {heading_level} style to this section title"
+
             result.append({
                 "function": "formatting",
-                "type": iss.get("type", "formatting"),
+                "type": issue_type,
                 "severity": iss.get("severity", "minor"),
                 "paragraph_id": iss.get("paragraph_id", ""),
                 "image_id": "",
                 "page": iss.get("page", 0),
-                "reason": iss.get("reason", ""),
-                "suggestion": iss.get("suggestion", ""),
-                "explanation": iss.get("reason", ""),
-                "original": "",
+                "reason": reason,
+                "suggestion": suggestion,
+                "explanation": reason,
+                "original": iss.get("original", ""),
+                "heading_level": heading_level,
                 "current_heading": "",
                 "content_belongs_to": "",
-                "text_preview": "",
+                "text_preview": (iss.get("original") or "")[:120],
                 "verdict": "",
-                "confidence": compliance_score,
-                "_compliance_score": compliance_score,
+                "confidence": int(float(compliance_score or 0)),
+                "_compliance_score": int(float(compliance_score or 0)),
             })
         return result
     except Exception as exc:

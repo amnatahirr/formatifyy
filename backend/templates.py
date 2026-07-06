@@ -11,7 +11,13 @@ from __future__ import annotations
 import json
 from typing import Any, Dict, List
 
-from database import get_db, init_db
+from database import get_db
+
+
+def _margin_display_inches(value: float) -> float:
+    """Convert stored margin (mm if > 3) to inches for display/prompts."""
+    v = float(value)
+    return round(v / 25.4, 2) if v > 3.0 else v
 
 
 def generate_markdown_rules(name: str, required_sections: List[str], rules: Dict[str, Any]) -> str:
@@ -20,7 +26,16 @@ def generate_markdown_rules(name: str, required_sections: List[str], rules: Dict
     markdown rules prompt. Matches what LLMs and python-docx expect.
     """
     sections_text = "\n".join(
-        f"{idx + 1}. {sec}" for idx, sec in enumerate(required_sections)
+        f"- Section {idx + 1}: **{sec.get('name', sec) if isinstance(sec, dict) else sec}** "
+        f"→ MUST use Word style **Heading {sec.get('heading_level', 1) if isinstance(sec, dict) else 1}**"
+        for idx, sec in enumerate(required_sections)
+    )
+
+    numbering = rules.get("heading_numbering", "decimal")
+    numbering_note = (
+        "Section titles MUST be numbered as '1. Section Name', '2. Section Name', etc."
+        if numbering == "decimal"
+        else "Section titles should NOT use decimal numbering."
     )
 
     def format_heading(prefix: str) -> str:
@@ -47,40 +62,54 @@ def generate_markdown_rules(name: str, required_sections: List[str], rules: Dict
     body_line_spacing = rules.get("body_line_spacing", 1.5)
     body_space_before = rules.get("body_space_before", 0.0)
     body_space_after = rules.get("body_space_after", 0.0)
-    first_line_indent = rules.get("first_line_indent", 0.5)
+    first_line_indent = _margin_display_inches(rules.get("first_line_indent", 0.5))
 
-    margin_top = rules.get("margin_top", 1.0)
-    margin_bottom = rules.get("margin_bottom", 1.0)
-    margin_left = rules.get("margin_left", 1.0)
-    margin_right = rules.get("margin_right", 1.0)
+    margin_top = _margin_display_inches(rules.get("margin_top", 1.0))
+    margin_bottom = _margin_display_inches(rules.get("margin_bottom", 1.0))
+    margin_left = _margin_display_inches(rules.get("margin_left", 1.0))
+    margin_right = _margin_display_inches(rules.get("margin_right", 1.0))
     page_size = rules.get("page_size", "A4")
 
-    return f"""# {name} Template
+    return f"""# {name} — Formatting Specification
 
-## Required Sections (in order)
+## Required Document Sections (strict order)
 {sections_text}
 
-## Heading Styles
-- **Heading 1**: {h1_style}
-- **Heading 2**: {h2_style}
-- **Heading 3**: {h3_style}
+{numbering_note}
 
-## Body Text
+Each section title paragraph MUST:
+1. Use the exact Word built-in style "Heading N" (not just bold text)
+2. Appear in the order listed above
+3. Match the section name (numbering prefix optional)
+
+## Heading Styles (Word built-in styles)
+- **Heading 1**: {h1_style} — use for main chapter/section titles
+- **Heading 2**: {h2_style} — use for subsections
+- **Heading 3**: {h3_style} — use for sub-subsections
+
+## Body Text (Normal style)
 - Font: {body_font}, {body_size}pt
 - Line Spacing: {body_line_spacing}
 - Space Before: {body_space_before}pt
 - Space After: {body_space_after}pt
-- First Line Indent: {first_line_indent} inches
+- First Line Indent: {first_line_indent} inches (first paragraph after a heading has NO indent)
 
 ## Page Layout
-- Margins: Top {margin_top} inches, Bottom {margin_bottom} inches, Left {margin_left} inches, Right {margin_right} inches
+- Margins: Top {margin_top} in, Bottom {margin_bottom} in, Left {margin_left} in, Right {margin_right} in
 - Page Size: {page_size}
+
+## Violation types to detect
+- heading_style: paragraph is a section title but uses Normal/bold instead of Heading N
+- section_order: sections appear in wrong order or are missing
+- font: wrong font family or size
+- spacing: wrong line spacing or paragraph spacing
+- alignment: wrong text alignment
+- margin: page margins incorrect
 """
 
 
 def get_all_templates() -> List[Dict[str, Any]]:
     """Return all templates for general listing."""
-    init_db()  # Ensure tables seeded
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM templates ORDER BY created_at DESC")
@@ -108,7 +137,6 @@ def get_all_templates() -> List[Dict[str, Any]]:
 
 def get_templates_by_university(university_id: int) -> List[Dict[str, Any]]:
     """Get all templates configured for a university."""
-    init_db()
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute(
@@ -139,7 +167,6 @@ def get_templates_by_university(university_id: int) -> List[Dict[str, Any]]:
 
 def get_templates_by_user(user_id: int) -> List[Dict[str, Any]]:
     """Get templates matching user's university."""
-    init_db()
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute("SELECT university_id FROM users WHERE id = ?", (user_id,))
@@ -153,10 +180,46 @@ def get_templates_by_user(user_id: int) -> List[Dict[str, Any]]:
     return get_templates_by_university(university_id)
 
 
+def update_template(template_id: int, updates: Dict[str, Any]) -> Dict[str, Any] | None:
+    """Update an existing template. Returns the updated template or None."""
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id FROM templates WHERE id = ?", (template_id,))
+    if not cursor.fetchone():
+        conn.close()
+        return None
+
+    fields = []
+    values: list = []
+    if updates.get("name") is not None:
+        fields.append("name = ?")
+        values.append(updates["name"])
+    if updates.get("description") is not None:
+        fields.append("description = ?")
+        values.append(updates["description"])
+    if updates.get("required_sections") is not None:
+        fields.append("required_sections = ?")
+        values.append(json.dumps(updates["required_sections"]))
+    if updates.get("formatting_rules") is not None:
+        fields.append("formatting_rules = ?")
+        values.append(json.dumps(updates["formatting_rules"]))
+
+    if not fields:
+        conn.close()
+        return get_template_by_id(template_id)
+
+    values.append(template_id)
+    cursor.execute(
+        f"UPDATE templates SET {', '.join(fields)} WHERE id = ?",
+        values,
+    )
+    conn.commit()
+    conn.close()
+    return get_template_by_id(template_id)
+
+
 def get_template_by_id(template_id: Any) -> Dict[str, Any] | None:
     """Retrieve details for a specific template (backward compatible with strings)."""
-    init_db()
-
     # Map legacy string IDs to database integers
     legacy_map = {
         "academic_research": 1,
