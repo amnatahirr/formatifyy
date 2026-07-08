@@ -9,7 +9,7 @@ return_exceptions=True.
 from __future__ import annotations
 
 import asyncio
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Union
 
 import anthropic
 
@@ -25,7 +25,7 @@ from functions.plagiarism import check_plagiarism
 async def dispatch_all(
     client: anthropic.AsyncAnthropic,
     batches: List[Batch],
-    template_rules: str,
+    template: Union[str, Dict[str, Any]],
 ) -> List[Dict[str, Any]]:
     """
     Run all 6 analysis functions across all batches in parallel.
@@ -36,8 +36,15 @@ async def dispatch_all(
         The shared Anthropic async client.
     batches : list[Batch]
         Batches produced by the batcher.
-    template_rules : str
-        The markdown template rules (injected into the formatting checker).
+    template : dict | str
+        The FULL structured template dict as returned by
+        templates.get_template_by_id() / get_all_templates()
+        (i.e. containing required_sections + formatting_rules +
+        markdown_rules). Passing the full dict — not just
+        template["markdown_rules"] — is required for check_formatting
+        to build explicit per-heading-level rules (Heading 1, 2, 3...).
+        A plain markdown string is still accepted for backward
+        compatibility, but per-level heading detection will be weaker.
 
     Returns
     -------
@@ -54,7 +61,7 @@ async def dispatch_all(
         ))
         # 2. Formatting
         tasks.append(asyncio.ensure_future(
-            _safe_call_formatting(check_formatting, client, batch, template_rules)
+            _safe_call_formatting(check_formatting, client, batch, template)
         ))
         # 3. Image Ethics
         tasks.append(asyncio.ensure_future(
@@ -99,10 +106,10 @@ async def _safe_call(fn, client, batch) -> List[Dict[str, Any]]:
         return []
 
 
-async def _safe_call_formatting(fn, client, batch, template_rules) -> List[Dict[str, Any]]:
-    """Formatting function has an extra parameter (template_rules)."""
+async def _safe_call_formatting(fn, client, batch, template) -> List[Dict[str, Any]]:
+    """Formatting function has an extra parameter (the full template dict)."""
     try:
-        return await fn(client, batch, template_rules)
+        return await fn(client, batch, template)
     except Exception as exc:
         print(f"[dispatcher] formatting failed: {exc}")
         return []
