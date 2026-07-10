@@ -88,11 +88,55 @@ def _parse_section_map(required_sections: List[Dict[str, Any]]) -> Dict[str, Dic
     return mapping
 
 
+def _strip_heading_number_prefix(text: str) -> str:
+    """Strip existing decimal heading prefixes (e.g. '1.2.3 Title' → 'Title')."""
+    cleaned = text.strip().rstrip(":").strip()
+    return re.sub(r"^[\d]+(?:\.[\d]+)*\.?\s+", "", cleaned).strip()
+
+
 def _normalize_section_title(text: str) -> str:
     """Strip numbering/colons for section title comparison."""
-    cleaned = text.strip().rstrip(":").strip()
-    cleaned = re.sub(r"^[\d]+(?:\.[\d]+)*\.?\s+", "", cleaned).strip()
-    return cleaned.lower()
+    return _strip_heading_number_prefix(text).lower()
+
+
+class _HeadingNumberTracker:
+    """Track hierarchical heading counters (1 → 1.1 → 1.2 → 2 → 2.1 …)."""
+
+    _MAX_LEVEL = 4
+
+    def __init__(self) -> None:
+        self._counters = [0] * self._MAX_LEVEL
+
+    def next_number(self, level: int) -> str:
+        level = max(1, min(self._MAX_LEVEL, level))
+        self._counters[level - 1] += 1
+        for idx in range(level, self._MAX_LEVEL):
+            self._counters[idx] = 0
+        return ".".join(str(self._counters[idx]) for idx in range(level))
+
+
+def _detect_heading_level(
+    para,
+    text: str,
+    section_map: Dict[str, Dict[str, Any]],
+) -> Optional[int]:
+    """Return heading level (1-4) if paragraph is a heading, else None."""
+    matched = _match_required_section(text, section_map)
+    if matched:
+        level = int(matched.get("heading_level", 1) or 1)
+        return max(1, min(4, level))
+
+    style_name = (para.style.name or "").lower()
+    for lvl in (1, 2, 3, 4):
+        if f"heading {lvl}" in style_name or style_name == f"heading{lvl}":
+            return lvl
+    return None
+
+
+def _format_numbered_heading(text: str, number: str) -> str:
+    """Build heading text with hierarchical number prefix."""
+    title = _strip_heading_number_prefix(text)
+    return f"{number}. {title}" if title else f"{number}."
 
 
 def _match_required_section(text: str, section_map: Dict[str, Dict[str, Any]]) -> Optional[Dict[str, Any]]:
@@ -310,6 +354,7 @@ def _reformat_docx(
     doc = Document(output_path)
 
     prev_was_heading = False
+    number_tracker = _HeadingNumberTracker() if numbering_style == "decimal" else None
 
     # ── Apply page margins ───────────────────────────────────────────────────
     margins = styles["margins"]
@@ -326,39 +371,22 @@ def _reformat_docx(
             prev_was_heading = False
             continue
 
-        matched = _match_required_section(text, section_map)
-        is_heading = False
-        styled = False
+        level = _detect_heading_level(para, text, section_map)
+        is_heading = level is not None
 
-        if matched:
-            level = int(matched.get("heading_level", 1) or 1)
-            level = max(1, min(4, level))
+        if is_heading:
             spec = styles.get(f"heading{min(level, 3)}", styles["heading1"])
-            is_heading = True
-            order = matched.get("order")
-            name = matched.get("name", text)
-            if numbering_style == "decimal" and order:
-                desired = f"{order}. {name}"
-                if not text.lower().startswith(f"{order}."):
+            if number_tracker is not None:
+                number = number_tracker.next_number(level)
+                desired = _format_numbered_heading(text, number)
+                if text != desired:
                     _set_paragraph_text_preserve_style(para, desired)
             _apply_word_heading(doc, para, level, spec, ALIGN_MAP)
-            styled = True
         else:
-            # Only preserve existing Word heading styles — no guessing from bold/colons
-            style_name = (para.style.name or "").lower()
-            for lvl in (1, 2, 3, 4):
-                if f"heading {lvl}" in style_name or style_name == f"heading{lvl}":
-                    spec = styles.get(f"heading{min(lvl, 3)}")
-                    is_heading = True
-                    _apply_word_heading(doc, para, lvl, spec, ALIGN_MAP)
-                    styled = True
-                    break
-
-            if not styled:
-                spec = dict(styles["body"])
-                if prev_was_heading:
-                    spec["first_line_indent"] = 0
-                _apply_style(para, spec, ALIGN_MAP)
+            spec = dict(styles["body"])
+            if prev_was_heading:
+                spec["first_line_indent"] = 0
+            _apply_style(para, spec, ALIGN_MAP)
 
         prev_was_heading = is_heading
 
