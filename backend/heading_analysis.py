@@ -48,6 +48,12 @@ _COMMON_SECTION_RE = re.compile(
     r"recommendations|declaration|table of contents)(?:\s|$)",
     re.IGNORECASE,
 )
+_LABEL_SUFFIX_RE = re.compile(r"[:]\s*$|(?:\s|(?<=\w))[-–—]\s*$")
+_STOPWORDS = frozenset({
+    "a", "an", "and", "are", "as", "at", "be", "but", "by", "for", "from", "in",
+    "is", "it", "of", "on", "or", "that", "the", "this", "to", "was", "were",
+    "with", "we", "they", "these", "those",
+})
 
 
 @dataclass
@@ -310,6 +316,171 @@ def detect_heading(block: AnalysisBlock) -> Tuple[bool, float]:
     return confidence >= 0.5, round(confidence, 3)
 
 
+def _ends_with_label_punctuation(text: str) -> bool:
+    """Trailing colon or dash marks a label, not a standalone sub-heading."""
+    return bool(_LABEL_SUFFIX_RE.search((text or "").strip()))
+
+
+def _is_bullet_or_list(text: str) -> bool:
+    stripped = (text or "").strip()
+    if _LIST_ITEM_RE.match(stripped):
+        return True
+    return bool(re.match(r"^\d+[\.\)]\s+\S", stripped))
+
+
+def _has_substantive_words(text: str) -> bool:
+    words = re.findall(r"\S+", text or "")
+    content = [w for w in words if w.lower().strip(".,;:") not in _STOPWORDS]
+    return len(content) >= 1
+
+
+def _is_body_like(text: str) -> bool:
+    stripped = (text or "").strip()
+    if not stripped:
+        return False
+    if _word_count(stripped) >= 12:
+        return True
+    return stripped.endswith((".", "?", "!"))
+
+
+def _infer_block_heading_level(block: AnalysisBlock, row: Dict[str, Any]) -> Optional[int]:
+    """Best-effort heading level for a block before full level assignment."""
+    existing = _level_to_int(row.get("level"))
+    if existing is not None:
+        return existing
+
+    depth = _numbering_depth(block.numbering_prefix)
+    if depth is not None:
+        return depth
+
+    style_level = _is_heading_style(block.style_name)
+    if style_level is not None:
+        return style_level
+
+    if row.get("is_heading"):
+        return 1
+    return None
+
+
+def detect_unnumbered_subheading(
+    block: AnalysisBlock,
+    blocks: List[AnalysisBlock],
+    idx: int,
+    results: List[Dict[str, Any]],
+) -> Tuple[bool, float, Optional[int]]:
+    """
+    Detect standalone unnumbered sub-headings by document position.
+
+    Pattern: numbered/parent heading → short unnumbered line → body paragraph or bullets.
+    """
+    text = (block.text or "").strip()
+    if not text:
+        return False, 0.0, None
+
+    if block.numbering_prefix or _LIST_ITEM_RE.match(text) or _CAPTION_RE.match(text):
+        return False, 0.0, None
+
+    words = _word_count(text)
+    if words < 1 or words > 4:
+        return False, 0.0, None
+
+    if text.rstrip().endswith((".", "?", "!")):
+        return False, 0.0, None
+
+    if _ends_with_label_punctuation(text):
+        return False, 0.0, None
+
+    if not _has_substantive_words(text):
+        return False, 0.0, None
+
+    if not (text.istitle() or text.isupper() or (words == 1 and text[0].isupper())):
+        return False, 0.0, None
+
+    if idx == 0 or idx >= len(blocks) - 1:
+        return False, 0.0, None
+
+    prev_block = blocks[idx - 1]
+    prev_row = results[idx - 1]
+    prev_level = _infer_block_heading_level(prev_block, prev_row)
+    prev_is_heading = bool(prev_row.get("is_heading"))
+    prev_is_numbered = bool(prev_block.numbering_prefix)
+
+    if not prev_is_heading and not prev_is_numbered:
+        return False, 0.0, None
+
+    if prev_level is None:
+        prev_level = 1
+
+    next_text = (blocks[idx + 1].text or "").strip()
+    if not next_text:
+        return False, 0.0, None
+
+    next_is_body = _is_body_like(next_text)
+    next_is_list = _is_bullet_or_list(next_text)
+    if not next_is_body and not next_is_list:
+        return False, 0.0, None
+
+    # Avoid promoting when the next block is another short title-like line.
+    if (
+        not next_is_body
+        and _word_count(next_text) <= 4
+        and not _is_bullet_or_list(next_text)
+    ):
+        return False, 0.0, None
+
+    # Already a numbered heading — not an unnumbered sub-heading.
+    if results[idx].get("is_heading") and block.numbering_prefix:
+        return False, 0.0, None
+
+    score = 0.72
+    if prev_is_numbered:
+        score += 0.12
+    if next_is_body:
+        score += 0.08
+    if next_is_list:
+        score += 0.06
+    if block.prev_blank or prev_block.next_blank:
+        score += 0.04
+
+    return True, round(min(1.0, score), 3), prev_level
+
+
+def _detect_unnumbered_subheadings(
+    blocks: List[AnalysisBlock],
+    results: List[Dict[str, Any]],
+    heading_indices: List[int],
+) -> None:
+    """Pass 1b — promote or reclassify contextual unnumbered sub-headings."""
+    for idx, block in enumerate(blocks):
+        is_sub, confidence, parent_level = detect_unnumbered_subheading(
+            block, blocks, idx, results,
+        )
+        if not is_sub or parent_level is None:
+            continue
+
+        child_level = min(4, parent_level + 1)
+        already_heading = bool(results[idx].get("is_heading"))
+
+        results[idx].update({
+            "is_heading": True,
+            "detection_confidence": max(
+                float(results[idx].get("detection_confidence") or 0),
+                confidence,
+            ),
+            "level": _level_label(child_level),
+            "heading_kind": "unnumbered_subheading",
+            "parent_level": parent_level,
+            "matched_template_heading": None,
+            "match_confidence": None,
+        })
+        if not already_heading:
+            results[idx]["detection_confidence"] = confidence
+        if idx not in heading_indices:
+            heading_indices.append(idx)
+
+    heading_indices.sort()
+
+
 def _parent_matches(context: MatchContext, entry: TemplateEntry) -> bool:
     if entry.level == 1 or not entry.parent:
         return True
@@ -379,7 +550,11 @@ def _infer_levels_from_sequence(
 
     for idx in heading_indices:
         row = results[idx]
-        if row["matched_template_heading"] is not None:
+        if row.get("level"):
+            current = _level_to_int(row["level"]) or current
+            continue
+
+        if row.get("matched_template_heading") is not None:
             current = int(row["level"][1])
             continue
 
@@ -393,8 +568,8 @@ def _infer_levels_from_sequence(
 
         text = block.text
         words = _word_count(text)
-        if words <= 4 and current > 1:
-            level = current
+        if words <= 4:
+            level = min(4, current + 1)
         elif current == 1:
             level = 1
         else:
@@ -429,6 +604,7 @@ def analyze_headings(
             "level": None,
             "detection_confidence": det_conf if is_heading else round(det_conf, 3),
             "match_confidence": None,
+            "heading_kind": "standard" if is_heading else None,
         }
         if not is_heading:
             row["detection_confidence"] = round(1.0 - det_conf, 3)
@@ -439,9 +615,14 @@ def analyze_headings(
             heading_indices.append(len(results))
         results.append(row)
 
-    # Pass 2 — template matching (document order)
+    # Pass 1b — unnumbered sub-headings (e.g. "Architecture" under "3. Methodology")
+    _detect_unnumbered_subheadings(blocks, results, heading_indices)
+
+    # Pass 2 — template matching (document order; skip pre-leveled sub-headings)
     for idx in heading_indices:
         block = blocks[idx]
+        if results[idx].get("heading_kind") == "unnumbered_subheading":
+            continue
         matched, match_conf = match_template_heading(block.text, outline, context)
         results[idx]["matched_template_heading"] = matched
         results[idx]["match_confidence"] = match_conf
@@ -479,3 +660,136 @@ def analyze_document_headings(
         item["text"] = block.text
         enriched.append(item)
     return enriched
+
+
+def _level_to_int(level: Optional[str]) -> Optional[int]:
+    if not level or not str(level).lower().startswith("h"):
+        return None
+    try:
+        return max(1, min(4, int(str(level)[1])))
+    except (TypeError, ValueError):
+        return None
+
+
+def enrich_matches_with_fix_status(
+    matches: List[Dict[str, Any]],
+    document_blocks: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """Add fix metadata by comparing detected headings against preview blocks."""
+    blocks_by_pid = {
+        b.get("paragraph_id"): b
+        for b in document_blocks
+        if b.get("paragraph_id")
+    }
+
+    enriched: List[Dict[str, Any]] = []
+    for match in matches:
+        row = dict(match)
+        if not row.get("is_heading"):
+            row["fix_status"] = None
+            row["fix_needed"] = False
+            enriched.append(row)
+            continue
+
+        pid = row.get("paragraph_id", "")
+        block = blocks_by_pid.get(pid, {})
+        expected_level = _level_to_int(row.get("level"))
+        current_type = (block.get("type") or "paragraph").lower()
+        current_level = block.get("level")
+        current_style = block.get("style") or "Normal"
+        matched_name = row.get("matched_template_heading")
+
+        fix_needed = False
+        fix_status = "ok"
+        fix_description = ""
+
+        if expected_level is None:
+            fix_status = "unknown_level"
+            fix_description = "Heading level could not be determined."
+        elif current_type != "heading":
+            fix_status = "needs_style"
+            fix_needed = True
+            suffix = f' for "{matched_name}"' if matched_name else ""
+            fix_description = f"Apply Heading {expected_level} style{suffix}."
+        elif current_level != expected_level:
+            fix_status = "wrong_level"
+            fix_needed = True
+            suffix = f' (template: "{matched_name}")' if matched_name else ""
+            fix_description = (
+                f"Change from Heading {current_level} to Heading {expected_level}{suffix}."
+            )
+        elif matched_name is None:
+            fix_status = "unmatched"
+            if row.get("heading_kind") == "unnumbered_subheading":
+                fix_description = (
+                    f"Unnumbered sub-heading \"{row.get('text', '')}\" "
+                    f"should use Heading {expected_level} style."
+                )
+            else:
+                fix_description = (
+                    f"Heading \"{row.get('text', '')}\" is not in the template outline."
+                )
+        else:
+            fix_description = f"Matches template section \"{matched_name}\" at H{expected_level}."
+
+        row.update({
+            "fix_status": fix_status,
+            "fix_needed": fix_needed,
+            "fix_description": fix_description,
+            "expected_level": expected_level,
+            "current_type": current_type,
+            "current_level": current_level,
+            "current_style": current_style,
+            "status": "ok" if not fix_needed else fix_status,
+        })
+        enriched.append(row)
+
+    return enriched
+
+
+def heading_matches_to_issues(matches: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Convert fixable heading matches into formatting issues for the issues pipeline."""
+    issues: List[Dict[str, Any]] = []
+    for match in matches:
+        if not match.get("is_heading") or not match.get("fix_needed"):
+            continue
+
+        pid = match.get("paragraph_id", "")
+        level = match.get("expected_level") or 1
+        text = match.get("text", "")
+        matched = match.get("matched_template_heading")
+        fix_status = match.get("fix_status", "needs_style")
+
+        if fix_status == "wrong_level":
+            reason = (
+                f"Heading \"{text}\" uses Heading {match.get('current_level')} "
+                f"but should be Heading {level}."
+            )
+            suggestion = f"Apply Heading {level} style"
+        else:
+            match_suffix = f' matching "{matched}"' if matched else ""
+            reason = (
+                f"\"{text}\" is detected as a section heading{match_suffix} "
+                f"but does not use Word Heading {level} style."
+            )
+            suggestion = f"Apply Heading {level} style"
+
+        issues.append({
+            "function": "formatting",
+            "category": "Formatting",
+            "type": "heading_style",
+            "severity": "major",
+            "paragraph_id": pid,
+            "page": 0,
+            "reason": reason,
+            "description": match.get("fix_description") or reason,
+            "suggestion": suggestion,
+            "original": text,
+            "current": text,
+            "heading_level": level,
+            "matched_template_heading": matched,
+            "issue_id": f"heading_match_{pid}",
+            "source": "template_heading_analysis",
+        })
+
+    return issues

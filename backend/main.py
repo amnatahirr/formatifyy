@@ -67,7 +67,13 @@ from content_fixer import (
     apply_template_reformat,
     _is_instruction_suggestion,
 )
-from heading_analysis import analyze_document_headings, analyze_headings, blocks_from_dicts
+from heading_analysis import (
+    analyze_document_headings,
+    analyze_headings,
+    blocks_from_dicts,
+    enrich_matches_with_fix_status,
+    heading_matches_to_issues,
+)
 from templates import (
     get_all_templates,
     get_template_by_id,
@@ -1124,6 +1130,15 @@ async def analyze_document_endpoint(document_id: int, user_id: int = Query(...))
     if doc_model and tmpl:
         try:
             template_heading_matches = analyze_document_headings(doc_model, tmpl)
+            template_heading_matches = enrich_matches_with_fix_status(
+                template_heading_matches,
+                document_blocks,
+            )
+            heading_issues = heading_matches_to_issues(template_heading_matches)
+            if heading_issues:
+                normalized_heading_issues = normalize_issues(heading_issues, image_paths)
+                style_issues.extend(normalized_heading_issues)
+                normalized_issues.extend(normalized_heading_issues)
         except Exception as exc:
             print(f"[analyze] heading analysis error (non-fatal): {exc}")
         

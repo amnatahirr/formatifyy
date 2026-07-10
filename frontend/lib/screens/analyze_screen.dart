@@ -2238,6 +2238,12 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
   bool _stylesNotApplied = true;
   bool _applyingTemplateStyles = false;
 
+  // ── Template heading analysis (from analyze response) ─────────────────────
+  List<Map<String, dynamic>> _templateHeadingMatches = [];
+  final Set<String> _applyingTemplateHeadingFixes = {};
+  final Set<String> _appliedTemplateHeadingFixes = {};
+  bool _applyingAllTemplateHeadings = false;
+
   // ── Paragraph style check state ───────────────────────────────────────────
   List<dynamic> _paragraphStyleIssues = [];
   bool _paragraphStyleLoading = false;
@@ -2348,11 +2354,17 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
         (data['issues'] as List<dynamic>? ?? [])
             .map((i) => Map<String, dynamic>.from(i as Map))
             .toList();
+    final headingMatches =
+        (data['template_heading_matches'] as List<dynamic>? ?? [])
+            .map((m) => Map<String, dynamic>.from(m as Map))
+            .toList();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       setState(() {
         _previewBlocks = blocks;
         _pipelineIssues = issues;
+        _templateHeadingMatches = headingMatches;
+        _appliedTemplateHeadingFixes.clear();
       });
     });
   }
@@ -2379,6 +2391,154 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
       }
       _isFixApplied = true;
     });
+  }
+
+  int _headingLevelFromMatch(Map<String, dynamic> match) {
+    final fromExpected = match['expected_level'];
+    if (fromExpected is num) return fromExpected.toInt();
+    final level = (match['level'] as String? ?? 'h1').toLowerCase();
+    final m = RegExp(r'h(\d)').firstMatch(level);
+    return m != null ? int.tryParse(m.group(1)!) ?? 1 : 1;
+  }
+
+  List<Map<String, dynamic>> get _visibleTemplateHeadingMatches =>
+      _templateHeadingMatches.where((m) => m['is_heading'] == true).toList();
+
+  List<Map<String, dynamic>> get _fixableTemplateHeadingMatches =>
+      _visibleTemplateHeadingMatches.where((m) {
+        final pid = m['paragraph_id'] as String? ?? '';
+        if (pid.isEmpty) return false;
+        if (_appliedTemplateHeadingFixes.contains(pid)) return false;
+        return m['fix_needed'] == true;
+      }).toList();
+
+  Future<void> _applyTemplateHeadingFix(Map<String, dynamic> match) async {
+    final pid = match['paragraph_id'] as String? ?? '';
+    if (pid.isEmpty) return;
+
+    setState(() => _applyingTemplateHeadingFixes.add(pid));
+    try {
+      final auth = context.read<AuthProvider>();
+      final level = _headingLevelFromMatch(match);
+      final resp = await http.post(
+        Uri.parse(
+          '$_baseUrl/documents/apply-content-fix/${widget.documentId}?user_id=${auth.userId}',
+        ),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'fix_type': 'heading',
+          'paragraph_id': pid,
+          'heading_level': level,
+        }),
+      );
+
+      if (resp.statusCode == 200) {
+        final data = json.decode(resp.body) as Map<String, dynamic>;
+        _mergeWorkingDocumentState(data);
+        setState(() {
+          _appliedTemplateHeadingFixes.add(pid);
+          final idx = _templateHeadingMatches.indexWhere(
+            (m) => m['paragraph_id'] == pid,
+          );
+          if (idx != -1) {
+            _templateHeadingMatches[idx] = {
+              ..._templateHeadingMatches[idx],
+              'fix_needed': false,
+              'fix_status': 'ok',
+              'status': 'ok',
+              'current_type': 'heading',
+              'current_level': level,
+            };
+          }
+          _pipelineIssues.removeWhere(
+            (i) =>
+                (i['issue_id'] as String? ?? '') == 'heading_match_$pid' ||
+                ((i['paragraph_id'] as String? ?? '') == pid &&
+                    (i['source'] as String? ?? '') ==
+                        'template_heading_analysis'),
+          );
+        });
+        _showSnack('Heading style applied!', _green);
+      } else {
+        _showSnack('Fix failed: ${resp.body}', _red);
+      }
+    } catch (e) {
+      _showSnack('Error: $e', _red);
+    } finally {
+      if (mounted) {
+        setState(() => _applyingTemplateHeadingFixes.remove(pid));
+      }
+    }
+  }
+
+  Future<void> _applyAllTemplateHeadingFixes() async {
+    final fixable = _fixableTemplateHeadingMatches;
+    if (fixable.isEmpty) {
+      _showSnack('No heading fixes to apply.', _textSec);
+      return;
+    }
+
+    setState(() => _applyingAllTemplateHeadings = true);
+    var applied = 0;
+    try {
+      for (final match in fixable) {
+        final pid = match['paragraph_id'] as String? ?? '';
+        if (pid.isEmpty || _appliedTemplateHeadingFixes.contains(pid)) continue;
+
+        final auth = context.read<AuthProvider>();
+        final level = _headingLevelFromMatch(match);
+        final resp = await http.post(
+          Uri.parse(
+            '$_baseUrl/documents/apply-content-fix/${widget.documentId}?user_id=${auth.userId}',
+          ),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({
+            'fix_type': 'heading',
+            'paragraph_id': pid,
+            'heading_level': level,
+          }),
+        );
+
+        if (resp.statusCode == 200) {
+          final data = json.decode(resp.body) as Map<String, dynamic>;
+          _mergeWorkingDocumentState(data);
+          setState(() {
+            _appliedTemplateHeadingFixes.add(pid);
+            final idx = _templateHeadingMatches.indexWhere(
+              (m) => m['paragraph_id'] == pid,
+            );
+            if (idx != -1) {
+              _templateHeadingMatches[idx] = {
+                ..._templateHeadingMatches[idx],
+                'fix_needed': false,
+                'fix_status': 'ok',
+                'status': 'ok',
+                'current_type': 'heading',
+                'current_level': level,
+              };
+            }
+            _pipelineIssues.removeWhere(
+              (i) =>
+                  (i['issue_id'] as String? ?? '') == 'heading_match_$pid' ||
+                  ((i['paragraph_id'] as String? ?? '') == pid &&
+                      (i['source'] as String? ?? '') ==
+                          'template_heading_analysis'),
+            );
+          });
+          applied++;
+        }
+      }
+      _showSnack(
+        applied > 0
+            ? 'Applied $applied heading fix${applied == 1 ? '' : 'es'}!'
+            : 'No heading fixes were applied.',
+        applied > 0 ? _green : _yellow,
+      );
+    } catch (e) {
+      _showSnack('Error: $e', _red);
+    } finally {
+      if (mounted) setState(() => _applyingAllTemplateHeadings = false);
+    }
   }
 
   Future<bool> _applyContentFixToBackend(
@@ -3507,6 +3667,10 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
   Widget _buildBody(Map<String, dynamic> data) {
     final structure = data['structure'] as Map<String, dynamic>? ?? {};
     final oldIssues = data['issues'] as List<dynamic>? ?? [];
+    _templateHeadingMatches =
+        (data['template_heading_matches'] as List<dynamic>? ?? [])
+            .map((m) => Map<String, dynamic>.from(m as Map))
+            .toList();
     final score =
         (structure['score'] as num?)?.toInt() ?? (data['compliance_score'] as num?)?.toInt() ?? 0;
     final status = structure['status'] as String? ?? 'unknown';
@@ -3515,6 +3679,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
 
     final grammarIssues = _issuesForFunction(oldIssues, 'grammar');
     final formattingIssues = _issuesForFunction(oldIssues, 'formatting');
+    final formattingTabCount = formattingIssues.length + _fixableTemplateHeadingMatches.length;
     final imageEthicsIssues = _issuesForFunction(oldIssues, 'image_ethics');
     final imageIssues = _issuesForFunction(oldIssues, 'image_relevance');
     final paraRelevanceIssues = _issuesForFunction(oldIssues, 'para_relevance');
@@ -3540,7 +3705,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
             tabs: [
               Tab(text: 'Review  (${oldIssues.length})'),
               Tab(text: 'Grammar  (${grammarIssues.length})'),
-              Tab(text: 'Formatting  (${formattingIssues.length})'),
+              Tab(text: 'Formatting  ($formattingTabCount)'),
               Tab(text: 'Image Ethics  (${imageEthicsIssues.length})'),
               Tab(text: 'Image Relevance  (${imageIssues.length})'),
               Tab(text: 'Para Relevance  (${paraRelevanceIssues.length})'),
@@ -3559,12 +3724,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
                 Icons.spellcheck,
                 'Checks spelling, punctuation, and grammar errors.',
               ),
-              _buildFunctionTab(
-                'Formatting',
-                formattingIssues,
-                Icons.format_shapes,
-                'Checks heading hierarchy, spacing, and template structure.',
-              ),
+              _buildFormattingTab(formattingIssues),
               _buildImageEthicsTab(imageEthicsIssues),
               _buildImageRelevancyTab(imageIssues, const []),
               _buildFunctionTab(
@@ -3584,6 +3744,244 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
         ),
         _buildActionBar(oldIssues),
       ],
+    );
+  }
+
+  Widget _buildFormattingTab(List<dynamic> issues) {
+    final visible = issues.where((i) {
+      final id = (i as Map)['issue_id'] as String? ?? '';
+      return !_ignoredIssueIds.contains(id) && !_resolvedIssueIds.contains(id);
+    }).toList();
+
+    final headingMatches = _visibleTemplateHeadingMatches;
+    final fixableCount = _fixableTemplateHeadingMatches.length;
+
+    if (headingMatches.isEmpty && visible.isEmpty) {
+      return _buildEmptyState(
+        Icons.format_shapes,
+        'No formatting issues',
+        'Checks heading hierarchy, spacing, and template structure.',
+        color: _green,
+      );
+    }
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (headingMatches.isNotEmpty) ...[
+            _buildInfoBanner(
+              'Template Heading Analysis',
+              'Detected section headings compared against your template outline. '
+                  'Apply fixes to assign the correct Word Heading style and level.',
+              _blue,
+            ),
+            const SizedBox(height: 12),
+            if (fixableCount > 0)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: _applyingAllTemplateHeadings
+                        ? null
+                        : _applyAllTemplateHeadingFixes,
+                    icon: _applyingAllTemplateHeadings
+                        ? const SizedBox(
+                            width: 14,
+                            height: 14,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : const Icon(Icons.auto_fix_high, size: 16),
+                    label: Text(
+                      _applyingAllTemplateHeadings
+                          ? 'Applying…'
+                          : 'Apply All Heading Fixes ($fixableCount)',
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: _green,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                    ),
+                  ),
+                ),
+              ),
+            ...headingMatches.map(_buildTemplateHeadingCard),
+            if (visible.isNotEmpty) const SizedBox(height: 24),
+          ],
+          if (visible.isNotEmpty) ...[
+            _buildInfoBanner(
+              'Formatting',
+              'Additional formatting issues found by the analysis pipeline.',
+              _purple,
+            ),
+            const SizedBox(height: 16),
+            ...visible.map(
+              (i) => _buildPipelineIssueCard(i as Map<String, dynamic>),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTemplateHeadingCard(Map<String, dynamic> match) {
+    final pid = match['paragraph_id'] as String? ?? '';
+    final text = match['text'] as String? ?? '';
+    final level = _headingLevelFromMatch(match);
+    final matched = match['matched_template_heading'] as String?;
+    final fixNeeded = match['fix_needed'] == true &&
+        !_appliedTemplateHeadingFixes.contains(pid);
+    final isApplied = _appliedTemplateHeadingFixes.contains(pid) ||
+        ((match['status'] as String? ?? '') == 'ok' && !fixNeeded);
+    final isApplying = _applyingTemplateHeadingFixes.contains(pid);
+    final fixStatus = match['fix_status'] as String? ?? '';
+    final fixDescription =
+        match['fix_description'] as String? ?? match['reason'] as String? ?? '';
+    final detectionConf =
+        ((match['detection_confidence'] as num?) ?? 0).toDouble();
+    final matchConf = match['match_confidence'];
+    final headingKind = match['heading_kind'] as String? ?? '';
+    final isUnnumberedSub =
+        headingKind == 'unnumbered_subheading';
+
+    final Color accentColor = isApplied
+        ? _green
+        : fixNeeded
+            ? _orange
+            : (isUnnumberedSub ? _blue : (matched == null ? _yellow : _blue));
+    final String statusLabel = isApplied
+        ? 'FIXED'
+        : fixNeeded
+            ? 'NEEDS FIX'
+            : (isUnnumberedSub
+                ? 'SUB-HEADING'
+                : (matched == null ? 'UNMATCHED' : 'OK'));
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      decoration: BoxDecoration(
+        color: _surface,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: accentColor.withOpacity(0.35)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: 32,
+                  height: 32,
+                  decoration: BoxDecoration(
+                    color: accentColor.withOpacity(0.12),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  alignment: Alignment.center,
+                  child: Icon(
+                    isApplied
+                        ? Icons.check_circle_outline
+                        : Icons.title,
+                    color: accentColor,
+                    size: 16,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              text,
+                              style: const TextStyle(
+                                color: _textPri,
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                          _Tag(statusLabel, accentColor),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 4,
+                        children: [
+                          _Tag('H$level', _blue),
+                          if (isUnnumberedSub)
+                            _Tag('Unnumbered sub-heading', _purple),
+                          if (matched != null) _Tag(matched, _purple),
+                          _Tag(
+                            'Detect ${(detectionConf * 100).round()}%',
+                            _textSec,
+                          ),
+                          if (matchConf != null)
+                            _Tag(
+                              'Match ${((matchConf as num) * 100).round()}%',
+                              _textSec,
+                            ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            if (fixDescription.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              Text(
+                fixDescription,
+                style: const TextStyle(color: _textSec, fontSize: 11, height: 1.4),
+              ),
+            ],
+            if (fixNeeded) ...[
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: isApplying ? null : () => _applyTemplateHeadingFix(match),
+                  icon: isApplying
+                      ? const SizedBox(
+                          width: 14,
+                          height: 14,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Icon(Icons.build_circle_outlined, size: 16),
+                  label: Text(
+                    isApplying
+                        ? 'Applying…'
+                        : 'Apply Heading $level Style',
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: _green,
+                    foregroundColor: Colors.white,
+                  ),
+                ),
+              ),
+            ] else if (fixStatus == 'unmatched' && !isApplied && !isUnnumberedSub) ...[
+              const SizedBox(height: 8),
+              Text(
+                'This heading is not in your template outline. No automatic rename is applied.',
+                style: TextStyle(color: _yellow.withOpacity(0.9), fontSize: 11),
+              ),
+            ],
+          ],
+        ),
+      ),
     );
   }
 
