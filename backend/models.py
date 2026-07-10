@@ -21,6 +21,12 @@ class ParagraphBlock(BaseModel):
     heading_context: str = ""
     style: str = "Normal"
     text: str = ""
+    font_size: Optional[float] = None
+    bold: Optional[bool] = None
+    style_name: Optional[str] = None
+    numbering_prefix: Optional[str] = None
+    prev_blank: bool = False
+    next_blank: bool = False
 
 
 class ImageBlock(BaseModel):

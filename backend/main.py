@@ -67,6 +67,7 @@ from content_fixer import (
     apply_template_reformat,
     _is_instruction_suggestion,
 )
+from heading_analysis import analyze_document_headings, analyze_headings, blocks_from_dicts
 from templates import (
     get_all_templates,
     get_template_by_id,
@@ -1117,6 +1118,14 @@ async def analyze_document_endpoint(document_id: int, user_id: int = Query(...))
                     paragraphs = f.read().splitlines()
         except Exception:
             pass
+
+    # Heading analysis — detection, template matching, level assignment
+    template_heading_matches: List[Dict[str, Any]] = []
+    if doc_model and tmpl:
+        try:
+            template_heading_matches = analyze_document_headings(doc_model, tmpl)
+        except Exception as exc:
+            print(f"[analyze] heading analysis error (non-fatal): {exc}")
         
     return {
         "document_id": document_id,
@@ -1144,7 +1153,7 @@ async def analyze_document_endpoint(document_id: int, user_id: int = Query(...))
         },
         "content_checker_mode": "ensemble_with_learning",
         "content_checker_version": "perfect",
-        "template_heading_matches": [],
+        "template_heading_matches": template_heading_matches,
         "compliance_score": score,
         "total_issues": len(normalized_issues),
         "major_issues": major_count,
@@ -1152,6 +1161,23 @@ async def analyze_document_endpoint(document_id: int, user_id: int = Query(...))
         "critical_issues": critical_count,
         "warning_issues": warning_count,
     }
+
+
+class HeadingAnalysisRequest(BaseModel):
+    template: Dict[str, Any]
+    blocks: List[Dict[str, Any]]
+
+
+@app.post("/api/heading-analysis", tags=["Analysis"])
+async def heading_analysis_endpoint(body: HeadingAnalysisRequest = Body(...)):
+    """
+    Run deterministic heading detection, template matching, and level assignment.
+
+    Accepts a template outline (required_sections) and a list of text blocks with
+    optional formatting metadata (font_size, bold, style_name, numbering_prefix).
+    """
+    blocks = blocks_from_dicts(body.blocks)
+    return analyze_headings(blocks, body.template)
 
 
 async def _get_ai_client():

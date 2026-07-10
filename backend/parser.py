@@ -38,24 +38,39 @@ def parse_file(file_path: str, filename: str) -> DocumentModel:
 
 def parse_text(text: str, title: str = "pasted_text.txt") -> DocumentModel:
     """Parse raw pasted text into a DocumentModel (single page, no images)."""
+    lines = text.split("\n")
     paragraphs: List[ParagraphBlock] = []
     heading_context = ""
-    for idx, line in enumerate(text.split("\n")):
+    para_idx = 0
+
+    for idx, line in enumerate(lines):
         stripped = line.strip()
         if not stripped:
             continue
+
+        prev_blank = idx == 0 or not lines[idx - 1].strip()
+        next_blank = idx == len(lines) - 1 or not lines[idx + 1].strip()
+
         style = _guess_style(stripped)
+        prefix, _ = _extract_numbering_prefix(stripped)
         if style.startswith("Heading"):
             heading_context = stripped
+
         paragraphs.append(
             ParagraphBlock(
-                paragraph_id=f"p{idx}",
+                paragraph_id=f"p{para_idx}",
                 page_number=1,
                 heading_context=heading_context,
                 style=style,
                 text=stripped,
+                style_name=style,
+                numbering_prefix=prefix,
+                prev_blank=prev_blank,
+                next_blank=next_blank,
             )
         )
+        para_idx += 1
+
     return DocumentModel(
         filename=title,
         total_pages=1,
@@ -109,11 +124,19 @@ def _parse_docx(file_path: str, filename: str) -> DocumentModel:
 
         text = para.text.strip()
         style_name = (para.style.name or "Normal") if para.style else "Normal"
+        font_size, is_bold = _extract_run_format(para)
+        prefix, _ = _extract_numbering_prefix(text)
 
         # Map Word style → our normalised style
         style = _normalise_docx_style(style_name, text)
         if style.startswith("Heading"):
             heading_context = text
+
+        prev_blank = para_idx == 0 or not doc.paragraphs[para_idx - 1].text.strip()
+        next_blank = (
+            para_idx == len(doc.paragraphs) - 1
+            or not doc.paragraphs[para_idx + 1].text.strip()
+        )
 
         # ── Check for embedded images ────────────────────────────────────────
         r_ns = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
@@ -151,6 +174,12 @@ def _parse_docx(file_path: str, filename: str) -> DocumentModel:
                     heading_context=heading_context,
                     style=style,
                     text=text,
+                    font_size=font_size,
+                    bold=is_bold,
+                    style_name=style_name,
+                    numbering_prefix=prefix,
+                    prev_blank=prev_blank,
+                    next_blank=next_blank,
                 )
             )
 
@@ -198,6 +227,7 @@ def _parse_pdf(file_path: str, filename: str) -> DocumentModel:
                     style = _guess_style_from_font(text, font_size, is_bold)
                     if style.startswith("Heading"):
                         heading_context = text
+                    prefix, _ = _extract_numbering_prefix(text)
 
                     paragraphs.append(
                         ParagraphBlock(
@@ -206,6 +236,10 @@ def _parse_pdf(file_path: str, filename: str) -> DocumentModel:
                             heading_context=heading_context,
                             style=style,
                             text=text,
+                            font_size=font_size,
+                            bold=is_bold,
+                            style_name=style,
+                            numbering_prefix=prefix,
                         )
                     )
                     para_counter += 1
@@ -251,6 +285,28 @@ def _parse_txt(file_path: str, filename: str) -> DocumentModel:
 # ═══════════════════════════════════════════════════════════════════════════════
 # HELPERS
 # ═══════════════════════════════════════════════════════════════════════════════
+
+def _extract_numbering_prefix(text: str) -> tuple[str | None, str]:
+    match = re.match(r"^(\d+(?:\.\d+)*)\.?\s+(.+)$", (text or "").strip())
+    if not match:
+        return None, (text or "").strip()
+    return match.group(1), match.group(2).strip()
+
+
+def _extract_run_format(para) -> tuple[float | None, bool | None]:
+    """Best-effort font size and bold flag from the first non-empty run."""
+    font_size = None
+    is_bold = None
+    for run in para.runs:
+        if not run.text.strip():
+            continue
+        if run.bold is not None:
+            is_bold = bool(run.bold)
+        if run.font.size is not None:
+            font_size = round(run.font.size.pt, 1)
+        break
+    return font_size, is_bold
+
 
 def _normalise_docx_style(style_name: str, text: str) -> str:
     """Map a Word style name to a normalised label."""
