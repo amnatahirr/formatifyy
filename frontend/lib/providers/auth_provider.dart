@@ -5,6 +5,7 @@ import 'dart:async';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:app_links/app_links.dart';
 import '../config/api_config.dart';
+import '../config/dev_user_config.dart';
 
 class AuthProvider extends ChangeNotifier {
   late String baseUrl;
@@ -18,6 +19,7 @@ class AuthProvider extends ChangeNotifier {
   bool _isLoading = false;
   bool _hasGoogleDrive = false;
   String? _googleDriveEmail;
+  bool _devBootstrap = false;
 
   String? get currentUser => _currentUser;
   String? get userEmail => _userEmail;
@@ -30,9 +32,27 @@ class AuthProvider extends ChangeNotifier {
   bool get isLoading => _isLoading;
   bool get hasGoogleDrive => _hasGoogleDrive;
   String? get googleDriveEmail => _googleDriveEmail;
+  bool get isDevBootstrap => _devBootstrap;
 
-  AuthProvider() {
+  AuthProvider({String? devUserKey}) {
     baseUrl = ApiConfig.getBaseUrl();
+    if (devUserKey != null) {
+      _bootstrapDevUser(devUserKey);
+    }
+  }
+
+  /// Auto-login for local multi-instance testing via --dart-define=USER_ID=member1|member2
+  void _bootstrapDevUser(String memberKey) {
+    DevUserConfig.initialize(memberKey);
+    _userId = DevUserConfig.backendUserId;
+    _currentUser = DevUserConfig.username;
+    _userEmail = DevUserConfig.email;
+    _userRole = DevUserConfig.role;
+    _isLoggedIn = true;
+    _devBootstrap = true;
+    debugPrint(
+      '[DevUser] Bootstrapped $memberKey → id=$_userId (${_currentUser})',
+    );
   }
 
   Future<bool> signup(
@@ -67,7 +87,9 @@ class AuthProvider extends ChangeNotifier {
         _userId = data["id"];
         _currentUser = data["username"];
         _userEmail = data["email"];
+        _userRole = data.get("role", "student");
         _isLoggedIn = true;
+        _devBootstrap = false;
         debugPrint("[v0] Signup successful: ${data['message']}");
         return true;
       } else {
@@ -115,6 +137,7 @@ class AuthProvider extends ChangeNotifier {
         _userEmail = data["email"];
         _userRole = data["role"];
         _isLoggedIn = true;
+        _devBootstrap = false;
         debugPrint(
           "[v0] Login successful for user: $_currentUser with role: $_userRole",
         );

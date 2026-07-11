@@ -309,3 +309,6 @@ def init_db():
 
     conn.close()
     print("Database tables initialized and seeded successfully.")
+
+    from vc.database import init_vc_tables
+    init_vc_tables()

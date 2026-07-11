@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:app_links/app_links.dart';
+import 'config/dev_user_config.dart';
 import 'screens/login_screen.dart';
 import 'screens/student_dashboard.dart';
 import 'screens/admin_dashboard.dart';
@@ -16,6 +17,7 @@ import 'providers/document_provider.dart';
 import 'providers/template_provider.dart';
 import 'providers/upload_provider.dart';
 import 'providers/image_formatter_provider.dart';
+import 'providers/collaboration_provider.dart';
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
@@ -25,12 +27,16 @@ bool _isMobilePlatform() {
 }
 
 void main() {
-  runApp(const MyApp());
+  const userId = String.fromEnvironment('USER_ID', defaultValue: 'member1');
+  DevUserConfig.initialize(userId);
+  runApp(MyApp(devUserKey: userId));
 }
 
 
 class MyApp extends StatefulWidget {
-  const MyApp({Key? key}) : super(key: key);
+  final String devUserKey;
+
+  const MyApp({Key? key, required this.devUserKey}) : super(key: key);
 
   @override
   State<MyApp> createState() => _MyAppState();
@@ -97,16 +103,19 @@ class _MyAppState extends State<MyApp> {
   Widget build(BuildContext context) {
     return MultiProvider(
       providers: [
-        ChangeNotifierProvider(create: (_) => AuthProvider()),
+        ChangeNotifierProvider(
+          create: (_) => AuthProvider(devUserKey: widget.devUserKey),
+        ),
         ChangeNotifierProvider(create: (_) => DocumentProvider()),
         ChangeNotifierProvider(create: (_) => TemplateProvider()),
         ChangeNotifierProvider(create: (_) => UploadProvider()),
         ChangeNotifierProvider(create: (_) => ImageFormatterProvider()),
+        ChangeNotifierProvider(create: (_) => CollaborationProvider()),
       ],
       child: MaterialApp(
         navigatorKey: navigatorKey,
         debugShowCheckedModeBanner: false,
-        title: 'FORMATIFY',
+        title: 'FORMATIFY — ${widget.devUserKey}',
         theme: ThemeData(
           useMaterial3: true,
           brightness: Brightness.dark,
@@ -186,7 +195,10 @@ class AuthCheck extends StatelessWidget {
     return Consumer<AuthProvider>(
       builder: (context, authProvider, _) {
         if (authProvider.isLoggedIn) {
-          // Route based on user role
+          // Dev bootstrap (--dart-define=USER_ID) skips admin routing for collab testing
+          if (authProvider.isDevBootstrap) {
+            return const StudentDashboard();
+          }
           if (authProvider.isAdmin) {
             return const AdminDashboard();
           } else {

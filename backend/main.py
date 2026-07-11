@@ -81,6 +81,8 @@ from templates import (
     get_templates_by_user,
     update_template,
 )
+from vc.routes import router as vc_router, set_analysis_runner
+from vc.reports_sync import sync_analysis_to_project_members
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # CONFIG
@@ -461,6 +463,10 @@ async def _run_analysis(
     return response
 
 
+set_analysis_runner(_run_analysis)
+app.include_router(vc_router)
+
+
 @app.post("/api/analyze", tags=["Analysis"])
 async def analyze_api(
     template: str = Form(...),
@@ -586,6 +592,11 @@ def _commit_working_document(document_id: int, working_copy: str, doc: Any) -> D
         document_blocks = build_document_blocks(doc_model, image_paths)
     except Exception as exc:
         print(f"[commit_working] preview refresh error: {exc}")
+
+    try:
+        sync_analysis_to_project_members(document_id, working_copy)
+    except Exception as exc:
+        print(f"[commit_working] project sync error (non-fatal): {exc}")
 
     return {
         "document_blocks": document_blocks,
@@ -1066,6 +1077,12 @@ async def analyze_document_endpoint(document_id: int, user_id: int = Query(...))
     cursor.execute("UPDATE documents SET status = 'completed', updated_at = CURRENT_TIMESTAMP WHERE id = ?", (document_id,))
     conn.commit()
     conn.close()
+
+    if file_path.endswith(".docx") and os.path.exists(file_path):
+        try:
+            sync_analysis_to_project_members(document_id, file_path)
+        except Exception as exc:
+            print(f"[analyze] project sync error (non-fatal): {exc}")
 
     # Build structured blocks + normalized issues for the Flutter preview UI
     doc_model = None

@@ -10,8 +10,12 @@ import 'package:file_picker/file_picker.dart';
 import '../providers/auth_provider.dart';
 import '../providers/document_provider.dart';
 import '../providers/template_provider.dart';
+import '../providers/collaboration_provider.dart';
 import 'new_report_screen.dart';
+import 'analyze_screen.dart';
 import '../widgets/export_dialog.dart';
+import 'collaboration/project_dashboard_screen.dart';
+import 'collaboration/project_history_screen.dart';
 
 class StudentDashboard extends StatefulWidget {
   const StudentDashboard({Key? key}) : super(key: key);
@@ -40,12 +44,15 @@ class _StudentDashboardState extends State<StudentDashboard> {
     Future.microtask(() {
       final auth = context.read<AuthProvider>();
       if (auth.userId != null) {
+        context.read<CollaborationProvider>().setActiveUserId(auth.userId!);
         context.read<TemplateProvider>().fetchUserTemplates(auth.userId!);
         context.read<DocumentProvider>().fetchDocuments(auth.userId!);
+        context.read<CollaborationProvider>().fetchProjects();
         //Start auto-refresh polling every 30 seconds
         _refreshTimer = Timer.periodic(const Duration(seconds: 10), (_) {
           final a = context.read<AuthProvider>();
           if (a.userId != null) {
+            context.read<CollaborationProvider>().setActiveUserId(a.userId!);
             context.read<DocumentProvider>().fetchDocuments(a.userId!);
           }
         });
@@ -395,6 +402,14 @@ class _StudentDashboardState extends State<StudentDashboard> {
   }
 
   Widget _buildBody() {
+    if (_selectedIndex == 2) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        final auth = context.read<AuthProvider>();
+        if (auth.userId != null) {
+          context.read<DocumentProvider>().fetchDocuments(auth.userId!);
+        }
+      });
+    }
     switch (_selectedIndex) {
       case 0:
         return _buildDashboardContent();
@@ -482,6 +497,8 @@ class _StudentDashboardState extends State<StudentDashboard> {
                   ),
                 ],
               ),
+              const SizedBox(height: 32),
+              _buildSharedProjectsSection(),
               const SizedBox(height: 32),
               _buildQuickActionsSection(),
             ],
@@ -822,6 +839,200 @@ class _StudentDashboardState extends State<StudentDashboard> {
     );
   }
 
+  Widget _buildSharedProjectsSection() {
+    return Consumer<CollaborationProvider>(
+      builder: (context, vc, _) {
+        final projects = vc.projects;
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Text(
+                  'Shared Projects',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.white,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF10B981).withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(
+                    '${projects.length}',
+                    style: const TextStyle(
+                      color: Color(0xFF10B981),
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                const Spacer(),
+                TextButton.icon(
+                  onPressed: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const ProjectDashboardScreen(),
+                    ),
+                  ),
+                  icon: const Icon(Icons.add, size: 16),
+                  label: const Text('New Project'),
+                  style: TextButton.styleFrom(foregroundColor: const Color(0xFF6366F1)),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            if (vc.loading && projects.isEmpty)
+              const Center(
+                child: Padding(
+                  padding: EdgeInsets.all(24),
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              )
+            else if (projects.isEmpty)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(24),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF161B22),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.white.withOpacity(0.1)),
+                ),
+                child: Column(
+                  children: [
+                    Icon(Icons.people_outline, size: 32, color: Colors.white.withOpacity(0.3)),
+                    const SizedBox(height: 8),
+                    Text(
+                      'No shared projects yet',
+                      style: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 13),
+                    ),
+                    const SizedBox(height: 12),
+                    OutlinedButton.icon(
+                      onPressed: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const ProjectDashboardScreen(),
+                        ),
+                      ),
+                      icon: const Icon(Icons.people, size: 16),
+                      label: const Text('Start Collaborating'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: const Color(0xFF10B981),
+                        side: const BorderSide(color: Color(0xFF10B981)),
+                      ),
+                    ),
+                  ],
+                ),
+              )
+            else
+              Wrap(
+                spacing: 12,
+                runSpacing: 12,
+                children: projects.map((p) => _buildSharedProjectCard(p)).toList(),
+              ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildSharedProjectCard(Map<String, dynamic> p) {
+    final status = p['status'] as String? ?? 'active';
+    final statusColor = status == 'merged'
+        ? const Color(0xFF10B981)
+        : status == 'active'
+            ? const Color(0xFF3B82F6)
+            : const Color(0xFF94A3B8);
+
+    return GestureDetector(
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => ProjectHistoryScreen(
+            projectId: p['id'] as int,
+            projectName: p['name'] as String? ?? 'Project',
+          ),
+        ),
+      ),
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        child: Container(
+          width: 280,
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: const Color(0xFF161B22),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.white.withOpacity(0.1)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF10B981).withOpacity(0.15),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Icon(Icons.folder_shared, color: Color(0xFF10B981), size: 18),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      p['name'] as String? ?? 'Project',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 13,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  Icon(Icons.history, size: 16, color: Colors.white.withOpacity(0.4)),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Text(
+                p['template_name'] as String? ?? 'Template',
+                style: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 11),
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Icon(Icons.people, size: 12, color: Colors.white.withOpacity(0.4)),
+                  const SizedBox(width: 4),
+                  Text(
+                    '${p['member_count'] ?? 1} members',
+                    style: TextStyle(color: Colors.white.withOpacity(0.4), fontSize: 11),
+                  ),
+                  const Spacer(),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: statusColor.withOpacity(0.15),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Text(
+                      status,
+                      style: TextStyle(color: statusColor, fontSize: 10, fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildQuickActionsSection() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -873,14 +1084,12 @@ class _StudentDashboardState extends State<StudentDashboard> {
                 'Share and work with team members',
                 Icons.people,
                 const Color(0xFF10B981),
-                onTap: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Collaboration feature coming soon'),
-                      backgroundColor: Color(0xFFD97706),
-                    ),
-                  );
-                },
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const ProjectDashboardScreen(),
+                  ),
+                ),
               ),
             ),
           ],
@@ -948,6 +1157,37 @@ class _StudentDashboardState extends State<StudentDashboard> {
 
   Widget _buildNewReportPage() {
     return NewReportScreen(selectedTemplate: _selectedTemplate);
+  }
+
+  void _openAnalyzeScreen(Map<String, dynamic> doc) {
+    final docId = doc['id'] as int?;
+    final templateId = doc['template_id'] as int?;
+    if (docId == null || templateId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Cannot analyze — document info is missing'),
+          backgroundColor: Color(0xFFEF4444),
+        ),
+      );
+      return;
+    }
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => AnalyzeScreen(
+          documentId: docId,
+          documentName: doc['filename'] as String? ?? 'Document',
+          templateId: templateId,
+          templateName: doc['template_name'] as String? ?? 'Template',
+        ),
+      ),
+    ).then((_) {
+      final auth = context.read<AuthProvider>();
+      if (auth.userId != null) {
+        context.read<DocumentProvider>().fetchDocuments(auth.userId!);
+      }
+    });
   }
 
   Widget _buildMyReportsPage() {
@@ -1262,28 +1502,52 @@ class _StudentDashboardState extends State<StudentDashboard> {
                                   // Action Buttons
                                   Row(
                                     children: [
-                          Expanded(
-                            child: ElevatedButton(
-                              onPressed: () {
-                                _showEditDialog(doc, auth.userId!);
-                              },
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: const Color(0xFF3B82F6),
-                                padding: const EdgeInsets.symmetric(vertical: 8),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(6),
-                                ),
-                              ),
-                              child: const Text(
-                                'Edit',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ),
-                          ),
-                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        flex: 2,
+                                        child: ElevatedButton.icon(
+                                          onPressed: () => _openAnalyzeScreen(doc),
+                                          icon: const Icon(Icons.analytics_outlined, size: 14),
+                                          label: const Text(
+                                            'Analyze',
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                          ),
+                                          style: ElevatedButton.styleFrom(
+                                            backgroundColor: const Color(0xFF10B981),
+                                            foregroundColor: Colors.white,
+                                            padding: const EdgeInsets.symmetric(vertical: 8),
+                                            shape: RoundedRectangleBorder(
+                                              borderRadius: BorderRadius.circular(6),
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 6),
+                                      Expanded(
+                                        child: OutlinedButton(
+                                          onPressed: () {
+                                            _showEditDialog(doc, auth.userId!);
+                                          },
+                                          style: OutlinedButton.styleFrom(
+                                            foregroundColor: const Color(0xFF3B82F6),
+                                            side: const BorderSide(color: Color(0xFF3B82F6)),
+                                            padding: const EdgeInsets.symmetric(vertical: 8),
+                                            shape: RoundedRectangleBorder(
+                                              borderRadius: BorderRadius.circular(6),
+                                            ),
+                                          ),
+                                          child: const Text(
+                                            'Edit',
+                                            style: TextStyle(
+                                              fontSize: 11,
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 4),
                                       IconButton(
                                         onPressed: () {
                                           _handleDownload(doc);
@@ -1299,7 +1563,9 @@ class _StudentDashboardState extends State<StudentDashboard> {
                                       const SizedBox(width: 4),
                                       PopupMenuButton<String>(
                                         onSelected: (value) {
-                                          if (value == 'preview') {
+                                          if (value == 'analyze') {
+                                            _openAnalyzeScreen(doc);
+                                          } else if (value == 'preview') {
                                             _showPreview(doc);
                                           } else if (value == 'download') {
                                             _handleDownload(doc);
@@ -1308,6 +1574,16 @@ class _StudentDashboardState extends State<StudentDashboard> {
                                           }
                                         },
                                         itemBuilder: (context) => [
+                                          const PopupMenuItem(
+                                            value: 'analyze',
+                                            child: Row(
+                                              children: [
+                                                Icon(Icons.analytics_outlined, size: 16, color: Color(0xFF10B981)),
+                                                SizedBox(width: 8),
+                                                Text('Analyze'),
+                                              ],
+                                            ),
+                                          ),
                                           const PopupMenuItem(
                                             value: 'preview',
                                             child: Row(
@@ -1493,10 +1769,12 @@ class _StudentDashboardState extends State<StudentDashboard> {
     switch (status.toLowerCase()) {
       case 'completed':
       case 'formatted':
-      case 'uploaded':
         return const Color(0xFF10B981);
       case 'processing':
         return const Color(0xFFEAB308);
+      case 'uploaded':
+      case 'pending':
+        return const Color(0xFF6366F1);
       case 'draft':
         return const Color(0xFFEF4444);
       default:
@@ -1511,9 +1789,11 @@ class _StudentDashboardState extends State<StudentDashboard> {
         return 'Completed';
       case 'processing':
         return 'In Progress';
-      case 'draft':
       case 'uploaded':
-        return 'Completed';
+      case 'pending':
+        return 'Ready to Analyze';
+      case 'draft':
+        return 'Draft';
       default:
         return 'Formatted';
     }
