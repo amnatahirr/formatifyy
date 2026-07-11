@@ -60,6 +60,17 @@ from issue_utils import (
     save_document_images,
 )
 from image_formatter import format_document_images, fix_image_captions
+from docx_fields import (
+    analyze_document_lists,
+    apply_toc_heading_styles,
+    collect_headings,
+    document_has_toc,
+    generate_document_lists,
+    insert_lof_field,
+    insert_lot_field,
+    insert_toc_field,
+)
+from table_processor import detect_tables, format_tables_in_document
 from content_fixer import (
     apply_text_fix,
     apply_all_text_fixes,
@@ -1632,6 +1643,22 @@ async def apply_all_fixes(
         except Exception as exc:
             image_result = {"status": "error", "message": str(exc)}
 
+    lists_result = {"status": "skipped"}
+    if working_copy.endswith(".docx"):
+        try:
+            rules = tmpl.get("formatting_rules", {})
+            lists_result = generate_document_lists(
+                working_copy,
+                rules,
+                tmpl.get("required_sections", []),
+                include_toc=bool(rules.get("include_toc", True)),
+                include_lot=bool(rules.get("include_lot", True)),
+                include_lof=bool(rules.get("include_lof", True)),
+                toc_levels=str(rules.get("toc_levels", "1-3")),
+            )
+        except Exception as exc:
+            lists_result = {"status": "error", "message": str(exc)}
+
     commit = _commit_working_document(document_id, working_copy, doc)
 
     return {
@@ -1639,6 +1666,7 @@ async def apply_all_fixes(
         "message": "All fixes applied to formatted working document",
         "text_fixes": text_result,
         "image_formatting": image_result,
+        "document_lists": lists_result,
         **commit,
     }
 
@@ -1812,6 +1840,291 @@ async def replace_image(
             "recommendation": validation.get("reason", ""),
         },
         "document_blocks": commit.get("document_blocks", []),
+    }
+
+
+def _get_user_document(document_id: int, user_id: int):
+    """Load document row and template; raise HTTPException if missing."""
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM documents WHERE id = ? AND user_id = ?", (document_id, user_id))
+    doc = cursor.fetchone()
+    conn.close()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+    tmpl = get_template_by_id(doc["template_id"])
+    if not tmpl:
+        raise HTTPException(status_code=400, detail="Template not found")
+    return doc, tmpl
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# TOC / LOT / LOF — Word field generation
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@app.get("/api/toc-check/{document_id}", tags=["Documents"])
+def toc_check(document_id: int, user_id: int = Query(...)):
+    """Analyze heading hierarchy and TOC/LOT/LOF field status."""
+    from docx import Document as DocxDocument
+
+    doc_row, tmpl = _get_user_document(document_id, user_id)
+    working_copy = _ensure_formatted_working_copy(doc_row, tmpl)
+    doc = DocxDocument(working_copy)
+    status = analyze_document_lists(doc)
+    status["status"] = "success"
+    status["document_id"] = document_id
+    return status
+
+
+@app.post("/api/add-toc/{document_id}", tags=["Documents"])
+def add_toc(document_id: int, user_id: int = Query(...)):
+    """Insert a dynamic Word TOC field after headings have been styled."""
+    doc_row, tmpl = _get_user_document(document_id, user_id)
+    working_copy = _ensure_formatted_working_copy(doc_row, tmpl)
+
+    from docx import Document as DocxDocument
+
+    from docx_fields import _toc_field_is_unpopulated
+
+    doc = DocxDocument(working_copy)
+    if document_has_toc(doc) and not _toc_field_is_unpopulated(doc):
+        raise HTTPException(status_code=409, detail={"message": "TOC already exists in document"})
+
+    headings = collect_headings(doc)
+    if not headings:
+        raise HTTPException(
+            status_code=422,
+            detail={"message": "No headings found to build TOC"},
+        )
+
+    rules = tmpl.get("formatting_rules", {})
+    toc_levels = str(rules.get("toc_levels", "1-3"))
+    result = generate_document_lists(
+        working_copy,
+        rules,
+        tmpl.get("required_sections", []),
+        include_toc=True,
+        include_lot=False,
+        include_lof=False,
+        toc_levels=toc_levels,
+    )
+    commit = _commit_working_document(document_id, working_copy, doc_row)
+    return {
+        "status": "success",
+        "message": "TOC field inserted",
+        "entry_count": result.get("entry_count", len(headings)),
+        **result,
+        **commit,
+    }
+
+
+@app.post("/api/apply-toc-style/{document_id}", tags=["Documents"])
+def apply_toc_style(document_id: int, user_id: int = Query(...)):
+    """Apply heading styles to TOC/LOT/LOF section titles."""
+    from docx import Document as DocxDocument
+
+    doc_row, tmpl = _get_user_document(document_id, user_id)
+    working_copy = _ensure_formatted_working_copy(doc_row, tmpl)
+    doc = DocxDocument(working_copy)
+
+    if not document_has_toc(doc):
+        raise HTTPException(status_code=409, detail={"message": "No TOC field found in document"})
+
+    styled = apply_toc_heading_styles(doc)
+    doc.save(working_copy)
+    commit = _commit_working_document(document_id, working_copy, doc_row)
+    return {
+        "status": "success",
+        "message": f"Applied styles to {styled} list heading(s)",
+        "styled_headings": styled,
+        **commit,
+    }
+
+
+@app.post("/api/add-lot/{document_id}", tags=["Documents"])
+def add_lot(document_id: int, user_id: int = Query(...)):
+    """Insert a dynamic List of Tables field (requires table captions)."""
+    from docx import Document as DocxDocument
+
+    from docx_fields import document_has_lot
+    from table_processor import ensure_table_captions
+
+    doc_row, tmpl = _get_user_document(document_id, user_id)
+    working_copy = _ensure_formatted_working_copy(doc_row, tmpl)
+    doc = DocxDocument(working_copy)
+
+    if not doc.tables:
+        raise HTTPException(status_code=422, detail={"message": "No tables found in document"})
+
+    if document_has_lot(doc):
+        raise HTTPException(status_code=409, detail={"message": "List of Tables already exists"})
+
+    ensure_table_captions(doc)
+    doc.save(working_copy)
+
+    result = generate_document_lists(
+        working_copy,
+        tmpl.get("formatting_rules", {}),
+        tmpl.get("required_sections", []),
+        include_toc=False,
+        include_lot=True,
+        include_lof=False,
+    )
+    commit = _commit_working_document(document_id, working_copy, doc_row)
+    return {"status": "success", "message": "List of Tables field inserted", **result, **commit}
+
+
+@app.post("/api/add-lof/{document_id}", tags=["Documents"])
+def add_lof(document_id: int, user_id: int = Query(...)):
+    """Insert a dynamic List of Figures field (requires figure captions)."""
+    from docx import Document as DocxDocument
+
+    from docx_fields import count_figures, document_has_lof
+
+    doc_row, tmpl = _get_user_document(document_id, user_id)
+    working_copy = _ensure_formatted_working_copy(doc_row, tmpl)
+    doc = DocxDocument(working_copy)
+
+    if count_figures(doc) == 0:
+        raise HTTPException(status_code=422, detail={"message": "No figures found in document"})
+
+    if document_has_lof(doc):
+        raise HTTPException(status_code=409, detail={"message": "List of Figures already exists"})
+
+    result = generate_document_lists(
+        working_copy,
+        tmpl.get("formatting_rules", {}),
+        tmpl.get("required_sections", []),
+        include_toc=False,
+        include_lot=False,
+        include_lof=True,
+    )
+    commit = _commit_working_document(document_id, working_copy, doc_row)
+    return {"status": "success", "message": "List of Figures field inserted", **result, **commit}
+
+
+@app.post("/api/generate-document-lists/{document_id}", tags=["Documents"])
+def generate_all_document_lists(
+    document_id: int,
+    user_id: int = Query(...),
+    payload: Dict[str, Any] = Body(default={}),
+):
+    """Generate TOC, LOT, and/or LOF fields based on user-selected options."""
+    doc_row, tmpl = _get_user_document(document_id, user_id)
+    working_copy = _ensure_formatted_working_copy(doc_row, tmpl)
+    rules = tmpl.get("formatting_rules", {})
+    toc_levels = str(payload.get("toc_levels") or rules.get("toc_levels", "1-3"))
+
+    include_toc = payload.get("include_toc", rules.get("include_toc", True))
+    include_lot = payload.get("include_lot", rules.get("include_lot", True))
+    include_lof = payload.get("include_lof", rules.get("include_lof", True))
+
+    result = generate_document_lists(
+        working_copy,
+        rules,
+        tmpl.get("required_sections", []),
+        include_toc=bool(include_toc),
+        include_lot=bool(include_lot),
+        include_lof=bool(include_lof),
+        toc_levels=toc_levels,
+    )
+    commit = _commit_working_document(document_id, working_copy, doc_row)
+    return {
+        "status": "success",
+        "message": "Document lists generated",
+        **result,
+        **commit,
+    }
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# TABLE DETECTION & FORMATTING
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@app.get("/api/tables/detect/{document_id}", tags=["Documents"])
+def tables_detect(document_id: int, user_id: int = Query(...)):
+    """Detect tables and caption issues in the working document."""
+    from docx import Document as DocxDocument
+
+    doc_row, tmpl = _get_user_document(document_id, user_id)
+    working_copy = _ensure_formatted_working_copy(doc_row, tmpl)
+    doc = DocxDocument(working_copy)
+    tables = detect_tables(doc)
+    return {
+        "status": "success",
+        "document_id": document_id,
+        "table_count": len(tables),
+        "tables": tables,
+    }
+
+
+@app.post("/api/tables/format/{document_id}", tags=["Documents"])
+def tables_format(
+    document_id: int,
+    user_id: int = Query(...),
+    payload: Dict[str, Any] = Body(default={}),
+):
+    """Format selected tables using a preset and optional custom rules."""
+    from docx import Document as DocxDocument
+
+    doc_row, tmpl = _get_user_document(document_id, user_id)
+    working_copy = _ensure_formatted_working_copy(doc_row, tmpl)
+    doc = DocxDocument(working_copy)
+
+    selected = set(payload.get("selected_indices", []))
+    if not selected:
+        raise HTTPException(status_code=400, detail="No tables selected")
+
+    result = format_tables_in_document(
+        doc,
+        selected,
+        preset=str(payload.get("preset", "academic")),
+        custom_rules=payload.get("custom_rules"),
+        add_captions=True,
+    )
+    doc.save(working_copy)
+    commit = _commit_working_document(document_id, working_copy, doc_row)
+    return {
+        "status": "success",
+        "formatted_tables": result.get("formatted_tables", []),
+        **result,
+        **commit,
+    }
+
+
+@app.post("/api/tables/format-with-template/{document_id}", tags=["Documents"])
+def tables_format_with_template(
+    document_id: int,
+    user_id: int = Query(...),
+    payload: Dict[str, Any] = Body(default={}),
+):
+    """Format selected tables using admin template table_style rules."""
+    from docx import Document as DocxDocument
+
+    doc_row, tmpl = _get_user_document(document_id, user_id)
+    working_copy = _ensure_formatted_working_copy(doc_row, tmpl)
+    doc = DocxDocument(working_copy)
+
+    selected = set(payload.get("selected_indices", []))
+    if not selected:
+        raise HTTPException(status_code=400, detail="No tables selected")
+
+    rules = tmpl.get("formatting_rules", {})
+    table_style = rules.get("table_style", {})
+    result = format_tables_in_document(
+        doc,
+        selected,
+        template_rules=table_style,
+        add_captions=True,
+    )
+    doc.save(working_copy)
+    commit = _commit_working_document(document_id, working_copy, doc_row)
+    return {
+        "status": "success",
+        "formatted_tables": result.get("formatted_tables", []),
+        "template_name": tmpl.get("name", ""),
+        **result,
+        **commit,
     }
 
 

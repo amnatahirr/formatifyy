@@ -28,7 +28,8 @@ def _length_to_inches(value: float, unit: str = "mm") -> float:
 
 
 def _paragraph_has_image(para) -> bool:
-    return bool(list(para._element.iter(BLIP_TAG)))
+    from docx_fields import paragraph_has_image
+    return paragraph_has_image(para)
 
 
 def _remove_floating_figure_captions(doc) -> int:
@@ -97,10 +98,20 @@ def _set_caption_style(para) -> None:
         run.font.size = Pt(10)
 
 
+def _parse_figure_caption(caption: str) -> tuple[str, str]:
+    """Split 'Figure N: description' into (label, description)."""
+    m = FIGURE_CAPTION_RE.match(caption.strip())
+    if m:
+        return "Figure", caption.split(":", 1)[1].strip() if ":" in caption else ""
+    if ":" in caption:
+        return "Figure", caption.split(":", 1)[1].strip()
+    return "Figure", caption.strip()
+
+
 def _ensure_caption_below_image(doc, img_idx: int, caption: str) -> None:
-    """Place caption as inline paragraph directly under the image paragraph."""
+    """Place SEQ-based caption paragraph directly under the image paragraph."""
     from docx.enum.text import WD_ALIGN_PARAGRAPH
-    from docx.oxml.ns import qn
+    from docx_fields import rebuild_caption_with_seq
 
     paragraphs = doc.paragraphs
     if img_idx < 0 or img_idx >= len(paragraphs):
@@ -119,17 +130,15 @@ def _ensure_caption_below_image(doc, img_idx: int, caption: str) -> None:
         if FIGURE_CAPTION_RE.match(nxt.text.strip()) and not _paragraph_has_image(nxt):
             cap_para = nxt
 
-    if cap_para is None:
-        cap_para = _insert_paragraph_after(img_para, caption)
-    else:
-        if cap_para.runs:
-            cap_para.runs[0].text = caption
-            for run in cap_para.runs[1:]:
-                run.text = ""
-        else:
-            cap_para.add_run(caption)
+    label, description = _parse_figure_caption(caption)
 
-    _set_caption_style(cap_para)
+    if cap_para is None:
+        cap_para = _insert_paragraph_after(img_para, "")
+        rebuild_caption_with_seq(cap_para, label, description)
+    else:
+        rebuild_caption_with_seq(cap_para, label, description)
+
+    cap_para.paragraph_format.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
     # Remove duplicate figure captions elsewhere in the document
     fig_match = FIGURE_CAPTION_RE.match(caption.strip())
@@ -281,6 +290,7 @@ async def format_document_images(
         "total_images": fig_num,
         "captions_added": captions_added,
         "tof_added": False,
+        "lof_ready": True,
         "images": results,
         "output_filename": os.path.basename(output_path),
         "manual_items": [],

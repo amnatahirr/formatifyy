@@ -139,6 +139,25 @@ def _format_numbered_heading(text: str, number: str) -> str:
     return f"{number}. {title}" if title else f"{number}."
 
 
+_META_LIST_HEADING_TITLES = frozenset({
+    "table of contents",
+    "contents",
+    "list of tables",
+    "list of figures",
+})
+
+
+def _is_meta_list_section_title(text: str) -> bool:
+    """Return True for front-matter list headings that must not receive section numbers."""
+    normalized = _normalize_section_title(text)
+    if normalized in _META_LIST_HEADING_TITLES:
+        return True
+    return any(
+        normalized == title or normalized.startswith(f"{title} ")
+        for title in _META_LIST_HEADING_TITLES
+    )
+
+
 def _match_required_section(text: str, section_map: Dict[str, Dict[str, Any]]) -> Optional[Dict[str, Any]]:
     normalized = _normalize_section_title(text)
     if not normalized:
@@ -376,7 +395,7 @@ def _reformat_docx(
 
         if is_heading:
             spec = styles.get(f"heading{min(level, 3)}", styles["heading1"])
-            if number_tracker is not None:
+            if number_tracker is not None and not _is_meta_list_section_title(text):
                 number = number_tracker.next_number(level)
                 desired = _format_numbered_heading(text, number)
                 if text != desired:

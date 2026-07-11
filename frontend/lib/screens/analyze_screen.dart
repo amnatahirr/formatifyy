@@ -2251,13 +2251,17 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
   bool _paragraphStyleLoaded = false;
   bool _applyingAllParaStyle = false;
 
-  // ── TOC check state ───────────────────────────────────────────────────────
+  // ── Document lists (TOC / LOT / LOF) state ────────────────────────────────
   Map<String, dynamic> _tocData = {};
   bool _tocLoading = false;
   String? _tocError;
   bool _tocLoaded = false;
   bool _applyingTocStyle = false;
   bool _addingToc = false;
+  bool _generatingLists = false;
+  bool _includeToc = false;
+  bool _includeLot = false;
+  bool _includeLof = false;
 
   // ── Content check state ───────────────────────────────────────────────────
   List<dynamic> _contentIssues = [];
@@ -2289,13 +2293,20 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 7, vsync: this);
+    _tabController = TabController(length: 8, vsync: this);
+    _tabController.addListener(_onAnalysisTabChanged);
     _baseUrl = ApiConfig.getBaseUrl();
     _analysisFuture = _fetchAnalysis();
   }
 
+  void _onAnalysisTabChanged() {
+    if (_tabController.index != 7) return;
+    _loadTocCheck();
+  }
+
   @override
   void dispose() {
+    _tabController.removeListener(_onAnalysisTabChanged);
     _tabController.dispose();
     super.dispose();
   }
@@ -2993,8 +3004,9 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
         ),
       );
       if (resp.statusCode == 200) {
+        final data = jsonDecode(resp.body) as Map<String, dynamic>;
         setState(() {
-          _tocData = jsonDecode(resp.body) as Map<String, dynamic>;
+          _tocData = data;
           _tocLoaded = true;
         });
       } else {
@@ -3004,6 +3016,64 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
       setState(() { _tocError = 'Network error: $e'; });
     } finally {
       setState(() { _tocLoading = false; });
+    }
+  }
+
+  Future<void> _generateSelectedLists() async {
+    if (!_includeToc && !_includeLot && !_includeLof) {
+      _showSnack('Enable at least one list option to generate', _yellow);
+      return;
+    }
+
+    setState(() { _generatingLists = true; });
+    try {
+      final auth = context.read<AuthProvider>();
+      final resp = await http.post(
+        Uri.parse(
+          '$_baseUrl/generate-document-lists/${widget.documentId}'
+          '?user_id=${auth.userId}',
+        ),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'include_toc': _includeToc,
+          'include_lot': _includeLot,
+          'include_lof': _includeLof,
+        }),
+      );
+      final data = jsonDecode(resp.body) as Map<String, dynamic>;
+
+      if (resp.statusCode == 200) {
+        final parts = <String>[];
+        if (data['toc_added'] == true) {
+          parts.add('Table of Contents');
+        }
+        if (data['lot_added'] == true) {
+          parts.add('List of Tables');
+        }
+        if (data['lof_added'] == true) {
+          parts.add('List of Figures');
+        }
+
+        if (parts.isEmpty) {
+          _showSnack(
+            'No new lists were added — selected lists may already exist '
+            'or required content was not found.',
+            _yellow,
+          );
+        } else {
+          _showSnack('Generated: ${parts.join(', ')}', _green);
+        }
+        await _loadTocCheck();
+      } else {
+        _showSnack(
+          data['message'] as String? ?? 'Failed to generate lists: ${resp.body}',
+          _red,
+        );
+      }
+    } catch (e) {
+      _showSnack('Error generating lists: $e', _red);
+    } finally {
+      setState(() { _generatingLists = false; });
     }
   }
 
@@ -3710,6 +3780,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
               Tab(text: 'Image Relevance  (${imageIssues.length})'),
               Tab(text: 'Para Relevance  (${paraRelevanceIssues.length})'),
               Tab(text: 'Plagiarism  (${plagiarismIssues.length})'),
+              Tab(text: 'Document Lists'),
             ],
           ),
         ),
@@ -3739,6 +3810,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
                 Icons.gpp_maybe_outlined,
                 'Pattern-based detection of style shifts and unattributed quotes.',
               ),
+              _buildDocumentListsTab(),
             ],
           ),
         ),
@@ -7112,14 +7184,428 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
   }
 
   // ─────────────────────────────────────────────────────────────────────────
-  // Tab 10: Table of Contents
+  // Tab 8: Document Lists (TOC / LOT / LOF)
   // ─────────────────────────────────────────────────────────────────────────
 
-  Widget _buildTocTab() {
-    return _buildEmptyState(
-      Icons.toc,
-      'Table of Contents',
-      'This feature provides an overview of detected document headings and their hierarchy.',
+  Widget _buildDocumentListsTab() {
+    if (_tocLoading && !_tocLoaded) {
+      return const Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CircularProgressIndicator(color: _blue),
+            SizedBox(height: 14),
+            Text(
+              'Scanning document structure…',
+              style: TextStyle(color: _textSec, fontSize: 12),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (_tocError != null) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.error_outline, color: _red, size: 40),
+            const SizedBox(height: 10),
+            Text(_tocError!, style: const TextStyle(color: _red, fontSize: 12)),
+            const SizedBox(height: 14),
+            ElevatedButton(
+              onPressed: _loadTocCheck,
+              child: const Text('Retry'),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final headingCount = (_tocData['heading_count'] as num?)?.toInt() ?? 0;
+    final tableCount = (_tocData['table_count'] as num?)?.toInt() ?? 0;
+    final figureCount = (_tocData['figure_count'] as num?)?.toInt() ?? 0;
+    final hasToc = _tocData['has_toc'] as bool? ?? false;
+    final tocPopulated = _tocData['toc_populated'] as bool? ?? false;
+    final hasLot = _tocData['has_lot'] as bool? ?? false;
+    final hasLof = _tocData['has_lof'] as bool? ?? false;
+    final headings = _tocData['headings'] as List<dynamic>? ?? [];
+    final tablesMissingCaptions =
+        (_tocData['tables_missing_captions'] as num?)?.toInt() ?? 0;
+    final figuresMissingCaptions =
+        (_tocData['figures_missing_captions'] as num?)?.toInt() ?? 0;
+
+    final canGenerateToc = headingCount > 0;
+    final canGenerateLot = tableCount > 0;
+    final canGenerateLof = figureCount > 0;
+    final anySelected = _includeToc || _includeLot || _includeLof;
+
+    return Column(
+      children: [
+        Expanded(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: _blue.withOpacity(0.15),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Icon(Icons.toc, color: _blue, size: 20),
+                    ),
+                    const SizedBox(width: 12),
+                    const Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Document Lists',
+                            style: TextStyle(
+                              color: _textPri,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          Text(
+                            'Generate dynamic Word fields for TOC, tables, and figures',
+                            style: TextStyle(color: _textSec, fontSize: 12),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                _buildInfoBanner(
+                  'How it works',
+                  'Toggle the lists you want, then click Generate. '
+                      'Word will populate page numbers when you open the exported '
+                      'document and choose Update Table / Update Field.',
+                  _blue,
+                ),
+                const SizedBox(height: 16),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    _Tag('$headingCount headings', _blue),
+                    _Tag('$tableCount tables', _purple),
+                    _Tag('$figureCount figures', _orange),
+                  ],
+                ),
+                const SizedBox(height: 20),
+                _buildListToggleCard(
+                  title: 'Table of Contents',
+                  subtitle: 'Auto-generate from document heading hierarchy (Heading 1–3)',
+                  icon: Icons.format_list_bulleted,
+                  color: _blue,
+                  value: _includeToc,
+                  enabled: canGenerateToc,
+                  statusTag: hasToc
+                      ? (tocPopulated ? 'Added' : 'Placeholder')
+                      : null,
+                  statusColor: hasToc
+                      ? (tocPopulated ? _green : _yellow)
+                      : null,
+                  warning: hasToc && !tocPopulated
+                      ? 'TOC field exists but is empty — click Generate to populate it'
+                      : null,
+                  disabledReason: canGenerateToc
+                      ? null
+                      : 'No headings detected — apply heading styles first',
+                  onChanged: (v) => setState(() => _includeToc = v),
+                ),
+                const SizedBox(height: 12),
+                _buildListToggleCard(
+                  title: 'List of Tables',
+                  subtitle: 'Auto-generate from table captions (Table N: …)',
+                  icon: Icons.table_chart_outlined,
+                  color: _purple,
+                  value: _includeLot,
+                  enabled: canGenerateLot,
+                  statusTag: hasLot ? 'Added' : null,
+                  statusColor: hasLot ? _green : null,
+                  disabledReason: canGenerateLot
+                      ? null
+                      : 'No tables detected in this document',
+                  warning: tablesMissingCaptions > 0
+                      ? '$tablesMissingCaptions table(s) missing captions — '
+                          'captions will be added automatically'
+                      : null,
+                  onChanged: (v) => setState(() => _includeLot = v),
+                ),
+                const SizedBox(height: 12),
+                _buildListToggleCard(
+                  title: 'List of Figures',
+                  subtitle: 'Auto-generate from figure captions (Figure N: …)',
+                  icon: Icons.image_outlined,
+                  color: _orange,
+                  value: _includeLof,
+                  enabled: canGenerateLof,
+                  statusTag: hasLof ? 'Added' : null,
+                  statusColor: hasLof ? _green : null,
+                  disabledReason: canGenerateLof
+                      ? null
+                      : 'No figures/images detected in this document',
+                  warning: figuresMissingCaptions > 0
+                      ? '$figuresMissingCaptions figure(s) missing captions — '
+                          'format images first or captions will be added'
+                      : null,
+                  onChanged: (v) => setState(() => _includeLof = v),
+                ),
+                if (headings.isNotEmpty) ...[
+                  const SizedBox(height: 24),
+                  Text(
+                    'Detected Headings',
+                    style: const TextStyle(
+                      color: _textPri,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  ...headings.take(12).map((h) {
+                    final item = h as Map<String, dynamic>;
+                    final level = (item['level'] as num?)?.toInt() ?? 1;
+                    final text = item['text'] as String? ?? '';
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 4),
+                      padding: EdgeInsets.fromLTRB(12 + (level - 1) * 14.0, 8, 12, 8),
+                      decoration: BoxDecoration(
+                        color: _surface,
+                        borderRadius: BorderRadius.circular(6),
+                        border: const Border(
+                          left: BorderSide(color: _blue, width: 3),
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          _Tag('H$level', _blue),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              text,
+                              style: const TextStyle(
+                                color: _textPri,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  }),
+                  if (headings.length > 12)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 6),
+                      child: Text(
+                        '+ ${headings.length - 12} more headings',
+                        style: const TextStyle(color: _textSec, fontSize: 11),
+                      ),
+                    ),
+                ],
+              ],
+            ),
+          ),
+        ),
+        _buildDocumentListsActionBar(anySelected: anySelected),
+      ],
+    );
+  }
+
+  Widget _buildListToggleCard({
+    required String title,
+    required String subtitle,
+    required IconData icon,
+    required Color color,
+    required bool value,
+    required bool enabled,
+    String? statusTag,
+    Color? statusColor,
+    required ValueChanged<bool> onChanged,
+    String? disabledReason,
+    String? warning,
+  }) {
+    return Opacity(
+      opacity: enabled ? 1.0 : 0.55,
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: _surface,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: value && enabled ? color.withOpacity(0.45) : _border,
+            width: value && enabled ? 1.5 : 1,
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: color.withOpacity(0.12),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Icon(icon, color: color, size: 18),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              title,
+                              style: const TextStyle(
+                                color: _textPri,
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                          if (statusTag != null)
+                            _Tag(statusTag, statusColor ?? _green),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        subtitle,
+                        style: const TextStyle(
+                          color: _textSec,
+                          fontSize: 11,
+                          height: 1.4,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Transform.scale(
+                  scale: 0.9,
+                  child: Switch(
+                    value: value,
+                    onChanged: enabled ? onChanged : null,
+                    activeColor: color,
+                    inactiveThumbColor: _textSec,
+                    inactiveTrackColor: _border,
+                  ),
+                ),
+              ],
+            ),
+            if (!enabled && disabledReason != null) ...[
+              const SizedBox(height: 10),
+              Text(
+                disabledReason,
+                style: TextStyle(
+                  color: _red.withOpacity(0.85),
+                  fontSize: 11,
+                ),
+              ),
+            ],
+            if (enabled && warning != null) ...[
+              const SizedBox(height: 10),
+              Text(
+                warning,
+                style: TextStyle(
+                  color: _yellow.withOpacity(0.9),
+                  fontSize: 11,
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDocumentListsActionBar({required bool anySelected}) {
+    final selectedCount = [
+      if (_includeToc) 'TOC',
+      if (_includeLot) 'LOT',
+      if (_includeLof) 'LOF',
+    ].length;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+      decoration: const BoxDecoration(
+        color: _surface,
+        border: Border(top: BorderSide(color: _border)),
+      ),
+      child: Row(
+        children: [
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                anySelected
+                    ? '$selectedCount list${selectedCount == 1 ? '' : 's'} selected'
+                    : 'No lists selected',
+                style: TextStyle(
+                  color: anySelected ? _textPri : _textSec,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const Text(
+                'Fields update page numbers in Microsoft Word',
+                style: TextStyle(color: _textSec, fontSize: 11),
+              ),
+            ],
+          ),
+          const Spacer(),
+          TextButton.icon(
+            onPressed: _tocLoading ? null : _loadTocCheck,
+            icon: const Icon(Icons.refresh, size: 14),
+            label: const Text('Re-scan', style: TextStyle(fontSize: 12)),
+            style: TextButton.styleFrom(foregroundColor: _textSec),
+          ),
+          const SizedBox(width: 12),
+          ElevatedButton.icon(
+            onPressed: (!anySelected || _generatingLists)
+                ? null
+                : _generateSelectedLists,
+            icon: _generatingLists
+                ? const SizedBox(
+                    width: 14,
+                    height: 14,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  )
+                : const Icon(Icons.playlist_add_check, size: 16),
+            label: Text(
+              _generatingLists
+                  ? 'Generating…'
+                  : anySelected
+                      ? 'Generate Selected Lists'
+                      : 'Select lists above',
+              style: const TextStyle(fontSize: 13),
+            ),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: anySelected ? _blue : _surface2,
+              foregroundColor: anySelected ? Colors.white : _textSec,
+              disabledBackgroundColor: _surface2,
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
