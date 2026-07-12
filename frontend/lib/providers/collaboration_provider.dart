@@ -11,6 +11,8 @@ class CollaborationProvider extends ChangeNotifier {
   List<Map<String, dynamic>> sections = [];
   List<Map<String, dynamic>> history = [];
   List<Map<String, dynamic>> projectHistory = [];
+  /// Cross-project recent commits for the Collaboration hub summary panel.
+  List<Map<String, dynamic>> hubActivity = [];
   Map<String, dynamic>? mergeStatus;
   bool loading = false;
   String? error;
@@ -152,6 +154,41 @@ class CollaborationProvider extends ChangeNotifier {
     return resp.statusCode == 200;
   }
 
+  /// Upload/re-upload a .docx — creates new versioned import commits (never silent overwrite).
+  Future<bool> uploadProjectDocument(int projectId, File documentFile) async {
+    loading = true;
+    error = null;
+    notifyListeners();
+    try {
+      final request = http.MultipartRequest(
+        'POST',
+        Uri.parse(_base('/vc/projects/$projectId/document')),
+      );
+      request.files.add(
+        await http.MultipartFile.fromPath('file', documentFile.path),
+      );
+      final streamed = await request.send();
+      final body = await streamed.stream.bytesToString();
+      if (streamed.statusCode == 200) {
+        currentProject = Map<String, dynamic>.from(jsonDecode(body) as Map);
+        sections = (currentProject!['sections'] as List? ?? [])
+            .map((e) => Map<String, dynamic>.from(e as Map))
+            .toList();
+        await loadProjectHistory(projectId);
+        await fetchProjects();
+        return true;
+      }
+      error = body;
+      return false;
+    } catch (e) {
+      error = e.toString();
+      return false;
+    } finally {
+      loading = false;
+      notifyListeners();
+    }
+  }
+
   Future<bool> saveSection({
     required int projectId,
     required String sectionId,
@@ -206,6 +243,50 @@ class CollaborationProvider extends ChangeNotifier {
       loading = false;
       notifyListeners();
     }
+  }
+
+  /// Loads recent commits across the user's projects for the hub preview.
+  Future<void> loadHubActivitySummary({int maxProjects = 5, int maxItems = 12}) async {
+    if (projects.isEmpty) {
+      hubActivity = [];
+      notifyListeners();
+      return;
+    }
+
+    final selected = projects.take(maxProjects).toList();
+    final collected = <Map<String, dynamic>>[];
+
+    for (final p in selected) {
+      final projectId = p['id'] as int?;
+      if (projectId == null) continue;
+      try {
+        final resp = await http.get(
+          Uri.parse(_base('/vc/projects/$projectId/history')),
+        );
+        if (resp.statusCode != 200) continue;
+        final data = jsonDecode(resp.body) as Map<String, dynamic>;
+        final history = (data['history'] as List? ?? [])
+            .map((e) => Map<String, dynamic>.from(e as Map))
+            .toList();
+        for (final c in history) {
+          collected.add({
+            ...c,
+            'project_id': projectId,
+            'project_name': p['name'] as String? ?? 'Project',
+          });
+        }
+      } catch (_) {
+        // Skip failed project history fetches for hub summary.
+      }
+    }
+
+    collected.sort((a, b) {
+      final aAt = a['created_at'] as String? ?? '';
+      final bAt = b['created_at'] as String? ?? '';
+      return bAt.compareTo(aAt);
+    });
+    hubActivity = collected.take(maxItems).toList();
+    notifyListeners();
   }
 
   Future<bool> rollback(int projectId, String sectionId, int commitId) async {

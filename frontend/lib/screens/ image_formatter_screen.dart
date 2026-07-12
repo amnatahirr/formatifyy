@@ -90,6 +90,9 @@ class _ImageFormatterBody extends StatelessWidget {
               case 1:
                 Navigator.pushNamedAndRemoveUntil(context, '/new-report', (_) => false);
                 break;
+              case 3:
+                Navigator.pushNamedAndRemoveUntil(context, '/collaboration', (_) => false);
+                break;
             }
           },
         ),

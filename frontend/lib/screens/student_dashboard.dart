@@ -14,18 +14,30 @@ import '../providers/collaboration_provider.dart';
 import 'new_report_screen.dart';
 import 'analyze_screen.dart';
 import '../widgets/export_dialog.dart';
+import '../widgets/collaboration/project_card.dart';
 import 'collaboration/project_dashboard_screen.dart';
-import 'collaboration/project_history_screen.dart';
+import 'collaboration/project_detail_screen.dart';
 
 class StudentDashboard extends StatefulWidget {
-  const StudentDashboard({Key? key}) : super(key: key);
+  final int initialIndex;
+  final int? initialProjectId;
+  final int initialProjectTab;
+
+  const StudentDashboard({
+    Key? key,
+    this.initialIndex = 0,
+    this.initialProjectId,
+    this.initialProjectTab = 0,
+  }) : super(key: key);
 
   @override
   State<StudentDashboard> createState() => _StudentDashboardState();
 }
 
 class _StudentDashboardState extends State<StudentDashboard> {
-  int _selectedIndex = 0;
+  late int _selectedIndex;
+  int? _activeProjectId;
+  int _projectDetailTab = 0;
   Map<String, dynamic>? _selectedTemplate;
   String _searchQuery = '';
   String _selectedFilter = 'all';
@@ -37,6 +49,9 @@ class _StudentDashboardState extends State<StudentDashboard> {
   @override
   void initState() {
     super.initState();
+    _selectedIndex = widget.initialIndex.clamp(0, 6);
+    _activeProjectId = widget.initialProjectId;
+    _projectDetailTab = widget.initialProjectTab;
     _loadInitialData();
   }
 
@@ -161,16 +176,21 @@ class _StudentDashboardState extends State<StudentDashboard> {
                 ),
                 _buildSidebarItem(
                   3,
+                  Icons.people_outline,
+                  'Collaboration',
+                ),
+                _buildSidebarItem(
+                  4,
                   Icons.auto_awesome,
                   'AI Tools',
                 ),
                 _buildSidebarItem(
-                  4,
+                  5,
                   Icons.layers,
                   'Templates',
                 ),
                 _buildSidebarItem(
-                  5,
+                  6,
                   Icons.settings,
                   'Settings',
                 ),
@@ -270,7 +290,10 @@ class _StudentDashboardState extends State<StudentDashboard> {
       color: isSelected ? const Color(0xFF3B82F6).withOpacity(0.15) : Colors.transparent,
       child: InkWell(
         onTap: () {
-          setState(() => _selectedIndex = index);
+          setState(() {
+            _selectedIndex = index;
+            _activeProjectId = null;
+          });
         },
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -302,15 +325,35 @@ class _StudentDashboardState extends State<StudentDashboard> {
   }
 
   Widget _buildTopBar() {
-    final titles = ['Dashboard', 'New Report', 'My Reports', 'AI Tools', 'Templates', 'Settings'];
+    final titles = [
+      'Dashboard',
+      'New Report',
+      'My Reports',
+      'Collaboration',
+      'AI Tools',
+      'Templates',
+      'Settings',
+    ];
     final descriptions = [
       'Here\'s your report overview.',
       'Choose a template and start formatting your report. Upload from local files, Google Drive, or paste content directly.',
       'Manage and view all your uploaded reports',
+      'Create projects, invite teammates, and track shared work.',
       'Powerful AI-powered tools to enhance your reports',
       'Choose from pre-built academic report templates',
       'Manage your account settings and preferences',
     ];
+
+    final showingProject = _activeProjectId != null;
+    final projectName = context.watch<CollaborationProvider>().currentProject?['name'] as String?;
+    final title = showingProject
+        ? (projectName ?? 'Project')
+        : titles[_selectedIndex];
+    final description = showingProject
+        ? 'Shared project workspace'
+        : (_selectedIndex == 0
+            ? 'Welcome back, ${context.watch<AuthProvider>().currentUser ?? "User"}. ${descriptions[_selectedIndex]}'
+            : descriptions[_selectedIndex]);
 
     return Container(
       decoration: BoxDecoration(
@@ -329,24 +372,20 @@ class _StudentDashboardState extends State<StudentDashboard> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                titles[_selectedIndex],
+                title,
                 style: const TextStyle(
                   fontSize: 28,
                   fontWeight: FontWeight.w700,
                   color: Colors.white,
                 ),
               ),
-              Consumer<AuthProvider>(
-                builder: (context, auth, _) {
-                  return Text(
-                    _selectedIndex == 0 ? 'Welcome back, ${auth.currentUser ?? "User"}. ${descriptions[_selectedIndex]}' : descriptions[_selectedIndex],
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: Colors.white.withOpacity(0.6),
-                      fontWeight: FontWeight.w400,
-                    ),
-                  );
-                },
+              Text(
+                description,
+                style: TextStyle(
+                  fontSize: 13,
+                  color: Colors.white.withOpacity(0.6),
+                  fontWeight: FontWeight.w400,
+                ),
               ),
             ],
           ),
@@ -370,7 +409,10 @@ class _StudentDashboardState extends State<StudentDashboard> {
               const SizedBox(width: 12),
               GestureDetector(
                 onTap: () {
-                  setState(() => _selectedIndex = 1);
+                  setState(() {
+                    _selectedIndex = 1;
+                    _activeProjectId = null;
+                  });
                 },
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -402,6 +444,16 @@ class _StudentDashboardState extends State<StudentDashboard> {
   }
 
   Widget _buildBody() {
+    if (_activeProjectId != null) {
+      return ProjectDetailScreen(
+        key: ValueKey('project-$_activeProjectId-$_projectDetailTab'),
+        projectId: _activeProjectId!,
+        initialTab: _projectDetailTab,
+        embedded: true,
+        onBack: () => setState(() => _activeProjectId = null),
+      );
+    }
+
     if (_selectedIndex == 2) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         final auth = context.read<AuthProvider>();
@@ -418,10 +470,15 @@ class _StudentDashboardState extends State<StudentDashboard> {
       case 2:
         return _buildMyReportsPage();
       case 3:
-        return _buildAIToolsPage();
+        return ProjectDashboardScreen(
+          embedded: true,
+          onOpenProject: _openProjectById,
+        );
       case 4:
-        return _buildTemplatesPage();
+        return _buildAIToolsPage();
       case 5:
+        return _buildTemplatesPage();
+      case 6:
         return _buildSettingsPage();
       default:
         return const SizedBox.shrink();
@@ -603,7 +660,10 @@ class _StudentDashboardState extends State<StudentDashboard> {
               ),
               GestureDetector(
                 onTap: () {
-                  setState(() => _selectedIndex = 2);
+                  setState(() {
+                    _selectedIndex = 2;
+                    _activeProjectId = null;
+                  });
                 },
                 child: Text(
                   'View All',
@@ -839,10 +899,32 @@ class _StudentDashboardState extends State<StudentDashboard> {
     );
   }
 
+  void _openCollaborationHub() {
+    setState(() {
+      _selectedIndex = 3;
+      _activeProjectId = null;
+    });
+  }
+
+  void _openProjectById(int projectId, {int tab = 0}) {
+    setState(() {
+      _selectedIndex = 3;
+      _activeProjectId = projectId;
+      _projectDetailTab = tab;
+    });
+  }
+
+  void _openProject(Map<String, dynamic> p, {int tab = 0}) {
+    final id = p['id'] as int?;
+    if (id == null) return;
+    _openProjectById(id, tab: tab);
+  }
+
   Widget _buildSharedProjectsSection() {
     return Consumer<CollaborationProvider>(
       builder: (context, vc, _) {
         final projects = vc.projects;
+        final recent = projects.take(3).toList();
 
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -850,7 +932,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
             Row(
               children: [
                 const Text(
-                  'Shared Projects',
+                  'Recent collaborations',
                   style: TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w600,
@@ -858,32 +940,30 @@ class _StudentDashboardState extends State<StudentDashboard> {
                   ),
                 ),
                 const SizedBox(width: 8),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF10B981).withOpacity(0.15),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Text(
-                    '${projects.length}',
-                    style: const TextStyle(
-                      color: Color(0xFF10B981),
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
+                if (projects.isNotEmpty)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF10B981).withOpacity(0.15),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      '${projects.length}',
+                      style: const TextStyle(
+                        color: Color(0xFF10B981),
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                   ),
-                ),
                 const Spacer(),
-                TextButton.icon(
-                  onPressed: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => const ProjectDashboardScreen(),
-                    ),
+                TextButton(
+                  onPressed: _openCollaborationHub,
+                  style: TextButton.styleFrom(
+                    foregroundColor: const Color(0xFF6366F1),
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
                   ),
-                  icon: const Icon(Icons.add, size: 16),
-                  label: const Text('New Project'),
-                  style: TextButton.styleFrom(foregroundColor: const Color(0xFF6366F1)),
+                  child: const Text('View all'),
                 ),
               ],
             ),
@@ -909,23 +989,22 @@ class _StudentDashboardState extends State<StudentDashboard> {
                     Icon(Icons.people_outline, size: 32, color: Colors.white.withOpacity(0.3)),
                     const SizedBox(height: 8),
                     Text(
-                      'No shared projects yet',
+                      'No collaborations yet',
                       style: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 13),
                     ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Create or join a project from Collaboration',
+                      style: TextStyle(color: Colors.white.withOpacity(0.35), fontSize: 12),
+                    ),
                     const SizedBox(height: 12),
-                    OutlinedButton.icon(
-                      onPressed: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => const ProjectDashboardScreen(),
-                        ),
-                      ),
-                      icon: const Icon(Icons.people, size: 16),
-                      label: const Text('Start Collaborating'),
+                    OutlinedButton(
+                      onPressed: _openCollaborationHub,
                       style: OutlinedButton.styleFrom(
                         foregroundColor: const Color(0xFF10B981),
                         side: const BorderSide(color: Color(0xFF10B981)),
                       ),
+                      child: const Text('Open Collaboration'),
                     ),
                   ],
                 ),
@@ -934,102 +1013,18 @@ class _StudentDashboardState extends State<StudentDashboard> {
               Wrap(
                 spacing: 12,
                 runSpacing: 12,
-                children: projects.map((p) => _buildSharedProjectCard(p)).toList(),
+                children: recent
+                    .map(
+                      (p) => ProjectCard(
+                        project: p,
+                        onTap: () => _openProject(p),
+                      ),
+                    )
+                    .toList(),
               ),
           ],
         );
       },
-    );
-  }
-
-  Widget _buildSharedProjectCard(Map<String, dynamic> p) {
-    final status = p['status'] as String? ?? 'active';
-    final statusColor = status == 'merged'
-        ? const Color(0xFF10B981)
-        : status == 'active'
-            ? const Color(0xFF3B82F6)
-            : const Color(0xFF94A3B8);
-
-    return GestureDetector(
-      onTap: () => Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => ProjectHistoryScreen(
-            projectId: p['id'] as int,
-            projectName: p['name'] as String? ?? 'Project',
-          ),
-        ),
-      ),
-      child: MouseRegion(
-        cursor: SystemMouseCursors.click,
-        child: Container(
-          width: 280,
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: const Color(0xFF161B22),
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Colors.white.withOpacity(0.1)),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF10B981).withOpacity(0.15),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: const Icon(Icons.folder_shared, color: Color(0xFF10B981), size: 18),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      p['name'] as String? ?? 'Project',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w600,
-                        fontSize: 13,
-                      ),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                  Icon(Icons.history, size: 16, color: Colors.white.withOpacity(0.4)),
-                ],
-              ),
-              const SizedBox(height: 10),
-              Text(
-                p['template_name'] as String? ?? 'Template',
-                style: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 11),
-              ),
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  Icon(Icons.people, size: 12, color: Colors.white.withOpacity(0.4)),
-                  const SizedBox(width: 4),
-                  Text(
-                    '${p['member_count'] ?? 1} members',
-                    style: TextStyle(color: Colors.white.withOpacity(0.4), fontSize: 11),
-                  ),
-                  const Spacer(),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: statusColor.withOpacity(0.15),
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: Text(
-                      status,
-                      style: TextStyle(color: statusColor, fontSize: 10, fontWeight: FontWeight.w600),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ),
     );
   }
 
@@ -1054,7 +1049,10 @@ class _StudentDashboardState extends State<StudentDashboard> {
                 'Start from scratch or use a template',
                 Icons.description,
                 const Color(0xFF3B82F6),
-                onTap: () => setState(() => _selectedIndex = 1),
+                onTap: () => setState(() {
+                  _selectedIndex = 1;
+                  _activeProjectId = null;
+                }),
               ),
             ),
             const SizedBox(width: 16),
@@ -1064,7 +1062,10 @@ class _StudentDashboardState extends State<StudentDashboard> {
                 'Upload existing files to format',
                 Icons.upload_file,
                 const Color(0xFF8B5CF6),
-                onTap: () => setState(() => _selectedIndex = 1),
+                onTap: () => setState(() {
+                  _selectedIndex = 1;
+                  _activeProjectId = null;
+                }),
               ),
             ),
             const SizedBox(width: 16),
@@ -1074,7 +1075,10 @@ class _StudentDashboardState extends State<StudentDashboard> {
                 'Explore academic report templates',
                 Icons.layers,
                 const Color(0xFF06B6D4),
-                onTap: () => setState(() => _selectedIndex = 4),
+                onTap: () => setState(() {
+                  _selectedIndex = 5;
+                  _activeProjectId = null;
+                }),
               ),
             ),
             const SizedBox(width: 16),
@@ -1084,12 +1088,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
                 'Share and work with team members',
                 Icons.people,
                 const Color(0xFF10B981),
-                onTap: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => const ProjectDashboardScreen(),
-                  ),
-                ),
+                onTap: _openCollaborationHub,
               ),
             ),
           ],
@@ -1156,7 +1155,10 @@ class _StudentDashboardState extends State<StudentDashboard> {
   }
 
   Widget _buildNewReportPage() {
-    return NewReportScreen(selectedTemplate: _selectedTemplate);
+    return NewReportScreen(
+      selectedTemplate: _selectedTemplate,
+      embedded: true,
+    );
   }
 
   void _openAnalyzeScreen(Map<String, dynamic> doc) {
@@ -2978,6 +2980,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
                             setState(() {
                               _selectedTemplate = template;
                               _selectedIndex = 1; // Switch to New Report tab
+                              _activeProjectId = null;
                             });
                             Navigator.pop(context);
                           },

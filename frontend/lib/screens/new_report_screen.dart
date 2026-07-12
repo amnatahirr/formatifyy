@@ -1433,8 +1433,14 @@ import 'package:url_launcher/url_launcher.dart';
 
 class NewReportScreen extends StatefulWidget {
   final Map<String, dynamic>? selectedTemplate;
+  /// When true, renders inside StudentDashboard (no outer Scaffold).
+  final bool embedded;
 
-  const NewReportScreen({Key? key, this.selectedTemplate}) : super(key: key);
+  const NewReportScreen({
+    Key? key,
+    this.selectedTemplate,
+    this.embedded = false,
+  }) : super(key: key);
 
   @override
   State<NewReportScreen> createState() => _NewReportScreenState();
@@ -1939,9 +1945,7 @@ void _showSuccess(String message) {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFF0D1117),
-      body: SingleChildScrollView(
+    final body = SingleChildScrollView(
         padding: const EdgeInsets.all(32),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -1991,7 +1995,18 @@ void _showSuccess(String message) {
               _buildUploadFromPhoneUI(),
           ],
         ),
-      ),
+    );
+
+    if (widget.embedded) {
+      return ColoredBox(
+        color: const Color(0xFF0D1117),
+        child: body,
+      );
+    }
+
+    return Scaffold(
+      backgroundColor: const Color(0xFF0D1117),
+      body: body,
     );
   }
 

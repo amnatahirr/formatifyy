@@ -239,6 +239,137 @@ def create_project_with_document(
     )
 
 
+def upload_project_document(
+    project_id: int,
+    user_id: int,
+    docx_path: str,
+    original_filename: str,
+) -> Dict[str, Any]:
+    """
+    Attach or replace the project document.
+    Always creates new section commits (commit_type=import) — never silent overwrite.
+    """
+    _require_member(project_id, user_id)
+    if not docx_path or not os.path.exists(docx_path):
+        raise HTTPException(status_code=400, detail="Document file missing")
+    if not original_filename.lower().endswith(".docx"):
+        raise HTTPException(status_code=400, detail="Only .docx files are supported")
+
+    project = _get_project(project_id)
+    tmpl = get_template_by_id(project["template_id"]) or {}
+    template_sections = parse_template_sections(tmpl.get("required_sections", []))
+
+    project_dir = os.path.join(VC_UPLOAD_DIR, f"project_{project_id}")
+    os.makedirs(project_dir, exist_ok=True)
+    permanent_doc_path = os.path.join(
+        project_dir, f"base_{uuid.uuid4().hex[:8]}.docx",
+    )
+    shutil.copy2(docx_path, permanent_doc_path)
+
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        UPDATE collaboration_projects
+        SET base_document_path = ?, base_document_filename = ?,
+            shared_snapshot_path = ?
+        WHERE id = ?
+        """,
+        (permanent_doc_path, original_filename, permanent_doc_path, project_id),
+    )
+    conn.commit()
+    conn.close()
+
+    section_contents = extract_sections_from_docx(permanent_doc_path, template_sections)
+    commits_created = 0
+    for sec in template_sections:
+        sid = sec["section_id"]
+        content = (section_contents.get(sid) or "").strip()
+        if not content:
+            continue
+        create_commit(
+            project_id,
+            sid,
+            user_id,
+            content,
+            message=f"Document upload: {original_filename}",
+            commit_type="import",
+        )
+        commits_created += 1
+
+    reports_sync = sync_project_to_member_reports(project_id)
+    detail = get_project_detail(project_id, user_id)
+    detail["upload"] = {
+        "filename": original_filename,
+        "commits_created": commits_created,
+        "reports_sync": reports_sync,
+    }
+    return detail
+
+
+def resolve_project_download(
+    project_id: int,
+    user_id: int,
+    merge_id: Optional[int] = None,
+) -> Dict[str, str]:
+    """
+    Resolve a downloadable .docx path.
+    Preference: explicit merge → merged_file_path → shared_snapshot → base_document
+    → assemble from latest section content.
+    """
+    _require_member(project_id, user_id)
+    project = _get_project(project_id)
+
+    file_path: Optional[str] = None
+    if merge_id:
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT merged_file_path FROM project_merges WHERE id = ? AND project_id = ?",
+            (merge_id, project_id),
+        )
+        row = cursor.fetchone()
+        conn.close()
+        if row and row["merged_file_path"]:
+            file_path = row["merged_file_path"]
+
+    if not file_path or not os.path.exists(file_path or ""):
+        file_path = project.get("merged_file_path")
+
+    if not file_path or not os.path.exists(file_path or ""):
+        file_path = project.get("shared_snapshot_path")
+
+    if not file_path or not os.path.exists(file_path or ""):
+        file_path = project.get("base_document_path")
+
+    if file_path and os.path.exists(file_path):
+        filename = (
+            project.get("base_document_filename")
+            or os.path.basename(file_path)
+        )
+        return {"path": file_path, "filename": filename}
+
+    # Assemble from latest section text so empty/merge-less projects still download.
+    sections = get_project_sections(project_id)
+    latest = get_latest_content_map(project_id)
+    content_map = {sid: (data.get("content") or "") for sid, data in latest.items()}
+    if not any(c.strip() for c in content_map.values()) and not sections:
+        raise HTTPException(status_code=404, detail="No document available to download")
+
+    project_dir = os.path.join(VC_UPLOAD_DIR, f"project_{project_id}")
+    os.makedirs(project_dir, exist_ok=True)
+    assembled = os.path.join(project_dir, "download_latest.docx")
+    assemble_merged_docx(
+        sections,
+        content_map,
+        assembled,
+        int(project["template_id"]),
+    )
+    name = project.get("name") or "project"
+    safe = "".join(c if c.isalnum() or c in ("-", "_") else "_" for c in name)
+    return {"path": assembled, "filename": f"{safe}.docx"}
+
+
 def get_project_history(project_id: int, user_id: int) -> List[Dict[str, Any]]:
     """All commits across every section, chronological order."""
     _require_member(project_id, user_id)
@@ -421,6 +552,8 @@ def get_project_detail(project_id: int, user_id: int) -> Dict[str, Any]:
     project = _get_project(project_id)
     tmpl = get_template_by_id(project["template_id"]) or {}
     project["template_name"] = tmpl.get("name")
+    owner = _get_user(int(project["created_by"]))
+    project["owner_name"] = owner.get("username") if owner else None
     project["sections"] = get_sections_with_latest(project_id)
     project["members"] = list_project_members(project_id)
     return project

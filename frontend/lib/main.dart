@@ -11,7 +11,6 @@ import 'screens/admin_dashboard.dart';
 import 'screens/mobile_qr_upload_screen.dart';
 import 'screens/mobile_qr_download_screen.dart';
 import 'screens/mobile_companion_screen.dart';
-import 'screens/new_report_screen.dart';
 import 'providers/auth_provider.dart';
 import 'providers/document_provider.dart';
 import 'providers/template_provider.dart';
@@ -172,7 +171,23 @@ class _MyAppState extends State<MyApp> {
           '/login': (_) => const LoginScreen(),
           '/student-dashboard': (_) => const StudentDashboard(),
           '/admin-dashboard': (_) => const AdminDashboard(),
-          '/new-report': (_) => const NewReportScreen(),
+          '/new-report': (_) => const StudentDashboard(initialIndex: 1),
+          '/collaboration': (_) => const StudentDashboard(initialIndex: 3),
+          '/collaboration/project': (context) {
+            final args = ModalRoute.of(context)?.settings.arguments;
+            final projectId = args is int
+                ? args
+                : (args is Map ? args['projectId'] as int? : null);
+            if (projectId == null) {
+              return const StudentDashboard(initialIndex: 3);
+            }
+            final initialTab = args is Map ? (args['tab'] as int? ?? 0) : 0;
+            return StudentDashboard(
+              initialIndex: 3,
+              initialProjectId: projectId,
+              initialProjectTab: initialTab,
+            );
+          },
         },
         darkTheme: ThemeData(
           useMaterial3: true,

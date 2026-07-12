@@ -32,8 +32,10 @@ from vc.service import (
     list_section_images,
     list_user_projects,
     resolve_conflict,
+    resolve_project_download,
     rollback_section,
     start_merge,
+    upload_project_document,
     upload_section_image,
     VC_UPLOAD_DIR,
 )
@@ -86,6 +88,37 @@ async def api_list_projects(user_id: int = Query(...)):
 @router.get("/projects/{project_id}")
 async def api_get_project(project_id: int, user_id: int = Query(...)):
     return get_project_detail(project_id, user_id)
+
+
+@router.post("/projects/{project_id}/document")
+async def api_upload_project_document(
+    project_id: int,
+    user_id: int = Query(...),
+    file: UploadFile = File(...),
+):
+    """Upload or re-upload a project .docx as new versioned section commits."""
+    if not file.filename or not file.filename.lower().endswith(".docx"):
+        raise HTTPException(status_code=400, detail="Only .docx files are supported")
+
+    temp_dir = os.path.join(VC_UPLOAD_DIR, "temp")
+    os.makedirs(temp_dir, exist_ok=True)
+    docx_path = os.path.join(temp_dir, f"upload_{uuid.uuid4().hex[:8]}.docx")
+    with open(docx_path, "wb") as f:
+        shutil.copyfileobj(file.file, f)
+
+    try:
+        return upload_project_document(
+            project_id,
+            user_id,
+            docx_path,
+            file.filename,
+        )
+    finally:
+        if os.path.exists(docx_path):
+            try:
+                os.remove(docx_path)
+            except OSError:
+                pass
 
 
 @router.post("/projects/join")
@@ -252,33 +285,11 @@ async def api_download_merged(
     user_id: int = Query(...),
     merge_id: int = Query(None),
 ):
-    from vc.service import _get_project, _require_member
-
-    _require_member(project_id, user_id)
-    project = _get_project(project_id)
-
-    file_path = project.get("merged_file_path")
-    if merge_id:
-        from database import get_db
-
-        conn = get_db()
-        cursor = conn.cursor()
-        cursor.execute(
-            "SELECT merged_file_path FROM project_merges WHERE id = ? AND project_id = ?",
-            (merge_id, project_id),
-        )
-        row = cursor.fetchone()
-        conn.close()
-        if row and row["merged_file_path"]:
-            file_path = row["merged_file_path"]
-
-    if not file_path or not os.path.exists(file_path):
-        raise HTTPException(status_code=404, detail="Merged document not available")
-
+    resolved = resolve_project_download(project_id, user_id, merge_id)
     return FileResponse(
-        file_path,
+        resolved["path"],
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        filename=os.path.basename(file_path),
+        filename=resolved["filename"],
     )
 
 
@@ -293,11 +304,13 @@ async def vc_websocket(websocket: WebSocket, project_id: int, user_id: int = Que
         return
 
     await vc_manager.connect(websocket, project_id, user_id)
+    online = sorted(vc_manager.online_user_ids(project_id))
     await vc_manager.broadcast(project_id, {
         "type": "member_joined",
         "project_id": project_id,
         "user_id": user_id,
-        "online_count": len(vc_manager.online_user_ids(project_id)),
+        "online_count": len(online),
+        "online_user_ids": online,
     })
 
     try:
@@ -307,9 +320,11 @@ async def vc_websocket(websocket: WebSocket, project_id: int, user_id: int = Que
                 await websocket.send_text('{"type":"pong"}')
     except WebSocketDisconnect:
         vc_manager.disconnect(websocket)
+        online = sorted(vc_manager.online_user_ids(project_id))
         await vc_manager.broadcast(project_id, {
             "type": "member_left",
             "project_id": project_id,
             "user_id": user_id,
-            "online_count": len(vc_manager.online_user_ids(project_id)),
+            "online_count": len(online),
+            "online_user_ids": online,
         })
