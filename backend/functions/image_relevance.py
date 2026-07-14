@@ -1,225 +1,387 @@
 """
-functions/image_relevance.py — Image-to-text relevance checker.
+functions/image_relevance.py — Local image–section relevance detector.
 
-Model: claude-sonnet-4-6
+Runs fully offline (no Claude / GPT / Gemini APIs).
 
-Checks whether each image is relevant to the surrounding paragraph text.
-The prompt instructs Claude to quote the surrounding text and explain why
-the image does or does not belong.
+Optimisations vs first version:
+  - CLIP similarity only (no second BLIP caption pass by default)
+  - Reuses cached BLIP caption for light keyword bonus when available
+  - Images downscaled in local_vision before inference
 """
 
 from __future__ import annotations
 
-import json
+import asyncio
 import re
-from typing import Any, Dict, List
-
-import anthropic
+from typing import Any, Dict, List, Optional
 
 from models import Batch
+from functions.local_vision import (
+    clip_similarity_from_b64,
+    generate_caption_from_b64,
+    image_fingerprint,
+)
 
-from config import ANALYSIS_MODEL
+
+DEFAULT_RELEVANCE_THRESHOLD = 0.22
+_KEYWORD_BONUS_MAX = 0.08
+
+
+def _build_section_text(heading: str, paragraph: str) -> str:
+    parts = [p.strip() for p in (heading or "", paragraph or "") if p and p.strip()]
+    return " ".join(parts).strip() or "empty document section"
+
+
+def _extract_keywords(text: str) -> set:
+    stop = {
+        "the", "and", "for", "with", "this", "that", "from", "are", "was", "has",
+        "have", "its", "into", "also", "below", "above", "following", "shows",
+        "shown", "figure", "image", "diagram", "each", "used", "uses", "using",
+        "based", "which", "their", "they", "them", "then", "than", "when",
+        "where", "how", "all", "any", "can", "may", "will", "two", "one",
+        "data", "system", "process", "result", "results", "report",
+    }
+    words = set(re.findall(r"\b[a-zA-Z]{4,}\b", (text or "").lower()))
+    return words - stop
+
+
+def analyze_image_relevance_sync(
+    b64: str,
+    heading: str = "",
+    paragraph: str = "",
+    threshold: float = DEFAULT_RELEVANCE_THRESHOLD,
+    caption: str | None = None,
+    skip_caption: bool = False,
+) -> dict:
+    """
+    Local CLIP relevance analysis.
+
+    Returns: { "similarity": float, "relevant": bool, ... }
+    """
+    if not b64:
+        return {
+            "similarity": 0.0,
+            "relevant": False,
+            "is_relevant": False,
+            "verdict": "irrelevant",
+            "confidence": 0.0,
+            "reason": "No image data",
+            "caption": "",
+        }
+
+    section_text = _build_section_text(heading, paragraph)
+    similarity = clip_similarity_from_b64(b64, section_text)
+
+    # Reuse cached caption for keyword bonus — never force a second BLIP run
+    # unless caption was already produced by ethics in the same combined pass.
+    if caption is None and not skip_caption:
+        try:
+            caption = generate_caption_from_b64(b64, cache_key=image_fingerprint(b64))
+        except Exception as exc:
+            print(f"[image_relevance] caption skipped: {exc}")
+            caption = ""
+
+    caption = caption or ""
+    keyword_bonus = 0.0
+    matches: list = []
+    if caption:
+        img_kw = _extract_keywords(caption)
+        ctx_kw = _extract_keywords(section_text)
+        matches = sorted(img_kw & ctx_kw)
+        if matches:
+            keyword_bonus = min(_KEYWORD_BONUS_MAX, 0.03 * len(matches))
+
+    final_score = min(1.0, similarity + keyword_bonus)
+    relevant = final_score >= threshold
+
+    reason = (
+        f"CLIP similarity={similarity:.3f}"
+        + (f", keyword_bonus={keyword_bonus:.3f} matches={matches}" if matches else "")
+        + f" vs threshold={threshold:.2f}."
+        + (f" Caption: '{caption}'." if caption else "")
+    )
+
+    if relevant:
+        print(
+            f"[image_relevance] ✅ RELEVANT | similarity={final_score:.3f} | "
+            f"heading='{(heading or '')[:60]}' | caption='{caption[:80]}'"
+        )
+    else:
+        print(
+            f"[image_relevance] ❌ IRRELEVANT | similarity={final_score:.3f} | "
+            f"threshold={threshold:.2f} | heading='{(heading or '')[:60]}' | "
+            f"caption='{caption[:80]}'"
+        )
+
+    return {
+        "similarity": round(final_score, 4),
+        "clip_similarity": round(similarity, 4),
+        "relevant": relevant,
+        "is_relevant": relevant,
+        "verdict": "relevant" if relevant else "irrelevant",
+        "confidence": round(final_score, 4),
+        "threshold": threshold,
+        "caption": caption,
+        "heading": heading,
+        "keyword_matches": matches,
+        "reason": reason,
+    }
+
+
+def _surrounding_for_image(batch: Batch, page_number: int) -> tuple[str, str]:
+    candidates = list(batch.paragraphs) + list(batch.context_paragraphs)
+    same_page = [p for p in candidates if p.page_number == page_number]
+    pool = same_page or candidates
+
+    heading = ""
+    for p in pool:
+        if p.heading_context and p.heading_context.strip():
+            heading = p.heading_context.strip()
+            break
+
+    body_parts: list[str] = []
+    for p in pool:
+        t = (p.text or "").strip()
+        if t:
+            body_parts.append(t)
+        if len(body_parts) >= 6:
+            break
+
+    return heading, " ".join(body_parts)
+
+
+# ======================================================================
+# PIPELINE API
+# ======================================================================
+
+async def evaluate_image_relevance(
+    client: Any = None,
+    b64: str = "",
+    surrounding_text: str = "",
+    heading: str = "",
+) -> Dict[str, Any]:
+    paragraph = surrounding_text or ""
+    if not heading and paragraph:
+        lines = [ln.strip() for ln in paragraph.splitlines() if ln.strip()]
+        if lines and len(lines[0].split()) <= 12:
+            heading = lines[0]
+            paragraph = " ".join(lines[1:]) if len(lines) > 1 else paragraph
+
+    result = await asyncio.to_thread(
+        analyze_image_relevance_sync, b64, heading, paragraph
+    )
+    return {
+        "verdict": result["verdict"],
+        "is_relevant": result["relevant"],
+        "relevant": result["relevant"],
+        "similarity": result["similarity"],
+        "confidence": float(result["similarity"]),
+        "reason": result["reason"],
+        "caption": result.get("caption", ""),
+    }
 
 
 async def check_image_relevance(
-    client: anthropic.AsyncAnthropic,
+    client: Any,
     batch: Batch,
 ) -> List[Dict[str, Any]]:
-    """
-    For every image in the batch, find its surrounding paragraph text and
-    ask Claude whether the image is relevant.
-    """
     if not batch.images:
         return []
 
-    # Build a lookup of surrounding text per page
-    text_by_page: dict[int, str] = {}
-    for p in batch.paragraphs:
-        text_by_page.setdefault(p.page_number, "")
-        text_by_page[p.page_number] += p.text + "\n"
-    # Also include context paragraphs
-    for p in batch.context_paragraphs:
-        text_by_page.setdefault(p.page_number, "")
-        text_by_page[p.page_number] += p.text + "\n"
-
     results: List[Dict[str, Any]] = []
-
     for img in batch.images:
         if not img.base64:
             continue
-        surrounding = text_by_page.get(img.page_number, "").strip()
-        if not surrounding:
-            surrounding = "(no surrounding text found)"
+        heading, paragraph = _surrounding_for_image(batch, img.page_number)
         try:
             issue = await _evaluate_relevance(
-                client, img.image_id, img.page_number, img.base64, surrounding
+                img.image_id, img.page_number, img.base64, heading, paragraph
             )
             if issue:
                 results.append(issue)
         except Exception as exc:
             print(f"[image_relevance] error on {img.image_id}: {exc}")
             continue
-
     return results
 
 
 async def _evaluate_relevance(
-    client: anthropic.AsyncAnthropic,
     image_id: str,
     page: int,
     b64: str,
-    surrounding_text: str,
-) -> Dict[str, Any] | None:
-    """Check one image against its surrounding text."""
-
-    media_type = "image/png"
-    if b64.startswith("/9j/"):
-        media_type = "image/jpeg"
-    elif b64.startswith("iVBOR"):
-        media_type = "image/png"
-    elif b64.startswith("R0lGOD"):
-        media_type = "image/gif"
-
-    prompt = f"""You are a strict academic document reviewer. Determine whether the provided image is relevant to the surrounding text in the document.
-
-SURROUNDING TEXT:
-\"\"\"{surrounding_text[:2000]}\"\"\"
-
-Instructions:
-1. Quote the most relevant portion of the surrounding text.
-2. Describe what the image shows.
-3. Compare the image subject to the section topic — flag as irrelevant if they are clearly different domains (e.g. house photo in a computer architecture section, random stock photo, unrelated diagram).
-4. When the image does not directly support or illustrate the surrounding text, set verdict to "irrelevant".
-
-Return ONLY valid JSON. Do NOT return markdown. Do NOT wrap JSON inside code fences.
-
-Return this exact structure:
-{{"verdict": "relevant" or "irrelevant", "reason": "detailed explanation quoting the surrounding text", "confidence": 0-100}}
-
-Return ONLY a valid JSON object. No markdown, no explanation, no code fences. Just the raw JSON."""
-
-    response = await client.messages.create(
-        model=ANALYSIS_MODEL,
-        max_tokens=1024,
-        messages=[
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "image",
-                        "source": {
-                            "type": "base64",
-                            "media_type": media_type,
-                            "data": b64,
-                        },
-                    },
-                    {
-                        "type": "text",
-                        "text": prompt,
-                    },
-                ],
-            }
-        ],
+    heading: str,
+    paragraph: str,
+    caption: str | None = None,
+) -> Optional[Dict[str, Any]]:
+    result = await asyncio.to_thread(
+        lambda: analyze_image_relevance_sync(
+            b64,
+            heading=heading,
+            paragraph=paragraph,
+            caption=caption,
+            skip_caption=False,
+        )
     )
+    if result["relevant"]:
+        return None
 
-    raw = response.content[0].text
-    parsed = _safe_parse(raw)
-    verdict = parsed.get("verdict", "relevant").lower()
+    conf = result["similarity"]
+    conf_pct = int(round(conf * 100)) if conf <= 1.0 else int(conf)
+    surrounding = _build_section_text(heading, paragraph)
 
-    if verdict == "irrelevant":
-        return {
-            "function": "image_relevance",
-            "type": "image_relevance",
-            "severity": "major",
-            "paragraph_id": "",
-            "image_id": image_id,
-            "page": page,
-            "reason": parsed.get("reason", "Image is not relevant to surrounding text"),
-            "suggestion": "Replace this image with one that matches the surrounding content.",
-            "explanation": parsed.get("reason", ""),
-            "original": "",
-            "current_heading": "",
-            "content_belongs_to": "",
-            "surrounding_text": surrounding_text[:200],
-            "text_preview": surrounding_text[:120],
-            "verdict": "irrelevant",
-            "confidence": int(float(parsed.get("confidence", 0) or 0)),
-            "_replace_image": True,
-        }
-
-    return None
-
-
-async def evaluate_image_relevance(
-    client: anthropic.AsyncAnthropic,
-    b64: str,
-    surrounding_text: str,
-) -> Dict[str, Any]:
-    """Return relevance verdict for a single image (used after replacement)."""
-    if not b64:
-        return {
-            "verdict": "relevant",
-            "is_relevant": True,
-            "confidence": 0.5,
-            "reason": "Could not read image bytes for validation.",
-        }
-
-    media_type = "image/png"
-    if b64.startswith("/9j/"):
-        media_type = "image/jpeg"
-
-    prompt = f"""You are a strict academic document reviewer. Determine whether the provided image is relevant to the surrounding text.
-
-SURROUNDING TEXT:
-\"\"\"{surrounding_text[:2000]}\"\"\"
-
-Return ONLY valid JSON:
-{{"verdict": "relevant" or "irrelevant", "reason": "brief explanation", "confidence": 0-100}}"""
-
-    response = await client.messages.create(
-        model=ANALYSIS_MODEL,
-        max_tokens=512,
-        messages=[{
-            "role": "user",
-            "content": [
-                {"type": "image", "source": {"type": "base64", "media_type": media_type, "data": b64}},
-                {"type": "text", "text": prompt},
-            ],
-        }],
-    )
-    parsed = _safe_parse(response.content[0].text)
-    verdict = str(parsed.get("verdict", "relevant")).lower()
-    conf = float(parsed.get("confidence", 80) or 80)
-    if conf > 1.0:
-        conf = conf / 100.0
     return {
-        "verdict": verdict,
-        "is_relevant": verdict != "irrelevant",
-        "confidence": conf,
-        "reason": parsed.get("reason", ""),
+        "function": "image_relevance",
+        "type": "image_relevance",
+        "severity": "major",
+        "paragraph_id": "",
+        "image_id": image_id,
+        "page": page,
+        "reason": result["reason"],
+        "suggestion": "Replace this image with one that matches the surrounding content.",
+        "explanation": result["reason"],
+        "original": "",
+        "current_heading": heading,
+        "content_belongs_to": "",
+        "surrounding_text": surrounding[:200],
+        "text_preview": surrounding[:120],
+        "verdict": "irrelevant",
+        "similarity": result["similarity"],
+        "confidence": conf_pct,
+        "relevant": False,
+        "_replace_image": True,
     }
 
 
-def _safe_parse(text: str) -> dict:
-    cleaned = re.sub(r"```(?:json)?\s*", "", text).strip().rstrip("`")
-    try:
-        return json.loads(cleaned)
-    except json.JSONDecodeError:
-        return {"verdict": "relevant", "reason": "Parse error", "confidence": 0}
+async def check_images_combined(
+    client: Any,
+    batch: Batch,
+) -> List[Dict[str, Any]]:
+    """
+    Single pass over batch images: one BLIP caption + one CLIP score.
+    Returns both ethics and relevance issues.
+    """
+    from functions.image_ethics import analyze_image_ethics_sync
+
+    if not batch.images:
+        return []
+
+    def _process_all() -> List[Dict[str, Any]]:
+        issues: List[Dict[str, Any]] = []
+        for img in batch.images:
+            if not img.base64:
+                continue
+            heading, paragraph = _surrounding_for_image(batch, img.page_number)
+            try:
+                ethics = analyze_image_ethics_sync(img.base64)
+                if not ethics["ethical"]:
+                    conf = ethics["confidence"]
+                    conf_pct = int(round(conf * 100)) if conf <= 1.0 else int(conf)
+                    issues.append({
+                        "function": "image_ethics",
+                        "type": "image_ethics",
+                        "severity": "major",
+                        "paragraph_id": "",
+                        "image_id": img.image_id,
+                        "page": img.page_number,
+                        "reason": ethics["reason"],
+                        "suggestion": "Replace this image with appropriate academic content.",
+                        "explanation": ethics["reason"],
+                        "original": "",
+                        "current_heading": heading,
+                        "content_belongs_to": "",
+                        "text_preview": ethics.get("caption", "")[:120],
+                        "verdict": "unethical",
+                        "ethics_category": ethics["category"],
+                        "confidence": conf_pct,
+                        "ethical": False,
+                        "_replace_image": True,
+                    })
+
+                rel = analyze_image_relevance_sync(
+                    img.base64,
+                    heading=heading,
+                    paragraph=paragraph,
+                    caption=ethics.get("caption") or "",
+                    skip_caption=True,
+                )
+                if not rel["relevant"]:
+                    conf = rel["similarity"]
+                    conf_pct = int(round(conf * 100)) if conf <= 1.0 else int(conf)
+                    surrounding = _build_section_text(heading, paragraph)
+                    issues.append({
+                        "function": "image_relevance",
+                        "type": "image_relevance",
+                        "severity": "major",
+                        "paragraph_id": "",
+                        "image_id": img.image_id,
+                        "page": img.page_number,
+                        "reason": rel["reason"],
+                        "suggestion": "Replace this image with one that matches the surrounding content.",
+                        "explanation": rel["reason"],
+                        "original": "",
+                        "current_heading": heading,
+                        "content_belongs_to": "",
+                        "surrounding_text": surrounding[:200],
+                        "text_preview": surrounding[:120],
+                        "verdict": "irrelevant",
+                        "similarity": rel["similarity"],
+                        "confidence": conf_pct,
+                        "relevant": False,
+                        "_replace_image": True,
+                    })
+            except Exception as exc:
+                print(f"[image_analysis] error on {img.image_id}: {exc}")
+        return issues
+
+    return await asyncio.to_thread(_process_all)
 
 
 async def recheck_image(
-    client: anthropic.AsyncAnthropic,
-    b64: str,
-    surrounding_text: str,
+    client: Any = None,
+    b64: str = "",
+    surrounding_text: str = "",
     image_id: str = "",
 ) -> Dict[str, Any]:
-    """Run ethics + relevance on a single replacement image."""
-    from functions.image_ethics import evaluate_image_ethics
+    """Run local ethics + relevance on a single replacement image (one pass)."""
+    from functions.image_ethics import analyze_image_ethics_sync
 
-    ethics = await evaluate_image_ethics(client, b64)
-    relevance = await evaluate_image_relevance(client, b64, surrounding_text)
+    def _both() -> Dict[str, Any]:
+        ethics_raw = analyze_image_ethics_sync(b64)
+        relevance_raw = analyze_image_relevance_sync(
+            b64,
+            heading="",
+            paragraph=surrounding_text or "",
+            caption=ethics_raw.get("caption") or "",
+            skip_caption=True,
+        )
+        return ethics_raw, relevance_raw
+
+    ethics_raw, relevance_raw = await asyncio.to_thread(_both)
+    ethics = {
+        "verdict": ethics_raw["verdict"],
+        "is_ethical": ethics_raw["ethical"],
+        "ethical": ethics_raw["ethical"],
+        "category": ethics_raw["category"],
+        "confidence": ethics_raw["confidence"],
+        "reason": ethics_raw["reason"],
+        "caption": ethics_raw.get("caption", ""),
+    }
+    relevance = {
+        "verdict": relevance_raw["verdict"],
+        "is_relevant": relevance_raw["relevant"],
+        "relevant": relevance_raw["relevant"],
+        "similarity": relevance_raw["similarity"],
+        "confidence": float(relevance_raw["similarity"]),
+        "reason": relevance_raw["reason"],
+        "caption": relevance_raw.get("caption", ""),
+    }
     cleared = bool(ethics.get("is_ethical")) and bool(relevance.get("is_relevant"))
+    print(
+        f"[recheck_image] image_id={image_id} | "
+        f"ethical={ethics['ethical']} ({ethics['category']}) | "
+        f"relevant={relevance['relevant']} (sim={relevance['similarity']}) | "
+        f"cleared={cleared}"
+    )
     return {
         "image_id": image_id,
         "ethics": ethics,
@@ -228,4 +390,5 @@ async def recheck_image(
         "is_relevant": relevance.get("is_relevant", False),
         "is_ethical": ethics.get("is_ethical", True),
         "confidence": relevance.get("confidence", 0),
+        "similarity": relevance.get("similarity", 0),
     }

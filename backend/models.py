@@ -83,6 +83,10 @@ class Issue(BaseModel):
     text_preview: str = ""
     verdict: str = ""
     confidence: float = 0.0
+    # Local vision extras
+    ethics_category: str = ""
+    similarity: float = 0.0
+    surrounding_text: str = ""
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

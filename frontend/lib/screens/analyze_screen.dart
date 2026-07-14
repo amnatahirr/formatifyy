@@ -2340,6 +2340,14 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
         .toList();
   }
 
+  /// Issues still open (not ignored / not resolved after fix or image replace).
+  List<dynamic> _visibleIssues(List<dynamic> issues) {
+    return issues.where((i) {
+      final id = (i as Map)['issue_id'] as String? ?? '';
+      return !_ignoredIssueIds.contains(id) && !_resolvedIssueIds.contains(id);
+    }).toList();
+  }
+
   List<Map<String, dynamic>> _asBlockList(List<dynamic> raw) {
     if (raw.isEmpty) return [];
     if (raw.first is Map) {
@@ -2634,12 +2642,21 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
           final idx = jsonInt(i['image_index']);
           final iid = i['image_id'] as String? ?? '';
           final matchesImage = (imageIndex >= 0 && idx == imageIndex) ||
-              (imageId.isNotEmpty && iid == imageId);
+              (imageId.isNotEmpty && iid == imageId) ||
+              (imageId.isEmpty && imageIndex < 0 &&
+                  (fn.contains('image_relevance') || fn.contains('image_ethics')));
           if (matchesImage &&
-              (fn.contains('image_relevance') || fn.contains('image_ethics'))) {
+              (fn.contains('image_relevance') ||
+                  fn.contains('image_ethics') ||
+                  fn.contains('image ethics') ||
+                  fn.contains('image relevance'))) {
             final id = i['issue_id'] as String? ?? '';
             if (id.isNotEmpty) _resolvedIssueIds.add(id);
           }
+        }
+        // Also resolve the specific card that triggered replace
+        if (issueId != null && issueId.isNotEmpty) {
+          _resolvedIssueIds.add(issueId);
         }
       } else if (issueId != null && issueId.isNotEmpty) {
         _resolvedIssueIds.add(issueId);
@@ -3750,13 +3767,14 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
     final summary = structure['summary'] as Map<String, dynamic>? ?? {};
     _seedPreviewData(data);
 
-    final grammarIssues = _issuesForFunction(oldIssues, 'grammar');
-    final formattingIssues = _issuesForFunction(oldIssues, 'formatting');
+    final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
+    final formattingIssues = _visibleIssues(_issuesForFunction(oldIssues, 'formatting'));
     final formattingTabCount = formattingIssues.length + _fixableTemplateHeadingMatches.length;
-    final imageEthicsIssues = _issuesForFunction(oldIssues, 'image_ethics');
-    final imageIssues = _issuesForFunction(oldIssues, 'image_relevance');
-    final paraRelevanceIssues = _issuesForFunction(oldIssues, 'para_relevance');
-    final plagiarismIssues = _issuesForFunction(oldIssues, 'plagiarism');
+    final imageEthicsIssues = _visibleIssues(_issuesForFunction(oldIssues, 'image_ethics'));
+    final imageIssues = _visibleIssues(_issuesForFunction(oldIssues, 'image_relevance'));
+    final paraRelevanceIssues = _visibleIssues(_issuesForFunction(oldIssues, 'para_relevance'));
+    final plagiarismIssues = _visibleIssues(_issuesForFunction(oldIssues, 'plagiarism'));
+    final openIssueCount = _visibleIssues(oldIssues).length;
 
     return Column(
       children: [
@@ -3776,7 +3794,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
             unselectedLabelColor: _textSec,
             isScrollable: true,
             tabs: [
-              Tab(text: 'Review  (${oldIssues.length})'),
+              Tab(text: 'Review  ($openIssueCount)'),
               Tab(text: 'Grammar  (${grammarIssues.length})'),
               Tab(text: 'Formatting  ($formattingTabCount)'),
               Tab(text: 'Image Ethics  (${imageEthicsIssues.length})'),

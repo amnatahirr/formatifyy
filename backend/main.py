@@ -141,6 +141,20 @@ app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 _jobs: Dict[str, Dict] = {}
 
 
+@app.on_event("startup")
+async def _preload_local_vision_models() -> None:
+    """Warm BLIP + CLIP so the first analyze request doesn't download/load mid-flight."""
+    def _warm() -> None:
+        try:
+            from functions.local_vision import preload_models
+            preload_models()
+        except Exception as exc:
+            print(f"[startup] Vision model preload skipped: {exc}")
+
+    # Run in a thread so startup HTTP isn't blocked longer than needed
+    await asyncio.to_thread(_warm)
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # HELPERS
 # ═══════════════════════════════════════════════════════════════════════════════

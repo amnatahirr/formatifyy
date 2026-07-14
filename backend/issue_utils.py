@@ -121,14 +121,14 @@ def normalize_issue(
 ) -> Dict[str, Any]:
     """Add frontend-compatible aliases without removing pipeline fields."""
     func = (issue.get("function") or "").lower()
-    category = issue.get("category") or FUNCTION_TO_CATEGORY.get(func, func.replace("_", " ").title())
     image_id = issue.get("image_id") or ""
     para_idx = _para_index(issue.get("paragraph_id") or "")
 
     normalized = dict(issue)
     normalized.update({
         "issue_id": issue.get("issue_id") or f"{func}_{image_id or issue.get('paragraph_id') or index}",
-        "category": category,
+        "category": FUNCTION_TO_CATEGORY.get(func, func.replace("_", " ").title()),
+        "ethics_category": issue.get("ethics_category") or "",
         "description": issue.get("description") or issue.get("reason") or issue.get("explanation") or "",
         "message": issue.get("message") or issue.get("reason") or "",
         "current": issue.get("current") or issue.get("original") or issue.get("text_preview") or "",
@@ -137,6 +137,7 @@ def normalize_issue(
         "image_index": _image_index(image_id),
         "image_path": image_paths.get(image_id, ""),
         "replace_image": bool(issue.get("replace_image") or func in ("image_ethics", "image_relevance")),
+        "similarity": float(issue.get("similarity") or 0),
     })
 
     if issue.get("content_belongs_to"):

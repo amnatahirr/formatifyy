@@ -16,8 +16,7 @@ import anthropic
 from models import Batch
 from functions.grammar import check_grammar
 from functions.formatting import check_formatting
-from functions.image_ethics import check_image_ethics
-from functions.image_relevance import check_image_relevance
+from functions.image_relevance import check_images_combined
 from functions.para_relevance import check_para_relevance
 from functions.plagiarism import check_plagiarism
 
@@ -28,62 +27,33 @@ async def dispatch_all(
     template: Union[str, Dict[str, Any]],
 ) -> List[Dict[str, Any]]:
     """
-    Run all 6 analysis functions across all batches in parallel.
+    Run all analysis functions across all batches in parallel.
 
-    Parameters
-    ----------
-    client : AsyncAnthropic
-        The shared Anthropic async client.
-    batches : list[Batch]
-        Batches produced by the batcher.
-    template : dict | str
-        The FULL structured template dict as returned by
-        templates.get_template_by_id() / get_all_templates()
-        (i.e. containing required_sections + formatting_rules +
-        markdown_rules). Passing the full dict — not just
-        template["markdown_rules"] — is required for check_formatting
-        to build explicit per-heading-level rules (Heading 1, 2, 3...).
-        A plain markdown string is still accepted for backward
-        compatibility, but per-level heading detection will be weaker.
-
-    Returns
-    -------
-    list[dict]
-        Flat list of raw issue dicts from every function × every batch.
+    Image ethics + relevance share a single local vision pass per batch
+    (one BLIP caption + one CLIP score per image).
     """
-    # Build one coroutine per (batch × function) combination
     tasks: List[asyncio.Task] = []
 
     for batch in batches:
-        # 1. Grammar
         tasks.append(asyncio.ensure_future(
             _safe_call(check_grammar, client, batch)
         ))
-        # 2. Formatting
         tasks.append(asyncio.ensure_future(
             _safe_call_formatting(check_formatting, client, batch, template)
         ))
-        # 3. Image Ethics
+        # Combined local image ethics + relevance (faster than two separate passes)
         tasks.append(asyncio.ensure_future(
-            _safe_call(check_image_ethics, client, batch)
+            _safe_call(check_images_combined, client, batch)
         ))
-        # 4. Image Relevance
-        tasks.append(asyncio.ensure_future(
-            _safe_call(check_image_relevance, client, batch)
-        ))
-        # 5. Paragraph Relevance
         tasks.append(asyncio.ensure_future(
             _safe_call(check_para_relevance, client, batch)
         ))
-        # 6. Plagiarism
         tasks.append(asyncio.ensure_future(
             _safe_call(check_plagiarism, client, batch)
         ))
 
-    # Fire everything concurrently — exceptions are returned, not raised
     results = await asyncio.gather(*tasks, return_exceptions=True)
 
-    # Flatten: each result is either a list of dicts or an Exception
     all_issues: List[Dict[str, Any]] = []
     for result in results:
         if isinstance(result, Exception):
