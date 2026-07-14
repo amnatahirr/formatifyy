@@ -468,18 +468,23 @@ def _should_number_heading_paragraph(para, text: str) -> bool:
     level = _heading_level_from_paragraph(para)
     if level is None:
         return False
+    # Heading 4+ — style only, never auto-numbered (avoids 3.2.1.1. Title)
+    if level > 3:
+        return False
     return _is_valid_toc_source_heading(text)
 
 
 def apply_hierarchical_heading_numbering(doc) -> int:
     """
     Renumber valid content headings from 1 using 1, 1.1, 2, 2.1 …
-    Front-matter list headings and invalid heading-styled body text are skipped.
+    Front-matter list headings, invalid heading-styled body text, and
+    Heading 4+ (style-only) are skipped. Existing H4 number prefixes are stripped.
     """
     from reformatter import (
         _HeadingNumberTracker,
         _format_numbered_heading,
         _set_paragraph_text_preserve_style,
+        _strip_heading_number_prefix,
     )
 
     tracker = _HeadingNumberTracker()
@@ -488,10 +493,17 @@ def apply_hierarchical_heading_numbering(doc) -> int:
         text = para.text.strip()
         if not text:
             continue
-        if not _should_number_heading_paragraph(para, text):
-            continue
         level = _heading_level_from_paragraph(para)
         if level is None:
+            continue
+        if level > 3:
+            # Style-only: strip any erroneous 3.2.1.1-style prefix
+            cleaned = _strip_heading_number_prefix(text)
+            if cleaned and cleaned != text:
+                _set_paragraph_text_preserve_style(para, cleaned)
+                updated += 1
+            continue
+        if not _should_number_heading_paragraph(para, text):
             continue
         number = tracker.next_number(level)
         desired = _format_numbered_heading(text, number)
@@ -507,7 +519,7 @@ def apply_heading_styles_to_document(
     required_sections: List[Any],
 ) -> int:
     """
-    Ensure detected template headings use built-in Word Heading N styles.
+    Ensure detected + inferred headings use built-in Word Heading N styles.
     Returns count of paragraphs updated.
     """
     from reformatter import _apply_word_heading, _detect_heading_level, _parse_section_map, parse_template_styles
@@ -525,12 +537,23 @@ def apply_heading_styles_to_document(
     styles.pop("_spacing_unit", None)
     section_map = _parse_section_map(required_sections or [])
 
+    heading_map: Dict[int, Dict[str, Any]] = {}
+    try:
+        from heading_analysis import classify_paragraphs_for_reformat
+        heading_map = classify_paragraphs_for_reformat(
+            list(doc.paragraphs),
+            required_sections or [],
+        )
+    except Exception as exc:
+        print(f"[docx_fields] heading classification fallback: {exc}")
+
     updated = 0
-    for para in doc.paragraphs:
+    for para_idx, para in enumerate(doc.paragraphs):
         text = para.text.strip()
         if not text:
             continue
-        level = _detect_heading_level(para, text, section_map)
+        classified = heading_map.get(para_idx)
+        level = _detect_heading_level(para, text, section_map, classified)
         if level is None:
             continue
         if not _is_valid_toc_source_heading(text):

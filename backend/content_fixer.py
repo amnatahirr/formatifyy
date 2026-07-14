@@ -162,6 +162,20 @@ def apply_heading_fix(
     para = doc.paragraphs[idx]
     style_name = force_heading_style(para, doc, level)
 
+    # Headings must never keep list bullets
+    p_pr = para._element.get_or_add_pPr()
+    num_pr = p_pr.find(qn("w:numPr"))
+    if num_pr is not None:
+        p_pr.remove(num_pr)
+    cleaned = re.sub(r"^\s*[•*○■▪\-–—→»·]\s+", "", para.text or "")
+    if cleaned.strip() and cleaned != (para.text or ""):
+        if para.runs:
+            para.runs[0].text = cleaned.strip()
+            for run in para.runs[1:]:
+                run.text = ""
+        else:
+            para.text = cleaned.strip()
+
     # Template font reinforcement without breaking the Word style link
     for run in para.runs:
         if level == 1:

@@ -2707,35 +2707,111 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
     setState(() => _isApplyingFix = true);
     try {
       final auth = context.read<AuthProvider>();
-      final fixes = _pipelineIssues
-          .where((i) {
-            final pid = i['paragraph_id'] as String? ?? '';
-            final issueId = i['issue_id'] as String? ?? '';
-            if (pid.isEmpty || _ignoredIssueIds.contains(issueId) || _resolvedIssueIds.contains(issueId)) return false;
-            final fn = (i['function'] as String? ?? i['category'] as String? ?? '').toLowerCase();
-            if (fn.contains('format') && (i['type'] as String? ?? '') == 'heading_style') {
-              return true;
-            }
-            return fn.contains('grammar') && (i['suggestion'] as String? ?? '').isNotEmpty;
-          })
-          .map(
-            (i) {
-              final fn = (i['function'] as String? ?? i['category'] as String? ?? '').toLowerCase();
-              if (fn.contains('format') && (i['type'] as String? ?? '') == 'heading_style') {
-                return {
-                  'paragraph_id': i['paragraph_id'],
-                  'fix_type': 'heading',
-                  'heading_level': i['heading_level'] ?? _inferHeadingLevel(i['suggestion'] as String? ?? ''),
-                };
+      final fixes = <Map<String, dynamic>>[];
+
+      for (final i in _pipelineIssues) {
+        final pid = i['paragraph_id'] as String? ?? '';
+        final issueId = i['issue_id'] as String? ?? '';
+        if (_ignoredIssueIds.contains(issueId) ||
+            _resolvedIssueIds.contains(issueId)) {
+          continue;
+        }
+        final fn =
+            (i['function'] as String? ?? i['category'] as String? ?? '')
+                .toLowerCase();
+        final itype = (i['type'] as String? ?? '').toLowerCase();
+
+        // Heading style fixes
+        if ((fn.contains('format') || fn.contains('style')) &&
+            (itype == 'heading_style' || itype == 'heading')) {
+          if (pid.isEmpty) continue;
+          fixes.add({
+            'paragraph_id': pid,
+            'fix_type': 'heading',
+            'type': 'heading_style',
+            'heading_level': i['heading_level'] ??
+                _inferHeadingLevel(i['suggestion'] as String? ?? ''),
+          });
+          continue;
+        }
+
+        // Bullet / list fixes
+        if (itype == 'missing_bullets' ||
+            itype == 'list_formatting' ||
+            (i['fix_type'] as String? ?? '') == 'apply_section_bullets') {
+          final indices = <int>[];
+          final rawIndices = i['para_indices'];
+          if (rawIndices is List) {
+            for (final v in rawIndices) {
+              if (v is int) {
+                indices.add(v);
+              } else if (v is num) {
+                indices.add(v.toInt());
               }
-              return {
-                'paragraph_id': i['paragraph_id'],
-                'original': i['original'] ?? i['current'] ?? '',
-                'suggestion': _appliedFixes[i['paragraph_id']] ?? i['suggestion'],
-              };
-            },
-          )
-          .toList();
+            }
+          }
+          final details = i['fix_details'];
+          if (indices.isEmpty && details is Map) {
+            final di = details['para_indices'];
+            if (di is List) {
+              for (final v in di) {
+                if (v is int) {
+                  indices.add(v);
+                } else if (v is num) {
+                  indices.add(v.toInt());
+                }
+              }
+            }
+          }
+          if (indices.isEmpty && pid.isNotEmpty) {
+            final m = RegExp(r'^p(\d+)$').firstMatch(pid);
+            if (m != null) indices.add(int.parse(m.group(1)!));
+          }
+          fixes.add({
+            'paragraph_id': pid,
+            'fix_type': 'apply_section_bullets',
+            'type': itype.isEmpty ? 'missing_bullets' : itype,
+            'para_indices': indices,
+            'fix_details': {'para_indices': indices},
+          });
+          continue;
+        }
+
+        // Grammar / content text fixes
+        if (fn.contains('grammar') &&
+            (i['suggestion'] as String? ?? '').isNotEmpty &&
+            pid.isNotEmpty) {
+          fixes.add({
+            'paragraph_id': pid,
+            'original': i['original'] ?? i['current'] ?? '',
+            'suggestion':
+                _appliedFixes[pid] ?? i['suggestion'],
+          });
+        }
+      }
+
+      // Also include template heading mismatches awaiting style
+      for (final match in _templateHeadingMatches) {
+        if (match is! Map) continue;
+        if (match['fix_needed'] != true) continue;
+        if ((match['source'] as String? ?? '') == 'missing') continue;
+        final pid = match['paragraph_id'] as String? ?? '';
+        if (pid.isEmpty) continue;
+        final already = fixes.any(
+          (f) =>
+              f['paragraph_id'] == pid && f['fix_type'] == 'heading',
+        );
+        if (already) continue;
+        fixes.add({
+          'paragraph_id': pid,
+          'fix_type': 'heading',
+          'type': 'heading_style',
+          'heading_level': match['expected_level'] ??
+              match['heading_level'] ??
+              1,
+          'source': match['source'],
+        });
+      }
 
       final resp = await http.post(
         Uri.parse(
@@ -2747,9 +2823,16 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
       if (resp.statusCode == 200) {
         final data = json.decode(resp.body) as Map<String, dynamic>;
         _mergeWorkingDocumentState(data);
-        _showSnack('All fixes applied!', _green);
+        final bullets = data['bullet_fixes'] as Map?;
+        final bulletCount = (bullets?['applied'] as List?)?.length ?? 0;
+        _showSnack(
+          'All fixes applied'
+          '${bulletCount > 0 ? ' ($bulletCount list items)' : ''}!',
+          _green,
+        );
         setState(() {
           _styleIssues = [];
+          _isFixApplied = true;
         });
       } else {
         _showSnack('Apply-all failed: ${resp.body}', _red);

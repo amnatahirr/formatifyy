@@ -171,6 +171,10 @@ async def check_formatting(
     """
     Compare batch paragraphs against the template rules.
 
+    List detection is done deterministically FIRST (label:colon, parallel
+    infinitive/gerund/marker runs, trigger lines). The LLM only confirms /
+    assigns list level — it does not decide whether something is a list.
+
     `template` should ideally be the full structured template dict returned
     by templates.get_template_by_id() / get_all_templates() (i.e. containing
     required_sections + formatting_rules), not just template["markdown_rules"].
@@ -182,6 +186,29 @@ async def check_formatting(
     if not batch.paragraphs:
         return []
 
+    # ── Deterministic list pre-pass (before LLM) ─────────────────────────────
+    from list_detection import (
+        build_list_hint_payload,
+        detect_list_groups,
+        list_groups_to_issues,
+    )
+
+    list_groups = detect_list_groups(batch.paragraphs)
+    deterministic_list_issues = list_groups_to_issues(
+        list_groups, issue_prefix="list_prepass"
+    )
+    list_hints = build_list_hint_payload(list_groups)
+    preconfirmed_pids = {
+        pid
+        for g in list_groups
+        for pid in g.paragraph_ids
+    }
+    if list_groups:
+        print(
+            f"[formatting] list pre-pass: {len(list_groups)} group(s), "
+            f"{len(preconfirmed_pids)} paragraphs confirmed as list items"
+        )
+
     paragraphs_payload = [
         {
             "paragraph_id": p.paragraph_id,
@@ -189,11 +216,17 @@ async def check_formatting(
             "style": p.style,
             "heading_context": p.heading_context,
             "text": p.text[:400],
+            "preconfirmed_list_item": p.paragraph_id in preconfirmed_pids,
         }
         for p in batch.paragraphs
     ]
 
     template_block = _template_to_prompt_block(template)
+    list_hint_block = (
+        json.dumps(list_hints, indent=2)
+        if list_hints
+        else "[]  (no deterministic list groups in this batch)"
+    )
 
     prompt = f"""You are a strict academic document formatting auditor. Compare each paragraph against the template specification below.
 
@@ -203,19 +236,26 @@ TEMPLATE SPECIFICATION (authoritative — every rule must be enforced):
 DOCUMENT PARAGRAPHS (from the student's file):
 {json.dumps(paragraphs_payload, indent=2)}
 
+DETERMINISTIC LIST PRE-PASS (authoritative — do NOT second-guess these):
+{list_hint_block}
+Paragraphs marked "preconfirmed_list_item": true are already confirmed list
+members. For those, only emit list_formatting if useful for the UI — do not
+argue they are body text. Focus your own list discovery on OTHER paragraphs
+not covered by the pre-pass.
+
 AUDIT RULES:
 1. You must NEVER rewrite, summarize, or replace paragraph content. Only identify structural issues. The original text is sacred.
 2. The "suggestion" field must describe WHAT TO DO (e.g. "Apply Heading 1 style") — NEVER put replacement paragraph text in suggestion.
 3. Section titles MUST use Word style "Heading 1/2/3/4" — NOT just bold Normal text.
 4. Every issue MUST reference an existing paragraph_id from the input.
 5. For heading_style issues, you MUST include heading_level (1-4) — this is required, never omit it.
-6. CHECK EVERY HEADING LEVEL INDEPENDENTLY. A paragraph that functions as a subsection title (short, standalone, distinct from surrounding body text, introduces a topic followed by body paragraphs) must be checked against its level's rule EVEN IF its exact text is not in the required-sections list. Do not limit heading_style checks to Heading 1 only.
+6. CHECK EVERY HEADING LEVEL INDEPENDENTLY. A paragraph that functions as a subsection title (short, standalone, distinct from surrounding body text, introduces a topic followed by body paragraphs) must be checked against its level's rule EVEN IF its exact text is not in the required-sections list. Do not limit heading_style checks to Heading 1 only. Structurally obvious labels under a numbered heading (e.g. "Specific Objectives" under "2.6.1 Main Goal") are Heading 3 candidates.
 7. Use the "heading_context" field of each paragraph to understand its position in the document hierarchy (e.g. a paragraph whose heading_context shows it sits under "1. Introduction" as a subsection is a Heading 2 candidate).
-8. CHECK FOR CONTENT THAT SHOULD BE A BULLETED/NUMBERED LIST but is currently written as plain running paragraphs. Look for these structural patterns across CONSECUTIVE paragraphs:
-   - A repeating "Label: description" or "Bold Term — explanation" pattern (e.g. several paragraphs in a row each starting with a short bolded/capitalized term followed by a colon and an explanation of that one item).
-   - A set of parallel items belonging to the same category (e.g. a list of system features, requirements, steps, advantages, or components), each written as its own separate paragraph instead of a bullet point.
-   - Enumerable content that reads like "the system does X. The system also does Y. Additionally, it does Z." spread across paragraphs, where each sentence/paragraph is really one list item.
-   When you detect this pattern, flag EACH paragraph in that group individually with type "list_formatting" (do not merge them into one issue) — the suggestion should say to convert that specific paragraph into a bullet list item, and note in "reason" which other paragraph_ids form part of the same list group so they can be converted together.
+8. CHECK FOR CONTENT THAT SHOULD BE A BULLETED/NUMBERED LIST but is currently written as plain running paragraphs. Prefer confirming the deterministic pre-pass. Additionally look for:
+   - A repeating "Label: description" or "Bold Term — explanation" pattern.
+   - Parallel infinitive items ("To develop…", "To build…", "To implement…") or gerunds after a trigger line ending in "are:" / "include:" / "as follows:".
+   - Manual markers (-, *, •, a), i), 1.).
+   When you detect this pattern, flag EACH paragraph in that group individually with type "list_formatting" — note sibling paragraph_ids in "reason".
    Do NOT flag a single standalone descriptive paragraph as needing bullets — only flag when there is a real repeating parallel-item pattern across 2+ consecutive paragraphs.
 
 For each violation return:
@@ -248,20 +288,55 @@ Return ONLY a valid JSON object. No markdown, no explanation, no code fences. Ju
         compliance_score = parsed.get("compliance_score", 100)
 
         result = []
+        seen_list_pids: set = set()
+
+        # Seed with deterministic list issues so detection never depends on the LLM
+        for det in deterministic_list_issues:
+            pid = det.get("paragraph_id", "")
+            if det.get("type") == "list_formatting" and pid:
+                seen_list_pids.add(pid)
+            result.append({
+                "function": "formatting",
+                "type": det.get("type", "list_formatting"),
+                "severity": det.get("severity", "minor"),
+                "paragraph_id": pid,
+                "image_id": "",
+                "page": 0,
+                "reason": det.get("reason", ""),
+                "suggestion": det.get("suggestion", ""),
+                "explanation": det.get("reason", ""),
+                "original": det.get("original", ""),
+                "heading_level": 0,
+                "current_heading": "",
+                "content_belongs_to": "",
+                "text_preview": (det.get("original") or det.get("reason") or "")[:120],
+                "verdict": "",
+                "confidence": int(float(compliance_score or 0)),
+                "source": "list_detection_prepass",
+                "list_detection": det.get("list_detection", ""),
+                "para_indices": det.get("para_indices") or [],
+                "fix_type": det.get("fix_type"),
+                "fix_details": det.get("fix_details"),
+                "issue_id": det.get("issue_id"),
+                "_compliance_score": int(float(compliance_score or 0)),
+            })
+
         for iss in issues:
             issue_type = iss.get("type", "formatting")
             suggestion = iss.get("suggestion", "") or iss.get("problem", "")
             reason = iss.get("reason", "") or iss.get("problem", "")
+            pid = iss.get("paragraph_id", "")
+
+            # Skip duplicate list_formatting already covered by the pre-pass
+            if issue_type == "list_formatting" and pid in seen_list_pids:
+                continue
 
             raw_level = iss.get("heading_level")
             if issue_type == "heading_style":
                 if raw_level is None or raw_level == "":
-                    # Don't silently coerce to 1 — that was masking real
-                    # Heading 2/3 detections. Log it so it's visible instead
-                    # of invisibly mislabeled.
                     print(
                         f"[formatting] WARNING: heading_style issue on "
-                        f"paragraph_id={iss.get('paragraph_id')} missing heading_level "
+                        f"paragraph_id={pid} missing heading_level "
                         f"from model output; defaulting to 1 as last resort."
                     )
                     heading_level = 1
@@ -270,15 +345,16 @@ Return ONLY a valid JSON object. No markdown, no explanation, no code fences. Ju
                 if not suggestion:
                     suggestion = f"Apply Heading {heading_level} style to this section title"
             else:
-                # Non-heading issue types (list_formatting, font, spacing, etc.)
-                # don't have a real heading level — don't fake one as "1".
                 heading_level = 0
+
+            if issue_type == "list_formatting" and pid:
+                seen_list_pids.add(pid)
 
             result.append({
                 "function": "formatting",
                 "type": issue_type,
                 "severity": iss.get("severity", "minor"),
-                "paragraph_id": iss.get("paragraph_id", ""),
+                "paragraph_id": pid,
                 "image_id": "",
                 "page": iss.get("page", 0),
                 "reason": reason,
@@ -291,12 +367,32 @@ Return ONLY a valid JSON object. No markdown, no explanation, no code fences. Ju
                 "text_preview": (iss.get("original") or "")[:120],
                 "verdict": "",
                 "confidence": int(float(compliance_score or 0)),
+                "source": "llm_formatting",
                 "_compliance_score": int(float(compliance_score or 0)),
             })
         return result
     except Exception as exc:
         print(f"[formatting] error: {exc}")
-        return []
+        # Still return deterministic list findings if the LLM call fails
+        fallback = []
+        for det in deterministic_list_issues:
+            if det.get("type") != "list_formatting":
+                continue
+            fallback.append({
+                "function": "formatting",
+                "type": "list_formatting",
+                "severity": "minor",
+                "paragraph_id": det.get("paragraph_id", ""),
+                "page": 0,
+                "reason": det.get("reason", ""),
+                "suggestion": det.get("suggestion", ""),
+                "original": det.get("original", ""),
+                "heading_level": 0,
+                "source": "list_detection_prepass",
+                "list_detection": det.get("list_detection", ""),
+                "para_indices": det.get("para_indices") or [],
+            })
+        return fallback
 
 
 def _safe_parse(text: str) -> dict:

@@ -451,8 +451,9 @@ async def _run_analysis(
         client = GeminiClientAdapter(api_key=GEMINI_API_KEY)
     else:
         client = anthropic.AsyncAnthropic(api_key=ANTHROPIC_API_KEY)
-    # Pass the full markdown rules string to the LLM agents
-    raw_issues = await dispatch_all(client, batches, tmpl["markdown_rules"])
+    # Pass the full template dict so formatting gets required_sections +
+    # structured rules (not just the markdown string).
+    raw_issues = await dispatch_all(client, batches, tmpl)
     report = aggregate(raw_issues, doc_model, total_batches=len(batches))
 
     # ── Step 5: Reformat ──────────────────────────────────────────────────────
@@ -637,11 +638,18 @@ def _commit_working_document(document_id: int, working_copy: str, doc: Any) -> D
 def _detect_missing_bullet_issues(docx_path: str) -> list:
     """
     Search docx for paragraphs that look like bullet lists but missing w:numPr.
-    Also detects implicit lists (e.g. Abstract feature lines, Label: paragraphs).
+
+    Uses the deterministic list_detection pre-pass:
+      a) Label: description
+      b) Parallel infinitive / gerund / marker openings
+      c) Trigger lines ("are:", "include:", "as follows:")
+    Plus Abstract-section short-line heuristic as a fallback.
     """
     try:
         from docx import Document as DocxDoc
         from docx.oxml.ns import qn
+        from list_detection import detect_list_groups, list_groups_to_issues
+
         docx = DocxDoc(docx_path)
 
         blocks = []
@@ -663,55 +671,64 @@ def _detect_missing_bullet_issues(docx_path: str) -> list:
                 "text": text,
                 "style": style_name,
                 "has_numpr": has_numpr,
+                "paragraph_id": f"p{idx}",
             })
 
-        bullet_groups = []
-        current_group = []
+        groups = detect_list_groups(blocks)
+        issues = list_groups_to_issues(groups, issue_prefix="missing_bullets")
+
+        # Keep only the grouped missing_bullets issues for the apply-fix UI
+        # (list_formatting per-item variants are useful for LLM path).
+        grouped = [i for i in issues if i.get("type") == "missing_bullets"]
+
+        # Implicit lists under Abstract (short consecutive lines) — supplemental
         import re
-
-        bullet_pattern = re.compile(r"^[•*○■▪\-–→»*]|\(?\d+[.)]|\(?[A-Za-z][.)]")
         label_pattern = re.compile(r"^[A-Z][A-Za-z0-9\s/&()-]{1,50}:")
-
-        def _flush_group():
-            nonlocal current_group
-            if len(current_group) >= 2:
-                bullet_groups.append(list(current_group))
-            current_group = []
-
-        for block in blocks:
-            btype = block["type"]
-            text = block["text"]
-            if btype == "heading":
-                _flush_group()
-                continue
-
-            is_bullet_like = (
-                bullet_pattern.match(text) is not None
-                or "list" in block["style"]
-                or label_pattern.match(text) is not None
-            )
-
-            if is_bullet_like and not block["has_numpr"]:
-                current_group.append(block)
-            else:
-                _flush_group()
-
-        _flush_group()
-
-        # Implicit lists under Abstract (short consecutive lines)
         in_abstract = False
         abstract_group: list = []
+        covered = {idx for g in groups for idx in g.indices}
+
+        def _flush_abstract():
+            nonlocal abstract_group
+            if len(abstract_group) >= 2:
+                para_indices = [g["index"] for g in abstract_group]
+                if any(i in covered for i in para_indices):
+                    abstract_group = []
+                    return
+                preview_items = [g["text"][:60] for g in abstract_group[:3]]
+                first_idx = para_indices[0]
+                grouped.append({
+                    "issue_id": f"missing_bullets_abstract_{first_idx}",
+                    "paragraph_id": f"p{first_idx}",
+                    "function": "formatting",
+                    "category": "Formatting",
+                    "type": "missing_bullets",
+                    "code": "MISSING_BULLETS",
+                    "severity": "minor",
+                    "reason": f"List items starting with '{preview_items[0]}' need Word bullet styling.",
+                    "description": f"List items starting with '{preview_items[0]}' appear to be missing formal Word bullet styling.",
+                    "message": f"List items starting with '{preview_items[0]}' appear to be missing formal Word bullet styling.",
+                    "heading": "List formatting",
+                    "para_indices": para_indices,
+                    "para_index": first_idx,
+                    "preview_items": preview_items,
+                    "suggestion": "Apply Word bullet list formatting",
+                    "fix_type": "apply_section_bullets",
+                    "fix_details": {"para_indices": para_indices},
+                    "source": "list_detection_prepass",
+                    "list_detection": "abstract_short_lines",
+                })
+            abstract_group = []
+
         for block in blocks:
             if block["type"] == "heading" and "abstract" in block["text"].lower():
+                _flush_abstract()
                 in_abstract = True
-                abstract_group = []
                 continue
             if in_abstract:
                 if block["type"] == "heading":
-                    if len(abstract_group) >= 2:
-                        bullet_groups.append(list(abstract_group))
+                    _flush_abstract()
                     in_abstract = False
-                    abstract_group = []
                     continue
                 text = block["text"]
                 if (
@@ -722,50 +739,14 @@ def _detect_missing_bullet_issues(docx_path: str) -> list:
                 ) or label_pattern.match(text):
                     abstract_group.append(block)
                 else:
-                    if len(abstract_group) >= 2:
-                        bullet_groups.append(list(abstract_group))
-                    abstract_group = []
-                    if block["type"] == "heading":
-                        in_abstract = False
-        if len(abstract_group) >= 2:
-            bullet_groups.append(abstract_group)
+                    _flush_abstract()
+        _flush_abstract()
 
-        # Deduplicate groups by index sets
-        seen = set()
-        unique_groups = []
-        for group in bullet_groups:
-            key = tuple(sorted(g["index"] for g in group))
-            if key in seen:
-                continue
-            seen.add(key)
-            unique_groups.append(group)
-
-        issues = []
-        for gi, group in enumerate(unique_groups):
-            para_indices = [g["index"] for g in group]
-            preview_items = [g["text"][:60] for g in group[:3]]
-            first_idx = para_indices[0]
-
-            issues.append({
-                "issue_id": f"missing_bullets_{gi}_{first_idx}",
-                "paragraph_id": f"p{first_idx}",
-                "function": "formatting",
-                "category": "Formatting",
-                "type": "missing_bullets",
-                "code": "MISSING_BULLETS",
-                "severity": "minor",
-                "reason": f"List items starting with '{preview_items[0]}' need Word bullet styling.",
-                "description": f"List items starting with '{preview_items[0]}' appear to be missing formal Word bullet styling.",
-                "message": f"List items starting with '{preview_items[0]}' appear to be missing formal Word bullet styling.",
-                "heading": "List formatting",
-                "para_indices": para_indices,
-                "para_index": first_idx,
-                "preview_items": preview_items,
-                "suggestion": "Apply Word bullet list formatting",
-                "fix_type": "apply_section_bullets",
-                "fix_details": {"para_indices": para_indices},
-            })
-        return issues
+        print(
+            f"[BulletCheck] detected {len(grouped)} list group(s) "
+            f"via deterministic pre-pass"
+        )
+        return grouped
     except Exception as exc:
         print("[BulletCheck] error:", exc)
         return []
@@ -776,6 +757,7 @@ def apply_section_bullets_to_file(docx_path: str, para_indices: list[int]):
     from docx.oxml import OxmlElement as _OE
     from docx.oxml.ns import qn
     import random
+    from list_detection import is_heading_paragraph
     
     docx = DocxDoc(docx_path)
     paras = docx.paragraphs
@@ -891,14 +873,22 @@ def apply_section_bullets_to_file(docx_path: str, para_indices: list[int]):
     applied = []
     skipped = []
     import re
-    _LEADING_MARKER = re.compile(r'^\s*(?:[•○■▪\-–→»*]|\(?\d+[.)]|\(?[A-Za-z][.)]|\(?[ivxlcdmIVXLCDM]+[.)])\s+')
+    _LEADING_MARKER = re.compile(r'^\s*(?:[•○■▪\-–→»*]|\(?\d+[.)](?!\d)|\(?[A-Za-z][.)]|\(?[ivxlcdmIVXLCDM]+[.)])\s+')
     
     for idx in para_indices:
         if idx < 0 or idx >= len(paras):
             skipped.append(idx)
             continue
         p = paras[idx]
-        if not p.text.strip():
+        text = (p.text or "").strip()
+        if not text:
+            skipped.append(idx)
+            continue
+
+        style_name = (p.style.name or "") if p.style is not None else ""
+        # NEVER bullet a heading (e.g. "3.2. Proposed Solution")
+        if is_heading_paragraph(text, style_name):
+            print(f"[bullets] skip heading-like paragraph p{idx}: {text[:60]}")
             skipped.append(idx)
             continue
             
@@ -1618,7 +1608,14 @@ async def apply_all_fixes(
     user_id: int = Query(...),
     payload: Dict[str, Any] = Body(default={}),
 ):
-    """Apply template styles plus all provided text fixes."""
+    """
+    Apply ALL fixes on the working document:
+      - heading style fixes
+      - grammar/text fixes
+      - missing bullet / list_formatting groups (deterministic detection)
+      - template reformatting (H1–H3 numbering only; H4 style-only)
+      - image formatting + TOC/LOT/LOF when configured
+    """
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM documents WHERE id = ? AND user_id = ?", (document_id, user_id))
@@ -1635,15 +1632,116 @@ async def apply_all_fixes(
     working_copy = _ensure_formatted_working_copy(doc, tmpl)
 
     text_result = {"applied": 0, "skipped": 0, "errors": []}
+    bullet_result = {"applied": [], "skipped": [], "groups": 0}
     fixes = payload.get("fixes", [])
-    if fixes and working_copy.endswith(".docx"):
-        text_result = apply_all_text_fixes(working_copy, fixes)
+
+    # Split payload fixes into heading / bullets / text
+    heading_fixes = []
+    bullet_fix_indices: list = []
+    text_fixes = []
+    for fix in fixes:
+        ftype = (fix.get("fix_type") or "text").lower()
+        itype = (fix.get("type") or "").lower()
+        if ftype in ("heading", "heading_style") or itype == "heading_style":
+            heading_fixes.append(fix)
+        elif ftype in ("bullets", "apply_section_bullets", "list_formatting") or itype in (
+            "missing_bullets", "list_formatting",
+        ):
+            indices = fix.get("para_indices") or []
+            if not indices and isinstance(fix.get("fix_details"), dict):
+                indices = fix["fix_details"].get("para_indices") or []
+            if not indices and fix.get("paragraph_id"):
+                m = re.match(r"p(\d+)", str(fix.get("paragraph_id", "")))
+                if m:
+                    indices = [int(m.group(1))]
+            bullet_fix_indices.extend(int(i) for i in indices)
+        else:
+            text_fixes.append(fix)
+
+    if working_copy.endswith(".docx"):
+        # 1) Heading fixes first (also strips any mistaken bullets on those paras)
+        for fix in heading_fixes:
+            ok, msg = apply_heading_fix(
+                working_copy,
+                fix.get("paragraph_id", ""),
+                int(fix.get("heading_level", 1) or 1),
+            )
+            if ok:
+                text_result["applied"] += 1
+            else:
+                text_result["skipped"] += 1
+                text_result["errors"].append(msg)
+
+        # 2) Grammar/text fixes
+        if text_fixes:
+            tr = apply_all_text_fixes(working_copy, text_fixes)
+            text_result["applied"] += tr.get("applied", 0)
+            text_result["skipped"] += tr.get("skipped", 0)
+            text_result["errors"].extend(tr.get("errors") or [])
+
+        # 3) Deterministic list detection — apply ALL groups so every
+        #    "To develop…" item is bulleted, not just a partial subset.
+        try:
+            from docx import Document as DocxDoc
+            from docx.oxml.ns import qn
+            from list_detection import detect_list_groups, groups_needing_numpr
+
+            docx = DocxDoc(working_copy)
+            blocks = []
+            for idx, p in enumerate(docx.paragraphs):
+                text = (p.text or "").strip()
+                if not text:
+                    continue
+                style_name = (p.style.name or "").lower() if p.style else ""
+                has_numpr = p._element.find(f".//{qn('w:numPr')}") is not None
+                btype = "paragraph"
+                if has_numpr or "list" in style_name:
+                    btype = "list_item"
+                elif "heading" in style_name:
+                    btype = "heading"
+                blocks.append({
+                    "index": idx,
+                    "type": btype,
+                    "text": text,
+                    "style": style_name,
+                    "has_numpr": has_numpr,
+                    "paragraph_id": f"p{idx}",
+                })
+            groups = groups_needing_numpr(detect_list_groups(blocks))
+            all_indices = sorted({i for g in groups for i in g.indices} | set(bullet_fix_indices))
+            if all_indices:
+                applied, skipped = apply_section_bullets_to_file(working_copy, all_indices)
+                bullet_result = {
+                    "applied": applied,
+                    "skipped": skipped,
+                    "groups": len(groups),
+                }
+                print(
+                    f"[apply-all] bullets: {len(applied)} applied, "
+                    f"{len(skipped)} skipped across {len(groups)} groups"
+                )
+        except Exception as exc:
+            print(f"[apply-all] bullet detection error (non-fatal): {exc}")
+            bullet_result = {"applied": [], "skipped": [], "groups": 0, "error": str(exc)}
+
+        # 4) Strip bullets from any remaining heading paragraphs
+        try:
+            _strip_bullets_from_headings(working_copy)
+        except Exception as exc:
+            print(f"[apply-all] strip heading bullets error (non-fatal): {exc}")
 
     apply_template_reformat(
         working_copy,
         tmpl["formatting_rules"],
         tmpl.get("required_sections", []),
     )
+
+    # After reformat, headings may reappear with leftover bullets — clean again
+    if working_copy.endswith(".docx"):
+        try:
+            _strip_bullets_from_headings(working_copy)
+        except Exception:
+            pass
 
     image_result = {"status": "skipped"}
     if working_copy.endswith(".docx"):
@@ -1679,10 +1777,47 @@ async def apply_all_fixes(
         "status": "success",
         "message": "All fixes applied to formatted working document",
         "text_fixes": text_result,
+        "bullet_fixes": bullet_result,
         "image_formatting": image_result,
         "document_lists": lists_result,
         **commit,
     }
+
+
+def _strip_bullets_from_headings(docx_path: str) -> int:
+    """Remove Word list numbering / bullet glyphs from heading paragraphs."""
+    from docx import Document as DocxDoc
+    from docx.oxml.ns import qn
+    from list_detection import is_heading_paragraph
+
+    docx = DocxDoc(docx_path)
+    cleaned = 0
+    for p in docx.paragraphs:
+        text = (p.text or "").strip()
+        if not text:
+            continue
+        style_name = (p.style.name or "") if p.style is not None else ""
+        if not is_heading_paragraph(text, style_name) and "heading" not in style_name.lower():
+            continue
+        pPr = p._element.get_or_add_pPr()
+        numPr = pPr.find(qn("w:numPr"))
+        if numPr is not None:
+            pPr.remove(numPr)
+            cleaned += 1
+        # Drop visible bullet glyphs
+        new_text = re.sub(r"^\s*[•*○■▪\-–—→»·]\s+", "", text)
+        if new_text != text and new_text:
+            if p.runs:
+                p.runs[0].text = new_text
+                for run in p.runs[1:]:
+                    run.text = ""
+            else:
+                p.text = new_text
+            cleaned += 1
+    if cleaned:
+        docx.save(docx_path)
+        print(f"[apply-all] stripped bullets from {cleaned} heading paragraph(s)")
+    return cleaned
 
 
 @app.post("/api/documents/recheck-image/{document_id}", tags=["Documents"])

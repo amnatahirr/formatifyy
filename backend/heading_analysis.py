@@ -1,10 +1,21 @@
 """
 heading_analysis.py — Deterministic heading detection, template matching, and level assignment.
 
-For each document block:
-  1. Detect whether the block is a heading.
-  2. Match detected headings against the template outline (with synonyms).
-  3. Assign heading levels from the template or inferred from numbering/sequence.
+Two-pass architecture
+---------------------
+  PASS A — Known heading matching:
+      Match paragraph text against the admin-defined required_sections list
+      (with soft/synonym matching). Matched paragraphs get the template's
+      pre-configured level and source="matched".
+
+  PASS B — Structural heading inference:
+      For paragraphs NOT matched in Pass A, evaluate structural signals
+      (short label-like line under a known heading, followed by body/list)
+      and infer a heading one level deeper than the nearest parent.
+      These are marked source="inferred".
+
+  Missing template headings (in admin list, not found in the upload) are
+  returned as synthetic entries with source="missing".
 """
 
 from __future__ import annotations
@@ -18,14 +29,15 @@ from models import DocumentModel
 # ── Synonym groups for template matching ─────────────────────────────────────
 
 _SYNONYM_GROUPS: List[set[str]] = [
-    {"background", "context", "overview", "setting", "problem statement"},
+    {"background", "context", "overview", "setting"},
+    {"problem statement", "problem"},
     {"literature review", "related work", "related studies", "prior research", "state of the art"},
     {"methodology", "methods", "materials and methods", "research design", "approach"},
-    {"results", "findings", "data analysis", "analysis"},
+    {"results", "findings", "data analysis"},
     {"discussion", "interpretation"},
-    {"conclusion", "conclusions", "summary", "closing remarks"},
+    {"conclusion", "conclusions", "closing remarks"},
     {"introduction", "intro"},
-    {"abstract", "executive summary", "summary"},
+    {"abstract", "executive summary"},
     {"references", "bibliography", "works cited"},
     {"acknowledgements", "acknowledgments", "acknowledgement"},
     {"table of contents", "contents"},
@@ -128,7 +140,21 @@ def _synonym_match(a: str, b: str) -> bool:
     return False
 
 
+def _content_tokens(text: str) -> set[str]:
+    return {
+        t for t in (text or "").lower().split()
+        if t and t not in _STOPWORDS and len(t) > 1
+    }
+
+
 def _text_match_score(text: str, template_name: str) -> float:
+    """
+    Soft match score between document heading text and an admin template name.
+
+    Handles abbreviated forms ("Problem" ↔ "Problem Statement") and synonyms.
+    Does NOT equate related-but-distinct titles (e.g. "Specific Objectives"
+    must not match "Main Objectives" via a shared noun).
+    """
     norm_text = _normalize(text)
     norm_name = _normalize(template_name)
     if not norm_text or not norm_name:
@@ -137,17 +163,51 @@ def _text_match_score(text: str, template_name: str) -> float:
         return 1.0
     if _synonym_match(norm_text, norm_name):
         return 0.9
-    if norm_text.endswith(f" {norm_name}") or norm_name in norm_text:
-        if len(norm_text) <= len(norm_name) + 10:
-            return 0.85
-    # Token overlap for partial matches
+
+    # Containment only when lengths are close (avoids long body sentences)
+    if norm_name in norm_text and len(norm_text) <= len(norm_name) + 10:
+        return 0.85
+    if norm_text in norm_name and len(norm_name) <= len(norm_text) + 12:
+        # "Problem" inside "Problem Statement"
+        return 0.84
+
     text_tokens = set(norm_text.split())
     name_tokens = set(norm_name.split())
+    text_content = _content_tokens(norm_text)
+    name_content = _content_tokens(norm_name)
+
+    # Template tokens fully appear in doc text ("Problem Statement" in longer title)
     if name_tokens and name_tokens.issubset(text_tokens):
         return 0.75
+
+    # Doc text is a shorter form of the template name ("Problem" → "Problem Statement")
+    if text_content and name_content and text_content.issubset(name_content):
+        coverage = len(text_content) / max(1, len(name_content))
+        # Require either strong coverage OR a single primary noun abbreviation
+        # with no competing unique tokens on the doc side (already guaranteed by subset).
+        if coverage >= 0.5:
+            return 0.82
+        if len(text_content) == 1:
+            single = next(iter(text_content))
+            if single in {"and", "or", "of", "for", "with", "from", "into", "main"}:
+                return 0.0
+            return 0.72
+
+    # Overlap must be near-complete — a single shared generic noun is not enough
+    # when either side still has distinguishing content words.
     overlap = len(text_tokens & name_tokens)
-    if overlap and overlap >= max(1, len(name_tokens) - 1):
-        return 0.65
+    content_overlap = len(text_content & name_content)
+    if name_content and content_overlap >= len(name_content) and content_overlap >= 2:
+        return 0.7
+    if (
+        content_overlap
+        and content_overlap >= max(2, len(name_content) - 1)
+        and content_overlap >= max(2, len(text_content) - 1)
+    ):
+        return 0.68
+    if overlap and overlap >= max(2, len(name_tokens) - 0):
+        if len(name_tokens) >= 2 and overlap == len(name_tokens):
+            return 0.65
     return 0.0
 
 
@@ -251,6 +311,9 @@ def detect_heading(block: AnalysisBlock) -> Tuple[bool, float]:
         return False, 0.05
     if _LIST_ITEM_RE.match(text):
         return False, 0.1
+    # Objective-style infinitives are list body, never headings
+    if re.match(r"^To\s+[a-z]+\b", text, re.IGNORECASE) and _word_count(text) >= 6:
+        return False, 0.05
 
     score = 0.0
     signals = 0
@@ -325,7 +388,14 @@ def _is_bullet_or_list(text: str) -> bool:
     stripped = (text or "").strip()
     if _LIST_ITEM_RE.match(stripped):
         return True
-    return bool(re.match(r"^\d+[\.\)]\s+\S", stripped))
+    if re.match(r"^\d+[\.\)]\s+\S", stripped):
+        return True
+    # Infinitive / gerund goal-style items also read as list bodies under a heading
+    if re.match(r"^To\s+[a-z]+\b", stripped, re.IGNORECASE):
+        return True
+    if re.match(r"^[A-Z][a-z]*ing\b", stripped) and _word_count(stripped) <= 40:
+        return True
+    return False
 
 
 def _has_substantive_words(text: str) -> bool:
@@ -341,6 +411,34 @@ def _is_body_like(text: str) -> bool:
     if _word_count(stripped) >= 12:
         return True
     return stripped.endswith((".", "?", "!"))
+
+
+def _looks_like_section_label(text: str) -> bool:
+    """Short, non-sentence line that can serve as a structural sub-heading."""
+    stripped = (text or "").strip()
+    if not stripped:
+        return False
+    # Never promote objective infinitives to headings
+    if re.match(r"^To\s+[a-z]+\b", stripped, re.IGNORECASE):
+        return False
+    words = _word_count(stripped)
+    if words < 1 or words > 8:
+        return False
+    if stripped.endswith((".", "?", "!")):
+        return False
+    if _ends_with_label_punctuation(stripped):
+        return False
+    if _LIST_ITEM_RE.match(stripped) or _CAPTION_RE.match(stripped):
+        return False
+    if not _has_substantive_words(stripped):
+        return False
+    # Prefer title case / uppercase / short Capitalized phrases
+    if stripped.istitle() or stripped.isupper():
+        return True
+    # "Specific objectives" / mixed case — require starting capital
+    if stripped[0].isupper() and words <= 5:
+        return True
+    return False
 
 
 def _infer_block_heading_level(block: AnalysisBlock, row: Dict[str, Any]) -> Optional[int]:
@@ -362,87 +460,110 @@ def _infer_block_heading_level(block: AnalysisBlock, row: Dict[str, Any]) -> Opt
     return None
 
 
+def _nearest_preceding_heading(
+    blocks: List[AnalysisBlock],
+    results: List[Dict[str, Any]],
+    idx: int,
+) -> Tuple[Optional[int], Optional[int]]:
+    """Return (block_index, level) of the nearest preceding known heading."""
+    for prev_idx in range(idx - 1, -1, -1):
+        row = results[prev_idx]
+        if not row.get("is_heading"):
+            continue
+        # Prefer matched / numbered / styled headings as parents
+        level = _infer_block_heading_level(blocks[prev_idx], row)
+        if level is None:
+            continue
+        source = row.get("source")
+        if source == "inferred" and not blocks[prev_idx].numbering_prefix:
+            # Skip chaining inferred→inferred more than one hop when a numbered
+            # sibling exists nearby — still allow if nothing else is available.
+            pass
+        return prev_idx, level
+    return None, None
+
+
 def detect_unnumbered_subheading(
     block: AnalysisBlock,
     blocks: List[AnalysisBlock],
     idx: int,
     results: List[Dict[str, Any]],
-) -> Tuple[bool, float, Optional[int]]:
+) -> Tuple[bool, float, Optional[int], Optional[int]]:
     """
-    Detect standalone unnumbered sub-headings by document position.
+    PASS B helper — detect standalone unnumbered sub-headings by structure.
 
-    Pattern: numbered/parent heading → short unnumbered line → body paragraph or bullets.
+    Returns (is_subheading, confidence, parent_level, parent_idx).
+    Pattern: known/numbered heading → short unnumbered label → body paragraph or list.
     """
     text = (block.text or "").strip()
     if not text:
-        return False, 0.0, None
+        return False, 0.0, None, None
+
+    # Already matched in Pass A — leave alone
+    if results[idx].get("source") == "matched":
+        return False, 0.0, None, None
 
     if block.numbering_prefix or _LIST_ITEM_RE.match(text) or _CAPTION_RE.match(text):
-        return False, 0.0, None
+        return False, 0.0, None, None
 
-    words = _word_count(text)
-    if words < 1 or words > 4:
-        return False, 0.0, None
-
-    if text.rstrip().endswith((".", "?", "!")):
-        return False, 0.0, None
-
-    if _ends_with_label_punctuation(text):
-        return False, 0.0, None
-
-    if not _has_substantive_words(text):
-        return False, 0.0, None
-
-    if not (text.istitle() or text.isupper() or (words == 1 and text[0].isupper())):
-        return False, 0.0, None
+    if not _looks_like_section_label(text):
+        return False, 0.0, None, None
 
     if idx == 0 or idx >= len(blocks) - 1:
-        return False, 0.0, None
+        return False, 0.0, None, None
 
-    prev_block = blocks[idx - 1]
-    prev_row = results[idx - 1]
-    prev_level = _infer_block_heading_level(prev_block, prev_row)
-    prev_is_heading = bool(prev_row.get("is_heading"))
-    prev_is_numbered = bool(prev_block.numbering_prefix)
+    parent_idx, parent_level = _nearest_preceding_heading(blocks, results, idx)
+    if parent_idx is None or parent_level is None:
+        return False, 0.0, None, None
 
-    if not prev_is_heading and not prev_is_numbered:
-        return False, 0.0, None
-
-    if prev_level is None:
-        prev_level = 1
+    # Prefer parents that are matched, numbered, or Word-styled (not free floating)
+    parent_block = blocks[parent_idx]
+    parent_row = results[parent_idx]
+    parent_is_reliable = (
+        parent_row.get("source") == "matched"
+        or bool(parent_block.numbering_prefix)
+        or _is_heading_style(parent_block.style_name) is not None
+    )
+    if not parent_is_reliable and (idx - parent_idx) > 3:
+        return False, 0.0, None, None
 
     next_text = (blocks[idx + 1].text or "").strip()
     if not next_text:
-        return False, 0.0, None
+        return False, 0.0, None, None
 
     next_is_body = _is_body_like(next_text)
     next_is_list = _is_bullet_or_list(next_text)
     if not next_is_body and not next_is_list:
-        return False, 0.0, None
+        return False, 0.0, None, None
 
     # Avoid promoting when the next block is another short title-like line.
     if (
         not next_is_body
+        and not next_is_list
         and _word_count(next_text) <= 4
-        and not _is_bullet_or_list(next_text)
     ):
-        return False, 0.0, None
+        return False, 0.0, None, None
 
-    # Already a numbered heading — not an unnumbered sub-heading.
+    # Don't double-promote a numbered heading
     if results[idx].get("is_heading") and block.numbering_prefix:
-        return False, 0.0, None
+        return False, 0.0, None, None
 
     score = 0.72
-    if prev_is_numbered:
+    if parent_block.numbering_prefix:
         score += 0.12
+    if parent_row.get("source") == "matched":
+        score += 0.08
     if next_is_body:
         score += 0.08
     if next_is_list:
-        score += 0.06
-    if block.prev_blank or prev_block.next_blank:
+        score += 0.1
+    if block.prev_blank or parent_block.next_blank:
         score += 0.04
+    # Immediate child of parent is strongest signal ("Main Goal" → "Specific Objectives")
+    if parent_idx == idx - 1:
+        score += 0.06
 
-    return True, round(min(1.0, score), 3), prev_level
+    return True, round(min(1.0, score), 3), parent_level, parent_idx
 
 
 def _detect_unnumbered_subheadings(
@@ -450,16 +571,34 @@ def _detect_unnumbered_subheadings(
     results: List[Dict[str, Any]],
     heading_indices: List[int],
 ) -> None:
-    """Pass 1b — promote or reclassify contextual unnumbered sub-headings."""
+    """PASS B — promote structurally obvious unnumbered sub-headings."""
     for idx, block in enumerate(blocks):
-        is_sub, confidence, parent_level = detect_unnumbered_subheading(
+        is_sub, confidence, parent_level, parent_idx = detect_unnumbered_subheading(
             block, blocks, idx, results,
         )
-        if not is_sub or parent_level is None:
+        if not is_sub or parent_level is None or parent_idx is None:
             continue
 
+        parent_block = blocks[parent_idx]
         child_level = min(4, parent_level + 1)
+
+        # Sibling case: numbered heading → unnumbered label → list
+        # e.g. "2.6.1 Main Goal" → "Specific Objectives" → "To develop…"
+        # should share Main Goal's level (H3 under "2.6 Main Objectives"),
+        # not become H4 beneath Main Goal.
+        next_text = (blocks[idx + 1].text or "").strip() if idx + 1 < len(blocks) else ""
+        if (
+            parent_idx == idx - 1
+            and parent_block.numbering_prefix
+            and next_text
+            and _is_bullet_or_list(next_text)
+        ):
+            child_level = parent_level
+
         already_heading = bool(results[idx].get("is_heading"))
+        already_matched = results[idx].get("source") == "matched"
+        if already_matched:
+            continue
 
         results[idx].update({
             "is_heading": True,
@@ -469,9 +608,10 @@ def _detect_unnumbered_subheadings(
             ),
             "level": _level_label(child_level),
             "heading_kind": "unnumbered_subheading",
-            "parent_level": parent_level,
-            "matched_template_heading": None,
-            "match_confidence": None,
+            "parent_level": max(1, child_level - 1) if child_level == parent_level else parent_level,
+            "source": "inferred",
+            "matched_template_heading": results[idx].get("matched_template_heading"),
+            "match_confidence": results[idx].get("match_confidence"),
         })
         if not already_heading:
             results[idx]["detection_confidence"] = confidence
@@ -499,14 +639,16 @@ def match_template_heading(
     text: str,
     template: List[TemplateEntry],
     context: MatchContext,
-) -> Tuple[Optional[str], float]:
-    """Step 2 — match heading text to a template entry."""
+    *,
+    min_score: float = 0.65,
+) -> Tuple[Optional[str], Optional[float]]:
+    """PASS A — match heading text to a template entry (soft/synonym aware)."""
     best_name: Optional[str] = None
     best_score = 0.0
 
     for entry in template:
         base = _text_match_score(text, entry.name)
-        if base < 0.65:
+        if base < min_score:
             continue
         if not _parent_matches(context, entry):
             base *= 0.35
@@ -516,7 +658,7 @@ def match_template_heading(
             best_score = base
             best_name = entry.name
 
-    if best_score < 0.65:
+    if best_score < min_score:
         return None, None
     return best_name, round(best_score, 3)
 
@@ -535,7 +677,7 @@ def _update_match_context(context: MatchContext, matched_name: str, level: int) 
 
 def _template_level_for_name(name: str, template: List[TemplateEntry]) -> int:
     for entry in template:
-        if _synonym_match(entry.name, name):
+        if _synonym_match(entry.name, name) or _normalize(entry.name) == _normalize(name):
             return entry.level
     return 1
 
@@ -545,7 +687,7 @@ def _infer_levels_from_sequence(
     blocks: List[AnalysisBlock],
     results: List[Dict[str, Any]],
 ) -> None:
-    """Step 3b — infer levels for unmatched headings using document sequence."""
+    """Infer levels for remaining unmatched/inferred headings using document sequence."""
     current = 1
 
     for idx in heading_indices:
@@ -555,14 +697,13 @@ def _infer_levels_from_sequence(
             continue
 
         if row.get("matched_template_heading") is not None:
-            current = int(row["level"][1])
+            current = int(str(row["level"])[1]) if row.get("level") else current
             continue
 
         block = blocks[idx]
         depth = _numbering_depth(block.numbering_prefix)
         if depth is not None:
             row["level"] = _level_label(depth)
-            row["detection_confidence"] = row["detection_confidence"]
             current = depth
             continue
 
@@ -576,17 +717,74 @@ def _infer_levels_from_sequence(
             level = min(4, current + 1)
 
         row["level"] = _level_label(level)
+        if not row.get("source"):
+            row["source"] = "inferred"
         current = level
+
+
+def find_missing_template_headings(
+    results: List[Dict[str, Any]],
+    outline: List[TemplateEntry],
+) -> List[Dict[str, Any]]:
+    """
+    Admin template headings with no matching content in the uploaded document.
+    Returned as synthetic classification rows with source="missing".
+    """
+    matched_names = {
+        (r.get("matched_template_heading") or "").strip().lower()
+        for r in results
+        if r.get("matched_template_heading") and r.get("source") == "matched"
+    }
+    # Also consider soft synonym hits already recorded
+    missing: List[Dict[str, Any]] = []
+    for entry in outline:
+        found = False
+        for name in matched_names:
+            if not name:
+                continue
+            if _normalize(name) == _normalize(entry.name) or _synonym_match(name, entry.name):
+                found = True
+                break
+            # Soft reverse: doc matched a shorter form of this template entry
+            if _text_match_score(name, entry.name) >= 0.65:
+                found = True
+                break
+        if found:
+            continue
+        missing.append({
+            "block_id": None,
+            "paragraph_id": None,
+            "text": entry.name,
+            "is_heading": False,
+            "matched_template_heading": entry.name,
+            "level": _level_label(entry.level),
+            "detection_confidence": None,
+            "match_confidence": None,
+            "heading_kind": None,
+            "source": "missing",
+            "expected_level": entry.level,
+            "fix_needed": False,
+            "fix_status": "missing_in_document",
+            "fix_description": (
+                f'Template heading "{entry.name}" (H{entry.level}) was not found '
+                f"in the uploaded document."
+            ),
+        })
+    return missing
 
 
 def analyze_headings(
     blocks: List[AnalysisBlock],
     template: Optional[Dict[str, Any]] = None,
+    *,
+    include_missing: bool = False,
 ) -> List[Dict[str, Any]]:
     """
-    Run heading detection, template matching, and level assignment for all blocks.
+    Run Pass A (known matching) + Pass B (structural inference) + level assignment.
 
-    Returns one result dict per block in the same order as the input.
+    Each heading result includes source ∈ {matched, inferred}.
+    When include_missing=True, appends template entries not found in the document
+    with source="missing".
     """
     outline = build_template_outline((template or {}).get("required_sections", []))
 
@@ -594,7 +792,7 @@ def analyze_headings(
     heading_indices: List[int] = []
     context = MatchContext()
 
-    # Pass 1 — detection
+    # ── Seed rows + structural/style detection ───────────────────────────────
     for block in blocks:
         is_heading, det_conf = detect_heading(block)
         row: Dict[str, Any] = {
@@ -605,42 +803,91 @@ def analyze_headings(
             "detection_confidence": det_conf if is_heading else round(det_conf, 3),
             "match_confidence": None,
             "heading_kind": "standard" if is_heading else None,
+            "source": None,
         }
         if not is_heading:
             row["detection_confidence"] = round(1.0 - det_conf, 3)
-            row["matched_template_heading"] = None
-            row["level"] = None
-            row["match_confidence"] = None
         else:
             heading_indices.append(len(results))
+            # Numbered / styled headings without a template match are inferred
+            # until Pass A promotes them to matched.
+            row["source"] = "inferred"
+            depth = _numbering_depth(block.numbering_prefix)
+            style_level = _is_heading_style(block.style_name)
+            if depth is not None:
+                row["level"] = _level_label(depth)
+            elif style_level is not None:
+                row["level"] = _level_label(style_level)
         results.append(row)
 
-    # Pass 1b — unnumbered sub-headings (e.g. "Architecture" under "3. Methodology")
+    # ── PASS A — known heading matching (template list) ──────────────────────
+    # Match ALL paragraphs (not only already-detected headings) so abbreviated
+    # forms like "Problem" still bind to "Problem Statement".
+    for idx, block in enumerate(blocks):
+        text = (block.text or "").strip()
+        if not text or _CAPTION_RE.match(text) or _LIST_ITEM_RE.match(text):
+            continue
+        # Objective infinitives are list body — never template headings
+        if re.match(r"^To\s+[a-z]+\b", text, re.IGNORECASE) and _word_count(text) >= 6:
+            continue
+        # Skip long body sentences — they are never section titles
+        if _word_count(text) > 14 and text.rstrip().endswith((".", "?", "!")):
+            continue
+
+        matched, match_conf = match_template_heading(text, outline, context, min_score=0.65)
+        if not matched:
+            continue
+
+        level = _template_level_for_name(matched, outline)
+        entry = next((e for e in outline if e.name == matched), None)
+        if entry:
+            level = entry.level
+
+        results[idx].update({
+            "is_heading": True,
+            "matched_template_heading": matched,
+            "match_confidence": match_conf,
+            "level": _level_label(level),
+            "source": "matched",
+            "heading_kind": results[idx].get("heading_kind") or "standard",
+            "detection_confidence": max(
+                float(results[idx].get("detection_confidence") or 0),
+                float(match_conf or 0),
+            ),
+        })
+        if idx not in heading_indices:
+            heading_indices.append(idx)
+        _update_match_context(context, matched, level)
+
+    heading_indices.sort()
+
+    # Fill levels for detected-but-unmatched headings that have numbering
+    for idx in heading_indices:
+        if results[idx].get("source") == "matched":
+            continue
+        if results[idx].get("level"):
+            continue
+        depth = _numbering_depth(blocks[idx].numbering_prefix)
+        if depth is not None:
+            results[idx]["level"] = _level_label(depth)
+            results[idx]["source"] = results[idx].get("source") or "inferred"
+
+    # ── PASS B — structural heading inference ────────────────────────────────
     _detect_unnumbered_subheadings(blocks, results, heading_indices)
 
-    # Pass 2 — template matching (document order; skip pre-leveled sub-headings)
-    for idx in heading_indices:
-        block = blocks[idx]
-        if results[idx].get("heading_kind") == "unnumbered_subheading":
-            continue
-        matched, match_conf = match_template_heading(block.text, outline, context)
-        results[idx]["matched_template_heading"] = matched
-        results[idx]["match_confidence"] = match_conf
-
-        if matched:
-            level = _template_level_for_name(matched, outline)
-            entry = next((e for e in outline if e.name == matched), None)
-            if entry:
-                level = entry.level
-            results[idx]["level"] = _level_label(level)
-            _update_match_context(context, matched, level)
-        else:
-            depth = _numbering_depth(block.numbering_prefix)
-            if depth is not None:
-                results[idx]["level"] = _level_label(depth)
-
-    # Pass 3 — infer levels for remaining unmatched headings
+    # Sequence-based level fill for anything still missing a level
     _infer_levels_from_sequence(heading_indices, blocks, results)
+
+    # Ensure every heading has an explicit source
+    for idx in heading_indices:
+        if results[idx].get("is_heading") and not results[idx].get("source"):
+            if results[idx].get("matched_template_heading"):
+                results[idx]["source"] = "matched"
+            else:
+                results[idx]["source"] = "inferred"
+
+    if include_missing:
+        results.extend(find_missing_template_headings(results, outline))
 
     return results
 
@@ -648,10 +895,12 @@ def analyze_headings(
 def analyze_document_headings(
     doc: DocumentModel,
     template: Optional[Dict[str, Any]] = None,
+    *,
+    include_missing: bool = True,
 ) -> List[Dict[str, Any]]:
     """Analyze all paragraphs in a DocumentModel and enrich results for the API."""
     blocks = blocks_from_document(doc)
-    raw = analyze_headings(blocks, template)
+    raw = analyze_headings(blocks, template, include_missing=False)
 
     enriched: List[Dict[str, Any]] = []
     for block, row in zip(blocks, raw):
@@ -659,14 +908,72 @@ def analyze_document_headings(
         item["paragraph_id"] = block.paragraph_id
         item["text"] = block.text
         enriched.append(item)
+
+    if include_missing:
+        outline = build_template_outline((template or {}).get("required_sections", []))
+        enriched.extend(find_missing_template_headings(enriched, outline))
+
     return enriched
+
+
+def classify_paragraphs_for_reformat(
+    paragraphs: List[Any],
+    required_sections: Optional[List[Any]] = None,
+) -> Dict[int, Dict[str, Any]]:
+    """
+    Build a paragraph-index → heading classification map for the reformatter.
+
+    `paragraphs` may be python-docx Paragraph objects or objects with `.text`
+    and optional `.style`.
+    """
+    blocks: List[AnalysisBlock] = []
+    index_map: List[int] = []
+
+    for idx, para in enumerate(paragraphs):
+        text = (para.text or "").strip() if hasattr(para, "text") else str(para).strip()
+        if not text:
+            continue
+        style_name = None
+        try:
+            style_name = para.style.name if para.style is not None else None
+        except Exception:
+            style_name = None
+        prefix, _ = _extract_numbering_prefix(text)
+        blocks.append(
+            AnalysisBlock(
+                block_id=len(blocks),
+                text=text,
+                style_name=style_name,
+                numbering_prefix=prefix,
+                paragraph_id=f"p{idx}",
+            )
+        )
+        index_map.append(idx)
+
+    template = {"required_sections": required_sections or []}
+    results = analyze_headings(blocks, template, include_missing=False)
+
+    mapping: Dict[int, Dict[str, Any]] = {}
+    for block_pos, row in enumerate(results):
+        if not row.get("is_heading"):
+            continue
+        doc_idx = index_map[block_pos]
+        level = _level_to_int(row.get("level")) or 1
+        mapping[doc_idx] = {
+            "level": level,
+            "source": row.get("source") or "inferred",
+            "matched_template_heading": row.get("matched_template_heading"),
+            "heading_kind": row.get("heading_kind"),
+            "text": blocks[block_pos].text,
+        }
+    return mapping
 
 
 def _level_to_int(level: Optional[str]) -> Optional[int]:
     if not level or not str(level).lower().startswith("h"):
         return None
     try:
-        return max(1, min(4, int(str(level)[1])))
+        return max(1, min(4, int(str(level)[1:])))
     except (TypeError, ValueError):
         return None
 
@@ -685,6 +992,14 @@ def enrich_matches_with_fix_status(
     enriched: List[Dict[str, Any]] = []
     for match in matches:
         row = dict(match)
+        source = row.get("source")
+
+        if source == "missing":
+            row.setdefault("fix_status", "missing_in_document")
+            row.setdefault("fix_needed", False)
+            enriched.append(row)
+            continue
+
         if not row.get("is_heading"):
             row["fix_status"] = None
             row["fix_needed"] = False
@@ -709,7 +1024,12 @@ def enrich_matches_with_fix_status(
         elif current_type != "heading":
             fix_status = "needs_style"
             fix_needed = True
-            suffix = f' for "{matched_name}"' if matched_name else ""
+            if source == "inferred":
+                suffix = " (structurally inferred — review recommended)"
+            elif matched_name:
+                suffix = f' for "{matched_name}"'
+            else:
+                suffix = ""
             fix_description = f"Apply Heading {expected_level} style{suffix}."
         elif current_level != expected_level:
             fix_status = "wrong_level"
@@ -718,19 +1038,25 @@ def enrich_matches_with_fix_status(
             fix_description = (
                 f"Change from Heading {current_level} to Heading {expected_level}{suffix}."
             )
-        elif matched_name is None:
-            fix_status = "unmatched"
-            if row.get("heading_kind") == "unnumbered_subheading":
+        elif matched_name is None or source == "inferred":
+            fix_status = "unmatched" if source != "inferred" else "inferred_ok"
+            if row.get("heading_kind") == "unnumbered_subheading" or source == "inferred":
                 fix_description = (
-                    f"Unnumbered sub-heading \"{row.get('text', '')}\" "
+                    f"Inferred sub-heading \"{row.get('text', '')}\" "
                     f"should use Heading {expected_level} style."
                 )
+                if current_type != "heading":
+                    fix_needed = True
+                    fix_status = "needs_style"
             else:
                 fix_description = (
                     f"Heading \"{row.get('text', '')}\" is not in the template outline."
                 )
         else:
-            fix_description = f"Matches template section \"{matched_name}\" at H{expected_level}."
+            fix_description = (
+                f"Matches template section \"{matched_name}\" at H{expected_level} "
+                f"(source={source})."
+            )
 
         row.update({
             "fix_status": fix_status,
@@ -741,6 +1067,7 @@ def enrich_matches_with_fix_status(
             "current_level": current_level,
             "current_style": current_style,
             "status": "ok" if not fix_needed else fix_status,
+            "source": source or ("matched" if matched_name else "inferred"),
         })
         enriched.append(row)
 
@@ -751,6 +1078,32 @@ def heading_matches_to_issues(matches: List[Dict[str, Any]]) -> List[Dict[str, A
     """Convert fixable heading matches into formatting issues for the issues pipeline."""
     issues: List[Dict[str, Any]] = []
     for match in matches:
+        source = match.get("source") or (
+            "matched" if match.get("matched_template_heading") else "inferred"
+        )
+
+        if source == "missing":
+            issues.append({
+                "function": "formatting",
+                "category": "Formatting",
+                "type": "missing_section",
+                "severity": "major",
+                "paragraph_id": "",
+                "page": 0,
+                "reason": match.get("fix_description") or (
+                    f'Template heading "{match.get("text")}" not found in document.'
+                ),
+                "description": match.get("fix_description") or "",
+                "suggestion": f'Add a heading for "{match.get("text")}"',
+                "original": "",
+                "current": "",
+                "heading_level": match.get("expected_level") or _level_to_int(match.get("level")) or 1,
+                "matched_template_heading": match.get("matched_template_heading") or match.get("text"),
+                "issue_id": f"missing_heading_{_normalize(str(match.get('text') or 'section'))}",
+                "source": "missing",
+            })
+            continue
+
         if not match.get("is_heading") or not match.get("fix_needed"):
             continue
 
@@ -768,9 +1121,10 @@ def heading_matches_to_issues(matches: List[Dict[str, Any]]) -> List[Dict[str, A
             suggestion = f"Apply Heading {level} style"
         else:
             match_suffix = f' matching "{matched}"' if matched else ""
+            inferred_note = " (structurally inferred)" if source == "inferred" else ""
             reason = (
-                f"\"{text}\" is detected as a section heading{match_suffix} "
-                f"but does not use Word Heading {level} style."
+                f"\"{text}\" is detected as a section heading{match_suffix}"
+                f"{inferred_note} but does not use Word Heading {level} style."
             )
             suggestion = f"Apply Heading {level} style"
 
@@ -778,7 +1132,7 @@ def heading_matches_to_issues(matches: List[Dict[str, Any]]) -> List[Dict[str, A
             "function": "formatting",
             "category": "Formatting",
             "type": "heading_style",
-            "severity": "major",
+            "severity": "major" if source == "matched" else "minor",
             "paragraph_id": pid,
             "page": 0,
             "reason": reason,
@@ -789,7 +1143,7 @@ def heading_matches_to_issues(matches: List[Dict[str, Any]]) -> List[Dict[str, A
             "heading_level": level,
             "matched_template_heading": matched,
             "issue_id": f"heading_match_{pid}",
-            "source": "template_heading_analysis",
+            "source": source,
         })
 
     return issues

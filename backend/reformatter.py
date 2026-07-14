@@ -119,8 +119,17 @@ def _detect_heading_level(
     para,
     text: str,
     section_map: Dict[str, Dict[str, Any]],
+    classified: Optional[Dict[str, Any]] = None,
 ) -> Optional[int]:
-    """Return heading level (1-4) if paragraph is a heading, else None."""
+    """
+    Return heading level (1-4) if paragraph is a heading, else None.
+
+    Prefers Pass A/B classification when available; falls back to admin-list
+    soft match and existing Word Heading styles.
+    """
+    if classified and classified.get("level"):
+        return max(1, min(4, int(classified["level"])))
+
     matched = _match_required_section(text, section_map)
     if matched:
         level = int(matched.get("heading_level", 1) or 1)
@@ -159,11 +168,20 @@ def _is_meta_list_section_title(text: str) -> bool:
 
 
 def _match_required_section(text: str, section_map: Dict[str, Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """
+    PASS A soft lookup — exact, numbered, substring, and abbreviated forms
+    (e.g. document "Problem" ↔ template "Problem Statement").
+    """
     normalized = _normalize_section_title(text)
     if not normalized:
         return None
     if normalized in section_map:
         return section_map[normalized]
+
+    text_tokens = {t for t in normalized.split() if t}
+    best: Optional[Dict[str, Any]] = None
+    best_score = 0.0
+
     for key, sec in section_map.items():
         order = sec.get("order")
         if order:
@@ -174,6 +192,25 @@ def _match_required_section(text: str, section_map: Dict[str, Dict[str, Any]]) -
             return sec
         if key in normalized and len(normalized) <= len(key) + 8:
             return sec
+
+        # Abbreviation: doc tokens ⊆ template tokens ("problem" ⊆ "problem statement")
+        # Require coverage >= 0.5 OR a single primary content word (not "main"/"the").
+        key_tokens = {t for t in key.split() if t and t not in {"the", "a", "an", "and", "of", "for"}}
+        content_tokens = {t for t in text_tokens if t not in {"the", "a", "an", "and", "of", "for", "main"}}
+        if content_tokens and key_tokens and content_tokens.issubset(key_tokens):
+            coverage = len(content_tokens) / max(1, len(key_tokens))
+            if coverage >= 0.5 or len(content_tokens) == 1:
+                score = 0.82 if coverage >= 0.5 else 0.72
+                if score > best_score:
+                    best_score = score
+                    best = sec
+        elif key_tokens and key_tokens.issubset(text_tokens) and len(normalized) <= len(key) + 12:
+            if 0.75 > best_score:
+                best_score = 0.75
+                best = sec
+
+    if best is not None and best_score >= 0.72:
+        return best
     return None
 
 
@@ -184,6 +221,19 @@ def _apply_word_heading(doc, para, level: int, spec: dict, align_map: dict) -> N
     _apply_style(para, spec, align_map)
 
     from docx.oxml.ns import qn
+
+    # Headings must never carry list bullets / numbering properties
+    p_pr = para._element.get_or_add_pPr()
+    for tag in (qn("w:numPr"),):
+        existing = p_pr.find(tag)
+        if existing is not None:
+            p_pr.remove(existing)
+
+    # Strip a stray leading bullet glyph left in the visible text
+    text = para.text or ""
+    cleaned = re.sub(r"^\s*[•*○■▪\-–—→»·]\s+", "", text)
+    if cleaned != text and cleaned.strip():
+        _set_paragraph_text_preserve_style(para, cleaned.strip())
 
     pf = para.paragraph_format
     pf.first_line_indent = None
@@ -372,6 +422,25 @@ def _reformat_docx(
     section_map = _parse_section_map(required_sections or [])
     doc = Document(output_path)
 
+    # Pass A/B classification so inferred headings (e.g. "Specific Objectives")
+    # receive Word Heading styles — not just admin-list lookups.
+    heading_map: Dict[int, Dict[str, Any]] = {}
+    try:
+        from heading_analysis import classify_paragraphs_for_reformat
+        heading_map = classify_paragraphs_for_reformat(
+            list(doc.paragraphs),
+            required_sections or [],
+        )
+        matched_n = sum(1 for v in heading_map.values() if v.get("source") == "matched")
+        inferred_n = sum(1 for v in heading_map.values() if v.get("source") == "inferred")
+        print(
+            f"[reformatter] heading classification: "
+            f"{matched_n} matched, {inferred_n} inferred, "
+            f"{len(heading_map)} total"
+        )
+    except Exception as exc:
+        print(f"[reformatter] heading classification fallback (non-fatal): {exc}")
+
     prev_was_heading = False
     number_tracker = _HeadingNumberTracker() if numbering_style == "decimal" else None
 
@@ -384,18 +453,29 @@ def _reformat_docx(
         section.right_margin = Inches(margins["right"])
 
     # ── Apply styles to paragraphs (never rewrite paragraph text) ────────────
-    for para in doc.paragraphs:
+    for para_idx, para in enumerate(doc.paragraphs):
         text = para.text.strip()
         if not text:
             prev_was_heading = False
             continue
 
-        level = _detect_heading_level(para, text, section_map)
+        classified = heading_map.get(para_idx)
+        level = _detect_heading_level(para, text, section_map, classified)
         is_heading = level is not None
 
         if is_heading:
             spec = styles.get(f"heading{min(level, 3)}", styles["heading1"])
-            if number_tracker is not None and not _is_meta_list_section_title(text):
+            # Number Heading 1–3 only. Heading 4 gets style alone (no 3.2.1.1.).
+            if level >= 4:
+                cleaned = _strip_heading_number_prefix(text)
+                # Also drop a depth-4 auto-number if present (e.g. "3.2.1.1. Title")
+                if cleaned != text and cleaned:
+                    _set_paragraph_text_preserve_style(para, cleaned)
+                    text = cleaned
+            elif (
+                number_tracker is not None
+                and not _is_meta_list_section_title(text)
+            ):
                 number = number_tracker.next_number(level)
                 desired = _format_numbered_heading(text, number)
                 if text != desired:

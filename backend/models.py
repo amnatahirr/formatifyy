@@ -87,6 +87,13 @@ class Issue(BaseModel):
     ethics_category: str = ""
     similarity: float = 0.0
     surrounding_text: str = ""
+    # Heading / list classification provenance
+    source: str = ""  # matched | inferred | missing | list_detection_prepass | ...
+    heading_level: Optional[int] = None
+    matched_template_heading: Optional[str] = None
+    needs_review: bool = False
+    list_detection: str = ""
+    para_indices: List[int] = Field(default_factory=list)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
