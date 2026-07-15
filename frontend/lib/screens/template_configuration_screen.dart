@@ -1038,6 +1038,7 @@ import '../widgets/template_config/list_bullet_styles_card.dart';
 import '../widgets/template_config/heading_styles_card.dart';
 import '../widgets/template_config/table_styles_card.dart';    // ← NEW
 import '../widgets/template_config/action_buttons.dart';
+import '../widgets/template_config/upload_template_document_button.dart';
 import '../utils/template_mapping_utils.dart';
 import '../screens/admin_reference_settings_screen.dart';
 
@@ -1482,6 +1483,141 @@ class _TemplateConfigurationScreenState
   // ── Capitalise first letter for dropdown values loaded from DB ────────────
   String _capitalise(String s) =>
       s.isEmpty ? s : s[0].toUpperCase() + s.substring(1).toLowerCase();
+
+  /// Populate the existing form fields from an extracted draft.
+  /// Does not save — admin still uses Create Template / Save Changes as usual.
+  void _applyExtractedDraft(Map<String, dynamic> draft) {
+    final rules = (draft['formatting_rules'] as Map?)?.cast<String, dynamic>() ??
+        <String, dynamic>{};
+    final rawSections = (draft['required_sections'] as List<dynamic>?) ?? [];
+    final sections = rawSections.map((s) {
+      if (s is Map<String, dynamic>) return RequiredSectionItem.fromJson(s);
+      if (s is Map) {
+        return RequiredSectionItem.fromJson(Map<String, dynamic>.from(s));
+      }
+      return RequiredSectionItem(name: s.toString());
+    }).toList();
+
+    final tableStyle =
+        (rules['table_style'] as Map?)?.cast<String, dynamic>() ??
+            <String, dynamic>{};
+
+    setState(() {
+      // Stay on create path (not edit-selected-template)
+      _selectedTemplateId = null;
+      _selectedTemplate = null;
+
+      _templateNameController.text = (draft['name'] ?? '').toString();
+      _requiredSections = sections;
+
+      _pageMarginTopController.text = (rules['margin_top'] ?? 25).toString();
+      _pageMarginBottomController.text =
+          (rules['margin_bottom'] ?? 25).toString();
+      _pageMarginLeftController.text = (rules['margin_left'] ?? 30).toString();
+      _pageMarginRightController.text =
+          (rules['margin_right'] ?? 20).toString();
+
+      _heading1SizeController.text = (rules['heading1_size'] ?? 18).toString();
+      _heading1SpaceBeforeController.text =
+          (rules['heading1_space_before'] ?? 12.0).toString();
+      _heading1SpaceAfterController.text =
+          (rules['heading1_space_after'] ?? 6.0).toString();
+      _heading1Weight = (rules['heading1_bold'] == true) ? 'Bold' : 'Normal';
+      _heading1Italic = rules['heading1_italic'] == true;
+
+      _heading2SizeController.text = (rules['heading2_size'] ?? 16).toString();
+      _heading2SpaceBeforeController.text =
+          (rules['heading2_space_before'] ?? 10.0).toString();
+      _heading2SpaceAfterController.text =
+          (rules['heading2_space_after'] ?? 5.0).toString();
+      _heading2Weight = (rules['heading2_bold'] == true) ? 'Bold' : 'Normal';
+      _heading2Italic = rules['heading2_italic'] == true;
+
+      _heading3SizeController.text = (rules['heading3_size'] ?? 14).toString();
+      _heading3SpaceBeforeController.text =
+          (rules['heading3_space_before'] ?? 8.0).toString();
+      _heading3SpaceAfterController.text =
+          (rules['heading3_space_after'] ?? 4.0).toString();
+      _heading3Weight = (rules['heading3_bold'] == true) ? 'Bold' : 'Normal';
+      _heading3Italic = rules['heading3_italic'] == true;
+
+      _heading4SizeController.text = (rules['heading4_size'] ?? 12).toString();
+      _heading4SpaceBeforeController.text =
+          (rules['heading4_space_before'] ?? 6.0).toString();
+      _heading4SpaceAfterController.text =
+          (rules['heading4_space_after'] ?? 3.0).toString();
+      _heading4Weight = (rules['heading4_bold'] == true) ? 'Bold' : 'Normal';
+      _heading4Italic = rules['heading4_italic'] == true;
+
+      _bodyFontSizeController.text = (rules['body_size'] ?? 12).toString();
+      _lineSpacingController.text =
+          (rules['body_line_spacing'] ?? 2.0).toString();
+      _firstLineIndentController.text =
+          (rules['first_line_indent'] ?? 0.5).toString();
+      _bulletIndentController.text =
+          (rules['bullet_indent'] ?? 0.5).toString();
+      _paragraphSpaceBeforeController.text =
+          (rules['body_space_before'] ?? 0.0).toString();
+      _paragraphSpaceAfterController.text =
+          (rules['body_space_after'] ?? 0.0).toString();
+
+      _primaryFontFamily = (rules['heading1_font'] ??
+              rules['body_font'] ??
+              'Times New Roman')
+          .toString();
+      _pageSize = (rules['page_size'] ?? 'A4').toString();
+      _spacingUnit = (rules['spacing_unit'] ?? 'mm').toString();
+
+      _bulletStyle = TemplateMappingUtils.mapBulletTypeToDisplay(
+          (rules['bullet_type'] ?? 'bullet').toString());
+      _numberingFormat = TemplateMappingUtils.mapNumberedStyleToDisplay(
+          (rules['numbered_style'] ?? '1,2,3').toString());
+      final hn = (rules['heading_numbering_style'] ?? 'none').toString();
+      _headingNumberingStyle = hn == 'decimal'
+          ? '1, 1.1, 1.1.1'
+          : hn == 'roman'
+              ? 'I, A, 1'
+              : hn == 'alpha'
+                  ? 'A, 1, a'
+                  : 'None';
+
+      _justifyText = rules['body_justified'] ?? true;
+
+      if (tableStyle.isNotEmpty) {
+        _tableFontName = (tableStyle['font_name'] ?? 'Times New Roman').toString();
+        _tableHeaderAlign =
+            _capitalise((tableStyle['header_align'] ?? 'center').toString());
+        _tableBodyAlign =
+            _capitalise((tableStyle['body_align'] ?? 'left').toString());
+        _tableHeaderBold = tableStyle['header_bold'] ?? true;
+        _tableBandedRows = tableStyle['banded_rows'] ?? true;
+        _tableBorders = tableStyle['borders'] ?? true;
+        _tableCenterTable = tableStyle['center_table'] ?? true;
+        _tableAutoFit = tableStyle['auto_fit'] ?? true;
+        _tableRepeatHeader = tableStyle['repeat_header'] ?? true;
+        _tableFontSizeController.text =
+            (tableStyle['font_size'] ?? 12).toString();
+        _tableHeaderBgColorController.text =
+            (tableStyle['header_bg'] ?? 'D6E4F0').toString().replaceAll('#', '');
+        _tableBandColorController.text =
+            (tableStyle['band_color'] ?? 'F2F8FC').toString().replaceAll('#', '');
+        _tableBorderColorController.text =
+            (tableStyle['border_color'] ?? '000000')
+                .toString()
+                .replaceAll('#', '');
+        _tableBorderSizeController.text =
+            (tableStyle['border_size'] ?? 4).toString();
+        _tablePaddingTopController.text =
+            (tableStyle['cell_padding_top'] ?? 60).toString();
+        _tablePaddingBottomController.text =
+            (tableStyle['cell_padding_bot'] ?? 60).toString();
+        _tablePaddingLeftController.text =
+            (tableStyle['cell_padding_lft'] ?? 108).toString();
+        _tablePaddingRightController.text =
+            (tableStyle['cell_padding_rgt'] ?? 108).toString();
+      }
+    });
+  }
 
   Future<void> _createTemplate() async {
     if (_templateNameController.text.trim().isEmpty) {
@@ -2071,6 +2207,14 @@ class _TemplateConfigurationScreenState
             _buildReferenceRulesButton(),
             if (_selectedTemplateId != null) const SizedBox(height: 32),
 
+            Align(
+              alignment: Alignment.centerRight,
+              child: UploadTemplateDocumentButton(
+                enabled: !_isSaving && !_isLoading,
+                onDraftReady: _applyExtractedDraft,
+              ),
+            ),
+            const SizedBox(height: 12),
             ActionButtons(
               selectedTemplateId: _selectedTemplateId,
               isSaving: _isSaving,

@@ -495,6 +495,10 @@ async def _run_analysis(
 set_analysis_runner(_run_analysis)
 app.include_router(vc_router)
 
+# Additive: draft-template extraction from prose guideline DOCX (does not alter create/update)
+from template_extract_routes import router as template_extract_router
+app.include_router(template_extract_router)
+
 
 @app.post("/api/analyze", tags=["Analysis"])
 async def analyze_api(
