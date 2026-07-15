@@ -607,31 +607,55 @@ def join_project_by_invite(user_id: int, invite_code: str) -> Dict[str, Any]:
 
 
 def invite_member_by_email(project_id: int, inviter_id: int, email: str) -> Dict[str, Any]:
+    """
+    Email the project's invite code to the recipient.
+
+    Does not add anyone to project_members — the recipient joins via the
+    existing Join Project + invite-code flow after receiving the email.
+    """
     _require_member(project_id, inviter_id)
-    conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM users WHERE LOWER(email) = LOWER(?)", (email.strip(),))
-    user = cursor.fetchone()
-    if not user:
-        conn.close()
-        raise HTTPException(status_code=404, detail="User not found with that email")
+    cleaned = (email or "").strip()
+    if not cleaned or "@" not in cleaned:
+        raise HTTPException(status_code=400, detail="A valid email address is required")
 
-    cursor.execute(
-        "SELECT id FROM project_members WHERE project_id = ? AND user_id = ?",
-        (project_id, user["id"]),
-    )
-    if cursor.fetchone():
-        conn.close()
-        return {"status": "already_member", "user_id": user["id"], "username": user["username"]}
+    project = _get_project(project_id)
+    invite_code = (project.get("invite_code") or "").strip()
+    if not invite_code:
+        raise HTTPException(
+            status_code=500,
+            detail="This project has no invite code. Recreate the project or contact support.",
+        )
 
-    cursor.execute(
-        "INSERT INTO project_members (project_id, user_id, role) VALUES (?, ?, 'editor')",
-        (project_id, user["id"]),
+    project_name = (project.get("name") or "Untitled project").strip()
+    inviter = _get_user(inviter_id)
+    inviter_name = (
+        (inviter.get("username") or "").strip()
+        or (inviter.get("email") or "").strip()
+        or "A teammate"
     )
-    conn.commit()
-    conn.close()
-    sync_project_to_member_reports(project_id)
-    return {"status": "invited", "user_id": user["id"], "username": user["username"]}
+
+    try:
+        from vc.invite_mail import send_invite_email
+        send_invite_email(
+            to_email=cleaned,
+            inviter_name=inviter_name,
+            project_name=project_name,
+            invite_code=invite_code,
+        )
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Failed to send invite email: {exc}",
+        ) from exc
+
+    return {
+        "status": "invite_sent",
+        "email": cleaned,
+        "project_name": project_name,
+        "invite_code": invite_code,
+    }
 
 
 def _next_version(project_id: int, section_id: str) -> int:

@@ -19,7 +19,6 @@ from heading_analysis import (
     detect_heading,
 )
 from parser import parse_file
-from vc.utils import section_slug
 
 
 _LIST_ITEM_RE = re.compile(r"^[\u2022\u2023\u25E6\u2043\u2219•\-*–·]\s+")
@@ -27,6 +26,24 @@ _CAPTION_RE = re.compile(
     r"^(figure|fig\.?|table|tab\.?|image|chart|diagram|equation|eq\.?)\s*[\d.:]+",
     re.IGNORECASE,
 )
+
+
+def _format_heading_check_line(
+    text: str,
+    diag: Dict[str, Any],
+    *,
+    result: str,
+    prefix: str = "[HEADING-CHECK]",
+) -> str:
+    snippet = (text or "").replace("\n", " ").strip()
+    if len(snippet) > 80:
+        snippet = snippet[:77] + "..."
+    parts = [f"{prefix} {snippet!r} -> {result}"]
+    if diag.get("score") is not None:
+        parts.append(f"score={diag['score']}")
+    if diag.get("layer"):
+        parts.append(f"layer={diag['layer']}")
+    return " | ".join(parts)
 
 
 def _resolve_section_id(
@@ -83,6 +100,31 @@ def _append_content(result: Dict[str, str], section_id: str, text: str) -> None:
         result[section_id] = text
 
 
+def _section_display_name(
+    section_id: Optional[str],
+    template_sections: List[Dict[str, Any]],
+) -> str:
+    if not section_id:
+        return "(none)"
+    for sec in template_sections:
+        if sec["section_id"] == section_id:
+            return sec["section_name"]
+    return section_id
+
+
+def _log_heading_check(
+    text: str,
+    block_index: Optional[int],
+    result: str,
+    *,
+    prefix: str = "[HEADING-CHECK]",
+    extra_diag: Optional[Dict[str, Any]] = None,
+) -> None:
+    del block_index  # retained for call-site compatibility
+    diag = dict(extra_diag or {})
+    print(_format_heading_check_line(text, diag, result=result, prefix=prefix), flush=True)
+
+
 def extract_sections_from_docx(
     file_path: str,
     template_sections: List[Dict[str, Any]],
@@ -108,25 +150,49 @@ def extract_sections_from_docx(
     }
 
     analysis = analyze_document_headings(doc_model, template_payload)
+
     outline = build_template_outline(template_payload["required_sections"])
 
     result: Dict[str, str] = {sec["section_id"]: "" for sec in template_sections}
     current_section: Optional[str] = None
     match_context = MatchContext()
 
+    print(f"[HEADING-CHECK] === section extraction: {filename} ===", flush=True)
+
     for item in analysis:
         text = (item.get("text") or "").strip()
+        # Current pipeline exposes block_id; older logs used block_index
+        block_index = item.get("block_index")
+        if block_index is None:
+            block_index = item.get("block_id")
+        if block_index is None and item.get("source") == "missing":
+            continue
+        if block_index is None and not text:
+            continue
         if not text:
+            _log_heading_check(text, block_index, "skipped (empty)")
             continue
 
         is_heading = bool(item.get("is_heading"))
         matched_name = item.get("matched_template_heading")
         heading_kind = item.get("heading_kind")
+        current_name = _section_display_name(current_section, template_sections)
 
         # Sub-headings within a section are kept as content.
         if heading_kind == "unnumbered_subheading":
             if current_section:
                 _append_content(result, current_section, text)
+                _log_heading_check(
+                    text,
+                    block_index,
+                    f'absorbed as subheading into "{current_name}"',
+                )
+            else:
+                _log_heading_check(
+                    text,
+                    block_index,
+                    "subheading with no active section (dropped)",
+                )
             continue
 
         section_boundary: Optional[str] = None
@@ -138,6 +204,13 @@ def extract_sections_from_docx(
             section_boundary = _strict_section_boundary_match(text, template_sections)
 
         if section_boundary:
+            new_name = _section_display_name(section_boundary, template_sections)
+            via = f'template match "{matched_name}"' if matched_name else "strict boundary"
+            _log_heading_check(
+                text,
+                block_index,
+                f'new section started -> "{new_name}" ({via})',
+            )
             current_section = section_boundary
             if matched_name:
                 level = 1
@@ -150,22 +223,40 @@ def extract_sections_from_docx(
 
         if is_heading and current_section:
             _append_content(result, current_section, text)
+            _log_heading_check(
+                text,
+                block_index,
+                f'absorbed into "{current_name}" (heading without section boundary)',
+            )
             continue
 
         if current_section:
             _append_content(result, current_section, text)
-        elif _strict_section_boundary_match(text, template_sections) is None:
-            # Preamble before first section (title page, author lines, etc.)
+            _log_heading_check(text, block_index, f'absorbed into "{current_name}"')
+            continue
+
+        if _strict_section_boundary_match(text, template_sections) is None:
             title_page = next(
                 (s["section_id"] for s in template_sections if s["section_id"] == "title_page"),
                 template_sections[0]["section_id"] if template_sections else None,
             )
             if title_page:
                 _append_content(result, title_page, text)
+                preamble_name = _section_display_name(title_page, template_sections)
+                _log_heading_check(
+                    text,
+                    block_index,
+                    f'preamble absorbed into "{preamble_name}"',
+                )
+            else:
+                _log_heading_check(text, block_index, "preamble with no target section")
+        else:
+            _log_heading_check(text, block_index, "no active section (content dropped)")
 
     # Fallback if heading pipeline found almost nothing
     filled = sum(1 for v in result.values() if v.strip())
     if filled <= 1:
+        print("[HEADING-CHECK] === fallback title-matching pass ===", flush=True)
         result = _fallback_extract_by_titles(doc_model, template_sections)
 
     return result
@@ -180,23 +271,53 @@ def _fallback_extract_by_titles(
     result: Dict[str, str] = {sec["section_id"]: "" for sec in template_sections}
     current_section: Optional[str] = None
 
-    for block in blocks:
+    for block_idx, block in enumerate(blocks):
         text = (block.text or "").strip()
         if not text:
             continue
 
-        is_heading, _ = detect_heading(block)
+        is_heading, det_conf = detect_heading(block)
         section_boundary = None
 
         if is_heading:
             section_boundary = _strict_section_boundary_match(text, template_sections)
 
+        current_name = _section_display_name(current_section, template_sections)
+        diag = {
+            "layer": "fallback_structural_scoring",
+            "score": det_conf,
+            "structural_pass": is_heading,
+            "template_match": {
+                "kind": "STRICT_BOUNDARY" if section_boundary else "NONE",
+                "name": _section_display_name(section_boundary, template_sections) if section_boundary else None,
+            },
+        }
+
         if section_boundary:
+            new_name = _section_display_name(section_boundary, template_sections)
+            print(
+                _format_heading_check_line(
+                    text,
+                    diag,
+                    result=f'new section started -> "{new_name}" (strict boundary)',
+                    prefix="[HEADING-CHECK-FALLBACK]",
+                ),
+                flush=True,
+            )
             current_section = section_boundary
             continue
 
         if current_section:
             _append_content(result, current_section, text)
+            print(
+                _format_heading_check_line(
+                    text,
+                    diag,
+                    result=f'absorbed into "{current_name}"',
+                    prefix="[HEADING-CHECK-FALLBACK]",
+                ),
+                flush=True,
+            )
         else:
             title_page = next(
                 (s["section_id"] for s in template_sections if s["section_id"] == "title_page"),
@@ -204,5 +325,15 @@ def _fallback_extract_by_titles(
             )
             if title_page:
                 _append_content(result, title_page, text)
+                preamble_name = _section_display_name(title_page, template_sections)
+                print(
+                    _format_heading_check_line(
+                        text,
+                        diag,
+                        result=f'preamble absorbed into "{preamble_name}"',
+                        prefix="[HEADING-CHECK-FALLBACK]",
+                    ),
+                    flush=True,
+                )
 
     return result

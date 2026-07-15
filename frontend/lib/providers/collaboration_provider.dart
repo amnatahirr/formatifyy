@@ -145,13 +145,59 @@ class CollaborationProvider extends ChangeNotifier {
     }
   }
 
-  Future<bool> inviteMember(int projectId, String email) async {
-    final resp = await http.post(
-      Uri.parse(_base('/vc/projects/$projectId/invite')),
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({'email': email}),
-    );
-    return resp.statusCode == 200;
+  /// Email the project's invite code to [email]. Does not add a member;
+  /// the recipient joins via Collaboration → Join Project.
+  Future<Map<String, dynamic>> inviteMember(int projectId, String email) async {
+    final trimmed = email.trim();
+    if (trimmed.isEmpty) {
+      return {'ok': false, 'message': 'Email is required'};
+    }
+    try {
+      final resp = await http.post(
+        Uri.parse(_base('/vc/projects/$projectId/invite')),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'email': trimmed}),
+      );
+      if (resp.statusCode == 200) {
+        final data = Map<String, dynamic>.from(jsonDecode(resp.body) as Map);
+        final status = data['status'] as String? ?? 'invite_sent';
+        final projectName = (data['project_name'] as String?)?.trim();
+        final message = projectName != null && projectName.isNotEmpty
+            ? 'Invite email sent to $trimmed for "$projectName"'
+            : 'Invite email sent to $trimmed';
+        return {
+          'ok': true,
+          'status': status,
+          'message': message,
+          'email': data['email'] ?? trimmed,
+          'project_name': projectName,
+          'invite_code': data['invite_code'],
+        };
+      }
+      return {
+        'ok': false,
+        'message': _parseApiDetail(resp.body) ?? 'Invite failed (${resp.statusCode})',
+      };
+    } catch (e) {
+      return {'ok': false, 'message': e.toString()};
+    }
+  }
+
+  String? _parseApiDetail(String body) {
+    try {
+      final decoded = jsonDecode(body);
+      if (decoded is Map && decoded['detail'] != null) {
+        final detail = decoded['detail'];
+        if (detail is String) return detail;
+        if (detail is List && detail.isNotEmpty) {
+          final first = detail.first;
+          if (first is Map && first['msg'] != null) {
+            return first['msg'].toString();
+          }
+        }
+      }
+    } catch (_) {}
+    return body.trim().isEmpty ? null : body;
   }
 
   /// Upload/re-upload a .docx — creates new versioned import commits (never silent overwrite).

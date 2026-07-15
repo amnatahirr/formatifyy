@@ -101,7 +101,8 @@ from vc.reports_sync import sync_analysis_to_project_members
 # CONFIG
 # ═══════════════════════════════════════════════════════════════════════════════
 
-load_dotenv()
+# Load backend/.env even if the process cwd is the repo root
+load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
 from config import ANALYSIS_MODEL
 
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")

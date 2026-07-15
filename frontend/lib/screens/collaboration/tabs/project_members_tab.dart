@@ -2,11 +2,56 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../providers/collaboration_provider.dart';
 
-/// Members tab — roster and roles (invite lives in the top Invite button).
-class ProjectMembersTab extends StatelessWidget {
+/// Members tab — roster, roles, and invite-by-email.
+class ProjectMembersTab extends StatefulWidget {
   final int projectId;
 
   const ProjectMembersTab({super.key, required this.projectId});
+
+  @override
+  State<ProjectMembersTab> createState() => _ProjectMembersTabState();
+}
+
+class _ProjectMembersTabState extends State<ProjectMembersTab> {
+  final _email = TextEditingController();
+  final _formKey = GlobalKey<FormState>();
+  bool _sending = false;
+
+  static final _emailPattern = RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$');
+
+  @override
+  void dispose() {
+    _email.dispose();
+    super.dispose();
+  }
+
+  Future<void> _inviteByEmail() async {
+    if (!(_formKey.currentState?.validate() ?? false)) return;
+    final email = _email.text.trim();
+    setState(() => _sending = true);
+
+    final vc = context.read<CollaborationProvider>();
+    final result = await vc.inviteMember(widget.projectId, email);
+    if (!mounted) return;
+    setState(() => _sending = false);
+
+    final ok = result['ok'] == true;
+    final message =
+        (result['message'] as String?) ?? (ok ? 'Invite email sent' : 'Invite failed');
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: ok ? const Color(0xFF10B981) : const Color(0xFFEF4444),
+      ),
+    );
+
+    if (ok) {
+      _email.clear();
+      _formKey.currentState?.reset();
+      await vc.loadProject(widget.projectId);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -29,10 +74,18 @@ class ProjectMembersTab extends StatelessWidget {
         ),
         const SizedBox(height: 8),
         const Text(
-          'Use the Invite button above to share a code or invite by email.',
+          'Invite teammates with the Invite button, or add a registered user by email below.',
           style: TextStyle(color: Color(0xFF94A3B8), fontSize: 12),
         ),
         const SizedBox(height: 16),
+        _InviteByEmailCard(
+          formKey: _formKey,
+          emailController: _email,
+          sending: _sending,
+          emailPattern: _emailPattern,
+          onSubmit: _inviteByEmail,
+        ),
+        const SizedBox(height: 20),
         if (members.isEmpty)
           const Text(
             'No members loaded',
@@ -41,6 +94,111 @@ class ProjectMembersTab extends StatelessWidget {
         else
           ...members.map((m) => _MemberTile(member: m)),
       ],
+    );
+  }
+}
+
+class _InviteByEmailCard extends StatelessWidget {
+  final GlobalKey<FormState> formKey;
+  final TextEditingController emailController;
+  final bool sending;
+  final RegExp emailPattern;
+  final VoidCallback onSubmit;
+
+  const _InviteByEmailCard({
+    required this.formKey,
+    required this.emailController,
+    required this.sending,
+    required this.emailPattern,
+    required this.onSubmit,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1A1F2E),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFF2D3748)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
+            children: [
+              Icon(Icons.mail_outline, size: 18, color: Color(0xFFA5B4FC)),
+              SizedBox(width: 8),
+              Text(
+                'Invite by email',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 14,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          const Text(
+            'We email them the project invite code. They join via Collaboration → Join Project.',
+            style: TextStyle(color: Color(0xFF94A3B8), fontSize: 12),
+          ),
+          const SizedBox(height: 12),
+          Form(
+            key: formKey,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: TextFormField(
+                    controller: emailController,
+                    keyboardType: TextInputType.emailAddress,
+                    textInputAction: TextInputAction.done,
+                    style: const TextStyle(color: Colors.white, fontSize: 14),
+                    onFieldSubmitted: (_) {
+                      if (!sending) onSubmit();
+                    },
+                    decoration: const InputDecoration(
+                      labelText: 'Email',
+                      hintText: 'member@university.edu',
+                      hintStyle: TextStyle(color: Color(0xFF64748B)),
+                      isDense: true,
+                      contentPadding: EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 12,
+                      ),
+                    ),
+                    validator: (value) {
+                      final v = value?.trim() ?? '';
+                      if (v.isEmpty) return 'Email required';
+                      if (!emailPattern.hasMatch(v)) return 'Invalid email';
+                      return null;
+                    },
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Padding(
+                  padding: const EdgeInsets.only(top: 2),
+                  child: ElevatedButton(
+                    onPressed: sending ? null : onSubmit,
+                    child: sending
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : const Text('Invite'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

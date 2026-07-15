@@ -7,11 +7,14 @@ import '../../../providers/collaboration_provider.dart';
 class InviteMenuDialog extends StatefulWidget {
   final int projectId;
   final String inviteCode;
+  /// Called after a successful email invite (members list should refresh).
+  final VoidCallback? onInvited;
 
   const InviteMenuDialog({
     super.key,
     required this.projectId,
     required this.inviteCode,
+    this.onInvited,
   });
 
   @override
@@ -21,7 +24,11 @@ class InviteMenuDialog extends StatefulWidget {
 class _InviteMenuDialogState extends State<InviteMenuDialog> {
   bool _byEmail = false;
   final _email = TextEditingController();
+  final _formKey = GlobalKey<FormState>();
   bool _sending = false;
+  String? _inlineError;
+
+  static final _emailPattern = RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$');
 
   @override
   void dispose() {
@@ -30,23 +37,34 @@ class _InviteMenuDialogState extends State<InviteMenuDialog> {
   }
 
   Future<void> _sendInvite() async {
+    setState(() => _inlineError = null);
+    if (!(_formKey.currentState?.validate() ?? false)) return;
+
     final email = _email.text.trim();
-    if (email.isEmpty) return;
     setState(() => _sending = true);
     final vc = context.read<CollaborationProvider>();
-    final ok = await vc.inviteMember(widget.projectId, email);
+    final result = await vc.inviteMember(widget.projectId, email);
     if (!mounted) return;
     setState(() => _sending = false);
+
+    final ok = result['ok'] == true;
+    final message =
+        (result['message'] as String?) ?? (ok ? 'Invite email sent' : 'Invite failed');
+
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(ok ? 'Invite sent to $email' : 'Invite failed'),
+        content: Text(message),
         backgroundColor: ok ? const Color(0xFF10B981) : const Color(0xFFEF4444),
       ),
     );
+
     if (ok) {
       _email.clear();
       await vc.loadProject(widget.projectId);
+      widget.onInvited?.call();
       if (mounted) Navigator.pop(context);
+    } else {
+      setState(() => _inlineError = message);
     }
   }
 
@@ -77,7 +95,10 @@ class _InviteMenuDialogState extends State<InviteMenuDialog> {
                   ChoiceChip(
                     label: const Text('Invite with code'),
                     selected: !_byEmail,
-                    onSelected: (_) => setState(() => _byEmail = false),
+                    onSelected: (_) => setState(() {
+                      _byEmail = false;
+                      _inlineError = null;
+                    }),
                     selectedColor: const Color(0xFF6366F1).withOpacity(0.3),
                     labelStyle: TextStyle(
                       color: !_byEmail ? Colors.white : const Color(0xFF94A3B8),
@@ -94,7 +115,10 @@ class _InviteMenuDialogState extends State<InviteMenuDialog> {
                   ChoiceChip(
                     label: const Text('Invite by email'),
                     selected: _byEmail,
-                    onSelected: (_) => setState(() => _byEmail = true),
+                    onSelected: (_) => setState(() {
+                      _byEmail = true;
+                      _inlineError = null;
+                    }),
                     selectedColor: const Color(0xFF6366F1).withOpacity(0.3),
                     labelStyle: TextStyle(
                       color: _byEmail ? Colors.white : const Color(0xFF94A3B8),
@@ -147,28 +171,59 @@ class _InviteMenuDialogState extends State<InviteMenuDialog> {
                   ],
                 ),
               ] else ...[
-                TextField(
-                  controller: _email,
-                  decoration: const InputDecoration(
-                    labelText: 'Enter email',
-                    hintText: 'member@university.edu',
+                const Text(
+                  'We\'ll email them this project\'s invite code. They join via Collaboration → Join Project (sign up first if needed).',
+                  style: TextStyle(color: Color(0xFF94A3B8), fontSize: 12),
+                ),
+                const SizedBox(height: 12),
+                Form(
+                  key: _formKey,
+                  child: TextFormField(
+                    controller: _email,
+                    autofocus: true,
+                    keyboardType: TextInputType.emailAddress,
+                    textInputAction: TextInputAction.done,
+                    style: const TextStyle(color: Colors.white),
+                    onFieldSubmitted: (_) {
+                      if (!_sending) _sendInvite();
+                    },
+                    decoration: InputDecoration(
+                      labelText: 'Email address',
+                      hintText: 'member@university.edu',
+                      hintStyle: const TextStyle(color: Color(0xFF64748B)),
+                      prefixIcon: const Icon(
+                        Icons.email_outlined,
+                        color: Color(0xFF94A3B8),
+                        size: 20,
+                      ),
+                      errorText: _inlineError,
+                    ),
+                    validator: (value) {
+                      final v = value?.trim() ?? '';
+                      if (v.isEmpty) return 'Enter an email address';
+                      if (!_emailPattern.hasMatch(v)) {
+                        return 'Enter a valid email address';
+                      }
+                      return null;
+                    },
                   ),
                 ),
                 const SizedBox(height: 16),
                 Align(
                   alignment: Alignment.centerRight,
-                  child: ElevatedButton(
+                  child: ElevatedButton.icon(
                     onPressed: _sending ? null : _sendInvite,
-                    child: _sending
+                    icon: _sending
                         ? const SizedBox(
-                            width: 18,
-                            height: 18,
+                            width: 16,
+                            height: 16,
                             child: CircularProgressIndicator(
                               strokeWidth: 2,
                               color: Colors.white,
                             ),
                           )
-                        : const Text('Invite'),
+                        : const Icon(Icons.person_add_alt_1, size: 18),
+                    label: Text(_sending ? 'Sending…' : 'Send invite'),
                   ),
                 ),
               ],
@@ -176,7 +231,7 @@ class _InviteMenuDialogState extends State<InviteMenuDialog> {
               Align(
                 alignment: Alignment.centerRight,
                 child: TextButton(
-                  onPressed: () => Navigator.pop(context),
+                  onPressed: _sending ? null : () => Navigator.pop(context),
                   child: const Text('Close'),
                 ),
               ),
