@@ -1,0 +1,304 @@
+"""
+plagiarism/local_check.py — Stage 1 local corpus plagiarism signals.
+
+Why Stage 1 exists (FYP):
+  Exact/near-exact (MinHash + LSH) and semantic (embeddings + FAISS) checks run
+  entirely on-device against a pre-indexed local corpus. This is deterministic,
+  incurs zero per-token API cost, and is fast enough to score every sentence in
+  the input document. Only highly suspicious sentences later justify optional
+  web verification (Stage 2).
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import List, Optional, Sequence
+
+from plagiarism import config
+from plagiarism.corpus_index import (
+    CorpusIndex,
+    embed_texts,
+    jaccard_from_minhash,
+    text_to_minhash,
+    tokenize,
+)
+
+
+@dataclass
+class ExactMatchResult:
+    """Outcome of shingling + MinHash + LSH against the local corpus."""
+    score: float  # Estimated Jaccard vs best corpus neighbour [0, 1]
+    matched_source: Optional[str]
+    matched_text: Optional[str]
+    candidate_count: int = 0
+
+
+@dataclass
+class SemanticMatchResult:
+    """Outcome of embedding + FAISS nearest-neighbour search."""
+    score: float  # Cosine similarity vs best neighbour [0, 1]
+    matched_source: Optional[str]
+    matched_text: Optional[str]
+    flagged: bool = False  # True when score > SEMANTIC_SIMILARITY_THRESHOLD
+
+
+@dataclass
+class LocalSentenceResult:
+    """Combined Stage-1 verdict for a single input sentence/chunk."""
+    sentence: str
+    chunk_id: str
+    exact: ExactMatchResult
+    semantic: SemanticMatchResult
+    local_suspicion_score: float
+    match_type: str  # "exact" | "semantic" | "both" | "none"
+    matched_corpus_source: Optional[str]
+
+
+# ── Exact / near-exact ───────────────────────────────────────────────────────
+
+def check_exact_match(sentence: str, corpus: CorpusIndex) -> ExactMatchResult:
+    """
+    Query MinHashLSH for near-duplicate corpus sentences, then rank by Jaccard.
+
+    Returns the best Jaccard estimate and its corpus filename. Empty / short
+    sentences score 0.
+    """
+    words = tokenize(sentence)
+    if len(words) < config.MIN_SENTENCE_WORDS:
+        return ExactMatchResult(score=0.0, matched_source=None, matched_text=None)
+
+    query_mh = text_to_minhash(sentence)
+    try:
+        keys = corpus.lsh.query(query_mh)
+    except Exception:
+        keys = []
+
+    best_score = 0.0
+    best_source: Optional[str] = None
+    best_text: Optional[str] = None
+
+    for key in keys:
+        entry = corpus.minhash_by_key.get(key)
+        if entry is None:
+            continue
+        source, text, corpus_mh = entry
+        score = jaccard_from_minhash(query_mh, corpus_mh)
+        if score > best_score:
+            best_score = score
+            best_source = source
+            best_text = text
+
+    # If LSH returned nothing, still try a brute-force top sample is overkill;
+    # score stays 0 — semantic stage covers paraphrases.
+    return ExactMatchResult(
+        score=float(best_score),
+        matched_source=best_source,
+        matched_text=best_text,
+        candidate_count=len(keys),
+    )
+
+
+# ── Semantic ─────────────────────────────────────────────────────────────────
+
+def check_semantic_similarity(
+    sentence: str,
+    corpus: CorpusIndex,
+    threshold: float = config.SEMANTIC_SIMILARITY_THRESHOLD,
+    top_k: int = config.FAISS_TOP_K,
+) -> SemanticMatchResult:
+    """
+    Embed `sentence` and query the FAISS IndexFlatIP corpus index.
+
+    Cosine similarity == inner product because corpus (and query) vectors are
+    L2-normalised at index time / encode time.
+    """
+    words = tokenize(sentence)
+    if len(words) < config.MIN_SENTENCE_WORDS:
+        return SemanticMatchResult(
+            score=0.0, matched_source=None, matched_text=None, flagged=False
+        )
+    if corpus.faiss_index.ntotal == 0:
+        return SemanticMatchResult(
+            score=0.0, matched_source=None, matched_text=None, flagged=False
+        )
+
+    query_vec = embed_texts([sentence], normalize=True)
+    k = min(top_k, corpus.faiss_index.ntotal)
+    scores, indices = corpus.faiss_index.search(query_vec, k)
+
+    best_score = 0.0
+    best_source: Optional[str] = None
+    best_text: Optional[str] = None
+
+    for score, idx in zip(scores[0], indices[0]):
+        if idx < 0:
+            continue
+        sim = float(score)
+        # Clamp floating-point noise outside [0, 1] for cosine of unit vectors.
+        sim = max(0.0, min(1.0, sim))
+        if sim > best_score:
+            best_score = sim
+            best_source = corpus.sentence_sources[idx]
+            best_text = corpus.sentence_texts[idx]
+
+    return SemanticMatchResult(
+        score=best_score,
+        matched_source=best_source,
+        matched_text=best_text,
+        flagged=best_score > threshold,
+    )
+
+
+def check_semantic_similarity_batch(
+    sentences: Sequence[str],
+    corpus: CorpusIndex,
+    threshold: float = config.SEMANTIC_SIMILARITY_THRESHOLD,
+    top_k: int = config.FAISS_TOP_K,
+) -> List[SemanticMatchResult]:
+    """
+    Batch embedding variant — more efficient for full-document Stage 1 passes.
+    """
+    results: List[SemanticMatchResult] = []
+    if not sentences:
+        return results
+    if corpus.faiss_index.ntotal == 0:
+        return [
+            SemanticMatchResult(score=0.0, matched_source=None, matched_text=None)
+            for _ in sentences
+        ]
+
+    # Pad empty/short sentences with a dummy then overwrite — keeps one encode call.
+    usable_flags = [len(tokenize(s)) >= config.MIN_SENTENCE_WORDS for s in sentences]
+    encode_inputs = [
+        s if ok else "placeholder" for s, ok in zip(sentences, usable_flags)
+    ]
+    query_vecs = embed_texts(encode_inputs, normalize=True)
+    k = min(top_k, corpus.faiss_index.ntotal)
+    scores_mat, indices_mat = corpus.faiss_index.search(query_vecs, k)
+
+    for i, ok in enumerate(usable_flags):
+        if not ok:
+            results.append(
+                SemanticMatchResult(
+                    score=0.0, matched_source=None, matched_text=None, flagged=False
+                )
+            )
+            continue
+
+        best_score = 0.0
+        best_source: Optional[str] = None
+        best_text: Optional[str] = None
+        for score, idx in zip(scores_mat[i], indices_mat[i]):
+            if idx < 0:
+                continue
+            sim = max(0.0, min(1.0, float(score)))
+            if sim > best_score:
+                best_score = sim
+                best_source = corpus.sentence_sources[idx]
+                best_text = corpus.sentence_texts[idx]
+
+        results.append(
+            SemanticMatchResult(
+                score=best_score,
+                matched_source=best_source,
+                matched_text=best_text,
+                flagged=best_score > threshold,
+            )
+        )
+    return results
+
+
+# ── Combine signals ──────────────────────────────────────────────────────────
+
+def combine_local_scores(
+    exact: ExactMatchResult,
+    semantic: SemanticMatchResult,
+    semantic_threshold: float = config.SEMANTIC_SIMILARITY_THRESHOLD,
+) -> tuple[float, str, Optional[str]]:
+    """
+    Merge exact + semantic into a single local_suspicion_score and match_type.
+
+    Score is max(exact.jaccard, semantic.cosine). Match type uses 'exact' when
+    Jaccard leads (or ties with a solid exact hit), 'semantic' when cosine
+    exceeds the semantic flag threshold and dominates, and 'both' when both
+    signals are meaningfully elevated.
+    """
+    score = max(exact.score, semantic.score)
+
+    exact_hit = exact.score >= config.LSH_THRESHOLD
+    semantic_hit = semantic.score > semantic_threshold
+
+    if exact_hit and semantic_hit:
+        match_type = "both"
+    elif exact_hit or (exact.score >= semantic.score and exact.score > 0):
+        match_type = "exact" if exact.score > 0 else "none"
+    elif semantic_hit or semantic.score > 0:
+        match_type = "semantic" if semantic.score > 0 else "none"
+    else:
+        match_type = "none"
+
+    # Prefer the source from the stronger signal.
+    if exact.score >= semantic.score:
+        source = exact.matched_source or semantic.matched_source
+    else:
+        source = semantic.matched_source or exact.matched_source
+
+    # Refine match_type labels for the report schema (exact | semantic | both).
+    if match_type == "none" and score > 0:
+        match_type = "exact" if exact.score >= semantic.score else "semantic"
+
+    return float(score), match_type, source
+
+
+def analyze_sentence_local(
+    sentence: str,
+    chunk_id: str,
+    corpus: CorpusIndex,
+    semantic: Optional[SemanticMatchResult] = None,
+) -> LocalSentenceResult:
+    """
+    Run both local checks for one sentence and return a combined result.
+
+    Pass a precomputed `semantic` result when using batch embedding.
+    """
+    exact = check_exact_match(sentence, corpus)
+    if semantic is None:
+        semantic = check_semantic_similarity(sentence, corpus)
+
+    suspicion, match_type, source = combine_local_scores(exact, semantic)
+    return LocalSentenceResult(
+        sentence=sentence,
+        chunk_id=chunk_id,
+        exact=exact,
+        semantic=semantic,
+        local_suspicion_score=suspicion,
+        match_type=match_type,
+        matched_corpus_source=source,
+    )
+
+
+def analyze_document_local(
+    sentences: Sequence[dict],
+    corpus: CorpusIndex,
+) -> List[LocalSentenceResult]:
+    """
+    Stage 1 over a full document.
+
+    Args:
+        sentences: Iterable of ``{"text": str, "chunk_id": str}`` dicts
+                   (already-parsed chunks from the Formatify pipeline).
+        corpus: Loaded CorpusIndex.
+
+    Returns:
+        Per-sentence LocalSentenceResult list (includes low-score sentences;
+        filtering for the report happens in the orchestrator).
+    """
+    texts = [str(s.get("text", "")) for s in sentences]
+    semantic_batch = check_semantic_similarity_batch(texts, corpus)
+
+    results: List[LocalSentenceResult] = []
+    for item, sem in zip(sentences, semantic_batch):
+        text = str(item.get("text", ""))
+        chunk_id = str(item.get("chunk_id", ""))
+        results.append(analyze_sentence_local(text, chunk_id, corpus, semantic=sem))
+    return results

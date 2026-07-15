@@ -1,21 +1,30 @@
 """
-heading_analysis.py — Deterministic heading detection, template matching, and level assignment.
+heading_analysis.py — Heading detection, template matching, and level assignment.
 
-Two-pass architecture
----------------------
-  PASS A — Known heading matching:
-      Match paragraph text against the admin-defined required_sections list
-      (with soft/synonym matching). Matched paragraphs get the template's
-      pre-configured level and source="matched".
+Architecture (Claude-first when LLM candidates are provided)
+-----------------------------------------------------------
+  0. CLAUDE PASS — Structure detection via LLM (see functions/heading_detect.py).
+     Candidates are seeded as headings first.
 
-  PASS B — Structural heading inference:
-      For paragraphs NOT matched in Pass A, evaluate structural signals
-      (short label-like line under a known heading, followed by body/list)
-      and infer a heading one level deeper than the nearest parent.
-      These are marked source="inferred".
+  PASS A — Template soft-matching (cross-check):
+      Match paragraph text against required_sections (synonyms/abbreviations).
+      Matched headings get the template level and source="matched".
 
-  Missing template headings (in admin list, not found in the upload) are
-  returned as synthetic entries with source="missing".
+  RULE CROSS-CHECK — Hard negatives (captions, list items, long body sentences)
+      reject false Claude positives. Deterministic detect_heading() supports
+      recovery of clear headings Claude may have missed.
+
+  PASS B — Structural inference for unnumbered sub-headings Claude missed
+      (source="inferred").
+
+  CLAUDE-ONLY extras — Claude headings that do not match the template are
+      marked source="claude_only" and require a user Keep/Discard decision
+      before style apply.
+
+  When claude_candidates is None, behaviour falls back to the original
+  deterministic Pass A/B pipeline (used by reformatter / unit tests).
+
+  Missing template headings → source="missing".
 """
 
 from __future__ import annotations
@@ -773,75 +782,162 @@ def find_missing_template_headings(
     return missing
 
 
+def _is_hard_negative_heading(text: str) -> bool:
+    """Return True for text that must never be treated as a heading."""
+    text = (text or "").strip()
+    if not text:
+        return True
+    if _CAPTION_RE.match(text) or _LIST_ITEM_RE.match(text):
+        return True
+    if re.match(r"^To\s+[a-z]+\b", text, re.IGNORECASE) and _word_count(text) >= 6:
+        return True
+    if _word_count(text) > 14 and text.rstrip().endswith((".", "?", "!")):
+        return True
+    return False
+
+
+def _index_claude_candidates(
+    blocks: List[AnalysisBlock],
+    claude_candidates: Optional[List[Dict[str, Any]]],
+) -> Dict[int, Dict[str, Any]]:
+    """Map block index → Claude candidate using paragraph_id or block_id."""
+    if not claude_candidates:
+        return {}
+
+    by_pid: Dict[str, int] = {}
+    by_bid: Dict[int, int] = {}
+    for idx, block in enumerate(blocks):
+        if block.paragraph_id:
+            by_pid[str(block.paragraph_id)] = idx
+        by_bid[int(block.block_id)] = idx
+
+    indexed: Dict[int, Dict[str, Any]] = {}
+    for cand in claude_candidates:
+        if not isinstance(cand, dict):
+            continue
+        idx: Optional[int] = None
+        pid = str(cand.get("paragraph_id") or "").strip()
+        if pid and pid in by_pid:
+            idx = by_pid[pid]
+        elif cand.get("block_id") is not None:
+            try:
+                idx = by_bid.get(int(cand["block_id"]))
+            except (TypeError, ValueError):
+                idx = None
+        if idx is None:
+            continue
+        indexed[idx] = cand
+    return indexed
+
+
 def analyze_headings(
     blocks: List[AnalysisBlock],
     template: Optional[Dict[str, Any]] = None,
     *,
     include_missing: bool = False,
+    claude_candidates: Optional[List[Dict[str, Any]]] = None,
+    user_decisions: Optional[Dict[str, str]] = None,
 ) -> List[Dict[str, Any]]:
     """
-    Run Pass A (known matching) + Pass B (structural inference) + level assignment.
+    Detect headings, cross-check against the template, assign levels.
 
-    Each heading result includes source ∈ {matched, inferred}.
-    When include_missing=True, appends template entries not found in the document
-    with source="missing".
+    When ``claude_candidates`` is provided, Claude detections are seeded first,
+    then Pass A (template) + rule negatives cross-check. Extra Claude headings
+    that are not in the template become source="claude_only".
+
+    Without Claude candidates, uses the deterministic Pass A/B pipeline.
     """
     outline = build_template_outline((template or {}).get("required_sections", []))
+    decisions = {str(k): str(v).lower() for k, v in (user_decisions or {}).items()}
+    claude_by_idx = _index_claude_candidates(blocks, claude_candidates)
+    use_claude = bool(claude_by_idx)
 
     results: List[Dict[str, Any]] = []
     heading_indices: List[int] = []
     context = MatchContext()
 
-    # ── Seed rows + structural/style detection ───────────────────────────────
-    for block in blocks:
-        is_heading, det_conf = detect_heading(block)
+    # ── Seed rows ────────────────────────────────────────────────────────────
+    for idx, block in enumerate(blocks):
+        text = (block.text or "").strip()
+        claude = claude_by_idx.get(idx)
+        is_heading = False
+        det_conf = 0.0
+        source: Optional[str] = None
+        level_label: Optional[str] = None
+        heading_kind: Optional[str] = None
+
+        if use_claude:
+            # Claude-first seed; hard negatives override Claude false positives
+            if claude and not _is_hard_negative_heading(text):
+                is_heading = True
+                det_conf = float(claude.get("confidence") or 0.85)
+                try:
+                    claude_level = max(1, min(4, int(claude.get("level") or 1)))
+                except (TypeError, ValueError):
+                    claude_level = 1
+                level_label = _level_label(claude_level)
+                source = "claude_only"  # may promote to matched in Pass A
+                heading_kind = "standard"
+            else:
+                # Deterministic recovery for strong headings Claude missed
+                rule_hit, rule_conf = detect_heading(block)
+                if rule_hit and rule_conf >= 0.55 and not _is_hard_negative_heading(text):
+                    is_heading = True
+                    det_conf = rule_conf
+                    source = "inferred"
+                    heading_kind = "standard"
+                    depth = _numbering_depth(block.numbering_prefix)
+                    style_level = _is_heading_style(block.style_name)
+                    if depth is not None:
+                        level_label = _level_label(depth)
+                    elif style_level is not None:
+                        level_label = _level_label(style_level)
+                else:
+                    det_conf = round(1.0 - rule_conf, 3) if rule_hit else round(rule_conf, 3)
+        else:
+            is_heading, det_conf = detect_heading(block)
+            if not is_heading:
+                det_conf = round(1.0 - det_conf, 3)
+            else:
+                source = "inferred"
+                heading_kind = "standard"
+                depth = _numbering_depth(block.numbering_prefix)
+                style_level = _is_heading_style(block.style_name)
+                if depth is not None:
+                    level_label = _level_label(depth)
+                elif style_level is not None:
+                    level_label = _level_label(style_level)
+
         row: Dict[str, Any] = {
             "block_id": block.block_id,
             "is_heading": is_heading,
             "matched_template_heading": None,
-            "level": None,
-            "detection_confidence": det_conf if is_heading else round(det_conf, 3),
+            "level": level_label,
+            "detection_confidence": round(det_conf, 3) if is_heading else (
+                det_conf if not use_claude else round(det_conf, 3)
+            ),
             "match_confidence": None,
-            "heading_kind": "standard" if is_heading else None,
-            "source": None,
+            "heading_kind": heading_kind,
+            "source": source,
+            "user_decision": None,
+            "detected_by_claude": bool(claude) and not _is_hard_negative_heading(text),
         }
-        if not is_heading:
-            row["detection_confidence"] = round(1.0 - det_conf, 3)
-        else:
+        if is_heading:
             heading_indices.append(len(results))
-            # Numbered / styled headings without a template match are inferred
-            # until Pass A promotes them to matched.
-            row["source"] = "inferred"
-            depth = _numbering_depth(block.numbering_prefix)
-            style_level = _is_heading_style(block.style_name)
-            if depth is not None:
-                row["level"] = _level_label(depth)
-            elif style_level is not None:
-                row["level"] = _level_label(style_level)
         results.append(row)
 
-    # ── PASS A — known heading matching (template list) ──────────────────────
-    # Match ALL paragraphs (not only already-detected headings) so abbreviated
-    # forms like "Problem" still bind to "Problem Statement".
+    # ── PASS A — template soft-matching (cross-check) ────────────────────────
     for idx, block in enumerate(blocks):
         text = (block.text or "").strip()
-        if not text or _CAPTION_RE.match(text) or _LIST_ITEM_RE.match(text):
-            continue
-        # Objective infinitives are list body — never template headings
-        if re.match(r"^To\s+[a-z]+\b", text, re.IGNORECASE) and _word_count(text) >= 6:
-            continue
-        # Skip long body sentences — they are never section titles
-        if _word_count(text) > 14 and text.rstrip().endswith((".", "?", "!")):
+        if not text or _is_hard_negative_heading(text):
             continue
 
         matched, match_conf = match_template_heading(text, outline, context, min_score=0.65)
         if not matched:
             continue
 
-        level = _template_level_for_name(matched, outline)
         entry = next((e for e in outline if e.name == matched), None)
-        if entry:
-            level = entry.level
+        level = entry.level if entry else (_template_level_for_name(matched, outline) or 1)
 
         results[idx].update({
             "is_heading": True,
@@ -854,6 +950,7 @@ def analyze_headings(
                 float(results[idx].get("detection_confidence") or 0),
                 float(match_conf or 0),
             ),
+            "user_decision": "keep",  # template matches are always kept
         })
         if idx not in heading_indices:
             heading_indices.append(idx)
@@ -870,7 +967,8 @@ def analyze_headings(
         depth = _numbering_depth(blocks[idx].numbering_prefix)
         if depth is not None:
             results[idx]["level"] = _level_label(depth)
-            results[idx]["source"] = results[idx].get("source") or "inferred"
+            if not results[idx].get("source"):
+                results[idx]["source"] = "inferred"
 
     # ── PASS B — structural heading inference ────────────────────────────────
     _detect_unnumbered_subheadings(blocks, results, heading_indices)
@@ -878,13 +976,50 @@ def analyze_headings(
     # Sequence-based level fill for anything still missing a level
     _infer_levels_from_sequence(heading_indices, blocks, results)
 
-    # Ensure every heading has an explicit source
+    # Finalize sources + apply user Keep/Discard for Claude-only extras
     for idx in heading_indices:
-        if results[idx].get("is_heading") and not results[idx].get("source"):
-            if results[idx].get("matched_template_heading"):
-                results[idx]["source"] = "matched"
+        row = results[idx]
+        if not row.get("is_heading"):
+            continue
+
+        if not row.get("source"):
+            if row.get("matched_template_heading"):
+                row["source"] = "matched"
+            elif row.get("detected_by_claude"):
+                row["source"] = "claude_only"
             else:
-                results[idx]["source"] = "inferred"
+                row["source"] = "inferred"
+
+        # Claude detections that never matched the template stay claude_only
+        # so the user can Keep/Discard — even if Pass B also inferred them.
+        if (
+            row.get("detected_by_claude")
+            and not row.get("matched_template_heading")
+            and row.get("source") != "matched"
+        ):
+            row["source"] = "claude_only"
+
+        pid = blocks[idx].paragraph_id or ""
+        decision = decisions.get(str(pid)) or decisions.get(str(row.get("block_id")))
+
+        if row.get("source") == "claude_only":
+            if decision in ("keep", "discard"):
+                row["user_decision"] = decision
+            else:
+                row["user_decision"] = "pending"
+            if decision == "discard":
+                row["is_heading"] = False
+                row["fix_needed"] = False
+                row["fix_status"] = "discarded_by_user"
+        elif row.get("source") == "matched":
+            row["user_decision"] = "keep"
+        elif row.get("source") == "inferred":
+            # Inferred still auto-kept (existing reformatter behavior)
+            row["user_decision"] = decision if decision in ("keep", "discard") else "keep"
+            if decision == "discard":
+                row["is_heading"] = False
+                row["fix_needed"] = False
+                row["fix_status"] = "discarded_by_user"
 
     if include_missing:
         results.extend(find_missing_template_headings(results, outline))
@@ -897,10 +1032,18 @@ def analyze_document_headings(
     template: Optional[Dict[str, Any]] = None,
     *,
     include_missing: bool = True,
+    claude_candidates: Optional[List[Dict[str, Any]]] = None,
+    user_decisions: Optional[Dict[str, str]] = None,
 ) -> List[Dict[str, Any]]:
     """Analyze all paragraphs in a DocumentModel and enrich results for the API."""
     blocks = blocks_from_document(doc)
-    raw = analyze_headings(blocks, template, include_missing=False)
+    raw = analyze_headings(
+        blocks,
+        template,
+        include_missing=False,
+        claude_candidates=claude_candidates,
+        user_decisions=user_decisions,
+    )
 
     enriched: List[Dict[str, Any]] = []
     for block, row in zip(blocks, raw):
@@ -914,6 +1057,39 @@ def analyze_document_headings(
         enriched.extend(find_missing_template_headings(enriched, outline))
 
     return enriched
+
+
+async def analyze_document_headings_with_claude(
+    doc: DocumentModel,
+    template: Optional[Dict[str, Any]] = None,
+    client: Any = None,
+    *,
+    include_missing: bool = True,
+    user_decisions: Optional[Dict[str, str]] = None,
+) -> List[Dict[str, Any]]:
+    """
+    Claude-first heading analysis for the document analyze API.
+
+    Falls back to deterministic Pass A/B when the client is unavailable or
+    Claude returns no usable candidates.
+    """
+    blocks = blocks_from_document(doc)
+    candidates: List[Dict[str, Any]] = []
+    if client is not None:
+        try:
+            from functions.heading_detect import detect_headings_with_claude
+            candidates = await detect_headings_with_claude(client, blocks, template)
+        except Exception as exc:
+            print(f"[heading_analysis] Claude detection failed (fallback): {exc}")
+            candidates = []
+
+    return analyze_document_headings(
+        doc,
+        template,
+        include_missing=include_missing,
+        claude_candidates=candidates or None,
+        user_decisions=user_decisions,
+    )
 
 
 def classify_paragraphs_for_reformat(
@@ -956,6 +1132,9 @@ def classify_paragraphs_for_reformat(
     mapping: Dict[int, Dict[str, Any]] = {}
     for block_pos, row in enumerate(results):
         if not row.get("is_heading"):
+            continue
+        # Never auto-apply Claude-only extras until the user keeps them
+        if row.get("source") == "claude_only" and row.get("user_decision") != "keep":
             continue
         doc_idx = index_map[block_pos]
         level = _level_to_int(row.get("level")) or 1
@@ -1000,6 +1179,18 @@ def enrich_matches_with_fix_status(
             enriched.append(row)
             continue
 
+        if row.get("fix_status") == "discarded_by_user" or (
+            source == "claude_only" and row.get("user_decision") == "discard"
+        ):
+            row["is_heading"] = False
+            row["fix_status"] = "discarded_by_user"
+            row["fix_needed"] = False
+            row["fix_description"] = (
+                f'Extra heading "{row.get("text", "")}" was discarded — treated as body text.'
+            )
+            enriched.append(row)
+            continue
+
         if not row.get("is_heading"):
             row["fix_status"] = None
             row["fix_needed"] = False
@@ -1013,6 +1204,27 @@ def enrich_matches_with_fix_status(
         current_level = block.get("level")
         current_style = block.get("style") or "Normal"
         matched_name = row.get("matched_template_heading")
+        user_decision = (row.get("user_decision") or "").lower()
+
+        # Claude-only extras wait for Keep/Discard before style apply
+        if source == "claude_only" and user_decision in ("", "pending"):
+            row.update({
+                "fix_status": "awaiting_confirmation",
+                "fix_needed": False,
+                "fix_description": (
+                    f'Claude detected "{row.get("text", "")}" as a heading, but it is not '
+                    f"in the template outline. Keep it as a heading or discard it."
+                ),
+                "expected_level": expected_level,
+                "current_type": current_type,
+                "current_level": current_level,
+                "current_style": current_style,
+                "status": "awaiting_confirmation",
+                "user_decision": "pending",
+                "source": "claude_only",
+            })
+            enriched.append(row)
+            continue
 
         fix_needed = False
         fix_status = "ok"
@@ -1024,7 +1236,9 @@ def enrich_matches_with_fix_status(
         elif current_type != "heading":
             fix_status = "needs_style"
             fix_needed = True
-            if source == "inferred":
+            if source == "claude_only":
+                suffix = " (kept — not in template)"
+            elif source == "inferred":
                 suffix = " (structurally inferred — review recommended)"
             elif matched_name:
                 suffix = f' for "{matched_name}"'
@@ -1037,6 +1251,11 @@ def enrich_matches_with_fix_status(
             suffix = f' (template: "{matched_name}")' if matched_name else ""
             fix_description = (
                 f"Change from Heading {current_level} to Heading {expected_level}{suffix}."
+            )
+        elif source == "claude_only":
+            fix_status = "claude_extra_ok"
+            fix_description = (
+                f'Kept as Heading {expected_level} (detected by Claude; not in template).'
             )
         elif matched_name is None or source == "inferred":
             fix_status = "unmatched" if source != "inferred" else "inferred_ok"
@@ -1104,6 +1323,12 @@ def heading_matches_to_issues(matches: List[Dict[str, Any]]) -> List[Dict[str, A
             })
             continue
 
+        # Pending Claude-only extras are confirmed in the UI, not as issues yet
+        if source == "claude_only" and (match.get("user_decision") or "pending") == "pending":
+            continue
+        if match.get("fix_status") in ("awaiting_confirmation", "discarded_by_user"):
+            continue
+
         if not match.get("is_heading") or not match.get("fix_needed"):
             continue
 
@@ -1121,10 +1346,15 @@ def heading_matches_to_issues(matches: List[Dict[str, Any]]) -> List[Dict[str, A
             suggestion = f"Apply Heading {level} style"
         else:
             match_suffix = f' matching "{matched}"' if matched else ""
-            inferred_note = " (structurally inferred)" if source == "inferred" else ""
+            if source == "claude_only":
+                extra_note = " (Claude-detected, kept by user)"
+            elif source == "inferred":
+                extra_note = " (structurally inferred)"
+            else:
+                extra_note = ""
             reason = (
                 f"\"{text}\" is detected as a section heading{match_suffix}"
-                f"{inferred_note} but does not use Word Heading {level} style."
+                f"{extra_note} but does not use Word Heading {level} style."
             )
             suggestion = f"Apply Heading {level} style"
 

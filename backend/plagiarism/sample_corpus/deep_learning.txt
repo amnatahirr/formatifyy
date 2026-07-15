@@ -1,0 +1,5 @@
+Deep learning models use multiple layers of neural networks to extract hierarchical features from raw data.
+Convolutional neural networks are especially effective for image recognition and computer vision tasks.
+Transfer learning reuses pretrained representations to improve performance on smaller target datasets.
+Plagiarism detection systems compare submitted text against a reference corpus using lexical and semantic signals.
+Students should paraphrase carefully and still attribute the original source of adapted ideas.

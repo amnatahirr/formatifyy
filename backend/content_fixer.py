@@ -197,6 +197,39 @@ def apply_heading_fix(
     return True, f"Applied {style_name}."
 
 
+def demote_heading_to_body(
+    file_path: str,
+    paragraph_id: str,
+) -> Tuple[bool, str]:
+    """Reset a paragraph from Heading N to Normal (body text)."""
+    if not file_path.endswith(".docx"):
+        return False, "Heading demote is only supported for DOCX files."
+    if not os.path.exists(file_path):
+        return False, "Working document not found."
+
+    from docx import Document as DocxDoc
+
+    idx = _para_index(paragraph_id)
+    if idx is None:
+        return False, f"Invalid paragraph_id: {paragraph_id}"
+
+    doc = DocxDoc(file_path)
+    if idx >= len(doc.paragraphs):
+        return False, f"Paragraph index {idx} out of range."
+
+    para = doc.paragraphs[idx]
+    try:
+        para.style = doc.styles["Normal"]
+    except Exception:
+        try:
+            para.style = "Normal"
+        except Exception as exc:
+            return False, f"Could not set Normal style: {exc}"
+
+    doc.save(file_path)
+    return True, "Demoted to Normal."
+
+
 def apply_all_text_fixes(
     file_path: str,
     fixes: List[Dict[str, Any]],

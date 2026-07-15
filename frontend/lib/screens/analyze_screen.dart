@@ -2421,19 +2421,120 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
   }
 
   List<Map<String, dynamic>> get _visibleTemplateHeadingMatches =>
-      _templateHeadingMatches.where((m) => m['is_heading'] == true).toList();
+      _templateHeadingMatches.where((m) {
+        if (m['is_heading'] == true) return true;
+        // Keep discarded Claude extras visible so the user can reverse the decision
+        return m['source'] == 'claude_only' && m['user_decision'] == 'discard';
+      }).toList();
 
   List<Map<String, dynamic>> get _fixableTemplateHeadingMatches =>
       _visibleTemplateHeadingMatches.where((m) {
         final pid = m['paragraph_id'] as String? ?? '';
         if (pid.isEmpty) return false;
         if (_appliedTemplateHeadingFixes.contains(pid)) return false;
+        // Claude extras must be Keep'd before style apply / Apply All
+        final decision = (m['user_decision'] as String? ?? '').toLowerCase();
+        if (decision == 'pending' || decision == 'discard') return false;
+        if ((m['fix_status'] as String? ?? '') == 'awaiting_confirmation') {
+          return false;
+        }
         return m['fix_needed'] == true;
       }).toList();
+
+  Future<void> _decideExtraHeading(
+    Map<String, dynamic> match,
+    String decision,
+  ) async {
+    final pid = match['paragraph_id'] as String? ?? '';
+    if (pid.isEmpty) return;
+
+    setState(() => _applyingTemplateHeadingFixes.add(pid));
+    try {
+      final auth = context.read<AuthProvider>();
+      final level = _headingLevelFromMatch(match);
+      final resp = await http.post(
+        Uri.parse(
+          '$_baseUrl/documents/heading-decision/${widget.documentId}?user_id=${auth.userId}',
+        ),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'paragraph_id': pid,
+          'decision': decision,
+          'heading_level': level,
+          'apply_style': decision == 'keep',
+        }),
+      );
+
+      if (resp.statusCode == 200) {
+        final data = json.decode(resp.body) as Map<String, dynamic>;
+        if (data['document_blocks'] != null) {
+          _mergeWorkingDocumentState(data);
+        }
+        setState(() {
+          final idx = _templateHeadingMatches.indexWhere(
+            (m) => m['paragraph_id'] == pid,
+          );
+          if (idx != -1) {
+            if (decision == 'keep') {
+              _appliedTemplateHeadingFixes.add(pid);
+              _templateHeadingMatches[idx] = {
+                ..._templateHeadingMatches[idx],
+                'user_decision': 'keep',
+                'is_heading': true,
+                'fix_needed': false,
+                'fix_status': 'ok',
+                'status': 'ok',
+                'current_type': 'heading',
+                'current_level': level,
+                'fix_description':
+                    'Kept as Heading $level (detected by Claude; not in template).',
+              };
+            } else {
+              _appliedTemplateHeadingFixes.remove(pid);
+              _templateHeadingMatches[idx] = {
+                ..._templateHeadingMatches[idx],
+                'user_decision': 'discard',
+                'is_heading': false,
+                'fix_needed': false,
+                'fix_status': 'discarded_by_user',
+                'status': 'discarded',
+                'current_type': 'paragraph',
+                'fix_description':
+                    'Discarded — treated as body text (not in template).',
+              };
+            }
+          }
+        });
+        _showSnack(
+          decision == 'keep'
+              ? 'Heading kept and style applied!'
+              : 'Heading discarded.',
+          decision == 'keep' ? _green : _textSec,
+        );
+      } else {
+        _showSnack('Decision failed: ${resp.body}', _red);
+      }
+    } catch (e) {
+      _showSnack('Error: $e', _red);
+    } finally {
+      if (mounted) {
+        setState(() => _applyingTemplateHeadingFixes.remove(pid));
+      }
+    }
+  }
 
   Future<void> _applyTemplateHeadingFix(Map<String, dynamic> match) async {
     final pid = match['paragraph_id'] as String? ?? '';
     if (pid.isEmpty) return;
+    final decision = (match['user_decision'] as String? ?? '').toLowerCase();
+    if (match['source'] == 'claude_only' &&
+        (decision == 'pending' || decision.isEmpty || decision == 'discard')) {
+      _showSnack(
+        'Confirm this Claude-detected heading with Keep first.',
+        _yellow,
+      );
+      return;
+    }
 
     setState(() => _applyingTemplateHeadingFixes.add(pid));
     try {
@@ -3949,8 +4050,8 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
           if (headingMatches.isNotEmpty) ...[
             _buildInfoBanner(
               'Template Heading Analysis',
-              'Detected section headings compared against your template outline. '
-                  'Apply fixes to assign the correct Word Heading style and level.',
+              'Headings are detected by Claude, then cross-checked against your template. '
+                  'Extra headings not in the template need Keep or Discard before styling.',
               _blue,
             ),
             const SizedBox(height: 12),
@@ -4010,8 +4111,17 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
     final text = match['text'] as String? ?? '';
     final level = _headingLevelFromMatch(match);
     final matched = match['matched_template_heading'] as String?;
+    final source = match['source'] as String? ?? '';
+    final userDecision =
+        (match['user_decision'] as String? ?? '').toLowerCase();
+    final isClaudeExtra = source == 'claude_only';
+    final isPendingExtra =
+        isClaudeExtra && (userDecision == 'pending' || userDecision.isEmpty);
+    final isDiscarded = isClaudeExtra && userDecision == 'discard';
     final fixNeeded = match['fix_needed'] == true &&
-        !_appliedTemplateHeadingFixes.contains(pid);
+        !_appliedTemplateHeadingFixes.contains(pid) &&
+        !isPendingExtra &&
+        !isDiscarded;
     final isApplied = _appliedTemplateHeadingFixes.contains(pid) ||
         ((match['status'] as String? ?? '') == 'ok' && !fixNeeded);
     final isApplying = _applyingTemplateHeadingFixes.contains(pid);
@@ -4025,18 +4135,28 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
     final isUnnumberedSub =
         headingKind == 'unnumbered_subheading';
 
-    final Color accentColor = isApplied
-        ? _green
-        : fixNeeded
-            ? _orange
-            : (isUnnumberedSub ? _blue : (matched == null ? _yellow : _blue));
-    final String statusLabel = isApplied
-        ? 'FIXED'
-        : fixNeeded
-            ? 'NEEDS FIX'
-            : (isUnnumberedSub
-                ? 'SUB-HEADING'
-                : (matched == null ? 'UNMATCHED' : 'OK'));
+    final Color accentColor = isDiscarded
+        ? _textSec
+        : isPendingExtra
+            ? _yellow
+            : isApplied
+                ? _green
+                : fixNeeded
+                    ? _orange
+                    : (isUnnumberedSub
+                        ? _blue
+                        : (matched == null ? _yellow : _blue));
+    final String statusLabel = isDiscarded
+        ? 'DISCARDED'
+        : isPendingExtra
+            ? 'CONFIRM'
+            : isApplied
+                ? 'FIXED'
+                : fixNeeded
+                    ? 'NEEDS FIX'
+                    : (isUnnumberedSub
+                        ? 'SUB-HEADING'
+                        : (matched == null ? 'UNMATCHED' : 'OK'));
 
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
@@ -4062,9 +4182,13 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
                   ),
                   alignment: Alignment.center,
                   child: Icon(
-                    isApplied
-                        ? Icons.check_circle_outline
-                        : Icons.title,
+                    isDiscarded
+                        ? Icons.remove_circle_outline
+                        : isPendingExtra
+                            ? Icons.help_outline
+                            : isApplied
+                                ? Icons.check_circle_outline
+                                : Icons.title,
                     color: accentColor,
                     size: 16,
                   ),
@@ -4095,6 +4219,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
                         runSpacing: 4,
                         children: [
                           _Tag('H$level', _blue),
+                          if (isClaudeExtra) _Tag('Claude extra', _yellow),
                           if (isUnnumberedSub)
                             _Tag('Unnumbered sub-heading', _purple),
                           if (matched != null) _Tag(matched, _purple),
@@ -4121,7 +4246,53 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
                 style: const TextStyle(color: _textSec, fontSize: 11, height: 1.4),
               ),
             ],
-            if (fixNeeded) ...[
+            if (isPendingExtra || isDiscarded) ...[
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      onPressed: isApplying
+                          ? null
+                          : () => _decideExtraHeading(match, 'keep'),
+                      icon: isApplying
+                          ? const SizedBox(
+                              width: 14,
+                              height: 14,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                          : const Icon(Icons.check, size: 16),
+                      label: Text(isDiscarded ? 'Keep as heading' : 'Keep'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: _green,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 10),
+                      ),
+                    ),
+                  ),
+                  if (isPendingExtra) ...[
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: isApplying
+                            ? null
+                            : () => _decideExtraHeading(match, 'discard'),
+                        icon: const Icon(Icons.close, size: 16),
+                        label: const Text('Discard'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: _textSec,
+                          side: BorderSide(color: _textSec.withOpacity(0.4)),
+                          padding: const EdgeInsets.symmetric(vertical: 10),
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ] else if (fixNeeded) ...[
               const SizedBox(height: 12),
               SizedBox(
                 width: double.infinity,
@@ -4148,7 +4319,10 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
                   ),
                 ),
               ),
-            ] else if (fixStatus == 'unmatched' && !isApplied && !isUnnumberedSub) ...[
+            ] else if (fixStatus == 'unmatched' &&
+                !isApplied &&
+                !isUnnumberedSub &&
+                !isClaudeExtra) ...[
               const SizedBox(height: 8),
               Text(
                 'This heading is not in your template outline. No automatic rename is applied.',

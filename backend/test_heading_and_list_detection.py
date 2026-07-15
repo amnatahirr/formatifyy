@@ -197,6 +197,54 @@ def test_all_infinitives_one_group():
     assert len(groups[0].items) == 7
 
 
+def test_claude_first_matched_and_extra():
+    """Claude candidates are seeded first; template match promotes; extras stay claude_only."""
+    blocks = [
+        _block(0, "1. Introduction", numbering_prefix="1"),
+        _block(1, "Students often struggle with formatting long academic chapters carefully."),
+        _block(2, "Custom Research Notes"),  # not in template
+        _block(3, "Further discussion of findings continues across several paragraphs here."),
+    ]
+    claude = [
+        {"paragraph_id": "p0", "level": 1, "confidence": 0.95},
+        {"paragraph_id": "p2", "level": 2, "confidence": 0.9},
+    ]
+    results = analyze_headings(blocks, TEMPLATE, claude_candidates=claude)
+
+    intro = results[0]
+    assert intro["is_heading"] is True
+    assert intro["source"] == "matched"
+    assert intro["matched_template_heading"] == "Introduction"
+    assert intro["user_decision"] == "keep"
+
+    extra = results[2]
+    assert extra["is_heading"] is True, f"extra not heading: {extra}"
+    assert extra["source"] == "claude_only", f"expected claude_only, got {extra}"
+    assert extra["user_decision"] == "pending"
+    assert extra["matched_template_heading"] is None
+
+    # Body paragraphs must not become headings
+    assert results[1]["is_heading"] is False
+    assert results[3]["is_heading"] is False
+
+
+def test_claude_extra_discard_hides_heading():
+    blocks = [
+        _block(0, "Custom Research Notes"),
+        _block(1, "Body text continuing after the custom notes heading."),
+    ]
+    claude = [{"paragraph_id": "p0", "level": 2, "confidence": 0.9}]
+    results = analyze_headings(
+        blocks,
+        TEMPLATE,
+        claude_candidates=claude,
+        user_decisions={"p0": "discard"},
+    )
+    assert results[0]["source"] == "claude_only"
+    assert results[0]["user_decision"] == "discard"
+    assert results[0]["is_heading"] is False
+
+
 if __name__ == "__main__":
     tests = [
         test_soft_match_problem_to_problem_statement,
@@ -209,6 +257,8 @@ if __name__ == "__main__":
         test_aggregator_flags_unconverted_parallel_run,
         test_section_heading_never_listed,
         test_all_infinitives_one_group,
+        test_claude_first_matched_and_extra,
+        test_claude_extra_discard_hides_heading,
     ]
 
     failed = 0

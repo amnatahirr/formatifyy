@@ -15,3 +15,9 @@ torch>=2.0.0
 transformers>=4.36.0
 safetensors>=0.4.0
 numpy>=1.24.0
+
+# Hybrid plagiarism detection (local MinHash/LSH + MiniLM/FAISS + optional Google CSE)
+sentence-transformers>=2.2.0
+datasketch>=1.6.0
+faiss-cpu>=1.7.4
+requests>=2.31.0

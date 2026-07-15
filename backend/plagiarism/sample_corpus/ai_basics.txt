@@ -1,0 +1,5 @@
+Natural language processing enables computers to understand human language.
+Machine learning is a subset of artificial intelligence that enables systems to learn and improve from experience without being explicitly programmed.
+Supervised learning trains models on labeled datasets to predict outcomes for unseen examples.
+Feature engineering often determines the practical success of classical machine learning pipelines.
+Academic integrity requires proper citation whenever another author's words or ideas are reused.

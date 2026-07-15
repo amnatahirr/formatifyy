@@ -76,10 +76,12 @@ from content_fixer import (
     apply_all_text_fixes,
     apply_heading_fix,
     apply_template_reformat,
+    demote_heading_to_body,
     _is_instruction_suggestion,
 )
 from heading_analysis import (
     analyze_document_headings,
+    analyze_document_headings_with_claude,
     analyze_headings,
     blocks_from_dicts,
     enrich_matches_with_fix_status,
@@ -574,6 +576,40 @@ async def download(job_id: str):
 
 def _working_copy_path(document_id: int) -> str:
     return os.path.join(UPLOAD_DIR, "working", f"doc_{document_id}_working.docx")
+
+
+def _heading_decisions_path(document_id: int) -> str:
+    return os.path.join(UPLOAD_DIR, "working", f"doc_{document_id}_heading_decisions.json")
+
+
+def _load_heading_decisions(document_id: int) -> Dict[str, str]:
+    path = _heading_decisions_path(document_id)
+    if not os.path.exists(path):
+        return {}
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if isinstance(data, dict):
+            decisions = data.get("decisions", data)
+            if isinstance(decisions, dict):
+                return {
+                    str(k): str(v).lower()
+                    for k, v in decisions.items()
+                    if str(v).lower() in ("keep", "discard")
+                }
+    except Exception as exc:
+        print(f"[heading_decisions] load error (non-fatal): {exc}")
+    return {}
+
+
+def _save_heading_decision(document_id: int, paragraph_id: str, decision: str) -> Dict[str, str]:
+    decisions = _load_heading_decisions(document_id)
+    decisions[str(paragraph_id)] = decision
+    path = _heading_decisions_path(document_id)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump({"decisions": decisions}, f, indent=2)
+    return decisions
 
 
 def _export_copy_path(document_id: int) -> str:
@@ -1157,11 +1193,31 @@ async def analyze_document_endpoint(document_id: int, user_id: int = Query(...))
         except Exception:
             pass
 
-    # Heading analysis — detection, template matching, level assignment
+    # Heading analysis — Claude-first detection, then template/rule cross-check
     template_heading_matches: List[Dict[str, Any]] = []
     if doc_model and tmpl:
         try:
-            template_heading_matches = analyze_document_headings(doc_model, tmpl)
+            decisions = _load_heading_decisions(document_id)
+            client = None
+            try:
+                client = await _get_ai_client()
+            except Exception as exc:
+                print(f"[analyze] AI client unavailable for heading detect: {exc}")
+
+            if client is not None:
+                template_heading_matches = await analyze_document_headings_with_claude(
+                    doc_model,
+                    tmpl,
+                    client,
+                    user_decisions=decisions,
+                )
+            else:
+                template_heading_matches = analyze_document_headings(
+                    doc_model,
+                    tmpl,
+                    user_decisions=decisions,
+                )
+
             template_heading_matches = enrich_matches_with_fix_status(
                 template_heading_matches,
                 document_blocks,
@@ -1225,6 +1281,90 @@ async def heading_analysis_endpoint(body: HeadingAnalysisRequest = Body(...)):
     """
     blocks = blocks_from_dicts(body.blocks)
     return analyze_headings(blocks, body.template)
+
+
+class HeadingDecisionRequest(BaseModel):
+    paragraph_id: str
+    decision: str  # "keep" | "discard"
+    heading_level: Optional[int] = None
+    apply_style: bool = True
+
+
+@app.post("/api/documents/heading-decision/{document_id}", tags=["Documents"])
+async def heading_decision_endpoint(
+    document_id: int,
+    user_id: int = Query(...),
+    body: HeadingDecisionRequest = Body(...),
+):
+    """
+    Keep or discard a Claude-detected heading that is not in the template.
+
+    Keep → persist decision and optionally apply Word Heading style.
+    Discard → persist decision; paragraph is treated as body text.
+    """
+    decision = (body.decision or "").strip().lower()
+    if decision not in ("keep", "discard"):
+        raise HTTPException(status_code=400, detail='decision must be "keep" or "discard"')
+    pid = (body.paragraph_id or "").strip()
+    if not pid:
+        raise HTTPException(status_code=400, detail="paragraph_id is required")
+
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM documents WHERE id = ? AND user_id = ?", (document_id, user_id))
+    doc = cursor.fetchone()
+    conn.close()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    decisions = _save_heading_decision(document_id, pid, decision)
+    result: Dict[str, Any] = {
+        "success": True,
+        "paragraph_id": pid,
+        "decision": decision,
+        "decisions": decisions,
+        "style_applied": False,
+        "message": (
+            "Heading kept."
+            if decision == "keep"
+            else "Heading discarded — treated as body text."
+        ),
+    }
+
+    if decision == "keep" and body.apply_style:
+        tmpl = get_template_by_id(doc["template_id"])
+        if not tmpl:
+            raise HTTPException(status_code=400, detail="Template not found")
+        try:
+            working_copy = _ensure_formatted_working_copy(doc, tmpl)
+            level = max(1, min(4, int(body.heading_level or 1)))
+            ok, msg = apply_heading_fix(working_copy, pid, level)
+            if not ok:
+                result["message"] = f"Decision saved, but style apply failed: {msg}"
+            else:
+                committed = _commit_working_document(document_id, working_copy, doc)
+                result.update(committed)
+                result["style_applied"] = True
+                result["message"] = f"Heading kept and Heading {level} style applied."
+        except Exception as exc:
+            result["message"] = f"Decision saved, but style apply failed: {exc}"
+    elif decision == "discard":
+        tmpl = get_template_by_id(doc["template_id"])
+        if tmpl and str(doc["file_path"]).endswith(".docx"):
+            try:
+                working_copy = _ensure_formatted_working_copy(doc, tmpl)
+                ok, msg = demote_heading_to_body(working_copy, pid)
+                if ok:
+                    committed = _commit_working_document(document_id, working_copy, doc)
+                    result.update(committed)
+                    result["style_applied"] = True
+                    result["message"] = "Heading discarded and demoted to body text."
+                else:
+                    result["message"] = f"Decision saved ({msg})."
+            except Exception as exc:
+                result["message"] = f"Decision saved, but demote failed: {exc}"
+
+    return result
 
 
 async def _get_ai_client():
