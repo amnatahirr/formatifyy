@@ -75,3 +75,13 @@ __pycache__/
 .idea/
 
 backend/dataset.csv
+
+# FYP plagiarism corpus (large local dataset — keep folder structure, ignore files)
+backend/plagiarism/fyp_reports_raw/*
+!backend/plagiarism/fyp_reports_raw/README.md
+!backend/plagiarism/fyp_reports_raw/.gitkeep
+backend/plagiarism/fyp_corpus/*
+!backend/plagiarism/fyp_corpus/README.md
+!backend/plagiarism/fyp_corpus/.gitkeep
+backend/plagiarism/cache/*
+!backend/plagiarism/cache/.gitkeep

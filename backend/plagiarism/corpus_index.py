@@ -22,6 +22,7 @@ import numpy as np
 from datasketch import MinHash, MinHashLSH
 
 from plagiarism import config
+from plagiarism.text_extract import extract_text_from_file, iter_corpus_files
 
 
 # ── Text helpers (pure, unit-testable) ───────────────────────────────────────
@@ -91,7 +92,7 @@ def corpus_fingerprint(corpus_dir: Path) -> str:
     h = hashlib.sha256()
     if not corpus_dir.exists():
         return h.hexdigest()
-    for path in sorted(corpus_dir.glob("*.txt")):
+    for path in iter_corpus_files(corpus_dir):
         stat = path.stat()
         h.update(path.name.encode("utf-8"))
         h.update(str(stat.st_mtime_ns).encode("utf-8"))
@@ -142,7 +143,10 @@ class CorpusIndex:
 
 def load_corpus_documents(corpus_dir: Path) -> List[CorpusDocument]:
     """
-    Load every ``*.txt`` file under `corpus_dir` as a CorpusDocument.
+    Load every supported reference file under `corpus_dir` as a CorpusDocument.
+
+    Accepts ``.txt``, ``.docx``, and ``.pdf``. Prefer ingesting to ``.txt`` via
+    ``python -m plagiarism.ingest_corpus`` for faster reloads.
 
     Raises ValueError with a clear message if the folder is missing or empty.
     """
@@ -150,18 +154,24 @@ def load_corpus_documents(corpus_dir: Path) -> List[CorpusDocument]:
     if not corpus_dir.exists():
         raise ValueError(
             f"Corpus directory does not exist: {corpus_dir}. "
-            "Create it and add .txt reference files, or set PLAGIARISM_CORPUS_DIR."
+            "Create plagiarism/fyp_corpus (or set PLAGIARISM_CORPUS_DIR) and add "
+            "FYP reports, or run: python -m plagiarism.ingest_corpus"
         )
-    paths = sorted(corpus_dir.glob("*.txt"))
+    paths = iter_corpus_files(corpus_dir)
     if not paths:
         raise ValueError(
-            f"Corpus directory is empty (no .txt files): {corpus_dir}. "
-            "Add at least one plain-text reference document."
+            f"Corpus directory is empty (no .txt/.docx/.pdf files): {corpus_dir}. "
+            "Copy reports into plagiarism/fyp_reports_raw and run "
+            "`python -m plagiarism.ingest_corpus`, or place .txt files here directly."
         )
 
     documents: List[CorpusDocument] = []
     for path in paths:
-        text = path.read_text(encoding="utf-8", errors="replace").strip()
+        try:
+            text = extract_text_from_file(path)
+        except Exception as exc:
+            print(f"[plagiarism.corpus_index] skip {path.name}: {exc}")
+            continue
         if not text:
             continue
         doc_id = path.stem
@@ -176,7 +186,7 @@ def load_corpus_documents(corpus_dir: Path) -> List[CorpusDocument]:
 
     if not documents:
         raise ValueError(
-            f"All .txt files in {corpus_dir} were empty. "
+            f"All corpus files in {corpus_dir} were empty or unreadable. "
             "Corpus must contain non-empty reference text."
         )
     return documents
@@ -284,7 +294,7 @@ def build_corpus_index(
     (name / mtime / size fingerprint).
 
     Args:
-        corpus_dir: Folder of ``.txt`` reference files. Defaults to config.CORPUS_DIR.
+        corpus_dir: Folder of reference files (.txt/.docx/.pdf). Defaults to config.CORPUS_DIR.
         cache_dir: Where to write pickle / FAISS artefacts. Defaults to config.INDEX_CACHE_DIR.
         force_rebuild: Ignore existing cache and recompute.
 

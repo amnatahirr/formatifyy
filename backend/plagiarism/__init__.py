@@ -2,10 +2,14 @@
 plagiarism — Hybrid local-corpus + selective web plagiarism detection for Formatify.
 
 Stage 1 (always): MinHash/LSH exact-ish matching + MiniLM/FAISS semantic matching
-against a local .txt corpus. Deterministic, offline, cost-efficient.
+against the local FYP corpus (``fyp_corpus/``). Deterministic, offline, cost-efficient.
 
 Stage 2 (selective): Google Custom Search only for top-K suspicious sentences.
 No LLM API calls in this package.
+
+Setup:
+  1. Copy previous FYP reports into ``plagiarism/fyp_reports_raw/``
+  2. Run ``python -m plagiarism.ingest_corpus --rebuild-index`` from backend/
 """
 
 from __future__ import annotations
@@ -17,6 +21,7 @@ __all__ = [
     "detect_plagiarism_sync",
     "build_corpus_index",
     "load_corpus_index",
+    "check_document_against_fyp_corpus",
 ]
 
 
@@ -36,4 +41,8 @@ def __getattr__(name: str) -> Any:
             "build_corpus_index": build_corpus_index,
             "load_corpus_index": load_corpus_index,
         }[name]
+    if name == "check_document_against_fyp_corpus":
+        from plagiarism.pipeline import check_document_against_fyp_corpus
+
+        return check_document_against_fyp_corpus
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

@@ -14,12 +14,30 @@ from pathlib import Path
 # ── Paths ────────────────────────────────────────────────────────────────────
 # Package-local defaults; override via env if needed.
 _PACKAGE_DIR = Path(__file__).resolve().parent
+_BACKEND_DIR = _PACKAGE_DIR.parent
 
-# Folder of plain-text reference documents used as the local corpus.
-CORPUS_DIR = Path(os.getenv("PLAGIARISM_CORPUS_DIR", str(_PACKAGE_DIR / "sample_corpus")))
+
+def _resolve_backend_path(raw: str, default_relative: str) -> Path:
+    """Resolve absolute paths as-is; relative paths against backend/."""
+    value = (raw or default_relative).strip()
+    path = Path(value)
+    if path.is_absolute():
+        return path
+    return (_BACKEND_DIR / path).resolve()
+
+
+# Folder of reference FYP documents (TXT preferred; DOCX/PDF also accepted).
+# Default: backend/plagiarism/fyp_corpus
+CORPUS_DIR = _resolve_backend_path(
+    os.getenv("PLAGIARISM_CORPUS_DIR", ""),
+    "plagiarism/fyp_corpus",
+)
 
 # Where MinHashLSH + FAISS artefacts are cached on disk.
-INDEX_CACHE_DIR = Path(os.getenv("PLAGIARISM_INDEX_DIR", str(_PACKAGE_DIR / "cache")))
+INDEX_CACHE_DIR = _resolve_backend_path(
+    os.getenv("PLAGIARISM_INDEX_DIR", ""),
+    "plagiarism/cache",
+)
 
 MINHASH_INDEX_FILE = INDEX_CACHE_DIR / "minhash_lsh.pkl"
 FAISS_INDEX_FILE = INDEX_CACHE_DIR / "faiss.index"

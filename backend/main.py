@@ -184,6 +184,46 @@ async def health():
     return {"status": "ok", "version": "3.0.0"}
 
 
+@app.get("/api/plagiarism/corpus-status", tags=["Plagiarism"])
+async def plagiarism_corpus_status(rebuild: bool = Query(False)):
+    """
+    Report whether the local FYP plagiarism corpus is ready.
+
+    Query ``rebuild=true`` to force a MinHash/FAISS rebuild (slow for ~210 reports).
+    """
+    from plagiarism import config as plag_config
+    from plagiarism.pipeline import corpus_plagiarism_enabled, get_or_build_corpus_index
+    from plagiarism.text_extract import iter_corpus_files
+
+    corpus_dir = plag_config.CORPUS_DIR
+    files = iter_corpus_files(corpus_dir)
+    payload = {
+        "enabled": corpus_plagiarism_enabled(),
+        "corpus_dir": str(corpus_dir),
+        "index_dir": str(plag_config.INDEX_CACHE_DIR),
+        "files_on_disk": len(files),
+        "ready": False,
+        "document_count": 0,
+        "sentence_count": 0,
+        "error": None,
+    }
+    if not files:
+        payload["error"] = (
+            "No corpus files found. Copy FYP reports into "
+            "backend/plagiarism/fyp_reports_raw/ and run "
+            "`python -m plagiarism.ingest_corpus --rebuild-index`."
+        )
+        return payload
+    try:
+        index = get_or_build_corpus_index(force_rebuild=rebuild)
+        payload["ready"] = True
+        payload["document_count"] = index.size
+        payload["sentence_count"] = index.sentence_count
+    except Exception as exc:
+        payload["error"] = str(exc)
+    return payload
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # AUTH ENDPOINTS
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -456,7 +496,16 @@ async def _run_analysis(
         client = anthropic.AsyncAnthropic(api_key=ANTHROPIC_API_KEY)
     # Pass the full template dict so formatting gets required_sections +
     # structured rules (not just the markdown string).
-    raw_issues = await dispatch_all(client, batches, tmpl)
+    # Corpus plagiarism runs once on the full document (parallel with batch checks).
+    from plagiarism.pipeline import check_document_against_fyp_corpus
+
+    dispatch_task = asyncio.create_task(dispatch_all(client, batches, tmpl))
+    corpus_task = asyncio.create_task(
+        check_document_against_fyp_corpus(doc_model, document_id=job_id)
+    )
+    raw_issues, corpus_issues = await asyncio.gather(dispatch_task, corpus_task)
+    if corpus_issues:
+        raw_issues.extend(corpus_issues)
     report = aggregate(raw_issues, doc_model, total_batches=len(batches))
 
     # ── Step 5: Reformat ──────────────────────────────────────────────────────

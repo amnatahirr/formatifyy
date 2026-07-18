@@ -18,7 +18,7 @@ from functions.grammar import check_grammar
 from functions.formatting import check_formatting
 from functions.image_relevance import check_images_combined
 from functions.para_relevance import check_para_relevance
-from functions.plagiarism import check_plagiarism
+from functions.plagiarism import check_plagiarism, llm_pattern_plagiarism_enabled
 
 
 async def dispatch_all(
@@ -31,8 +31,13 @@ async def dispatch_all(
 
     Image ethics + relevance share a single local vision pass per batch
     (one BLIP caption + one CLIP score per image).
+
+    Corpus plagiarism runs once at document level in main._run_analysis
+    (not per batch). Optional LLM pattern plagiarism can still run here when
+    PLAGIARISM_LLM_PATTERNS=true.
     """
     tasks: List[asyncio.Task] = []
+    run_llm_plagiarism = llm_pattern_plagiarism_enabled()
 
     for batch in batches:
         tasks.append(asyncio.ensure_future(
@@ -48,9 +53,10 @@ async def dispatch_all(
         tasks.append(asyncio.ensure_future(
             _safe_call(check_para_relevance, client, batch)
         ))
-        tasks.append(asyncio.ensure_future(
-            _safe_call(check_plagiarism, client, batch)
-        ))
+        if run_llm_plagiarism:
+            tasks.append(asyncio.ensure_future(
+                _safe_call(check_plagiarism, client, batch)
+            ))
 
     results = await asyncio.gather(*tasks, return_exceptions=True)
 

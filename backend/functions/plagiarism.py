@@ -1,7 +1,11 @@
 """
-functions/plagiarism.py — Pattern-based plagiarism / AI-writing detector.
+functions/plagiarism.py — Optional LLM pattern-based plagiarism / AI-writing detector.
 
+Primary plagiarism for Formatify is the local FYP corpus check in
+``plagiarism/pipeline.py`` (MinHash + semantic match against previous reports).
 
+This module is an optional secondary pass (AI-writing / style patterns only).
+Enable with ``PLAGIARISM_LLM_PATTERNS=true`` in backend/.env.
 
 NO INTERNET access. Detects plagiarism indicators purely from text patterns:
 - Writing style shifts
@@ -14,6 +18,7 @@ NO INTERNET access. Detects plagiarism indicators purely from text patterns:
 from __future__ import annotations
 
 import json
+import os
 import re
 from typing import Any, Dict, List
 
@@ -23,6 +28,12 @@ from models import Batch
 
 # Import centralized model config — never hardcode the model string
 from config import ANALYSIS_MODEL
+
+
+def llm_pattern_plagiarism_enabled() -> bool:
+    """Off by default — corpus check is the primary plagiarism path."""
+    flag = os.getenv("PLAGIARISM_LLM_PATTERNS", "false").strip().lower()
+    return flag in ("1", "true", "yes", "on")
 
 
 async def check_plagiarism(
