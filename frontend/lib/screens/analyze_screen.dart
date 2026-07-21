@@ -2966,6 +2966,15 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
     debugPrint(
       '[AnalyzeScreen] table_issues    : ${(data["table_issues"] as List?)?.length}',
     );
+    // Persist slim report on DocumentProvider for final_submissions (no recompute).
+    try {
+      context.read<DocumentProvider>().cacheAnalysisReport(
+        widget.documentId,
+        data,
+      );
+    } catch (e) {
+      debugPrint('[AnalyzeScreen] cacheAnalysisReport skipped: $e');
+    }
     return data;
   }
 

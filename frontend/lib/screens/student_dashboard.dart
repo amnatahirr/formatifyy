@@ -18,6 +18,12 @@ import '../widgets/collaboration/project_card.dart';
 import 'collaboration/project_dashboard_screen.dart';
 import 'collaboration/project_detail_screen.dart';
 import 'student_meeting_notes_screen.dart';
+import 'student/supervisor_selection_screen.dart';
+import 'student/my_supervisor_screen.dart';
+import 'student/fyp_milestones_screen.dart';
+import 'student/plagiarism_report_screen.dart';
+import 'student/status_tracker_screen.dart';
+import '../widgets/notifications_panel.dart';
 
 class StudentDashboard extends StatefulWidget {
   final int initialIndex;
@@ -50,7 +56,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
   @override
   void initState() {
     super.initState();
-    _selectedIndex = widget.initialIndex.clamp(0, 7);
+    _selectedIndex = widget.initialIndex.clamp(0, 12);
     _activeProjectId = widget.initialProjectId;
     _projectDetailTab = widget.initialProjectTab;
     _loadInitialData();
@@ -192,11 +198,36 @@ class _StudentDashboardState extends State<StudentDashboard> {
                 ),
                 _buildSidebarItem(
                   6,
+                  Icons.school_outlined,
+                  'Choose Supervisor',
+                ),
+                _buildSidebarItem(
+                  7,
+                  Icons.badge_outlined,
+                  'My Supervisor',
+                ),
+                _buildSidebarItem(
+                  8,
+                  Icons.checklist_outlined,
+                  'Milestones',
+                ),
+                _buildSidebarItem(
+                  9,
                   Icons.sticky_note_2_outlined,
                   'Meeting Notes',
                 ),
                 _buildSidebarItem(
-                  7,
+                  10,
+                  Icons.policy_outlined,
+                  'Plagiarism Report',
+                ),
+                _buildSidebarItem(
+                  11,
+                  Icons.track_changes_outlined,
+                  'Status Tracker',
+                ),
+                _buildSidebarItem(
+                  12,
                   Icons.settings,
                   'Settings',
                 ),
@@ -338,7 +369,12 @@ class _StudentDashboardState extends State<StudentDashboard> {
       'Collaboration',
       'AI Tools',
       'Templates',
+      'Choose Supervisor',
+      'My Supervisor',
+      'Milestones',
       'Meeting Notes',
+      'Plagiarism Report',
+      'Status Tracker',
       'Settings',
     ];
     final descriptions = [
@@ -348,7 +384,12 @@ class _StudentDashboardState extends State<StudentDashboard> {
       'Create projects, invite teammates, and track shared work.',
       'Powerful AI-powered tools to enhance your reports',
       'Choose from pre-built academic report templates',
+      'Request an FYP supervisor for your group',
+      'Track your supervisor assignment status',
+      'View your FYP milestone checklist',
       'Read-only meeting notes from your FYP supervisor',
+      'View plagiarism score and matched sources from your submission',
+      'Track final submission review status and supervisor decisions',
       'Manage your account settings and preferences',
     ];
 
@@ -399,21 +440,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
           ),
           Row(
             children: [
-              Container(
-                decoration: BoxDecoration(
-                  color: const Color(0xFF0D1117),
-                  borderRadius: BorderRadius.circular(6),
-                  border: Border.all(
-                    color: Colors.white.withOpacity(0.1),
-                  ),
-                ),
-                child: IconButton(
-                  icon: const Icon(Icons.notifications_outlined),
-                  onPressed: () {},
-                  color: Colors.white.withOpacity(0.6),
-                  tooltip: 'Notifications',
-                ),
-              ),
+              const NotificationsPanelButton(),
               const SizedBox(width: 12),
               GestureDetector(
                 onTap: () {
@@ -487,8 +514,58 @@ class _StudentDashboardState extends State<StudentDashboard> {
       case 5:
         return _buildTemplatesPage();
       case 6:
-        return const StudentMeetingNotesScreen();
+        return const SupervisorSelectionScreen();
       case 7:
+        return MySupervisorScreen(
+          onChooseSupervisor: () => setState(() {
+            _selectedIndex = 6;
+            _activeProjectId = null;
+          }),
+        );
+      case 8:
+        return FypMilestonesScreen(
+          onChooseSupervisor: () => setState(() {
+            _selectedIndex = 6;
+            _activeProjectId = null;
+          }),
+          onOpenMySupervisor: () => setState(() {
+            _selectedIndex = 7;
+            _activeProjectId = null;
+          }),
+        );
+      case 9:
+        return const StudentMeetingNotesScreen();
+      case 10:
+        return PlagiarismReportScreen(
+          onChooseSupervisor: () => setState(() {
+            _selectedIndex = 6;
+            _activeProjectId = null;
+          }),
+          onOpenMySupervisor: () => setState(() {
+            _selectedIndex = 7;
+            _activeProjectId = null;
+          }),
+          onOpenNewReport: () => setState(() {
+            _selectedIndex = 1;
+            _activeProjectId = null;
+          }),
+        );
+      case 11:
+        return StatusTrackerScreen(
+          onChooseSupervisor: () => setState(() {
+            _selectedIndex = 6;
+            _activeProjectId = null;
+          }),
+          onOpenMySupervisor: () => setState(() {
+            _selectedIndex = 7;
+            _activeProjectId = null;
+          }),
+          onUploadNewVersion: () => setState(() {
+            _selectedIndex = 1;
+            _activeProjectId = null;
+          }),
+        );
+      case 12:
         return _buildSettingsPage();
       default:
         return const SizedBox.shrink();

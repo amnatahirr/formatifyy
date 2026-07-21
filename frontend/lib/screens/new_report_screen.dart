@@ -1426,6 +1426,7 @@ import 'package:provider/provider.dart';
 import 'package:http/http.dart' as http;
 import '../providers/auth_provider.dart';
 import '../providers/document_provider.dart';
+import '../providers/fyp_provider.dart';
 import '../providers/template_provider.dart';
 import '../config/api_config.dart';
 import 'analyze_screen.dart';
@@ -1462,18 +1463,29 @@ class _NewReportScreenState extends State<NewReportScreen> {
   @override
   void initState() {
     super.initState();
-    _loadTemplatesAndDocuments();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _loadTemplatesAndDocuments();
+    });
     if (widget.selectedTemplate != null) {
       _selectedTemplate = widget.selectedTemplate;
     }
   }
 
   void _loadTemplatesAndDocuments() {
-    Future.microtask(() {
+    Future.microtask(() async {
+      if (!mounted) return;
       final auth = context.read<AuthProvider>();
       if (auth.userId != null) {
         context.read<TemplateProvider>().fetchUserTemplates(auth.userId!);
         context.read<DocumentProvider>().fetchDocuments(auth.userId!);
+        final email = (auth.userEmail ?? auth.email ?? '').trim();
+        final fyp = context.read<FypProvider>();
+        if (fyp.fypGroupId == null && email.isNotEmpty) {
+          await fyp.fetchAssignmentStatus(
+            userId: auth.userId!,
+            email: email,
+          );
+        }
       }
     });
   }
@@ -1516,10 +1528,11 @@ class _NewReportScreenState extends State<NewReportScreen> {
       final capturedTemplateId = _selectedTemplate!['id'];
       final capturedTemplateName =
           _selectedTemplate!['name'] ?? 'Unknown Template';
+      final capturedTitle = _titleController.text.trim();
 
       // Create report and get document ID
       final response = await _createReportAndGetId(
-        _titleController.text,
+        capturedTitle,
         _contentController.text,
         capturedTemplateId,
         auth.userId!,
@@ -1528,10 +1541,17 @@ class _NewReportScreenState extends State<NewReportScreen> {
       if (response != null) {
         _showSuccess('Report created successfully!');
 
-        // Clear fields AFTER capturing template values
         _titleController.clear();
         _contentController.clear();
         setState(() => _selectedTemplate = null);
+
+        context.read<DocumentProvider>().markReadyForSupervisorSubmit(
+          documentId: response['document_id'] as int,
+          filename: response['filename'] as String? ?? 'report.docx',
+          title: capturedTitle.isNotEmpty
+              ? capturedTitle
+              : (response['filename'] as String? ?? 'Report'),
+        );
 
         // Navigate using the captured (non-null) values
         if (mounted) {
@@ -1618,6 +1638,13 @@ class _NewReportScreenState extends State<NewReportScreen> {
 
       if (response != null) {
         _showSuccess('File uploaded successfully!');
+        final filename = response['filename'] as String? ??
+            _selectedFile!.path.split(RegExp(r'[\\/]')).last;
+        context.read<DocumentProvider>().markReadyForSupervisorSubmit(
+          documentId: response['document_id'] as int,
+          filename: filename,
+          title: filename,
+        );
         setState(() => _selectedFile = null);
 
         // Navigate to analyze screen
@@ -1905,6 +1932,17 @@ class _NewReportScreenState extends State<NewReportScreen> {
 
       if (response.statusCode == 200) {
         _showSuccess('File imported successfully!');
+        final data = jsonDecode(response.body);
+        final docId = data['document_id'] as int?;
+        final importedName =
+            (data['filename'] as String?) ?? filename;
+        if (docId != null) {
+          context.read<DocumentProvider>().markReadyForSupervisorSubmit(
+            documentId: docId,
+            filename: importedName,
+            title: importedName,
+          );
+        }
         final auth = context.read<AuthProvider>();
         if (auth.userId != null) {
           context.read<DocumentProvider>().fetchDocuments(auth.userId!);
@@ -1945,14 +1983,27 @@ void _showSuccess(String message) {
 
   @override
   Widget build(BuildContext context) {
+    final fyp = context.watch<FypProvider>();
+    final docs = context.watch<DocumentProvider>();
+    final showSubmit = fyp.fypGroupId != null &&
+        docs.pendingSubmitDocumentId != null;
+    final isResubmit = docs.resubmitPriorSubmissionId != null;
+
     final body = SingleChildScrollView(
         padding: const EdgeInsets.all(32),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            
+            if (isResubmit) ...[
+              _buildResubmitBanner(),
+              const SizedBox(height: 16),
+            ],
+            if (showSubmit) ...[
+              _buildSupervisorSubmitBanner(),
+              const SizedBox(height: 24),
+            ],
            
-            const SizedBox(height: 32),
+            const SizedBox(height: 8),
             Row(
               children: [
                 _buildOptionButton(
@@ -2008,6 +2059,166 @@ void _showSuccess(String message) {
       backgroundColor: const Color(0xFF0D1117),
       body: body,
     );
+  }
+
+  Widget _buildResubmitBanner() {
+    final docs = context.watch<DocumentProvider>();
+    final priorId = docs.resubmitPriorSubmissionId;
+    final sourceId = docs.resubmitSourceDocumentId;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF59E0B).withOpacity(0.12),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFF59E0B).withOpacity(0.4)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Uploading a new version',
+            style: TextStyle(
+              color: Color(0xFFF59E0B),
+              fontWeight: FontWeight.w700,
+              fontSize: 14,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            [
+              if (priorId != null) 'Prior submission #$priorId.',
+              if (sourceId != null)
+                'source_document_id=$sourceId will be used until you upload a revised file.',
+              'Upload or paste your revised report, then Submit for Supervisor Review.',
+            ].join(' '),
+            style: TextStyle(
+              color: Colors.white.withOpacity(0.75),
+              fontSize: 12,
+              height: 1.4,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSupervisorSubmitBanner() {
+    final docs = context.watch<DocumentProvider>();
+    final filename = docs.pendingSubmitFilename ?? 'document';
+    final hasAnalysis =
+        docs.pendingSubmitDocumentId != null &&
+        docs.analysisReportFor(docs.pendingSubmitDocumentId!) != null;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: const Color(0xFF161B22),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFF3B82F6).withOpacity(0.35)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Ready for supervisor review',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 15,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            filename,
+            style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 13),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            hasAnalysis
+                ? 'AI analysis snapshot will be attached.'
+                : 'No AI analysis cached yet — submit will still work; run Analyze first for grammar/plagiarism scores.',
+            style: TextStyle(
+              color: Colors.white.withOpacity(0.45),
+              fontSize: 12,
+            ),
+          ),
+          const SizedBox(height: 14),
+          SizedBox(
+            height: 44,
+            child: ElevatedButton.icon(
+              onPressed:
+                  docs.isSubmittingFinal ? null : _submitForSupervisorReview,
+              icon: docs.isSubmittingFinal
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                  : const Icon(Icons.send_outlined, size: 18),
+              label: Text(
+                docs.isSubmittingFinal
+                    ? 'Submitting...'
+                    : 'Submit for Supervisor Review',
+              ),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF3B82F6),
+                foregroundColor: Colors.white,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _submitForSupervisorReview() async {
+    final auth = context.read<AuthProvider>();
+    final fyp = context.read<FypProvider>();
+    final docs = context.read<DocumentProvider>();
+
+    final userId = auth.userId;
+    final email = (auth.userEmail ?? auth.email ?? '').trim();
+    var groupId = fyp.fypGroupId;
+    final docId = docs.pendingSubmitDocumentId;
+    final filename = docs.pendingSubmitFilename ?? 'document.docx';
+    final title = docs.pendingSubmitTitle ?? filename;
+
+    if (userId == null || email.isEmpty) {
+      _showError('Please sign in again to submit.');
+      return;
+    }
+    if (groupId == null) {
+      await fyp.fetchAssignmentStatus(userId: userId, email: email);
+      groupId = fyp.fypGroupId;
+    }
+    if (groupId == null || docId == null) {
+      _showError('No active FYP group or document ready to submit.');
+      return;
+    }
+
+    final result = await docs.submitFinalSubmission(
+      userId: userId,
+      groupId: groupId,
+      title: title,
+      filename: filename,
+      studentContactEmail: email,
+      // Prefer newly uploaded doc; fall back to prior source_document_id from Status Tracker.
+      sourceDocumentId: docId ?? docs.resubmitSourceDocumentId,
+      analysisReport: docId != null ? docs.analysisReportFor(docId) : null,
+    );
+
+    if (!mounted) return;
+    if (result != null) {
+      _showSuccess('Submitted for supervisor review.');
+    } else {
+      _showError(docs.errorMessage ?? 'Submit failed');
+    }
   }
 
   Widget _buildUploadFromPhoneUI() {

@@ -500,6 +500,7 @@ class PlagiarismMonitorGroup {
 class MeetingNoteModel {
   final int id;
   final int groupId;
+  final int? supervisorId;
   final String meetingDate;
   final String topic;
   final String actionItems;
@@ -511,6 +512,7 @@ class MeetingNoteModel {
   const MeetingNoteModel({
     required this.id,
     required this.groupId,
+    this.supervisorId,
     required this.meetingDate,
     required this.topic,
     required this.actionItems,
@@ -523,6 +525,10 @@ class MeetingNoteModel {
   factory MeetingNoteModel.fromJson(Map<String, dynamic> json) => MeetingNoteModel(
         id: _asInt(json['id']),
         groupId: _asInt(json['group_id']),
+        // Schema uses supervisor_id (not created_by).
+        supervisorId: json['supervisor_id'] == null
+            ? null
+            : _asInt(json['supervisor_id']),
         meetingDate: (json['meeting_date'] ?? '').toString(),
         topic: (json['topic'] ?? '').toString(),
         actionItems: (json['action_items'] ?? '').toString(),

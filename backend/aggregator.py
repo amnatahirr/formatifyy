@@ -154,7 +154,7 @@ def _run_list_validation(
         covered.update(g.indices)
         print(
             f"[aggregator] list auto-detected: {g.detection} "
-            f"→ {g.paragraph_ids}"
+            f"-> {g.paragraph_ids}"
         )
     for iss in issues:
         for idx in getattr(iss, "para_indices", None) or []:

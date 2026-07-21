@@ -1484,7 +1484,8 @@ async def get_plagiarism_monitor_detail(
     cursor = conn.cursor()
     cursor.execute(
         """
-        SELECT id, title, project_title, progress, student_contact_email, member_names
+        SELECT id, title, project_title, progress, student_contact_email, member_names,
+               plagiarism_flagged, plagiarism_flag_reason, plagiarism_flagged_at
         FROM fyp_groups
         WHERE id = ? AND supervisor_id = ? AND status = 'accepted'
         """,
@@ -1508,6 +1509,9 @@ async def get_plagiarism_monitor_detail(
         "match_count": plag["match_count"],
         "matches": plag["matches"],
         "data_source": plag["data_source"],
+        "flagged": bool(row["plagiarism_flagged"]) if "plagiarism_flagged" in row.keys() else False,
+        "flag_reason": (row["plagiarism_flag_reason"] or "") if "plagiarism_flag_reason" in row.keys() else "",
+        "flagged_at": (row["plagiarism_flagged_at"] or "") if "plagiarism_flagged_at" in row.keys() else "",
     }
     conn.close()
     return payload
@@ -1519,7 +1523,7 @@ async def flag_group_plagiarism(
     user_id: Annotated[int | None, Query()] = None,
     payload: dict[str, Any] = Body(default_factory=dict),
 ):
-    """Send a plagiarism warning notification to the student group contact."""
+    """Persist plagiarism flag on fyp_groups and notify the student contact."""
     supervisor = _require_supervisor(user_id)
     supervisor_id = supervisor["id"]
     note = (payload.get("note") or payload.get("message") or "").strip()
@@ -1554,6 +1558,18 @@ async def flag_group_plagiarism(
         else:
             message += "Please review matched sources and revise before final submission."
 
+        flagged_at = datetime.utcnow().isoformat(sep=" ", timespec="seconds")
+        cursor.execute(
+            """
+            UPDATE fyp_groups
+            SET plagiarism_flagged = 1,
+                plagiarism_flag_reason = ?,
+                plagiarism_flagged_at = ?
+            WHERE id = ?
+            """,
+            (note or message, flagged_at, group_id),
+        )
+
         _create_notification(
             cursor,
             recipient_email=student_email,
@@ -1570,6 +1586,9 @@ async def flag_group_plagiarism(
             "notified_email": student_email or "",
             "plagiarism_score": score,
             "risk_level": plag["risk_level"],
+            "flagged": True,
+            "flag_reason": note or message,
+            "flagged_at": flagged_at,
         }
     except HTTPException:
         conn.rollback()

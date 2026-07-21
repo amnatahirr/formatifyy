@@ -298,9 +298,11 @@ class SupervisorApiService {
       queryParameters: {'user_id': userId},
     );
     final map = Map<String, dynamic>.from(data as Map);
-    return List<Map<String, dynamic>>.from(map['notes'] ?? const [])
-        .map(MeetingNoteModel.fromJson)
-        .toList();
+    return List<Map<String, dynamic>>.from(
+      (map['notes'] as List? ?? const []).map(
+        (e) => Map<String, dynamic>.from(e as Map),
+      ),
+    ).map(MeetingNoteModel.fromJson).toList();
   }
 
   Future<MeetingNoteModel> createMeetingNote({

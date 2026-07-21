@@ -18,6 +18,7 @@ import 'providers/template_provider.dart';
 import 'providers/upload_provider.dart';
 import 'providers/image_formatter_provider.dart';
 import 'providers/collaboration_provider.dart';
+import 'providers/fyp_provider.dart';
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
@@ -111,6 +112,7 @@ class _MyAppState extends State<MyApp> {
         ChangeNotifierProvider(create: (_) => UploadProvider()),
         ChangeNotifierProvider(create: (_) => ImageFormatterProvider()),
         ChangeNotifierProvider(create: (_) => CollaborationProvider()),
+        ChangeNotifierProvider(create: (_) => FypProvider()),
       ],
       child: MaterialApp(
         navigatorKey: navigatorKey,

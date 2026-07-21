@@ -188,6 +188,9 @@ def init_db():
             deadline_date DATE,
             student_contact_email TEXT,
             department_id INTEGER,
+            plagiarism_flagged INTEGER DEFAULT 0,
+            plagiarism_flag_reason TEXT,
+            plagiarism_flagged_at DATETIME,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (supervisor_id) REFERENCES supervisors(id),
             FOREIGN KEY (department_id) REFERENCES departments(id)
@@ -203,6 +206,18 @@ def init_db():
         cursor.execute("ALTER TABLE fyp_groups ADD COLUMN deadline_date DATE")
     if "student_contact_email" not in fyp_group_columns:
         cursor.execute("ALTER TABLE fyp_groups ADD COLUMN student_contact_email TEXT")
+    if "plagiarism_flagged" not in fyp_group_columns:
+        cursor.execute(
+            "ALTER TABLE fyp_groups ADD COLUMN plagiarism_flagged INTEGER DEFAULT 0"
+        )
+    if "plagiarism_flag_reason" not in fyp_group_columns:
+        cursor.execute(
+            "ALTER TABLE fyp_groups ADD COLUMN plagiarism_flag_reason TEXT"
+        )
+    if "plagiarism_flagged_at" not in fyp_group_columns:
+        cursor.execute(
+            "ALTER TABLE fyp_groups ADD COLUMN plagiarism_flagged_at DATETIME"
+        )
 
     # 12. Assignment requests awaiting supervisor decision
     cursor.execute("""
@@ -265,12 +280,35 @@ def init_db():
             supervisor_id INTEGER NOT NULL,
             title TEXT NOT NULL,
             filename TEXT,
+            file_url TEXT,
+            milestone TEXT,
+            version_number INTEGER DEFAULT 1,
+            plagiarism_score REAL,
+            grammar_report_ref TEXT,
             status TEXT DEFAULT 'pending_review',
             submitted_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (group_id) REFERENCES fyp_groups(id),
             FOREIGN KEY (supervisor_id) REFERENCES supervisors(id)
         )
     """)
+
+    # Migrate group_documents columns on existing databases
+    cursor.execute("PRAGMA table_info(group_documents)")
+    group_doc_columns = {row[1] for row in cursor.fetchall()}
+    if "file_url" not in group_doc_columns:
+        cursor.execute("ALTER TABLE group_documents ADD COLUMN file_url TEXT")
+    if "milestone" not in group_doc_columns:
+        cursor.execute("ALTER TABLE group_documents ADD COLUMN milestone TEXT")
+    if "version_number" not in group_doc_columns:
+        cursor.execute(
+            "ALTER TABLE group_documents ADD COLUMN version_number INTEGER DEFAULT 1"
+        )
+    if "plagiarism_score" not in group_doc_columns:
+        cursor.execute("ALTER TABLE group_documents ADD COLUMN plagiarism_score REAL")
+    if "grammar_report_ref" not in group_doc_columns:
+        cursor.execute(
+            "ALTER TABLE group_documents ADD COLUMN grammar_report_ref TEXT"
+        )
 
     # 14. Replies from group members to the supervisor
     cursor.execute("""
@@ -363,6 +401,22 @@ def init_db():
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (group_id) REFERENCES fyp_groups(id),
             FOREIGN KEY (supervisor_id) REFERENCES supervisors(id)
+        )
+    """)
+
+    # 20. Overall verdict / remarks on a group document (or group-level feedback)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS remarks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            group_id INTEGER NOT NULL,
+            document_id INTEGER,
+            verdict TEXT NOT NULL,
+            remark_text TEXT,
+            created_by INTEGER NOT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (group_id) REFERENCES fyp_groups(id),
+            FOREIGN KEY (document_id) REFERENCES group_documents(id),
+            FOREIGN KEY (created_by) REFERENCES users(id)
         )
     """)
 

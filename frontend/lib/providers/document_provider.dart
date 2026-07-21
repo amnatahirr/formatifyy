@@ -21,13 +21,101 @@ class DocumentProvider extends ChangeNotifier {
 
   List<Map<String, dynamic>> _documents = [];
   bool _isLoading = false;
+  bool _isSubmittingFinal = false;
   String? _errorMessage;
   final Set<int> _reAnalyzingIds = {};
 
+  /// Cached AI Tools analyze payloads (grammar/plagiarism/stats) keyed by document id.
+  final Map<int, Map<String, dynamic>> _analysisByDocumentId = {};
+
+  /// Last document created/uploaded on New Report — used for supervisor submit.
+  int? _pendingSubmitDocumentId;
+  String? _pendingSubmitFilename;
+  String? _pendingSubmitTitle;
+
+  /// Prior final_submission.source_document_id when resubmitting after "revision".
+  int? _resubmitSourceDocumentId;
+  int? _resubmitPriorSubmissionId;
+
   List<Map<String, dynamic>> get documents => _documents;
   bool get isLoading => _isLoading;
+  bool get isSubmittingFinal => _isSubmittingFinal;
   String? get errorMessage => _errorMessage;
   bool isReAnalyzing(int documentId) => _reAnalyzingIds.contains(documentId);
+
+  int? get pendingSubmitDocumentId => _pendingSubmitDocumentId;
+  String? get pendingSubmitFilename => _pendingSubmitFilename;
+  String? get pendingSubmitTitle => _pendingSubmitTitle;
+  int? get resubmitSourceDocumentId => _resubmitSourceDocumentId;
+  int? get resubmitPriorSubmissionId => _resubmitPriorSubmissionId;
+
+  Map<String, dynamic>? analysisReportFor(int documentId) =>
+      _analysisByDocumentId[documentId];
+
+  /// Slim snapshot matching final_submissions / supervisor analysis_report shape.
+  static Map<String, dynamic> slimAnalysisReport(Map<String, dynamic> raw) {
+    return {
+      'stats': raw['stats'] is Map
+          ? Map<String, dynamic>.from(raw['stats'] as Map)
+          : <String, dynamic>{},
+      'structure': raw['structure'] is Map
+          ? Map<String, dynamic>.from(raw['structure'] as Map)
+          : <String, dynamic>{},
+      'compliance_score': raw['compliance_score'],
+      'issues': List<dynamic>.from(raw['issues'] as List? ?? const []),
+    };
+  }
+
+  void cacheAnalysisReport(int documentId, Map<String, dynamic> report) {
+    _analysisByDocumentId[documentId] = slimAnalysisReport(report);
+    notifyListeners();
+  }
+
+  void markReadyForSupervisorSubmit({
+    required int documentId,
+    required String filename,
+    String? title,
+  }) {
+    _pendingSubmitDocumentId = documentId;
+    _pendingSubmitFilename = filename;
+    _pendingSubmitTitle = (title != null && title.trim().isNotEmpty)
+        ? title.trim()
+        : filename;
+    notifyListeners();
+  }
+
+  /// Start a revision resubmit from Status Tracker into New Report (screen 4).
+  /// Passes [sourceDocumentId] from the prior final_submission for traceability.
+  void beginResubmitFromSubmission({
+    required int? sourceDocumentId,
+    required int priorSubmissionId,
+    required String title,
+    required String filename,
+  }) {
+    _resubmitSourceDocumentId = sourceDocumentId;
+    _resubmitPriorSubmissionId = priorSubmissionId;
+    if (sourceDocumentId != null) {
+      markReadyForSupervisorSubmit(
+        documentId: sourceDocumentId,
+        filename: filename,
+        title: title,
+      );
+    } else {
+      _pendingSubmitDocumentId = null;
+      _pendingSubmitFilename = filename;
+      _pendingSubmitTitle = title;
+      notifyListeners();
+    }
+  }
+
+  void clearPendingSupervisorSubmit() {
+    _pendingSubmitDocumentId = null;
+    _pendingSubmitFilename = null;
+    _pendingSubmitTitle = null;
+    _resubmitSourceDocumentId = null;
+    _resubmitPriorSubmissionId = null;
+    notifyListeners();
+  }
 
   Future<void> fetchDocuments(int userId) async {
     _isLoading = true;
@@ -65,6 +153,13 @@ class DocumentProvider extends ChangeNotifier {
       final url = Uri.parse('$baseUrl/analyze/$documentId?user_id=$userId');
       final resp = await http.get(url);
       if (resp.statusCode == 200) {
+        final data = json.decode(resp.body);
+        if (data is Map) {
+          cacheAnalysisReport(
+            documentId,
+            Map<String, dynamic>.from(data),
+          );
+        }
         await fetchDocuments(userId);
         return true;
       }
@@ -77,6 +172,68 @@ class DocumentProvider extends ChangeNotifier {
       _reAnalyzingIds.remove(documentId);
       notifyListeners();
     }
+  }
+
+  /// Insert into final_submissions (status=pending) for supervisor GET /submissions.
+  Future<Map<String, dynamic>?> submitFinalSubmission({
+    required int userId,
+    required int groupId,
+    required String title,
+    required String filename,
+    required String studentContactEmail,
+    int? sourceDocumentId,
+    Map<String, dynamic>? analysisReport,
+  }) async {
+    _isSubmittingFinal = true;
+    _errorMessage = null;
+    notifyListeners();
+    try {
+      final report = analysisReport ??
+          (sourceDocumentId != null
+              ? _analysisByDocumentId[sourceDocumentId]
+              : null);
+      final uri = Uri.parse(
+        '${ApiConfig.getBaseUrl()}/student/final-submissions',
+      ).replace(queryParameters: {'user_id': userId.toString()});
+
+      final response = await http.post(
+        uri,
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'group_id': groupId,
+          'title': title,
+          'filename': filename,
+          'student_contact_email': studentContactEmail,
+          if (sourceDocumentId != null) 'source_document_id': sourceDocumentId,
+          if (report != null) 'analysis_report': report,
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        final data = Map<String, dynamic>.from(jsonDecode(response.body) as Map);
+        clearPendingSupervisorSubmit();
+        return data;
+      }
+      _errorMessage = _detail(response.body) ?? 'Failed to submit for review';
+      return null;
+    } catch (e) {
+      _errorMessage = 'Network error: $e';
+      debugPrint('[DocumentProvider] submitFinalSubmission error: $e');
+      return null;
+    } finally {
+      _isSubmittingFinal = false;
+      notifyListeners();
+    }
+  }
+
+  String? _detail(String body) {
+    try {
+      final data = jsonDecode(body);
+      if (data is Map && data['detail'] != null) {
+        return data['detail'].toString();
+      }
+    } catch (_) {}
+    return null;
   }
 
   Future<bool> uploadDocument(File file, int templateId, int userId) async {
