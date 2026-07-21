@@ -9,6 +9,7 @@ import 'package:provider/provider.dart';
 import '../config/api_config.dart';
 import '../providers/auth_provider.dart';
 import '../providers/template_provider.dart';
+import '../widgets/admin/admin_ui.dart';
 import 'analyze_screen.dart';
 
 class AdminVerifyScreen extends StatefulWidget {
@@ -130,102 +131,78 @@ class _AdminVerifyScreenState extends State<AdminVerifyScreen> {
   Widget build(BuildContext context) {
     final templates = context.watch<TemplateProvider>().templates;
 
-    return Container(
-      color: const Color(0xFF0F1419),
-      padding: const EdgeInsets.all(32),
-      child: SingleChildScrollView(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Verify Document with Template',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 24,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Upload a file, choose a template, and run full verification as admin.',
-              style: TextStyle(color: Colors.white.withOpacity(0.6)),
-            ),
-            const SizedBox(height: 24),
-            Container(
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: const Color(0xFF1A1F2E),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: const Color(0xFF2D3748)),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  ElevatedButton.icon(
-                    onPressed: _isVerifying ? null : _pickFile,
-                    icon: const Icon(Icons.upload_file),
-                    label: Text(
-                      _selectedFile == null ? 'Choose File' : 'Change File',
+    return AdminPage(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const AdminPageHeader(
+            title: 'Verify Document with Template',
+            subtitle: 'Upload a file, choose a template, and run full verification as admin',
+          ),
+          const SizedBox(height: 24),
+          AdminSectionCard(
+            title: 'Verification',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                ElevatedButton.icon(
+                  onPressed: _isVerifying ? null : _pickFile,
+                  icon: const Icon(Icons.upload_file),
+                  label: Text(_selectedFile == null ? 'Choose File' : 'Change File'),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  _selectedFile?.path.split('/').last ?? 'No file selected',
+                  style: TextStyle(color: Colors.white.withOpacity(0.85)),
+                ),
+                const SizedBox(height: 18),
+                if (_isLoadingTemplates)
+                  const AdminLoadingView()
+                else
+                  DropdownButtonFormField<Map<String, dynamic>>(
+                    value: _selectedTemplate,
+                    dropdownColor: AdminColors.surface,
+                    decoration: const InputDecoration(
+                      labelText: 'Select Template',
+                      border: OutlineInputBorder(),
                     ),
+                    items: templates
+                        .map(
+                          (t) => DropdownMenuItem<Map<String, dynamic>>(
+                            value: t,
+                            child: Text((t['name'] ?? 'Template').toString()),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: _isVerifying
+                        ? null
+                        : (value) {
+                            setState(() => _selectedTemplate = value);
+                          },
                   ),
+                if (_error != null) ...[
                   const SizedBox(height: 12),
-                  Text(
-                    _selectedFile?.path.split('/').last ?? 'No file selected',
-                    style: TextStyle(color: Colors.white.withOpacity(0.85)),
-                  ),
-                  const SizedBox(height: 18),
-                  if (_isLoadingTemplates)
-                    const CircularProgressIndicator()
-                  else
-                    DropdownButtonFormField<Map<String, dynamic>>(
-                      value: _selectedTemplate,
-                      decoration: const InputDecoration(
-                        labelText: 'Select Template',
-                        border: OutlineInputBorder(),
-                      ),
-                      items: templates
-                          .map(
-                            (t) => DropdownMenuItem<Map<String, dynamic>>(
-                              value: t,
-                              child: Text((t['name'] ?? 'Template').toString()),
-                            ),
-                          )
-                          .toList(),
-                      onChanged: _isVerifying
-                          ? null
-                          : (value) {
-                              setState(() => _selectedTemplate = value);
-                            },
-                    ),
-                  if (_error != null) ...[
-                    const SizedBox(height: 12),
-                    Text(
-                      _error!,
-                      style: const TextStyle(color: Colors.redAccent),
-                    ),
-                  ],
-                  const SizedBox(height: 20),
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton.icon(
-                      onPressed: _isVerifying ? null : _verifyNow,
-                      icon: _isVerifying
-                          ? const SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.fact_check),
-                      label: Text(
-                        _isVerifying ? 'Verifying...' : 'Verify with Template',
-                      ),
-                    ),
-                  ),
+                  Text(_error!, style: const TextStyle(color: AdminColors.danger)),
                 ],
-              ),
+                const SizedBox(height: 20),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: _isVerifying ? null : _verifyNow,
+                    icon: _isVerifying
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.fact_check),
+                    label: Text(_isVerifying ? 'Verifying...' : 'Verify with Template'),
+                  ),
+                ),
+              ],
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

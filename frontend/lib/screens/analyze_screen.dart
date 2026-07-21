@@ -3725,7 +3725,11 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
     switch (index) {
       case 0:
         final auth = context.read<AuthProvider>();
-        final route = auth.isAdmin ? '/admin-dashboard' : '/student-dashboard';
+        final route = auth.isAdmin
+            ? '/admin-dashboard'
+            : auth.isSupervisor
+                ? '/supervisor-dashboard'
+                : '/student-dashboard';
         Navigator.pushNamedAndRemoveUntil(context, route, (_) => false);
         break;
       case 1:

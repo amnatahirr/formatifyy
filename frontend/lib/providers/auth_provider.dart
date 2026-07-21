@@ -27,6 +27,8 @@ class AuthProvider extends ChangeNotifier {
   int? get userId => _userId;
   String? get userRole => _userRole;
   bool get isAdmin => _userRole == "admin";
+  bool get isSupervisor => _userRole == "supervisor";
+  bool get isStudent => _userRole == "student" || (_userRole != null && !isAdmin && !isSupervisor);
   bool get isLoggedIn => _isLoggedIn;
   String? get errorMessage => _errorMessage;
   bool get isLoading => _isLoading;
@@ -182,6 +184,53 @@ class AuthProvider extends ChangeNotifier {
   void clearError() {
     _errorMessage = null;
     notifyListeners();
+  }
+
+  Future<bool> changePassword({
+    required String currentPassword,
+    required String newPassword,
+  }) async {
+    if (_userId == null) {
+      _errorMessage = 'You must be logged in.';
+      notifyListeners();
+      return false;
+    }
+
+    _isLoading = true;
+    _errorMessage = null;
+    notifyListeners();
+
+    try {
+      final response = await http
+          .post(
+            Uri.parse('$baseUrl/auth/change-password'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({
+              'user_id': _userId,
+              'current_password': currentPassword,
+              'new_password': newPassword,
+            }),
+          )
+          .timeout(const Duration(seconds: 10));
+
+      if (response.statusCode == 200) {
+        return true;
+      }
+
+      try {
+        final data = jsonDecode(response.body);
+        _errorMessage = (data['detail'] ?? 'Could not change password').toString();
+      } catch (_) {
+        _errorMessage = 'Could not change password';
+      }
+      return false;
+    } catch (e) {
+      _errorMessage = 'Network error: $e';
+      return false;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
   }
 
   /// Check if the current user has Google Drive tokens stored

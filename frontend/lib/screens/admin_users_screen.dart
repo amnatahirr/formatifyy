@@ -1,11 +1,9 @@
-import 'dart:convert';
-
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
 import 'package:provider/provider.dart';
 
-import '../config/api_config.dart';
 import '../providers/auth_provider.dart';
+import '../services/admin_api_service.dart';
+import '../widgets/admin/admin_ui.dart';
 
 class AdminUsersScreen extends StatefulWidget {
   const AdminUsersScreen({super.key});
@@ -15,11 +13,13 @@ class AdminUsersScreen extends StatefulWidget {
 }
 
 class _AdminUsersScreenState extends State<AdminUsersScreen> {
-  late String baseUrl;
+  final AdminApiService _api = AdminApiService();
   List<Map<String, dynamic>> _allUsers = [];
   List<Map<String, dynamic>> _pagedUsers = [];
   bool _isLoading = false;
+  String? _error;
   String _searchQuery = '';
+  String _roleFilter = 'All';
   int _currentPage = 1;
   final int _itemsPerPage = 10;
 
@@ -28,42 +28,47 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
   @override
   void initState() {
     super.initState();
-    baseUrl = ApiConfig.getBaseUrl();
     _loadUsers();
   }
 
   Future<void> _loadUsers() async {
-    setState(() => _isLoading = true);
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
     try {
       final auth = context.read<AuthProvider>();
       if (auth.userId == null) return;
-      final response = await http.get(
-        Uri.parse('$baseUrl/admin/users?user_id=${auth.userId}'),
-      );
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body) as Map<String, dynamic>;
-        _allUsers = List<Map<String, dynamic>>.from(data['users'] ?? []);
-        _applyFiltersAndPagination();
-      }
+      _allUsers = await _api.fetchUsers(auth.userId!);
+      _applyFiltersAndPagination();
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error loading users: $e')),
-      );
+      if (mounted) {
+        setState(() => _error = e.toString());
+        showAdminSnackBar(context, 'Error loading users: $e', isError: true);
+      }
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
   }
 
-  void _applyFiltersAndPagination() {
+  List<Map<String, dynamic>> get _roleFiltered {
     final query = _searchQuery.trim().toLowerCase();
-    final filtered = _allUsers.where((u) {
+    return _allUsers.where((u) {
+      final role = (u['role'] ?? '').toString().toLowerCase();
+      final matchesRole = _roleFilter == 'All' ||
+          (_roleFilter == 'Supervisors' && role == 'supervisor') ||
+          (_roleFilter == 'Students' && role == 'student') ||
+          (_roleFilter == 'Admins' && role == 'admin');
+      if (!matchesRole) return false;
       if (query.isEmpty) return true;
       final username = (u['username'] ?? '').toString().toLowerCase();
       final email = (u['email'] ?? '').toString().toLowerCase();
       return username.contains(query) || email.contains(query);
     }).toList();
+  }
 
+  void _applyFiltersAndPagination() {
+    final filtered = _roleFiltered;
     final totalPages = (filtered.length / _itemsPerPage).ceil();
     if (_currentPage > totalPages && totalPages > 0) _currentPage = totalPages;
     if (_currentPage < 1) _currentPage = 1;
@@ -74,23 +79,45 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
     setState(() {});
   }
 
+  Color _roleColor(String role) {
+    switch (role.toLowerCase()) {
+      case 'admin':
+        return AdminColors.accent;
+      case 'supervisor':
+        return AdminColors.primary;
+      case 'student':
+        return AdminColors.success;
+      default:
+        return Colors.white54;
+    }
+  }
+
+  IconData _roleIcon(String role) {
+    switch (role.toLowerCase()) {
+      case 'admin':
+        return Icons.shield_outlined;
+      case 'supervisor':
+        return Icons.supervisor_account_outlined;
+      case 'student':
+        return Icons.school_outlined;
+      default:
+        return Icons.person_outline;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final totalPages = (_allUsers.length / _itemsPerPage).ceil();
-    return Container(
-      color: const Color(0xFF0F1419),
-      padding: const EdgeInsets.all(32),
+    final filtered = _roleFiltered;
+    final totalPages = (filtered.length / _itemsPerPage).ceil();
+
+    return AdminPage(
+      scrollable: false,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'Students',
-            style: TextStyle(fontSize: 28, fontWeight: FontWeight.w700, color: Colors.white),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            'All registered student emails and accounts.',
-            style: TextStyle(color: Colors.white.withOpacity(0.6)),
+          const AdminPageHeader(
+            title: 'Users',
+            subtitle: 'All accounts — filter by supervisors and students',
           ),
           const SizedBox(height: 16),
           Row(
@@ -99,9 +126,10 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
                 child: TextField(
                   controller: _searchController,
                   style: const TextStyle(color: Colors.white),
-                  decoration: const InputDecoration(
+                  decoration: InputDecoration(
                     hintText: 'Search by username or email',
-                    border: OutlineInputBorder(),
+                    prefixIcon: const Icon(Icons.search),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                   ),
                   onChanged: (value) {
                     _searchQuery = value;
@@ -118,82 +146,120 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
               ),
             ],
           ),
+          const SizedBox(height: 14),
+          Wrap(
+            spacing: 8,
+            children: ['All', 'Supervisors', 'Students', 'Admins'].map((label) {
+              final selected = _roleFilter == label;
+              return ChoiceChip(
+                label: Text(label),
+                selected: selected,
+                onSelected: (_) {
+                  setState(() {
+                    _roleFilter = label;
+                    _currentPage = 1;
+                  });
+                  _applyFiltersAndPagination();
+                },
+              );
+            }).toList(),
+          ),
           const SizedBox(height: 16),
           Expanded(
             child: _isLoading
-                ? const Center(child: CircularProgressIndicator())
-                : _pagedUsers.isEmpty
-                    ? const Center(
-                        child: Text('No student users found', style: TextStyle(color: Colors.white70)),
-                      )
-                    : ListView.separated(
-                        itemCount: _pagedUsers.length,
-                        separatorBuilder: (_, __) => const SizedBox(height: 10),
-                        itemBuilder: (context, index) {
-                          final u = _pagedUsers[index];
-                          return Container(
-                            padding: const EdgeInsets.all(14),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF1A1F2E),
-                              borderRadius: BorderRadius.circular(10),
-                              border: Border.all(color: const Color(0xFF2D3748)),
-                            ),
-                            child: Row(
-                              children: [
-                                const Icon(Icons.school, color: Color(0xFF6366F1)),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        (u['username'] ?? '').toString(),
-                                        style: const TextStyle(
-                                          color: Colors.white,
-                                          fontWeight: FontWeight.w600,
-                                        ),
+                ? const AdminLoadingView()
+                : _error != null
+                    ? AdminErrorView(message: _error!, onRetry: _loadUsers)
+                    : _pagedUsers.isEmpty
+                        ? AdminEmptyView(message: 'No users match this filter.', onAction: _loadUsers, actionLabel: 'Refresh')
+                        : ListView.separated(
+                            itemCount: _pagedUsers.length,
+                            separatorBuilder: (_, __) => const SizedBox(height: 10),
+                            itemBuilder: (context, index) {
+                              final u = _pagedUsers[index];
+                              final role = (u['role'] ?? 'user').toString();
+                              final color = _roleColor(role);
+                              return Container(
+                                padding: const EdgeInsets.all(14),
+                                decoration: adminCardDecoration(),
+                                child: Row(
+                                  children: [
+                                    Container(
+                                      padding: const EdgeInsets.all(10),
+                                      decoration: BoxDecoration(
+                                        color: color.withOpacity(0.14),
+                                        borderRadius: BorderRadius.circular(10),
                                       ),
-                                      Text(
-                                        (u['email'] ?? '').toString(),
-                                        style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 12),
+                                      child: Icon(_roleIcon(role), color: color),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            (u['username'] ?? '').toString(),
+                                            style: const TextStyle(
+                                              color: Colors.white,
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                          ),
+                                          Text(
+                                            (u['email'] ?? '').toString(),
+                                            style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 12),
+                                          ),
+                                        ],
                                       ),
-                                    ],
-                                  ),
+                                    ),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                      decoration: BoxDecoration(
+                                        color: color.withOpacity(0.15),
+                                        borderRadius: BorderRadius.circular(20),
+                                      ),
+                                      child: Text(
+                                        role,
+                                        style: TextStyle(color: color, fontWeight: FontWeight.w600, fontSize: 12),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Text(
+                                      (u['university_name'] ?? 'N/A').toString(),
+                                      style: TextStyle(color: Colors.white.withOpacity(0.7)),
+                                    ),
+                                  ],
                                 ),
-                                Text(
-                                  (u['university_name'] ?? 'N/A').toString(),
-                                  style: TextStyle(color: Colors.white.withOpacity(0.7)),
-                                ),
-                              ],
-                            ),
-                          );
-                        },
-                      ),
+                              );
+                            },
+                          ),
           ),
           if (totalPages > 1)
-            Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                TextButton(
-                  onPressed: _currentPage > 1
-                      ? () {
-                          _currentPage--;
-                          _applyFiltersAndPagination();
-                        }
-                      : null,
-                  child: const Text('Prev'),
-                ),
-                Text('$_currentPage / $totalPages', style: const TextStyle(color: Colors.white70)),
-                TextButton(
-                  onPressed: _currentPage < totalPages
-                      ? () {
-                          _currentPage++;
-                          _applyFiltersAndPagination();
-                        }
-                      : null,
-                  child: const Text('Next'),
-                ),
-              ],
+            Padding(
+              padding: const EdgeInsets.only(top: 12),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton(
+                    onPressed: _currentPage > 1
+                        ? () {
+                            _currentPage--;
+                            _applyFiltersAndPagination();
+                          }
+                        : null,
+                    child: const Text('Prev'),
+                  ),
+                  Text('$_currentPage / $totalPages', style: TextStyle(color: Colors.white.withOpacity(0.7))),
+                  TextButton(
+                    onPressed: _currentPage < totalPages
+                        ? () {
+                            _currentPage++;
+                            _applyFiltersAndPagination();
+                          }
+                        : null,
+                    child: const Text('Next'),
+                  ),
+                ],
+              ),
             ),
         ],
       ),

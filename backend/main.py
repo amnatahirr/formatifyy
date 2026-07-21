@@ -47,11 +47,12 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from aggregator import aggregate
+from admin_routes import router as admin_router
 from batcher import create_batches
 from database import get_db, hash_password, init_db, verify_password
 
 from dispatcher import dispatch_all
-from models import AnalysisReport, UserLoginRequest, UserSignupRequest, TemplateCreateRequest, TemplateUpdateRequest
+from models import AnalysisReport, UserLoginRequest, UserSignupRequest, TemplateCreateRequest, TemplateUpdateRequest, ChangePasswordRequest
 from parser import parse_file, parse_text
 from reformatter import reformat_document
 from issue_utils import (
@@ -305,6 +306,32 @@ async def login(payload: UserLoginRequest):
     }
 
 
+@app.post("/api/auth/change-password", tags=["Auth"])
+async def change_password(payload: ChangePasswordRequest):
+    """Change password for the logged-in user."""
+    if len(payload.new_password.strip()) < 6:
+        raise HTTPException(status_code=400, detail="New password must be at least 6 characters.")
+
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM users WHERE id = ?", (payload.user_id,))
+    user = cursor.fetchone()
+    if not user:
+        conn.close()
+        raise HTTPException(status_code=404, detail="User not found.")
+
+    if not verify_password(payload.current_password, user["password_hash"]):
+        conn.close()
+        raise HTTPException(status_code=401, detail="Current password is incorrect.")
+
+    cursor.execute(
+        "UPDATE users SET password_hash = ? WHERE id = ?",
+        (hash_password(payload.new_password.strip()), payload.user_id),
+    )
+    conn.commit()
+    conn.close()
+    return {"success": True, "message": "Password updated successfully."}
+
 
 @app.get("/api/auth/google/debug/tokens", tags=["Auth"])
 async def google_debug_tokens():
@@ -364,11 +391,18 @@ async def get_template(template_id: int):
 # ═══════════════════════════════════════════════════════════════════════════════
 
 @app.post("/api/admin/templates", tags=["Admin"])
-async def create_template(payload: TemplateCreateRequest, created_by: int = 1, university_id: int = 1):
+async def create_template(
+    payload: TemplateCreateRequest,
+    created_by: int | None = None,
+    user_id: int | None = None,
+    university_id: int = 1,
+    department_id: int | None = None,
+):
     """
     Admin: create a new formatting template.
-    Query params: created_by (user_id of admin), university_id.
+    Query params: created_by / user_id (admin), university_id, department_id.
     """
+    admin_id = created_by or user_id or 1
     conn = get_db()
     cursor = conn.cursor()
 
@@ -379,7 +413,7 @@ async def create_template(payload: TemplateCreateRequest, created_by: int = 1, u
         raise HTTPException(status_code=404, detail="University not found.")
 
     # Validate admin user
-    cursor.execute("SELECT id, role FROM users WHERE id = ?", (created_by,))
+    cursor.execute("SELECT id, role FROM users WHERE id = ?", (admin_id,))
     admin = cursor.fetchone()
     if not admin:
         conn.close()
@@ -387,16 +421,17 @@ async def create_template(payload: TemplateCreateRequest, created_by: int = 1, u
 
     cursor.execute(
         """
-        INSERT INTO templates (university_id, name, description, required_sections, formatting_rules, created_by)
-        VALUES (?, ?, ?, ?, ?, ?)
+        INSERT INTO templates (university_id, department_id, name, description, required_sections, formatting_rules, created_by)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
         """,
         (
             university_id,
+            department_id,
             payload.name,
             payload.description or "",
             json.dumps(payload.required_sections),
             json.dumps(payload.formatting_rules),
-            created_by,
+            admin_id,
         ),
     )
     conn.commit()
@@ -408,9 +443,16 @@ async def create_template(payload: TemplateCreateRequest, created_by: int = 1, u
 
 
 @app.put("/api/admin/templates/{template_id}", tags=["Admin"])
-async def edit_template(template_id: int, payload: TemplateUpdateRequest, user_id: int = 1):
+async def edit_template(
+    template_id: int,
+    payload: TemplateUpdateRequest,
+    user_id: int = 1,
+    department_id: int | None = None,
+):
     """Admin: update an existing formatting template."""
     updates = payload.model_dump(exclude_unset=True)
+    if department_id is not None:
+        updates["department_id"] = department_id
     if not updates:
         raise HTTPException(status_code=400, detail="No fields to update.")
 
@@ -543,6 +585,7 @@ async def _run_analysis(
 
 set_analysis_runner(_run_analysis)
 app.include_router(vc_router)
+app.include_router(admin_router)
 
 # Additive: draft-template extraction from prose guideline DOCX (does not alter create/update)
 from template_extract_routes import router as template_extract_router

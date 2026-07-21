@@ -147,6 +147,12 @@ class UserLoginRequest(BaseModel):
     password: str
 
 
+class ChangePasswordRequest(BaseModel):
+    user_id: int
+    current_password: str
+    new_password: str
+
+
 class TemplateCreateRequest(BaseModel):
     name: str
     description: str = ""

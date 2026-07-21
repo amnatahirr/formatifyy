@@ -83,8 +83,11 @@ class _ImageFormatterBody extends StatelessWidget {
           onItemSelected: (index) {
             switch (index) {
               case 0:
-                final isAdmin = auth.isAdmin;
-                final route   = isAdmin ? '/admin-dashboard' : '/student-dashboard';
+                final route = auth.isAdmin
+                    ? '/admin-dashboard'
+                    : auth.isSupervisor
+                        ? '/supervisor-dashboard'
+                        : '/student-dashboard';
                 Navigator.pushNamedAndRemoveUntil(context, route, (_) => false);
                 break;
               case 1:

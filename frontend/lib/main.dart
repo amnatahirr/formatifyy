@@ -8,6 +8,7 @@ import 'config/dev_user_config.dart';
 import 'screens/login_screen.dart';
 import 'screens/student_dashboard.dart';
 import 'screens/admin_dashboard.dart';
+import 'screens/supervisor_dashboard.dart';
 import 'screens/mobile_qr_upload_screen.dart';
 import 'screens/mobile_qr_download_screen.dart';
 import 'screens/mobile_companion_screen.dart';
@@ -171,6 +172,7 @@ class _MyAppState extends State<MyApp> {
           '/login': (_) => const LoginScreen(),
           '/student-dashboard': (_) => const StudentDashboard(),
           '/admin-dashboard': (_) => const AdminDashboard(),
+          '/supervisor-dashboard': (_) => const SupervisorDashboard(),
           '/new-report': (_) => const StudentDashboard(initialIndex: 1),
           '/collaboration': (_) => const StudentDashboard(initialIndex: 3),
           '/collaboration/project': (context) {
@@ -216,9 +218,11 @@ class AuthCheck extends StatelessWidget {
           }
           if (authProvider.isAdmin) {
             return const AdminDashboard();
-          } else {
-            return const StudentDashboard();
           }
+          if (authProvider.isSupervisor) {
+            return const SupervisorDashboard();
+          }
+          return const StudentDashboard();
         }
         return const LoginScreen();
       },

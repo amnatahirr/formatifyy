@@ -129,6 +129,7 @@ def get_all_templates() -> List[Dict[str, Any]]:
             "formatting_rules": rules,
             "markdown_rules": markdown_rules,
             "university_id": r["university_id"],
+            "department_id": r["department_id"] if "department_id" in r.keys() else None,
             "created_by": r["created_by"],
             "created_at": str(r["created_at"])
         })
@@ -159,6 +160,7 @@ def get_templates_by_university(university_id: int) -> List[Dict[str, Any]]:
             "formatting_rules": rules,
             "markdown_rules": markdown_rules,
             "university_id": r["university_id"],
+            "department_id": r["department_id"] if "department_id" in r.keys() else None,
             "created_by": r["created_by"],
             "created_at": str(r["created_at"])
         })
@@ -203,6 +205,9 @@ def update_template(template_id: int, updates: Dict[str, Any]) -> Dict[str, Any]
     if updates.get("formatting_rules") is not None:
         fields.append("formatting_rules = ?")
         values.append(json.dumps(updates["formatting_rules"]))
+    if "department_id" in updates:
+        fields.append("department_id = ?")
+        values.append(updates["department_id"])
 
     if not fields:
         conn.close()
@@ -256,6 +261,7 @@ def get_template_by_id(template_id: Any) -> Dict[str, Any] | None:
         "formatting_rules": rules,
         "markdown_rules": markdown_rules,
         "university_id": row["university_id"],
+        "department_id": row["department_id"] if "department_id" in row.keys() else None,
         "created_by": row["created_by"],
         "created_at": str(row["created_at"])
     }

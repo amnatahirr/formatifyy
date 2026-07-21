@@ -1041,9 +1041,17 @@ import '../widgets/template_config/action_buttons.dart';
 import '../widgets/template_config/upload_template_document_button.dart';
 import '../utils/template_mapping_utils.dart';
 import '../screens/admin_reference_settings_screen.dart';
+import '../widgets/admin/admin_ui.dart';
 
 class TemplateConfigurationScreen extends StatefulWidget {
-  const TemplateConfigurationScreen({super.key});
+  final int? departmentId;
+  final bool standalone;
+
+  const TemplateConfigurationScreen({
+    super.key,
+    this.departmentId,
+    this.standalone = false,
+  });
 
   @override
   State<TemplateConfigurationScreen> createState() =>
@@ -1648,9 +1656,12 @@ class _TemplateConfigurationScreenState
 
       final templateData = _buildTemplateData(lineSpacing);
 
+      final departmentQuery = widget.departmentId != null
+          ? '&department_id=${widget.departmentId}'
+          : '';
       final response = await http.post(
         Uri.parse(
-            '$baseUrl/admin/templates?user_id=${authProvider.userId}&university_id=1'),
+            '$baseUrl/admin/templates?created_by=${authProvider.userId}&user_id=${authProvider.userId}&university_id=1$departmentQuery'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode(templateData),
       );
@@ -1660,6 +1671,10 @@ class _TemplateConfigurationScreenState
           ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
               content: Text('Template created successfully!'),
               backgroundColor: Colors.green));
+          if (widget.standalone) {
+            Navigator.of(context).pop(true);
+            return;
+          }
         }
         await _loadTemplates();
         _clearFormFields();
@@ -2030,10 +2045,10 @@ class _TemplateConfigurationScreenState
 
   @override
   Widget build(BuildContext context) {
-    return SingleChildScrollView(
+    final form = SingleChildScrollView(
       child: Container(
         color: const Color(0xFF0F1419),
-        padding: const EdgeInsets.all(32),
+        padding: EdgeInsets.all(widget.standalone ? 24 : 32),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -2232,6 +2247,17 @@ class _TemplateConfigurationScreenState
           ],
         ),
       ),
+    );
+
+    if (!widget.standalone) return form;
+
+    return AdminSubPage(
+      title: 'Create Template',
+      subtitle: widget.departmentId != null
+          ? 'Using the full template configuration for this department'
+          : 'Using the full template configuration screen',
+      onBack: () => Navigator.of(context).pop(false),
+      child: form,
     );
   }
 }

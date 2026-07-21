@@ -118,6 +118,63 @@ def init_db():
         )
     """)
 
+    # 6. Create Departments table
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS departments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            code TEXT NOT NULL,
+            min_members INTEGER DEFAULT 1,
+            max_members INTEGER DEFAULT 3,
+            max_groups_per_supervisor INTEGER DEFAULT 6,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
+    # 7. Create Supervisors table
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS supervisors (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            email TEXT NOT NULL UNIQUE,
+            department_id INTEGER NOT NULL,
+            max_groups INTEGER DEFAULT 6,
+            current_groups INTEGER DEFAULT 0,
+            is_active INTEGER DEFAULT 1,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (department_id) REFERENCES departments(id)
+        )
+    """)
+
+    # 8. Create Deadlines table
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS deadlines (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title TEXT NOT NULL,
+            description TEXT,
+            due_date DATE NOT NULL,
+            department_id INTEGER,
+            applies_to_all INTEGER DEFAULT 1,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (department_id) REFERENCES departments(id)
+        )
+    """)
+
+    # 9. Ensure templates support department scoping on existing databases
+    cursor.execute("PRAGMA table_info(templates)")
+    template_columns = {row[1] for row in cursor.fetchall()}
+    if "department_id" not in template_columns:
+        cursor.execute("ALTER TABLE templates ADD COLUMN department_id INTEGER")
+
+    # 10. Admin settings key-value store
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS admin_settings (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
     conn.commit()
 
 
@@ -306,6 +363,42 @@ def init_db():
         )
 
         conn.commit()
+
+    # D. Seed default departments
+    cursor.execute("SELECT COUNT(*) FROM departments")
+    if cursor.fetchone()[0] == 0:
+        cursor.executemany(
+            """
+            INSERT INTO departments (name, code, min_members, max_members, max_groups_per_supervisor)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            [
+                ("Computer Science", "CS", 1, 3, 6),
+                ("Electrical Engineering", "EE", 1, 4, 6),
+                ("Software Engineering", "SE", 1, 3, 6),
+                ("Master of Business Administration", "MBA", 1, 2, 6),
+            ],
+        )
+        conn.commit()
+
+    # E. Seed default admin settings
+    default_settings = {
+        "system_name": "FORMATIFY Admin Panel",
+        "version": "3.0.0",
+        "environment": "production",
+        "email_notifications": "true",
+        "system_notifications": "true",
+        "maintenance_mode": "false",
+        "api_rate_limit": "10000",
+        "api_timeout_seconds": "30",
+        "max_file_size_mb": "100",
+    }
+    for key, value in default_settings.items():
+        cursor.execute(
+            "INSERT OR IGNORE INTO admin_settings (key, value) VALUES (?, ?)",
+            (key, value),
+        )
+    conn.commit()
 
     conn.close()
     print("Database tables initialized and seeded successfully.")
