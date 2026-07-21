@@ -48,6 +48,8 @@ from pydantic import BaseModel
 
 from aggregator import aggregate
 from admin_routes import router as admin_router
+from supervisor_routes import router as supervisor_router
+from student_routes import router as student_router
 from batcher import create_batches
 from database import get_db, hash_password, init_db, verify_password
 
@@ -586,6 +588,8 @@ async def _run_analysis(
 set_analysis_runner(_run_analysis)
 app.include_router(vc_router)
 app.include_router(admin_router)
+app.include_router(supervisor_router)
+app.include_router(student_router)
 
 # Additive: draft-template extraction from prose guideline DOCX (does not alter create/update)
 from template_extract_routes import router as template_extract_router

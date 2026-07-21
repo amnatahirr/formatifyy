@@ -17,6 +17,7 @@ import '../widgets/export_dialog.dart';
 import '../widgets/collaboration/project_card.dart';
 import 'collaboration/project_dashboard_screen.dart';
 import 'collaboration/project_detail_screen.dart';
+import 'student_meeting_notes_screen.dart';
 
 class StudentDashboard extends StatefulWidget {
   final int initialIndex;
@@ -49,7 +50,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
   @override
   void initState() {
     super.initState();
-    _selectedIndex = widget.initialIndex.clamp(0, 6);
+    _selectedIndex = widget.initialIndex.clamp(0, 7);
     _activeProjectId = widget.initialProjectId;
     _projectDetailTab = widget.initialProjectTab;
     _loadInitialData();
@@ -191,6 +192,11 @@ class _StudentDashboardState extends State<StudentDashboard> {
                 ),
                 _buildSidebarItem(
                   6,
+                  Icons.sticky_note_2_outlined,
+                  'Meeting Notes',
+                ),
+                _buildSidebarItem(
+                  7,
                   Icons.settings,
                   'Settings',
                 ),
@@ -332,6 +338,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
       'Collaboration',
       'AI Tools',
       'Templates',
+      'Meeting Notes',
       'Settings',
     ];
     final descriptions = [
@@ -341,6 +348,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
       'Create projects, invite teammates, and track shared work.',
       'Powerful AI-powered tools to enhance your reports',
       'Choose from pre-built academic report templates',
+      'Read-only meeting notes from your FYP supervisor',
       'Manage your account settings and preferences',
     ];
 
@@ -479,6 +487,8 @@ class _StudentDashboardState extends State<StudentDashboard> {
       case 5:
         return _buildTemplatesPage();
       case 6:
+        return const StudentMeetingNotesScreen();
+      case 7:
         return _buildSettingsPage();
       default:
         return const SizedBox.shrink();

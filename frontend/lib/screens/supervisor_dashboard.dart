@@ -2,6 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../providers/auth_provider.dart';
+import 'supervisor/assignment_requests_screen.dart';
+import 'supervisor/my_groups_screen.dart';
+import 'supervisor/plagiarism_monitor_screen.dart';
+import 'supervisor/submission_review_screen.dart';
+import 'supervisor/supervisor_home_screen.dart';
 import '../widgets/admin/admin_ui.dart';
 
 class SupervisorDashboard extends StatefulWidget {
@@ -14,11 +19,27 @@ class SupervisorDashboard extends StatefulWidget {
 class _SupervisorDashboardState extends State<SupervisorDashboard> {
   int _selectedTab = 0;
 
-  final List<String> _tabs = const ['Dashboard', 'Profile'];
+  final List<String> _tabs = const [
+    'Dashboard',
+    'Assignment Requests',
+    'My Groups',
+    'Submissions',
+    'Plagiarism',
+    'Profile',
+  ];
   final List<IconData> _tabIcons = const [
     Icons.dashboard_rounded,
+    Icons.assignment_ind_rounded,
+    Icons.groups_rounded,
+    Icons.fact_check_rounded,
+    Icons.policy_rounded,
     Icons.person_rounded,
   ];
+
+  static const int _requestsTabIndex = 1;
+  static const int _groupsTabIndex = 2;
+  static const int _submissionsTabIndex = 3;
+  static const int _plagiarismTabIndex = 4;
 
   @override
   Widget build(BuildContext context) {
@@ -42,7 +63,7 @@ class _SupervisorDashboardState extends State<SupervisorDashboard> {
 
   Widget _buildSidebar() {
     return Container(
-      width: 240,
+      width: 250,
       decoration: BoxDecoration(
         color: AdminColors.surface,
         border: Border(right: BorderSide(color: AdminColors.border.withOpacity(0.5))),
@@ -107,12 +128,16 @@ class _SupervisorDashboardState extends State<SupervisorDashboard> {
                             color: selected ? AdminColors.primary : Colors.white.withOpacity(0.6),
                           ),
                           const SizedBox(width: 12),
-                          Text(
-                            _tabs[index],
-                            style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
-                              color: selected ? AdminColors.primary : Colors.white.withOpacity(0.7),
+                          Expanded(
+                            child: Text(
+                              _tabs[index],
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+                                color: selected ? AdminColors.primary : Colors.white.withOpacity(0.7),
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                             ),
                           ),
                         ],
@@ -198,58 +223,25 @@ class _SupervisorDashboardState extends State<SupervisorDashboard> {
   }
 
   Widget _buildContent() {
-    if (_selectedTab == 0) {
-      return const _SupervisorHomeView();
+    switch (_selectedTab) {
+      case 0:
+        return SupervisorHomeScreen(
+          onOpenAssignmentRequests: () => setState(() => _selectedTab = _requestsTabIndex),
+          onOpenMyGroups: () => setState(() => _selectedTab = _groupsTabIndex),
+          onOpenSubmissions: () => setState(() => _selectedTab = _submissionsTabIndex),
+          onOpenPlagiarism: () => setState(() => _selectedTab = _plagiarismTabIndex),
+        );
+      case 1:
+        return const AssignmentRequestsScreen();
+      case 2:
+        return const MyGroupsScreen();
+      case 3:
+        return const SubmissionReviewScreen();
+      case 4:
+        return const PlagiarismMonitorScreen();
+      default:
+        return const _SupervisorProfileView();
     }
-    return const _SupervisorProfileView();
-  }
-}
-
-class _SupervisorHomeView extends StatelessWidget {
-  const _SupervisorHomeView();
-
-  @override
-  Widget build(BuildContext context) {
-    final auth = context.watch<AuthProvider>();
-    return AdminPage(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          AdminPageHeader(
-            title: 'Welcome, ${auth.currentUser ?? 'Supervisor'}',
-            subtitle: 'Your supervisor workspace is ready. Use Profile to update your password.',
-          ),
-          const SizedBox(height: 24),
-          adminResponsiveGrid(
-            itemCount: 2,
-            itemBuilder: (context, index) {
-              if (index == 0) {
-                return const AdminStatCard(
-                  title: 'Account Role',
-                  value: 'Supervisor',
-                  icon: Icons.badge_outlined,
-                );
-              }
-              return AdminStatCard(
-                title: 'Signed in as',
-                value: (auth.currentUser ?? 'User').split(' ').first,
-                icon: Icons.person_outline_rounded,
-                accent: AdminColors.accent,
-              );
-            },
-          ),
-          const SizedBox(height: 24),
-          AdminSectionCard(
-            title: 'Getting started',
-            child: Text(
-              'Email: ${auth.userEmail ?? '—'}\n\n'
-              'Your account was created by an administrator. If you logged in with a temporary password, open Profile and change it now.',
-              style: TextStyle(color: Colors.white.withOpacity(0.75), height: 1.45),
-            ),
-          ),
-        ],
-      ),
-    );
   }
 }
 

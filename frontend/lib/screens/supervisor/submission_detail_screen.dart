@@ -1,0 +1,437 @@
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+
+import '../../models/supervisor_models.dart';
+import '../../providers/auth_provider.dart';
+import '../../services/supervisor_api_service.dart';
+import '../../widgets/admin/admin_ui.dart';
+
+class SubmissionDetailScreen extends StatefulWidget {
+  final int submissionId;
+  final String? titleHint;
+
+  const SubmissionDetailScreen({
+    super.key,
+    required this.submissionId,
+    this.titleHint,
+  });
+
+  @override
+  State<SubmissionDetailScreen> createState() => _SubmissionDetailScreenState();
+}
+
+class _SubmissionDetailScreenState extends State<SubmissionDetailScreen> {
+  final SupervisorApiService _api = SupervisorApiService();
+  FinalSubmissionModel? _submission;
+  String? _error;
+  bool _loading = true;
+  bool _busy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final userId = context.read<AuthProvider>().userId;
+    if (userId == null) return;
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final data = await _api.fetchSubmissionDetail(userId, widget.submissionId);
+      if (mounted) setState(() => _submission = data);
+    } catch (e) {
+      if (mounted) setState(() => _error = e.toString());
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<String?> _askNote({
+    required String title,
+    required String confirmLabel,
+    required Color confirmColor,
+    bool required = true,
+  }) async {
+    final controller = TextEditingController();
+    String? errorText;
+    final result = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              backgroundColor: AdminColors.surface,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              title: Text(title),
+              content: SizedBox(
+                width: 420,
+                child: TextField(
+                  controller: controller,
+                  maxLines: 4,
+                  autofocus: true,
+                  decoration: InputDecoration(
+                    labelText: required ? 'Reason / note' : 'Optional note',
+                    errorText: errorText,
+                    filled: true,
+                    fillColor: AdminColors.card,
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                ),
+              ),
+              actions: [
+                TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Cancel')),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(backgroundColor: confirmColor),
+                  onPressed: () {
+                    final text = controller.text.trim();
+                    if (required && text.isEmpty) {
+                      setDialogState(() => errorText = 'This field is required');
+                      return;
+                    }
+                    Navigator.pop(dialogContext, text);
+                  },
+                  child: Text(confirmLabel),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+    controller.dispose();
+    return result;
+  }
+
+  Future<void> _approve() async {
+    final note = await _askNote(
+      title: 'Approve submission',
+      confirmLabel: 'Approve',
+      confirmColor: AdminColors.success,
+      required: false,
+    );
+    if (note == null) return;
+    await _runAction(() => _api.approveSubmission(
+          context.read<AuthProvider>().userId!,
+          widget.submissionId,
+          note: note,
+        ));
+  }
+
+  Future<void> _requestRevision() async {
+    final note = await _askNote(
+      title: 'Request revision',
+      confirmLabel: 'Request Revision',
+      confirmColor: AdminColors.warning,
+    );
+    if (note == null || note.trim().isEmpty) return;
+    await _runAction(() => _api.requestSubmissionRevision(
+          context.read<AuthProvider>().userId!,
+          widget.submissionId,
+          note: note.trim(),
+        ));
+  }
+
+  Future<void> _reject() async {
+    final reason = await _askNote(
+      title: 'Reject submission',
+      confirmLabel: 'Reject',
+      confirmColor: AdminColors.danger,
+    );
+    if (reason == null || reason.trim().isEmpty) return;
+    await _runAction(() => _api.rejectSubmission(
+          context.read<AuthProvider>().userId!,
+          widget.submissionId,
+          reason: reason.trim(),
+        ));
+  }
+
+  Future<void> _runAction(Future<FinalSubmissionModel> Function() action) async {
+    setState(() => _busy = true);
+    try {
+      final updated = await action();
+      if (!mounted) return;
+      setState(() => _submission = updated);
+      showAdminSnackBar(context, 'Decision saved. Student notified.');
+      Navigator.of(context).pop(true);
+    } catch (e) {
+      if (mounted) showAdminSnackBar(context, e.toString(), isError: true);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final title = _submission?.title.isNotEmpty == true
+        ? _submission!.title
+        : (widget.titleHint ?? 'Submission Review');
+
+    return Scaffold(
+      backgroundColor: AdminColors.background,
+      body: Column(
+        children: [
+          Container(
+            height: 72,
+            decoration: BoxDecoration(
+              color: AdminColors.surface,
+              border: Border(bottom: BorderSide(color: AdminColors.border.withOpacity(0.5))),
+            ),
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Row(
+              children: [
+                IconButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  icon: const Icon(Icons.arrow_back_rounded, color: Colors.white),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    title,
+                    style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: Colors.white),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                if (_busy)
+                  const Padding(
+                    padding: EdgeInsets.only(right: 12),
+                    child: SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: AdminColors.primary),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          Expanded(child: _buildBody()),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBody() {
+    if (_loading) return const AdminPage(child: AdminLoadingView());
+    if (_error != null) {
+      return AdminPage(child: AdminErrorView(message: _error!, onRetry: _load));
+    }
+    final item = _submission;
+    if (item == null) {
+      return const AdminPage(child: AdminEmptyView(message: 'Submission not found.'));
+    }
+
+    final summary = item.analysisSummary;
+    final canDecide = item.status.toLowerCase() == 'pending';
+
+    return AdminPage(
+      onRefresh: _load,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          AdminPageHeader(
+            title: item.title,
+            subtitle: [
+              if (item.groupTitle.isNotEmpty) item.groupTitle,
+              if (item.filename.isNotEmpty) item.filename,
+            ].join(' · '),
+          ),
+          const SizedBox(height: 18),
+          AdminSectionCard(
+            title: 'Document',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(item.title, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
+                const SizedBox(height: 6),
+                Text(
+                  item.filename.isEmpty ? 'No filename provided' : item.filename,
+                  style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 13),
+                ),
+                if (item.submittedAt.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Text('Submitted: ${item.submittedAt}', style: TextStyle(color: Colors.white.withOpacity(0.45), fontSize: 12)),
+                ],
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          AdminSectionCard(
+            title: 'AI Analysis Report',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Same Formatify analysis shape used on the student analyze screen (grammar + plagiarism).',
+                  style: TextStyle(color: Colors.white.withOpacity(0.55), fontSize: 12, height: 1.4),
+                ),
+                const SizedBox(height: 14),
+                adminResponsiveGrid(
+                  itemCount: 4,
+                  itemBuilder: (context, index) {
+                    final cards = [
+                      AdminStatCard(
+                        title: 'Grammar Issues',
+                        value: '${summary.grammarIssues}',
+                        icon: Icons.spellcheck_rounded,
+                      ),
+                      AdminStatCard(
+                        title: 'Plagiarism Risk',
+                        value: '${summary.plagiarismScore.toStringAsFixed(0)}%',
+                        icon: Icons.policy_outlined,
+                        accent: AdminColors.warning,
+                      ),
+                      AdminStatCard(
+                        title: 'Plagiarism Flags',
+                        value: '${summary.plagiarismIssues}',
+                        icon: Icons.find_in_page_outlined,
+                        accent: AdminColors.danger,
+                      ),
+                      AdminStatCard(
+                        title: 'Compliance',
+                        value: '${summary.complianceScore.toStringAsFixed(0)}%',
+                        icon: Icons.verified_outlined,
+                        accent: AdminColors.success,
+                      ),
+                    ];
+                    return cards[index];
+                  },
+                ),
+                const SizedBox(height: 18),
+                Text('Grammar findings', style: TextStyle(color: Colors.white.withOpacity(0.8), fontWeight: FontWeight.w600)),
+                const SizedBox(height: 10),
+                if (item.grammarIssues.isEmpty)
+                  Text('No grammar issues reported.', style: TextStyle(color: Colors.white.withOpacity(0.55)))
+                else
+                  ...item.grammarIssues.map((issue) => _IssueTile(issue: issue, accent: AdminColors.primary)),
+                const SizedBox(height: 16),
+                Text('Plagiarism findings', style: TextStyle(color: Colors.white.withOpacity(0.8), fontWeight: FontWeight.w600)),
+                const SizedBox(height: 10),
+                if (item.plagiarismIssues.isEmpty)
+                  Text('No plagiarism issues reported.', style: TextStyle(color: Colors.white.withOpacity(0.55)))
+                else
+                  ...item.plagiarismIssues.map((issue) => _IssueTile(issue: issue, accent: AdminColors.warning)),
+              ],
+            ),
+          ),
+          const SizedBox(height: 24),
+          if (canDecide)
+            Row(
+              children: [
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: _busy ? null : _approve,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AdminColors.success,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                    ),
+                    icon: const Icon(Icons.check_rounded, size: 18),
+                    label: const Text('Approve'),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: _busy ? null : _requestRevision,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AdminColors.warning,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                    ),
+                    icon: const Icon(Icons.edit_note_rounded, size: 18),
+                    label: const Text('Request Revision'),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: _busy ? null : _reject,
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AdminColors.danger,
+                      side: BorderSide(color: AdminColors.danger.withOpacity(0.75)),
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                    ),
+                    icon: const Icon(Icons.close_rounded, size: 18),
+                    label: const Text('Reject'),
+                  ),
+                ),
+              ],
+            )
+          else
+            AdminSectionCard(
+              title: 'Decision',
+              child: Text(
+                'Status: ${item.statusLabel}'
+                '${item.decisionNote.isEmpty ? '' : '\nNote: ${item.decisionNote}'}',
+                style: TextStyle(color: Colors.white.withOpacity(0.8), height: 1.45),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _IssueTile extends StatelessWidget {
+  final AnalysisIssueModel issue;
+  final Color accent;
+
+  const _IssueTile({required this.issue, required this.accent});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AdminColors.background.withOpacity(0.4),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: accent.withOpacity(0.35)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: accent.withOpacity(0.16),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  issue.severity.toUpperCase(),
+                  style: TextStyle(color: accent, fontSize: 10, fontWeight: FontWeight.w700),
+                ),
+              ),
+              if (issue.similarity != null) ...[
+                const SizedBox(width: 8),
+                Text(
+                  'Similarity ${(issue.similarity! > 1 ? issue.similarity! : issue.similarity! * 100).toStringAsFixed(0)}%',
+                  style: TextStyle(color: Colors.white.withOpacity(0.55), fontSize: 11),
+                ),
+              ],
+            ],
+          ),
+          if (issue.reason.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Text(issue.reason, style: const TextStyle(color: Colors.white, fontSize: 13, height: 1.4)),
+          ],
+          if (issue.original.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Text('Original: ${issue.original}', style: TextStyle(color: Colors.white.withOpacity(0.65), fontSize: 12)),
+          ],
+          if (issue.suggestion.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text('Suggestion: ${issue.suggestion}', style: TextStyle(color: Colors.white.withOpacity(0.65), fontSize: 12)),
+          ],
+        ],
+      ),
+    );
+  }
+}
