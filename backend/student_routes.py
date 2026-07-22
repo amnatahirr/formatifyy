@@ -450,7 +450,8 @@ def get_assignment_request_status(
                 COALESCE(d.code, '') AS department_code,
                 g.title AS group_title,
                 g.project_title AS group_project_title,
-                g.status AS group_status
+                g.status AS group_status,
+                g.deadline_date AS group_deadline_date
             FROM assignment_requests ar
             LEFT JOIN supervisors s ON s.id = ar.supervisor_id
             LEFT JOIN departments d ON d.id = COALESCE(ar.department_id, s.department_id)
@@ -496,6 +497,7 @@ def get_assignment_request_status(
                 or data.get("project_title")
                 or "",
                 "status": data.get("group_status") or "accepted",
+                "deadline_date": data.get("group_deadline_date"),
             }
         return result
     finally:
@@ -673,26 +675,6 @@ def create_assignment_request(
 
 def _serialize_student_final_submission(row) -> dict[str, Any]:
     """Match supervisor GET /submissions list fields (without full report by default)."""
-    report_raw = row["analysis_report"] if "analysis_report" in row.keys() else None
-    report: dict[str, Any] = {}
-    if isinstance(report_raw, dict):
-        report = report_raw
-    elif report_raw:
-        try:
-            parsed = json.loads(str(report_raw))
-            if isinstance(parsed, dict):
-                report = parsed
-        except json.JSONDecodeError:
-            report = {}
-
-    stats = report.get("stats") if isinstance(report.get("stats"), dict) else {}
-    structure = report.get("structure") if isinstance(report.get("structure"), dict) else {}
-    summary = structure.get("summary") if isinstance(structure.get("summary"), dict) else {}
-    issues = report.get("issues") if isinstance(report.get("issues"), list) else []
-    plagiarism_score = float(stats.get("avg_plagiarism_risk") or 0)
-    if 0 < plagiarism_score <= 1:
-        plagiarism_score = round(plagiarism_score * 100, 1)
-
     return {
         "id": row["id"],
         "group_id": row["group_id"],
@@ -706,21 +688,7 @@ def _serialize_student_final_submission(row) -> dict[str, Any]:
         "decision_note": row["decision_note"] or "",
         "student_contact_email": row["student_contact_email"] or "",
         "source_document_id": row["source_document_id"],
-        "analysis_summary": {
-            "grammar_issues": int(stats.get("grammar_issues") or summary.get("grammar") or 0),
-            "plagiarism_issues": int(stats.get("plagiarism_issues") or summary.get("plagiarism") or 0),
-            "plagiarism_score": plagiarism_score,
-            "total_issues": int(stats.get("total_issues") or len(issues) or 0),
-            "major_issues": int(stats.get("major_issues") or 0),
-            "minor_issues": int(stats.get("minor_issues") or 0),
-            "compliance_score": float(
-                report.get("compliance_score")
-                or structure.get("score")
-                or stats.get("avg_formatting_compliance")
-                or 0
-            ),
-            "structure_status": str(structure.get("status") or ""),
-        },
+        "analysis_summary": _analysis_summary_from_report_row(row),
     }
 
 
@@ -1139,6 +1107,45 @@ def _submission_stage(status: str | None) -> dict[str, Any]:
     }
 
 
+def _analysis_summary_from_report_row(row) -> dict[str, Any]:
+    """Same analysis_report fields as _serialize_student_final_submission."""
+    report_raw = row["analysis_report"] if "analysis_report" in row.keys() else None
+    report: dict[str, Any] = {}
+    if isinstance(report_raw, dict):
+        report = report_raw
+    elif report_raw:
+        try:
+            parsed = json.loads(str(report_raw))
+            if isinstance(parsed, dict):
+                report = parsed
+        except json.JSONDecodeError:
+            report = {}
+
+    stats = report.get("stats") if isinstance(report.get("stats"), dict) else {}
+    structure = report.get("structure") if isinstance(report.get("structure"), dict) else {}
+    summary = structure.get("summary") if isinstance(structure.get("summary"), dict) else {}
+    issues = report.get("issues") if isinstance(report.get("issues"), list) else []
+    plagiarism_score = float(stats.get("avg_plagiarism_risk") or 0)
+    if 0 < plagiarism_score <= 1:
+        plagiarism_score = round(plagiarism_score * 100, 1)
+
+    return {
+        "grammar_issues": int(stats.get("grammar_issues") or summary.get("grammar") or 0),
+        "plagiarism_issues": int(stats.get("plagiarism_issues") or summary.get("plagiarism") or 0),
+        "plagiarism_score": plagiarism_score,
+        "total_issues": int(stats.get("total_issues") or len(issues) or 0),
+        "major_issues": int(stats.get("major_issues") or 0),
+        "minor_issues": int(stats.get("minor_issues") or 0),
+        "compliance_score": float(
+            report.get("compliance_score")
+            or structure.get("score")
+            or stats.get("avg_formatting_compliance")
+            or 0
+        ),
+        "structure_status": str(structure.get("status") or ""),
+    }
+
+
 def _serialize_status_tracker_submission(row) -> dict[str, Any]:
     stage = _submission_stage(row["status"] if "status" in row.keys() else None)
     return {
@@ -1156,6 +1163,8 @@ def _serialize_status_tracker_submission(row) -> dict[str, Any]:
         "resolved_at": row["resolved_at"],
         "source_document_id": row["source_document_id"],
         "student_contact_email": row["student_contact_email"] or "",
+        # Formatting % / issues — same analysis_report fields as supervisor list
+        "analysis_summary": _analysis_summary_from_report_row(row),
     }
 
 
@@ -1180,7 +1189,8 @@ def list_group_final_submissions(
         cursor.execute(
             """
             SELECT id, group_id, title, filename, status, decision_note,
-                   submitted_at, resolved_at, source_document_id, student_contact_email
+                   submitted_at, resolved_at, source_document_id, student_contact_email,
+                   analysis_report
             FROM final_submissions
             WHERE group_id = ?
             ORDER BY datetime(submitted_at) DESC, id DESC
@@ -1199,8 +1209,18 @@ def list_group_final_submissions(
         conn.close()
 
 
-def _serialize_notification(row) -> dict[str, Any]:
-    return {
+def _serialize_notification(row, cursor=None) -> dict[str, Any]:
+    """
+    Student notification payload.
+
+    Supervisor comment inserts already set:
+      related_type = "document_comment"
+      related_id   = document_comments.id  (the new comment row)
+
+    When related_type is document_comment, enrich with group_id / document_id
+    so the mobile inbox can open DocumentFeedbackScreen without a second lookup.
+    """
+    result: dict[str, Any] = {
         "id": row["id"],
         "recipient_email": row["recipient_email"] or "",
         "title": row["title"] or "",
@@ -1211,6 +1231,291 @@ def _serialize_notification(row) -> dict[str, Any]:
         "related_id": row["related_id"],
         "created_at": row["created_at"] or "",
     }
+
+    related_type = (result["related_type"] or "").strip().lower()
+    related_id = result["related_id"]
+    if (
+        cursor is not None
+        and related_type == "document_comment"
+        and related_id is not None
+    ):
+        cursor.execute(
+            """
+            SELECT dc.id AS comment_id, dc.document_id, gd.group_id
+            FROM document_comments dc
+            JOIN group_documents gd ON gd.id = dc.document_id
+            WHERE dc.id = ?
+            """,
+            (related_id,),
+        )
+        link = cursor.fetchone()
+        if link:
+            result["comment_id"] = link["comment_id"]
+            result["document_id"] = link["document_id"]
+            result["group_id"] = link["group_id"]
+
+    return result
+
+
+def _serialize_student_review_paragraphs(cursor, document_id: int) -> list[dict[str, Any]]:
+    """Match supervisor `_serialize_review_paragraphs` shape (incl. parent_comment_id)."""
+    cursor.execute(
+        """
+        SELECT id, sort_order, text
+        FROM document_paragraphs
+        WHERE document_id = ?
+        ORDER BY sort_order ASC, id ASC
+        """,
+        (document_id,),
+    )
+    paragraphs = []
+    for row in cursor.fetchall():
+        cursor.execute(
+            """
+            SELECT id, comment_text, is_resolved, created_at, resolved_at,
+                   supervisor_id, parent_comment_id
+            FROM document_comments
+            WHERE paragraph_id = ?
+            ORDER BY datetime(created_at) ASC, id ASC
+            """,
+            (row["id"],),
+        )
+        comments = []
+        has_unresolved = False
+        has_resolved = False
+        for comment in cursor.fetchall():
+            resolved = bool(comment["is_resolved"])
+            if resolved:
+                has_resolved = True
+            else:
+                has_unresolved = True
+            keys = comment.keys()
+            parent_id = (
+                comment["parent_comment_id"] if "parent_comment_id" in keys else None
+            )
+            comments.append(
+                {
+                    "id": comment["id"],
+                    "comment_text": comment["comment_text"],
+                    "is_resolved": resolved,
+                    "created_at": comment["created_at"],
+                    "resolved_at": comment["resolved_at"],
+                    "supervisor_id": comment["supervisor_id"],
+                    "parent_comment_id": parent_id,
+                }
+            )
+        if has_unresolved:
+            highlight = "unresolved"
+        elif has_resolved:
+            highlight = "resolved"
+        else:
+            highlight = "none"
+        paragraphs.append(
+            {
+                "id": row["id"],
+                "sort_order": row["sort_order"],
+                "text": row["text"],
+                "highlight": highlight,
+                "has_unresolved_comments": has_unresolved,
+                "comments": comments,
+            }
+        )
+    return paragraphs
+
+
+def _require_student_group_document(cursor, group_id: int, document_id: int, email: str):
+    cursor.execute(
+        """
+        SELECT gd.id, gd.title, gd.filename, gd.status, gd.submitted_at,
+               gd.group_id, fg.title AS group_title
+        FROM group_documents gd
+        JOIN fyp_groups fg ON fg.id = gd.group_id
+        WHERE gd.id = ?
+          AND gd.group_id = ?
+          AND fg.status = 'accepted'
+          AND LOWER(TRIM(fg.student_contact_email)) = LOWER(?)
+        """,
+        (document_id, group_id, email),
+    )
+    doc = cursor.fetchone()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found for this student.")
+    return doc
+
+
+def _require_student_comment(cursor, comment_id: int, email: str):
+    cursor.execute(
+        """
+        SELECT dc.id, dc.paragraph_id, dc.document_id, dc.supervisor_id,
+               dc.comment_text, dc.is_resolved, dc.parent_comment_id,
+               gd.group_id
+        FROM document_comments dc
+        JOIN group_documents gd ON gd.id = dc.document_id
+        JOIN fyp_groups fg ON fg.id = gd.group_id
+        WHERE dc.id = ?
+          AND fg.status = 'accepted'
+          AND LOWER(TRIM(fg.student_contact_email)) = LOWER(?)
+        """,
+        (comment_id, email),
+    )
+    row = cursor.fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Comment not found.")
+    return row
+
+
+@router.get("/groups/{group_id}/documents/{document_id}/comments")
+def get_student_document_comments(
+    group_id: int,
+    document_id: int,
+    user_id: Annotated[int | None, Query()] = None,
+):
+    """
+    Paragraph + comments for student feedback UI.
+    Response shape matches supervisor GET .../review (paragraphs[].comments[]).
+    """
+    student = _require_student(user_id)
+    email = (student.get("email") or "").strip().lower()
+    if not email:
+        raise HTTPException(status_code=400, detail="Your account has no email address.")
+
+    conn = get_db()
+    cursor = conn.cursor()
+    try:
+        doc = _require_student_group_document(cursor, group_id, document_id, email)
+        paragraphs = _serialize_student_review_paragraphs(cursor, document_id)
+        return {
+            "group_id": group_id,
+            "group_title": doc["group_title"] or "",
+            "document": {
+                "id": doc["id"],
+                "title": doc["title"],
+                "filename": doc["filename"] or "",
+                "status": doc["status"] or "",
+                "submitted_at": doc["submitted_at"],
+            },
+            "paragraphs": paragraphs,
+        }
+    finally:
+        conn.close()
+
+
+@router.post("/comments/{comment_id}/resolve")
+def resolve_student_comment(
+    comment_id: int,
+    user_id: Annotated[int | None, Query()] = None,
+):
+    """Student marks a single document_comments row resolved (is_resolved = true)."""
+    student = _require_student(user_id)
+    email = (student.get("email") or "").strip().lower()
+    if not email:
+        raise HTTPException(status_code=400, detail="Your account has no email address.")
+
+    from datetime import datetime
+
+    conn = get_db()
+    cursor = conn.cursor()
+    try:
+        comment = _require_student_comment(cursor, comment_id, email)
+        if bool(comment["is_resolved"]):
+            return {
+                "success": True,
+                "message": "Comment already resolved.",
+                "comment_id": comment_id,
+                "group_id": comment["group_id"],
+                "document_id": comment["document_id"],
+            }
+
+        resolved_at = datetime.utcnow().isoformat(sep=" ", timespec="seconds")
+        cursor.execute(
+            """
+            UPDATE document_comments
+            SET is_resolved = 1, resolved_at = ?
+            WHERE id = ?
+            """,
+            (resolved_at, comment_id),
+        )
+        conn.commit()
+        return {
+            "success": True,
+            "message": "Comment marked as resolved.",
+            "comment_id": comment_id,
+            "group_id": comment["group_id"],
+            "document_id": comment["document_id"],
+            "resolved_at": resolved_at,
+        }
+    except HTTPException:
+        conn.rollback()
+        raise
+    except Exception:
+        conn.rollback()
+        logger.exception("Failed to resolve student comment")
+        raise HTTPException(status_code=500, detail="Could not resolve comment.")
+    finally:
+        conn.close()
+
+
+@router.post("/comments/{comment_id}/reply")
+def reply_to_student_comment(
+    comment_id: int,
+    user_id: Annotated[int | None, Query()] = None,
+    payload: dict[str, Any] = Body(default_factory=dict),
+):
+    """
+    Student reply under an existing supervisor comment.
+    Inserts a new document_comments row with parent_comment_id set (same paragraph).
+    Note: supervisor Document Review lists comments flat (multi per paragraph) —
+    replies appear as additional peer comments, not nested threads.
+    """
+    student = _require_student(user_id)
+    email = (student.get("email") or "").strip().lower()
+    if not email:
+        raise HTTPException(status_code=400, detail="Your account has no email address.")
+
+    reply_text = (payload.get("reply_text") or payload.get("comment_text") or "").strip()
+    if not reply_text:
+        raise HTTPException(status_code=400, detail="reply_text is required.")
+
+    conn = get_db()
+    cursor = conn.cursor()
+    try:
+        parent = _require_student_comment(cursor, comment_id, email)
+        cursor.execute(
+            """
+            INSERT INTO document_comments
+                (paragraph_id, document_id, supervisor_id, comment_text,
+                 is_resolved, parent_comment_id)
+            VALUES (?, ?, ?, ?, 0, ?)
+            """,
+            (
+                parent["paragraph_id"],
+                parent["document_id"],
+                parent["supervisor_id"],
+                reply_text,
+                comment_id,
+            ),
+        )
+        reply_id = cursor.lastrowid
+        conn.commit()
+        paragraphs = _serialize_student_review_paragraphs(cursor, parent["document_id"])
+        return {
+            "success": True,
+            "message": "Reply added.",
+            "comment_id": reply_id,
+            "parent_comment_id": comment_id,
+            "group_id": parent["group_id"],
+            "document_id": parent["document_id"],
+            "paragraphs": paragraphs,
+        }
+    except HTTPException:
+        conn.rollback()
+        raise
+    except Exception:
+        conn.rollback()
+        logger.exception("Failed to add student reply")
+        raise HTTPException(status_code=500, detail="Could not add reply.")
+    finally:
+        conn.close()
 
 
 @router.get("/notifications")
@@ -1249,7 +1554,7 @@ def list_student_notifications(
             sql += " AND is_read = 0"
         sql += " ORDER BY datetime(created_at) DESC, id DESC"
         cursor.execute(sql, params)
-        rows = [_serialize_notification(r) for r in cursor.fetchall()]
+        rows = [_serialize_notification(r, cursor) for r in cursor.fetchall()]
         unread = sum(1 for r in rows if not r["is_read"])
         return {
             "notifications": rows,
@@ -1314,7 +1619,7 @@ def mark_student_notification_read(
         updated = cursor.fetchone()
         return {
             "success": True,
-            "notification": _serialize_notification(updated),
+            "notification": _serialize_notification(updated, cursor),
         }
     except HTTPException:
         conn.rollback()

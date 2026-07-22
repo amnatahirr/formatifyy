@@ -233,12 +233,18 @@ class DocumentCommentModel {
   final String commentText;
   final bool isResolved;
   final String createdAt;
+  final String resolvedAt;
+  final int? supervisorId;
+  final int? parentCommentId;
 
   const DocumentCommentModel({
     required this.id,
     required this.commentText,
     required this.isResolved,
     required this.createdAt,
+    this.resolvedAt = '',
+    this.supervisorId,
+    this.parentCommentId,
   });
 
   factory DocumentCommentModel.fromJson(Map<String, dynamic> json) => DocumentCommentModel(
@@ -246,6 +252,10 @@ class DocumentCommentModel {
         commentText: (json['comment_text'] ?? '').toString(),
         isResolved: json['is_resolved'] == true || json['is_resolved'] == 1,
         createdAt: (json['created_at'] ?? '').toString(),
+        resolvedAt: (json['resolved_at'] ?? '').toString(),
+        supervisorId: json['supervisor_id'] == null ? null : _asInt(json['supervisor_id']),
+        parentCommentId:
+            json['parent_comment_id'] == null ? null : _asInt(json['parent_comment_id']),
       );
 }
 

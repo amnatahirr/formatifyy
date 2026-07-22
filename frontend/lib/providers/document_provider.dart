@@ -23,6 +23,7 @@ class DocumentProvider extends ChangeNotifier {
   bool _isLoading = false;
   bool _isSubmittingFinal = false;
   String? _errorMessage;
+  String? _lastDownloadedPath;
   final Set<int> _reAnalyzingIds = {};
 
   /// Cached AI Tools analyze payloads (grammar/plagiarism/stats) keyed by document id.
@@ -41,6 +42,8 @@ class DocumentProvider extends ChangeNotifier {
   bool get isLoading => _isLoading;
   bool get isSubmittingFinal => _isSubmittingFinal;
   String? get errorMessage => _errorMessage;
+  /// Absolute path of the last successful [downloadFormattedDocument] save.
+  String? get lastDownloadedPath => _lastDownloadedPath;
   bool isReAnalyzing(int documentId) => _reAnalyzingIds.contains(documentId);
 
   int? get pendingSubmitDocumentId => _pendingSubmitDocumentId;
@@ -460,9 +463,10 @@ if (contentDisposition != null && contentDisposition.contains('filename=')) {
       
       // Write file
       await file.writeAsBytes(response.bodyBytes);
-      
+
       debugPrint('[v0] File saved to: ${file.path}');
-      
+
+      _lastDownloadedPath = file.path;
       _errorMessage = null;
       notifyListeners();
       return true;

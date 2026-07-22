@@ -785,7 +785,8 @@ def _serialize_review_paragraphs(cursor, document_id: int) -> list[dict[str, Any
     for row in cursor.fetchall():
         cursor.execute(
             """
-            SELECT id, comment_text, is_resolved, created_at, resolved_at
+            SELECT id, comment_text, is_resolved, created_at, resolved_at,
+                   supervisor_id, parent_comment_id
             FROM document_comments
             WHERE paragraph_id = ?
             ORDER BY datetime(created_at) ASC, id ASC
@@ -801,6 +802,12 @@ def _serialize_review_paragraphs(cursor, document_id: int) -> list[dict[str, Any
                 has_resolved = True
             else:
                 has_unresolved = True
+            keys = comment.keys()
+            parent_id = (
+                comment["parent_comment_id"]
+                if "parent_comment_id" in keys
+                else None
+            )
             comments.append(
                 {
                     "id": comment["id"],
@@ -808,6 +815,8 @@ def _serialize_review_paragraphs(cursor, document_id: int) -> list[dict[str, Any
                     "is_resolved": resolved,
                     "created_at": comment["created_at"],
                     "resolved_at": comment["resolved_at"],
+                    "supervisor_id": comment["supervisor_id"],
+                    "parent_comment_id": parent_id,
                 }
             )
         # Highlight priority: unresolved (yellow) > resolved-only (gray) > none

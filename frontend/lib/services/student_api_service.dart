@@ -98,4 +98,57 @@ class StudentApiService {
     }
     return Map<String, dynamic>.from(body as Map);
   }
+
+  Future<DocumentReviewModel> fetchDocumentComments({
+    required int userId,
+    required int groupId,
+    required int documentId,
+  }) async {
+    final data = await _request(
+      'GET',
+      '/student/groups/$groupId/documents/$documentId/comments',
+      queryParameters: {'user_id': userId},
+    );
+    return DocumentReviewModel.fromJson(Map<String, dynamic>.from(data as Map));
+  }
+
+  Future<Map<String, dynamic>> resolveComment({
+    required int userId,
+    required int commentId,
+  }) async {
+    final uri = _uri('/student/comments/$commentId/resolve', {'user_id': userId});
+    final response = await http.post(uri);
+    final body = response.body.isEmpty ? null : jsonDecode(response.body);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      final detail = body is Map && body['detail'] != null
+          ? body['detail'].toString()
+          : response.body;
+      throw Exception(
+        detail.isEmpty ? 'Request failed (${response.statusCode})' : detail,
+      );
+    }
+    return Map<String, dynamic>.from(body as Map? ?? const {});
+  }
+
+  Future<void> replyToComment({
+    required int userId,
+    required int commentId,
+    required String replyText,
+  }) async {
+    final uri = _uri('/student/comments/$commentId/reply', {'user_id': userId});
+    final response = await http.post(
+      uri,
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({'reply_text': replyText}),
+    );
+    final body = response.body.isEmpty ? null : jsonDecode(response.body);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      final detail = body is Map && body['detail'] != null
+          ? body['detail'].toString()
+          : response.body;
+      throw Exception(
+        detail.isEmpty ? 'Request failed (${response.statusCode})' : detail,
+      );
+    }
+  }
 }

@@ -362,12 +362,20 @@ def init_db():
             is_resolved INTEGER DEFAULT 0,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             resolved_at DATETIME,
+            parent_comment_id INTEGER,
             FOREIGN KEY (paragraph_id) REFERENCES document_paragraphs(id),
             FOREIGN KEY (document_id) REFERENCES group_documents(id),
-            FOREIGN KEY (supervisor_id) REFERENCES supervisors(id)
+            FOREIGN KEY (supervisor_id) REFERENCES supervisors(id),
+            FOREIGN KEY (parent_comment_id) REFERENCES document_comments(id)
         )
     """)
 
+    cursor.execute("PRAGMA table_info(document_comments)")
+    document_comment_columns = {row[1] for row in cursor.fetchall()}
+    if "parent_comment_id" not in document_comment_columns:
+        cursor.execute(
+            "ALTER TABLE document_comments ADD COLUMN parent_comment_id INTEGER"
+        )
     # 18. Final submissions awaiting supervisor decision (with AI analysis snapshot)
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS final_submissions (

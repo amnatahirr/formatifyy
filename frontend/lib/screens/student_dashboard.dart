@@ -7,6 +7,7 @@ import 'package:frontend/widgets/qr_dialog.dart';
 import 'package:provider/provider.dart';
 import 'dart:io';
 import 'package:file_picker/file_picker.dart';
+import 'package:share_plus/share_plus.dart';
 import '../providers/auth_provider.dart';
 import '../providers/document_provider.dart';
 import '../providers/template_provider.dart';
@@ -24,6 +25,27 @@ import 'student/fyp_milestones_screen.dart';
 import 'student/plagiarism_report_screen.dart';
 import 'student/status_tracker_screen.dart';
 import '../widgets/notifications_panel.dart';
+import '../widgets/student/mobile_status_summary_card.dart';
+import '../utils/responsive.dart';
+
+/// Mobile bottom-nav → existing `_selectedIndex` targets.
+/// Notifications has no desktop sidebar entry; uses [kNotificationsTabIndex].
+const int kNotificationsTabIndex = 13;
+
+class _MobileNavItem {
+  final int tabIndex;
+  final IconData icon;
+  final String label;
+
+  const _MobileNavItem(this.tabIndex, this.icon, this.label);
+}
+
+const List<_MobileNavItem> _kMobileNavItems = [
+  _MobileNavItem(0, Icons.dashboard_outlined, 'Dashboard'),
+  _MobileNavItem(8, Icons.checklist_outlined, 'Milestones'),
+  _MobileNavItem(kNotificationsTabIndex, Icons.notifications_outlined, 'Notifications'),
+  _MobileNavItem(2, Icons.folder_outlined, 'Reports'),
+];
 
 class StudentDashboard extends StatefulWidget {
   final int initialIndex;
@@ -56,7 +78,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
   @override
   void initState() {
     super.initState();
-    _selectedIndex = widget.initialIndex.clamp(0, 12);
+    _selectedIndex = widget.initialIndex.clamp(0, kNotificationsTabIndex);
     _activeProjectId = widget.initialProjectId;
     _projectDetailTab = widget.initialProjectTab;
     _loadInitialData();
@@ -90,17 +112,94 @@ class _StudentDashboardState extends State<StudentDashboard> {
 
   @override
   Widget build(BuildContext context) {
+    final compact = isCompact(context);
+
     return Scaffold(
       backgroundColor: const Color(0xFF0D1117),
-      body: Row(
-        children: [
-          _buildSidebar(),
-          Expanded(
-            child: Column(
+      body: compact
+          ? Column(
               children: [
-                _buildTopBar(),
+                _buildTopBar(compact: true),
                 Expanded(child: _buildBody()),
               ],
+            )
+          : Row(
+              children: [
+                _buildSidebar(),
+                Expanded(
+                  child: Column(
+                    children: [
+                      _buildTopBar(compact: false),
+                      Expanded(child: _buildBody()),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+      bottomNavigationBar: compact ? _buildMobileBottomNav() : null,
+    );
+  }
+
+  Widget _buildMobileBottomNav() {
+    final selectedNav = _kMobileNavItems.indexWhere(
+      (item) => item.tabIndex == _selectedIndex,
+    );
+
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFF161B22),
+        border: Border(
+          top: BorderSide(color: Colors.white.withOpacity(0.1)),
+        ),
+      ),
+      child: SafeArea(
+        top: false,
+        child: SizedBox(
+          height: 64,
+          child: Row(
+            children: [
+              for (var i = 0; i < _kMobileNavItems.length; i++)
+                Expanded(
+                  child: _buildMobileNavButton(
+                    item: _kMobileNavItems[i],
+                    selected: selectedNav == i,
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMobileNavButton({
+    required _MobileNavItem item,
+    required bool selected,
+  }) {
+    final color = selected
+        ? const Color(0xFF3B82F6)
+        : Colors.white.withOpacity(0.55);
+
+    return InkWell(
+      onTap: () {
+        setState(() {
+          _selectedIndex = item.tabIndex;
+          _activeProjectId = null;
+        });
+      },
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(item.icon, size: 22, color: color),
+          const SizedBox(height: 4),
+          Text(
+            item.label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: 10,
+              fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+              color: color,
             ),
           ),
         ],
@@ -361,7 +460,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
     );
   }
 
-  Widget _buildTopBar() {
+  Widget _buildTopBar({required bool compact}) {
     final titles = [
       'Dashboard',
       'New Report',
@@ -376,6 +475,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
       'Plagiarism Report',
       'Status Tracker',
       'Settings',
+      'Notifications',
     ];
     final descriptions = [
       'Here\'s your report overview.',
@@ -391,6 +491,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
       'View plagiarism score and matched sources from your submission',
       'Track final submission review status and supervisor decisions',
       'Manage your account settings and preferences',
+      'Updates from your supervisor and FYP workflow',
     ];
 
     final showingProject = _activeProjectId != null;
@@ -413,66 +514,75 @@ class _StudentDashboardState extends State<StudentDashboard> {
           ),
         ),
       ),
-      padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 20),
+      padding: EdgeInsets.symmetric(
+        horizontal: compact ? 16 : 32,
+        vertical: compact ? 14 : 20,
+      ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                title,
-                style: const TextStyle(
-                  fontSize: 28,
-                  fontWeight: FontWeight.w700,
-                  color: Colors.white,
-                ),
-              ),
-              Text(
-                description,
-                style: TextStyle(
-                  fontSize: 13,
-                  color: Colors.white.withOpacity(0.6),
-                  fontWeight: FontWeight.w400,
-                ),
-              ),
-            ],
-          ),
-          Row(
-            children: [
-              const NotificationsPanelButton(),
-              const SizedBox(width: 12),
-              GestureDetector(
-                onTap: () {
-                  setState(() {
-                    _selectedIndex = 1;
-                    _activeProjectId = null;
-                  });
-                },
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF3B82F6),
-                    borderRadius: BorderRadius.circular(6),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: TextStyle(
+                    fontSize: compact ? 20 : 28,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.white,
                   ),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.add, size: 18, color: Colors.white),
-                      const SizedBox(width: 6),
-                      const Text(
-                        'New Report',
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.white,
+                ),
+                if (!compact || _selectedIndex == 0)
+                  Text(
+                    description,
+                    maxLines: compact ? 1 : 3,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: Colors.white.withOpacity(0.6),
+                      fontWeight: FontWeight.w400,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          if (!compact)
+            Row(
+              children: [
+                const NotificationsPanelButton(),
+                const SizedBox(width: 12),
+                GestureDetector(
+                  onTap: () {
+                    setState(() {
+                      _selectedIndex = 1;
+                      _activeProjectId = null;
+                    });
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF3B82F6),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: const Row(
+                      children: [
+                        Icon(Icons.add, size: 18, color: Colors.white),
+                        SizedBox(width: 6),
+                        Text(
+                          'New Report',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.white,
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
-              ),
-            ],
-          ),
+              ],
+            ),
         ],
       ),
     );
@@ -567,12 +677,15 @@ class _StudentDashboardState extends State<StudentDashboard> {
         );
       case 12:
         return _buildSettingsPage();
+      case kNotificationsTabIndex:
+        return const StudentNotificationsPage();
       default:
         return const SizedBox.shrink();
     }
   }
 
   Widget _buildDashboardContent() {
+    final compact = isCompact(context);
     return Consumer<DocumentProvider>(
       builder: (context, docProvider, _) {
         final totalReports = docProvider.documents.length;
@@ -580,10 +693,14 @@ class _StudentDashboardState extends State<StudentDashboard> {
         final draftCount = docProvider.documents.where((d) => d['status'] == 'uploaded' || d['status'] == 'processing').length;
 
         return SingleChildScrollView(
-          padding: const EdgeInsets.all(32),
+          padding: EdgeInsets.all(compact ? 16 : 32),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              if (compact) ...[
+                const MobileStatusSummaryCard(),
+                const SizedBox(height: 20),
+              ],
               Row(
                 children: [
                   Expanded(
@@ -1642,6 +1759,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
                                           _handleDownload(doc);
                                         },
                                         icon: const Icon(Icons.download, size: 16),
+                                        tooltip: isCompact(context) ? 'Save' : 'Download',
                                         color: Colors.white.withOpacity(0.6),
                                         padding: EdgeInsets.zero,
                                         constraints: const BoxConstraints(
@@ -1649,6 +1767,20 @@ class _StudentDashboardState extends State<StudentDashboard> {
                                           minHeight: 24,
                                         ),
                                       ),
+                                      if (isCompact(context)) ...[
+                                        const SizedBox(width: 2),
+                                        IconButton(
+                                          onPressed: () => _handleShare(doc),
+                                          icon: const Icon(Icons.share_outlined, size: 16),
+                                          tooltip: 'Share',
+                                          color: Colors.white.withOpacity(0.6),
+                                          padding: EdgeInsets.zero,
+                                          constraints: const BoxConstraints(
+                                            minWidth: 24,
+                                            minHeight: 24,
+                                          ),
+                                        ),
+                                      ],
                                       const SizedBox(width: 4),
                                       PopupMenuButton<String>(
                                         onSelected: (value) {
@@ -1658,52 +1790,68 @@ class _StudentDashboardState extends State<StudentDashboard> {
                                             _showPreview(doc);
                                           } else if (value == 'download') {
                                             _handleDownload(doc);
+                                          } else if (value == 'share') {
+                                            _handleShare(doc);
                                           } else if (value == 'delete') {
                                             _handleDelete(doc);
                                           }
                                         },
-                                        itemBuilder: (context) => [
-                                          const PopupMenuItem(
-                                            value: 'analyze',
-                                            child: Row(
-                                              children: [
-                                                Icon(Icons.analytics_outlined, size: 16, color: Color(0xFF10B981)),
-                                                SizedBox(width: 8),
-                                                Text('Analyze'),
-                                              ],
+                                        itemBuilder: (context) {
+                                          final compact = isCompact(context);
+                                          return [
+                                            const PopupMenuItem(
+                                              value: 'analyze',
+                                              child: Row(
+                                                children: [
+                                                  Icon(Icons.analytics_outlined, size: 16, color: Color(0xFF10B981)),
+                                                  SizedBox(width: 8),
+                                                  Text('Analyze'),
+                                                ],
+                                              ),
                                             ),
-                                          ),
-                                          const PopupMenuItem(
-                                            value: 'preview',
-                                            child: Row(
-                                              children: [
-                                                Icon(Icons.preview, size: 16),
-                                                SizedBox(width: 8),
-                                                Text('Preview'),
-                                              ],
+                                            const PopupMenuItem(
+                                              value: 'preview',
+                                              child: Row(
+                                                children: [
+                                                  Icon(Icons.preview, size: 16),
+                                                  SizedBox(width: 8),
+                                                  Text('Preview'),
+                                                ],
+                                              ),
                                             ),
-                                          ),
-                                          const PopupMenuItem(
-                                            value: 'download',
-                                            child: Row(
-                                              children: [
-                                                Icon(Icons.download, size: 16),
-                                                SizedBox(width: 8),
-                                                Text('Download'),
-                                              ],
+                                            PopupMenuItem(
+                                              value: 'download',
+                                              child: Row(
+                                                children: [
+                                                  const Icon(Icons.download, size: 16),
+                                                  const SizedBox(width: 8),
+                                                  Text(compact ? 'Save' : 'Download'),
+                                                ],
+                                              ),
                                             ),
-                                          ),
-                                          const PopupMenuItem(
-                                            value: 'delete',
-                                            child: Row(
-                                              children: [
-                                                Icon(Icons.delete, size: 16, color: Colors.red),
-                                                SizedBox(width: 8),
-                                                Text('Delete', style: TextStyle(color: Colors.red)),
-                                              ],
+                                            if (compact)
+                                              const PopupMenuItem(
+                                                value: 'share',
+                                                child: Row(
+                                                  children: [
+                                                    Icon(Icons.share_outlined, size: 16),
+                                                    SizedBox(width: 8),
+                                                    Text('Share'),
+                                                  ],
+                                                ),
+                                              ),
+                                            const PopupMenuItem(
+                                              value: 'delete',
+                                              child: Row(
+                                                children: [
+                                                  Icon(Icons.delete, size: 16, color: Colors.red),
+                                                  SizedBox(width: 8),
+                                                  Text('Delete', style: TextStyle(color: Colors.red)),
+                                                ],
+                                              ),
                                             ),
-                                          ),
-                                        ],
+                                          ];
+                                        },
                                         child: Icon(
                                           Icons.more_vert,
                                           size: 16,
@@ -3623,6 +3771,69 @@ void _handleDownload(Map<String, dynamic> doc) {
   );
 }
 
+  /// Mobile-only: save via [downloadFormattedDocument], then share with share_plus
+  /// (same SharePlus.instance.share / ShareParams pattern as MobileQrDownloadScreen).
+  void _handleShare(Map<String, dynamic> doc) {
+    showDialog(
+      context: context,
+      builder: (dialogContext) => ExportDialog(
+        onExport: (format, {bool applyBullets = true, bool autoDetect = true}) async {
+          final docProvider = context.read<DocumentProvider>();
+          final userId = context.read<AuthProvider>().userId;
+          if (userId == null) return;
+
+          try {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Preparing $format for share...'),
+                backgroundColor: const Color(0xFF3B82F6),
+              ),
+            );
+
+            final success = await docProvider.downloadFormattedDocument(
+              doc['id'],
+              userId,
+              format: format,
+              applyBullets: applyBullets,
+              autoDetectBullets: autoDetect,
+            );
+
+            final path = docProvider.lastDownloadedPath;
+            if (!success || path == null || path.isEmpty) {
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      'Share failed: ${docProvider.errorMessage ?? 'Could not save file'}',
+                    ),
+                    backgroundColor: Colors.red,
+                  ),
+                );
+              }
+              return;
+            }
+
+            final fileName = path.split(Platform.pathSeparator).last;
+            await SharePlus.instance.share(
+              ShareParams(
+                files: [XFile(path)],
+                subject: fileName,
+              ),
+            );
+          } catch (e) {
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('Share error: $e'),
+                  backgroundColor: Colors.red,
+                ),
+              );
+            }
+          }
+        },
+      ),
+    );
+  }
 
   void _handleDelete(Map<String, dynamic> doc) {
     showDialog(

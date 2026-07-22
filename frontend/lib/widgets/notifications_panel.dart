@@ -3,6 +3,197 @@ import 'package:provider/provider.dart';
 
 import '../providers/auth_provider.dart';
 import '../services/student_api_service.dart';
+import '../screens/student/document_feedback_screen.dart';
+
+/// Full-page notifications inbox (mobile student bottom-nav tab).
+///
+/// Reuses the same API + list tiles as [NotificationsPanelButton]; shell only —
+/// no new notification features.
+class StudentNotificationsPage extends StatefulWidget {
+  const StudentNotificationsPage({super.key});
+
+  @override
+  State<StudentNotificationsPage> createState() =>
+      _StudentNotificationsPageState();
+}
+
+class _StudentNotificationsPageState extends State<StudentNotificationsPage> {
+  final StudentApiService _api = StudentApiService();
+  List<Map<String, dynamic>> _notifications = const [];
+  bool _loading = false;
+  String? _error;
+
+  static const _accent = Color(0xFF3B82F6);
+  static const _border = Color(0x22FFFFFF);
+
+  String? get _email {
+    final auth = context.read<AuthProvider>();
+    final email = (auth.userEmail ?? auth.email ?? '').trim();
+    return email.isEmpty ? null : email;
+  }
+
+  int? get _userId => context.read<AuthProvider>().userId;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _refresh());
+  }
+
+  Future<void> _refresh() async {
+    final email = _email;
+    final userId = _userId;
+    if (email == null || userId == null) return;
+
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final data = await _api.fetchNotifications(userId: userId, email: email);
+      if (!mounted) return;
+      setState(() {
+        _notifications = List<Map<String, dynamic>>.from(
+          (data['notifications'] as List? ?? const []).map(
+            (e) => Map<String, dynamic>.from(e as Map),
+          ),
+        );
+        _error = null;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _error = e.toString());
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _markRead(int id) async {
+    final email = _email;
+    final userId = _userId;
+    if (email == null || userId == null) return;
+    try {
+      await _api.markNotificationRead(
+        userId: userId,
+        email: email,
+        notificationId: id,
+      );
+      await _refresh();
+    } catch (e) {
+      if (mounted) setState(() => _error = e.toString());
+    }
+  }
+
+  int? _asInt(dynamic value) {
+    if (value is int) return value;
+    if (value == null) return null;
+    return int.tryParse(value.toString());
+  }
+
+  bool _isDocumentComment(Map<String, dynamic> n) {
+    final type = (n['type'] ?? '').toString().toLowerCase();
+    final related = (n['related_type'] ?? '').toString().toLowerCase();
+    return type == 'document_comment' || related == 'document_comment';
+  }
+
+  Future<void> _onNotificationTap(Map<String, dynamic> n) async {
+    final id = n['id'];
+    if (n['is_read'] != true && id is int) {
+      await _markRead(id);
+    }
+
+    if (!_isDocumentComment(n) || !mounted) return;
+
+    final groupId = _asInt(n['group_id']);
+    final documentId = _asInt(n['document_id']);
+    final commentId = _asInt(n['comment_id'] ?? n['related_id']);
+
+    if (groupId == null || documentId == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Could not open feedback — missing document link on this notification.',
+          ),
+        ),
+      );
+      return;
+    }
+
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => DocumentFeedbackScreen(
+          groupId: groupId,
+          documentId: documentId,
+          focusCommentId: commentId,
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading && _notifications.isEmpty) {
+      return const Center(
+        child: CircularProgressIndicator(color: _accent, strokeWidth: 2),
+      );
+    }
+    if (_error != null && _notifications.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                _error!,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: Colors.white.withOpacity(0.65),
+                  fontSize: 13,
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextButton(
+                onPressed: _refresh,
+                child: const Text('Retry'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+    if (_notifications.isEmpty) {
+      return Center(
+        child: Text(
+          'No notifications yet.',
+          style: TextStyle(
+            color: Colors.white.withOpacity(0.5),
+            fontSize: 14,
+          ),
+        ),
+      );
+    }
+
+    return RefreshIndicator(
+      color: _accent,
+      onRefresh: _refresh,
+      child: ListView.separated(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        itemCount: _notifications.length,
+        separatorBuilder: (_, __) => const Divider(height: 1, color: _border),
+        itemBuilder: (context, index) {
+          final n = _notifications[index];
+          return _NotificationTile(
+            notification: n,
+            onTap: () => _onNotificationTap(n),
+          );
+        },
+      ),
+    );
+  }
+}
 
 /// AppBar notifications dropdown — lists rows from `notifications` by recipient_email.
 class NotificationsPanelButton extends StatefulWidget {
