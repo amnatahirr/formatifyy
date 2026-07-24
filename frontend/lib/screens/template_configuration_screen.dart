@@ -1039,6 +1039,8 @@ import '../widgets/template_config/heading_styles_card.dart';
 import '../widgets/template_config/table_styles_card.dart';    // ← NEW
 import '../widgets/template_config/action_buttons.dart';
 import '../widgets/template_config/upload_template_document_button.dart';
+import '../widgets/template_config/frontmatter_branding_card.dart';
+import '../widgets/template_config/frontmatter_assets_card.dart';
 import '../utils/template_mapping_utils.dart';
 import '../screens/admin_reference_settings_screen.dart';
 import '../widgets/admin/admin_ui.dart';
@@ -2217,6 +2219,12 @@ class _TemplateConfigurationScreenState
               onSectionsChanged: (updated) =>
                   setState(() => _requiredSections = updated),
             ),
+            const SizedBox(height: 32),
+
+            // Cover / frontmatter branding + assets (admin_settings + templates/)
+            const FrontmatterBrandingCard(),
+            const SizedBox(height: 32),
+            const FrontmatterAssetsCard(),
             const SizedBox(height: 32),
 
             _buildReferenceRulesButton(),

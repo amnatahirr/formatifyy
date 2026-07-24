@@ -225,4 +225,69 @@ class AdminApiService {
     final settings = data is Map<String, dynamic> ? data['settings'] ?? data : data;
     return AdminSettingsModel.fromJson(Map<String, dynamic>.from(settings));
   }
+
+  Future<FrontmatterConfigModel> fetchFrontmatterConfig(int userId) async {
+    final data = await _request(
+      'GET',
+      '/admin/frontmatter-config',
+      queryParameters: {'user_id': userId},
+    );
+    return FrontmatterConfigModel.fromJson(Map<String, dynamic>.from(data));
+  }
+
+  Future<FrontmatterConfigModel> updateFrontmatterConfig(
+    int userId,
+    Map<String, dynamic> body,
+  ) async {
+    final data = await _request(
+      'PUT',
+      '/admin/frontmatter-config',
+      queryParameters: {'user_id': userId},
+      body: body,
+    );
+    final config = data is Map<String, dynamic> ? data['config'] ?? data : data;
+    return FrontmatterConfigModel.fromJson(Map<String, dynamic>.from(config));
+  }
+
+  Future<FrontmatterConfigModel> uploadFrontmatterLogo(int userId, String filePath) async {
+    final uri = _uri('/admin/frontmatter-config/logo', {'user_id': userId});
+    final request = http.MultipartRequest('POST', uri)
+      ..files.add(await http.MultipartFile.fromPath('file', filePath));
+    final streamed = await request.send();
+    final body = await streamed.stream.bytesToString();
+    if (streamed.statusCode < 200 || streamed.statusCode >= 300) {
+      throw Exception(_multipartError(body, streamed.statusCode));
+    }
+    final data = jsonDecode(body);
+    final config = data is Map<String, dynamic> ? data['config'] ?? data : data;
+    return FrontmatterConfigModel.fromJson(Map<String, dynamic>.from(config));
+  }
+
+  Future<FrontmatterConfigModel> uploadFrontmatterTemplate(
+    int userId,
+    String kind,
+    String filePath,
+  ) async {
+    final uri = _uri('/admin/frontmatter-config/templates/$kind', {'user_id': userId});
+    final request = http.MultipartRequest('POST', uri)
+      ..files.add(await http.MultipartFile.fromPath('file', filePath));
+    final streamed = await request.send();
+    final body = await streamed.stream.bytesToString();
+    if (streamed.statusCode < 200 || streamed.statusCode >= 300) {
+      throw Exception(_multipartError(body, streamed.statusCode));
+    }
+    final data = jsonDecode(body);
+    final config = data is Map<String, dynamic> ? data['config'] ?? data : data;
+    return FrontmatterConfigModel.fromJson(Map<String, dynamic>.from(config));
+  }
+
+  String _multipartError(String body, int statusCode) {
+    try {
+      final data = jsonDecode(body);
+      if (data is Map<String, dynamic>) {
+        return (data['detail'] ?? data['message'] ?? 'Upload failed ($statusCode)').toString();
+      }
+    } catch (_) {}
+    return 'Upload failed ($statusCode)';
+  }
 }

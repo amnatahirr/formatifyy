@@ -165,3 +165,50 @@ class TemplateUpdateRequest(BaseModel):
     description: Optional[str] = None
     required_sections: Optional[List[Any]] = None
     formatting_rules: Optional[Dict[str, Any]] = None
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# FRONTMATTER — cover page / project-details detection & generation
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class FrontmatterMember(BaseModel):
+    """One group member. reg_no / email are optional in the minimal schema."""
+    name: str = ""
+    reg_no: Optional[str] = None
+    email: Optional[str] = None
+
+
+class DetectionResult(BaseModel):
+    """Result of hybrid cover / project-info page detection on a DOCX."""
+    cover_page_present: bool = False
+    info_page_present: bool = False
+    cover_confidence: float = 0.0
+    info_confidence: float = 0.0
+    confidence: float = 0.0
+    reasoning: str = ""
+    used_llm: bool = False
+    cover_signals: List[str] = Field(default_factory=list)
+    info_signals: List[str] = Field(default_factory=list)
+
+
+class FrontmatterContext(BaseModel):
+    """Assembled data ready for cover / project-info DOCX templates."""
+    project_title: str = ""
+    university_name: str = ""
+    department: str = ""
+    session: str = ""
+    logo_path: Optional[str] = None
+    members: List[FrontmatterMember] = Field(default_factory=list)
+    supervisor_name: str = ""
+    cosupervisor_name: str = ""
+    domains: List[str] = Field(default_factory=list)
+    signature_path: Optional[str] = None
+
+
+class FrontmatterGenerateRequest(BaseModel):
+    """Optional overrides sent with POST .../frontmatter/generate."""
+    group_id: Optional[int] = None
+    domains: Optional[List[str]] = None
+    signature_path: Optional[str] = None
+    generate_cover: Optional[bool] = None
+    generate_info: Optional[bool] = None

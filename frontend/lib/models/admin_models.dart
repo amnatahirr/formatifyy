@@ -397,3 +397,67 @@ class AdminSettingsModel {
         'max_file_size_mb': maxFileSizeMb,
       };
 }
+
+class FrontmatterTemplateInfo {
+  final String kind;
+  final String filename;
+  final String path;
+  final bool exists;
+  final int sizeBytes;
+  final String? updatedAt;
+
+  const FrontmatterTemplateInfo({
+    required this.kind,
+    required this.filename,
+    required this.path,
+    required this.exists,
+    required this.sizeBytes,
+    this.updatedAt,
+  });
+
+  factory FrontmatterTemplateInfo.fromJson(Map<String, dynamic> json) => FrontmatterTemplateInfo(
+        kind: (json['kind'] ?? '').toString(),
+        filename: (json['filename'] ?? '').toString(),
+        path: (json['path'] ?? '').toString(),
+        exists: json['exists'] == true,
+        sizeBytes: _asInt(json['size_bytes']),
+        updatedAt: json['updated_at']?.toString(),
+      );
+}
+
+class FrontmatterConfigModel {
+  final String universityName;
+  final String departmentName;
+  final String session;
+  final String logoPath;
+  final String? logoUrl;
+  final bool logoExists;
+  final FrontmatterTemplateInfo coverTemplate;
+  final FrontmatterTemplateInfo infoTemplate;
+
+  const FrontmatterConfigModel({
+    required this.universityName,
+    required this.departmentName,
+    required this.session,
+    required this.logoPath,
+    this.logoUrl,
+    required this.logoExists,
+    required this.coverTemplate,
+    required this.infoTemplate,
+  });
+
+  factory FrontmatterConfigModel.fromJson(Map<String, dynamic> json) => FrontmatterConfigModel(
+        universityName: (json['university_name'] ?? '').toString(),
+        departmentName: (json['department_name'] ?? '').toString(),
+        session: (json['session'] ?? '').toString(),
+        logoPath: (json['logo_path'] ?? '').toString(),
+        logoUrl: json['logo_url']?.toString(),
+        logoExists: json['logo_exists'] == true,
+        coverTemplate: FrontmatterTemplateInfo.fromJson(
+          Map<String, dynamic>.from(json['cover_template'] as Map? ?? const {}),
+        ),
+        infoTemplate: FrontmatterTemplateInfo.fromJson(
+          Map<String, dynamic>.from(json['info_template'] as Map? ?? const {}),
+        ),
+      );
+}

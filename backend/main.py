@@ -623,6 +623,10 @@ app.include_router(student_router)
 from template_extract_routes import router as template_extract_router
 app.include_router(template_extract_router)
 
+# Frontmatter: cover / project-info detect + generate
+from frontmatter_routes import router as frontmatter_router
+app.include_router(frontmatter_router)
+
 
 @app.post("/api/analyze", tags=["Analysis"])
 async def analyze_api(
@@ -765,6 +769,12 @@ def _ensure_formatted_working_copy(doc: Any, tmpl: Dict[str, Any]) -> str:
             tmpl["formatting_rules"],
             tmpl.get("required_sections", []),
         )
+        try:
+            from frontmatter_apply import clear_frontmatter_marker, ensure_frontmatter_pages
+            clear_frontmatter_marker(int(doc["id"]))
+            ensure_frontmatter_pages(int(doc["id"]), working_copy)
+        except Exception as exc:
+            print(f"[working_copy] frontmatter apply skipped: {exc}")
     return working_copy
 
 
@@ -1718,6 +1728,21 @@ def export_formatted_document(document_id: int, user_id: int = Query(...)):
             tmpl["formatting_rules"],
             tmpl.get("required_sections", []),
         )
+        # Seed working copy so subsequent fixes/export stay consistent
+        os.makedirs(os.path.dirname(working_copy), exist_ok=True)
+        shutil.copy2(output_path, working_copy)
+
+    # Prepend admin cover / project-info templates when those pages are missing
+    try:
+        from frontmatter_apply import ensure_frontmatter_pages
+        fm = ensure_frontmatter_pages(document_id, working_copy)
+        if fm.get("applied"):
+            shutil.copy2(working_copy, output_path)
+            print(f"[export] frontmatter applied for doc {document_id}: {fm}")
+        else:
+            print(f"[export] frontmatter skipped for doc {document_id}: {fm.get('reason')}")
+    except Exception as exc:
+        print(f"[export] frontmatter apply error (non-fatal): {exc}")
 
     download_name = f"formatted_{doc['filename']}"
     if not download_name.endswith(".docx"):
@@ -1758,6 +1783,13 @@ def apply_all_style_fixes(document_id: int, user_id: int = Query(...)):
         file_path, working_copy, report,
         tmpl["formatting_rules"], tmpl.get("required_sections", []),
     )
+
+    try:
+        from frontmatter_apply import clear_frontmatter_marker, ensure_frontmatter_pages
+        clear_frontmatter_marker(document_id)
+        ensure_frontmatter_pages(document_id, working_copy)
+    except Exception as exc:
+        print(f"[apply-all-style-fixes] frontmatter apply skipped: {exc}")
     
     return {"status": "success", "message": "All style fixes applied to working copy"}
 

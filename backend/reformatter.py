@@ -422,6 +422,17 @@ def _reformat_docx(
     section_map = _parse_section_map(required_sections or [])
     doc = Document(output_path)
 
+    # Cover / info pages (before Formatify body bookmark) must stay as uploaded
+    body_start = None
+    try:
+        from docx_fields import (
+            find_formatify_body_start_element,
+            _paragraph_is_before_body_start,
+        )
+        body_start = find_formatify_body_start_element(doc)
+    except Exception as exc:
+        print(f"[reformatter] body-start lookup skipped: {exc}")
+
     # Pass A/B classification so inferred headings (e.g. "Specific Objectives")
     # receive Word Heading styles — not just admin-list lookups.
     heading_map: Dict[int, Dict[str, Any]] = {}
@@ -444,16 +455,31 @@ def _reformat_docx(
     prev_was_heading = False
     number_tracker = _HeadingNumberTracker() if numbering_style == "decimal" else None
 
-    # ── Apply page margins ───────────────────────────────────────────────────
+    # ── Apply page margins (skip when cover/info present — preserve their sections) ──
     margins = styles["margins"]
-    for section in doc.sections:
-        section.top_margin = Inches(margins["top"])
-        section.bottom_margin = Inches(margins["bottom"])
-        section.left_margin = Inches(margins["left"])
-        section.right_margin = Inches(margins["right"])
+    if body_start is None:
+        for section in doc.sections:
+            section.top_margin = Inches(margins["top"])
+            section.bottom_margin = Inches(margins["bottom"])
+            section.left_margin = Inches(margins["left"])
+            section.right_margin = Inches(margins["right"])
+    else:
+        # Only touch the last section (report body); leave cover/info section(s) alone
+        try:
+            section = doc.sections[-1]
+            section.top_margin = Inches(margins["top"])
+            section.bottom_margin = Inches(margins["bottom"])
+            section.left_margin = Inches(margins["left"])
+            section.right_margin = Inches(margins["right"])
+        except Exception as exc:
+            print(f"[reformatter] body section margin skip: {exc}")
 
     # ── Apply styles to paragraphs (never rewrite paragraph text) ────────────
     for para_idx, para in enumerate(doc.paragraphs):
+        if body_start is not None and _paragraph_is_before_body_start(doc, para, body_start):
+            prev_was_heading = False
+            continue
+
         text = para.text.strip()
         if not text:
             prev_was_heading = False

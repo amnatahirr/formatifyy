@@ -32,6 +32,10 @@ _TOC_HEADING_RE = re.compile(r"^(table\s+of\s+contents|contents)$", re.IGNORECAS
 _LOT_HEADING_RE = re.compile(r"^list\s+of\s+tables$", re.IGNORECASE)
 _LOF_HEADING_RE = re.compile(r"^list\s+of\s+figures$", re.IGNORECASE)
 
+# Bookmark marking where report body begins (after cover + project-info pages).
+# TOC / LOT / LOF must be inserted BEFORE this marker, never before the cover.
+FORMATIFY_BODY_START_BOOKMARK = "_FormatifyBodyStart"
+
 _HEADING_STYLE_RE = re.compile(r"heading\s*(\d+)", re.IGNORECASE)
 _NUMBERING_RE = re.compile(r"^(\d+(?:\.\d+)*)\.?\s+(.+)$")
 _BODY_SENTENCE_RE = re.compile(r"[.!?]\s+\S")
@@ -349,8 +353,12 @@ def sanitize_document_headings_for_lists(
     - Body paragraphs wrongly marked as headings are demoted to Normal
     """
     stats = {"meta_styled": 0, "demoted": 0}
+    body_start = find_formatify_body_start_element(doc)
 
     for para in doc.paragraphs:
+        # Leave admin cover / info pages untouched
+        if _paragraph_is_before_body_start(doc, para, body_start):
+            continue
         text = para.text.strip()
         if not text:
             continue
@@ -380,8 +388,11 @@ def sanitize_document_headings_for_lists(
 def ensure_figure_captions_for_lists(doc) -> Dict[str, Any]:
     """Ensure every detected figure has a SEQ-based caption for LOF."""
     added = 0
+    body_start = find_formatify_body_start_element(doc)
     image_indices = [
-        i for i, p in enumerate(doc.paragraphs) if paragraph_has_image(p)
+        i for i, p in enumerate(doc.paragraphs)
+        if paragraph_has_image(p)
+        and not _paragraph_is_before_body_start(doc, p, body_start)
     ]
 
     for fig_num, img_idx in enumerate(image_indices, start=1):
@@ -440,7 +451,10 @@ def _heading_level_from_paragraph(para) -> Optional[int]:
 def collect_headings(doc) -> List[Dict[str, Any]]:
     """Return valid section headings that should appear in a TOC."""
     entries: List[Dict[str, Any]] = []
+    body_start = find_formatify_body_start_element(doc)
     for idx, para in enumerate(doc.paragraphs):
+        if _paragraph_is_before_body_start(doc, para, body_start):
+            continue
         if _paragraph_in_generated_list(para):
             continue
         level = _heading_level_from_paragraph(para)
@@ -489,7 +503,10 @@ def apply_hierarchical_heading_numbering(doc) -> int:
 
     tracker = _HeadingNumberTracker()
     updated = 0
+    body_start = find_formatify_body_start_element(doc)
     for para in doc.paragraphs:
+        if _paragraph_is_before_body_start(doc, para, body_start):
+            continue
         text = para.text.strip()
         if not text:
             continue
@@ -548,7 +565,11 @@ def apply_heading_styles_to_document(
         print(f"[docx_fields] heading classification fallback: {exc}")
 
     updated = 0
+    body_start = find_formatify_body_start_element(doc)
     for para_idx, para in enumerate(doc.paragraphs):
+        # Never restyle admin cover / project-info pages
+        if _paragraph_is_before_body_start(doc, para, body_start):
+            continue
         text = para.text.strip()
         if not text:
             continue
@@ -703,6 +724,113 @@ def _get_max_bookmark_id(doc) -> int:
     return max_id
 
 
+def find_formatify_body_start_element(doc) -> Optional[OxmlElement]:
+    """
+    Return the paragraph/table that starts the report body
+    (after cover + project-info pages), or None if unmarked.
+    """
+    for bm in doc.element.body.iter(qn("w:bookmarkStart")):
+        if bm.get(qn("w:name")) != FORMATIFY_BODY_START_BOOKMARK:
+            continue
+        parent = bm.getparent()
+        while parent is not None and parent.tag not in (qn("w:p"), qn("w:tbl")):
+            parent = parent.getparent()
+        return parent
+    return None
+
+
+def ensure_formatify_body_start_bookmark(doc, *, bookmark_id: Optional[int] = None) -> OxmlElement:
+    """
+    Ensure the first body child carries FORMATIFY_BODY_START_BOOKMARK.
+    Call on the original report *before* cover/info are prepended.
+    """
+    existing = find_formatify_body_start_element(doc)
+    if existing is not None:
+        return existing
+
+    body = doc.element.body
+    if len(body) == 0:
+        para = doc.add_paragraph("")
+        target = para._element
+    else:
+        target = body[0]
+        if target.tag not in (qn("w:p"), qn("w:tbl")):
+            para = doc.add_paragraph("")
+            body.insert(0, para._element)
+            target = para._element
+
+    bm_id = bookmark_id if bookmark_id is not None else (_get_max_bookmark_id(doc) + 1)
+
+    for bm in list(doc.element.body.iter(qn("w:bookmarkStart"))):
+        if bm.get(qn("w:name")) != FORMATIFY_BODY_START_BOOKMARK:
+            continue
+        bm_id_old = bm.get(qn("w:id"))
+        parent = bm.getparent()
+        if parent is not None:
+            parent.remove(bm)
+        for bm_end in list(doc.element.body.iter(qn("w:bookmarkEnd"))):
+            if bm_end.get(qn("w:id")) == bm_id_old:
+                end_parent = bm_end.getparent()
+                if end_parent is not None:
+                    end_parent.remove(bm_end)
+
+    bm_start = OxmlElement("w:bookmarkStart")
+    bm_start.set(qn("w:id"), str(bm_id))
+    bm_start.set(qn("w:name"), FORMATIFY_BODY_START_BOOKMARK)
+    bm_end = OxmlElement("w:bookmarkEnd")
+    bm_end.set(qn("w:id"), str(bm_id))
+
+    if target.tag == qn("w:p"):
+        target.insert(0, bm_start)
+        target.append(bm_end)
+    else:
+        marker = OxmlElement("w:p")
+        marker.append(bm_start)
+        marker.append(bm_end)
+        target.addprevious(marker)
+        target = marker
+    return target
+
+
+def _lists_anchor_element(doc) -> Optional[OxmlElement]:
+    """
+    Element before which TOC/LOT/LOF should be placed.
+    Prefer the Formatify body-start bookmark so lists sit after cover + info.
+    """
+    body_start = find_formatify_body_start_element(doc)
+    if body_start is not None:
+        return body_start
+    body = doc.element.body
+    return body[0] if len(body) else None
+
+
+def suppress_document_from_toc(doc) -> int:
+    """
+    Intentionally a no-op.
+
+    Cover / project-info pages must remain byte-identical to the admin upload.
+    TOC exclusion is handled by ``_FormatifyBodyStart`` + ``_prepare_toc_entries``
+    (and list arrangement), without mutating cover/info paragraph styles.
+    """
+    return 0
+
+
+def iter_body_paragraphs(doc):
+    """Yield (index, paragraph) for paragraphs at/after Formatify body start."""
+    body_start = find_formatify_body_start_element(doc)
+    for para_idx, para in enumerate(doc.paragraphs):
+        if _paragraph_is_before_body_start(doc, para, body_start):
+            continue
+        yield para_idx, para
+
+
+def is_paragraph_in_cover_or_info(doc, para) -> bool:
+    """True if paragraph sits on the prepended cover / info pages."""
+    return _paragraph_is_before_body_start(
+        doc, para, find_formatify_body_start_element(doc)
+    )
+
+
 def _ensure_bookmark_on_paragraph(para, bookmark_name: str, bookmark_id: int) -> None:
     """Add bookmark markers to a heading paragraph if not already present."""
     p_el = para._element
@@ -841,13 +969,39 @@ def _build_toc_field_end_paragraph() -> OxmlElement:
     return p
 
 
+def _paragraph_is_before_body_start(doc, para, body_start: Optional[OxmlElement]) -> bool:
+    """True when paragraph belongs to cover/info region (before body-start bookmark)."""
+    if body_start is None:
+        return False
+    try:
+        return _body_index(doc, para._element) < _body_index(doc, body_start)
+    except ValueError:
+        pass
+    # Fallback: document-order walk
+    for el in doc.element.body.iter():
+        if el is para._element:
+            return True
+        if el is body_start:
+            return False
+        if (
+            el.tag == qn("w:bookmarkStart")
+            and el.get(qn("w:name")) == FORMATIFY_BODY_START_BOOKMARK
+        ):
+            return False
+    return False
+
+
 def _prepare_toc_entries(doc, levels: str = "1-3") -> List[Dict[str, Any]]:
     """Collect TOC source headings, add bookmarks, and exclude meta list headings."""
     min_level, max_level = _parse_toc_level_range(levels)
     next_bookmark_id = _get_max_bookmark_id(doc) + 1
     entries: List[Dict[str, Any]] = []
+    body_start = find_formatify_body_start_element(doc)
 
     for idx, para in enumerate(doc.paragraphs):
+        # Never list cover / project-info page headings in the TOC
+        if _paragraph_is_before_body_start(doc, para, body_start):
+            continue
         if _paragraph_in_generated_list(para):
             continue
         level = _heading_level_from_paragraph(para)
@@ -1131,7 +1285,7 @@ def _insert_field_after_heading(
 
     if heading_para is None:
         body = doc.element.body
-        first = body[0] if len(body) else None
+        first = _lists_anchor_element(doc)
         if first is not None:
             heading_para = _insert_paragraph_before(doc, first)
         else:
@@ -1168,8 +1322,7 @@ def insert_toc_field(
     toc_entries = entries if entries is not None else _prepare_toc_entries(doc, levels)
 
     if heading_para is None:
-        body = doc.element.body
-        first = body[0] if len(body) else None
+        first = _lists_anchor_element(doc)
         if first is not None:
             heading_para = _insert_paragraph_before(doc, first)
         else:
@@ -1193,8 +1346,7 @@ def insert_lot_field(
     if heading_para is None:
         heading_para = _find_section_heading_paragraph(doc, _LOT_HEADING_RE)
     if heading_para is None:
-        body = doc.element.body
-        first = body[0] if len(body) else None
+        first = _lists_anchor_element(doc)
         if first is not None:
             heading_para = _insert_paragraph_before(doc, first)
         else:
@@ -1218,8 +1370,7 @@ def insert_lof_field(
     if heading_para is None:
         heading_para = _find_section_heading_paragraph(doc, _LOF_HEADING_RE)
     if heading_para is None:
-        body = doc.element.body
-        first = body[0] if len(body) else None
+        first = _lists_anchor_element(doc)
         if first is not None:
             heading_para = _insert_paragraph_before(doc, first)
         else:
@@ -1360,6 +1511,46 @@ def _is_page_break_only_paragraph(p_el: OxmlElement) -> bool:
     return _paragraph_has_page_break(p_el)
 
 
+def repair_formatify_body_start_bookmark(doc, *, expected_leading_page_breaks: int = 2) -> bool:
+    """
+    If cover/info were prepended without a bookmark, place one after the leading
+    page-break paragraphs (cover page-break + info page-break).
+    """
+    if find_formatify_body_start_element(doc) is not None:
+        return False
+
+    breaks_seen = 0
+    for child in list(doc.element.body):
+        if child.tag != qn("w:p"):
+            continue
+        if not _is_page_break_only_paragraph(child):
+            continue
+        breaks_seen += 1
+        if breaks_seen < expected_leading_page_breaks:
+            continue
+        nxt = child.getnext()
+        while nxt is not None and nxt.tag == qn("w:p") and _is_page_break_only_paragraph(nxt):
+            nxt = nxt.getnext()
+        if nxt is None:
+            return False
+        bm_id = _get_max_bookmark_id(doc) + 1
+        bm_start = OxmlElement("w:bookmarkStart")
+        bm_start.set(qn("w:id"), str(bm_id))
+        bm_start.set(qn("w:name"), FORMATIFY_BODY_START_BOOKMARK)
+        bm_end = OxmlElement("w:bookmarkEnd")
+        bm_end.set(qn("w:id"), str(bm_id))
+        if nxt.tag == qn("w:p"):
+            nxt.insert(0, bm_start)
+            nxt.append(bm_end)
+        else:
+            marker = OxmlElement("w:p")
+            marker.append(bm_start)
+            marker.append(bm_end)
+            nxt.addprevious(marker)
+        return True
+    return False
+
+
 def _paragraph_is_list_entry_paragraph(p_el: OxmlElement) -> bool:
     for hl in p_el.iter(qn("w:hyperlink")):
         if (hl.get(qn("w:anchor")) or "").startswith("_Toc"):
@@ -1491,11 +1682,11 @@ def arrange_front_matter_lists(
     page_break_before_content: bool = True,
 ) -> Dict[str, Any]:
     """
-    Place front-matter lists at the document start:
-    - Table of Contents on the first page
-    - List of Figures on the next page (only when figures exist)
-    - List of Tables on the following page (only when tables exist)
-    Main body content begins after a final page break.
+    Place front-matter lists just before the report body:
+    Cover → Info → Table of Contents → List of Figures → List of Tables → Body.
+
+    When no Formatify cover/info bookmark exists, lists remain at document start
+    (legacy behaviour).
     """
     sections: List[Tuple[str, List[OxmlElement]]] = []
     for key, heading_re, field_re in _FRONT_MATTER_SECTIONS:
@@ -1518,7 +1709,8 @@ def arrange_front_matter_lists(
         _detach_body_elements(block)
 
     body = doc.element.body
-    content_start = body[0] if len(body) else None
+    # Anchor AFTER cover/info pages when present; otherwise document start
+    content_start = _lists_anchor_element(doc)
 
     ordered: List[OxmlElement] = []
     page_breaks = 0
@@ -1663,6 +1855,12 @@ def generate_document_lists(
                 result["figure_captions_upgraded"] += 1
 
     ensure_update_fields_on_open(doc)
+
+    # Keep TOC/lists after cover+info when Formatify frontmatter is present
+    try:
+        repair_formatify_body_start_bookmark(doc)
+    except Exception as exc:
+        print(f"[document_lists] body bookmark repair skipped: {exc}")
 
     cleanup = _cleanup_all_list_artifacts(doc)
     result["lists_cleanup"] = cleanup

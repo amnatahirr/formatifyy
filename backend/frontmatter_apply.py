@@ -1,0 +1,284 @@
+"""
+frontmatter_apply.py — Ensure cover / project-info pages are on a formatted DOCX.
+
+Called from the student export / working-copy path so downloaded reports include
+the admin-uploaded templates without requiring a separate Flutter generate step.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+from typing import Any, Dict, Optional
+
+from database import get_db
+from frontmatter_data import build_frontmatter_context
+from frontmatter_detector import detect_frontmatter_heuristic
+from frontmatter_generator import generate_frontmatter_docx, scaffold_templates
+from models import DetectionResult
+
+UPLOAD_DIR = "uploads"
+OUTPUT_DIR = "outputs"
+
+
+def _working_copy_path(document_id: int) -> str:
+    return os.path.join(UPLOAD_DIR, "working", f"doc_{document_id}_working.docx")
+
+
+def _export_copy_path(document_id: int) -> str:
+    return os.path.join(OUTPUT_DIR, f"export_{document_id}.docx")
+
+
+def _marker_path(document_id: int) -> str:
+    return os.path.join(UPLOAD_DIR, "working", f"doc_{document_id}_frontmatter.flag")
+
+
+def clear_frontmatter_marker(document_id: int) -> None:
+    """Call when the working copy is rebuilt from the original upload."""
+    path = _marker_path(document_id)
+    if os.path.exists(path):
+        try:
+            os.remove(path)
+        except OSError as exc:
+            print(f"[frontmatter_apply] marker clear failed: {exc}")
+
+
+def _write_marker(document_id: int, payload: Dict[str, Any]) -> None:
+    path = _marker_path(document_id)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(payload, f)
+
+
+def _save_detection(document_id: int, result: DetectionResult, extra: Optional[Dict[str, Any]] = None) -> None:
+    payload = result.model_dump()
+    if extra:
+        payload.update(extra)
+    conn = get_db()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            """
+            UPDATE documents
+            SET frontmatter_detection = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+            """,
+            (json.dumps(payload), document_id),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def ensure_frontmatter_pages(document_id: int, docx_path: str) -> Dict[str, Any]:
+    """
+    If the DOCX is missing a cover and/or project-info page, prepend the admin
+    templates (rendered when they contain Jinja placeholders, otherwise used
+    exactly as uploaded).
+
+    Uses a per-document flag file so export does not re-prepend on every download.
+    Clears automatically when ``clear_frontmatter_marker`` is called after a
+    full working-copy rebuild.
+
+    After pages exist, repairs body-start bookmark and re-orders TOC/LOT/LOF so
+    the document is always: Cover → Info → TOC/lists → Body.
+    """
+    status: Dict[str, Any] = {
+        "applied": False,
+        "generated_cover": False,
+        "generated_info": False,
+        "reason": "",
+    }
+
+    if not docx_path or not os.path.isfile(docx_path):
+        status["reason"] = "docx_path missing"
+        return status
+    if not str(docx_path).lower().endswith(".docx"):
+        status["reason"] = "not a docx"
+        return status
+
+    marker = _marker_path(document_id)
+    already_marked = os.path.exists(marker)
+
+    if not already_marked:
+        try:
+            detection, _pages = detect_frontmatter_heuristic(docx_path)
+        except Exception as exc:
+            print(f"[frontmatter_apply] detection failed (non-fatal): {exc}")
+            status["reason"] = f"detection failed: {exc}"
+            return status
+
+        insert_cover = not detection.cover_page_present
+        insert_info = not detection.info_page_present
+
+        if insert_cover or insert_info:
+            try:
+                scaffold_templates()
+                ctx = build_frontmatter_context(document_id)
+                merged = generate_frontmatter_docx(
+                    docx_path,
+                    ctx,
+                    insert_cover=insert_cover,
+                    insert_info=insert_info,
+                )
+            except Exception as exc:
+                print(f"[frontmatter_apply] generate/merge failed (non-fatal): {exc}")
+                status["reason"] = f"generate failed: {exc}"
+                return status
+
+            try:
+                working = _working_copy_path(document_id)
+                export_path = _export_copy_path(document_id)
+                os.makedirs(os.path.dirname(working), exist_ok=True)
+                os.makedirs(OUTPUT_DIR, exist_ok=True)
+                with open(docx_path, "wb") as f:
+                    f.write(merged)
+                with open(working, "wb") as f:
+                    f.write(merged)
+                with open(export_path, "wb") as f:
+                    f.write(merged)
+            except Exception as exc:
+                print(f"[frontmatter_apply] write failed (non-fatal): {exc}")
+                status["reason"] = f"write failed: {exc}"
+                return status
+
+            status.update(
+                {
+                    "applied": True,
+                    "generated_cover": insert_cover,
+                    "generated_info": insert_info,
+                    "project_title": getattr(ctx, "project_title", "") or "",
+                }
+            )
+        else:
+            status["reason"] = "cover and info already present"
+
+    # Always normalize order: Cover/Info → TOC/LOF/LOT → Body
+    try:
+        order_fix = fix_frontmatter_and_lists_order(docx_path)
+        status["order_fix"] = order_fix
+    except Exception as exc:
+        print(f"[frontmatter_apply] order fix skipped: {exc}")
+        status["order_fix_error"] = str(exc)
+
+    try:
+        from frontmatter_detector import detect_frontmatter_heuristic as _detect
+        refreshed, _ = _detect(docx_path if os.path.isfile(docx_path) else _working_copy_path(document_id))
+        _save_detection(
+            document_id,
+            refreshed,
+            extra={
+                "auto_applied": True,
+                "applied_cover": status.get("generated_cover", False),
+                "applied_info": status.get("generated_info", False),
+            },
+        )
+        _write_marker(
+            document_id,
+            {
+                "applied": True,
+                "generated_cover": status.get("generated_cover", False),
+                "generated_info": status.get("generated_info", False),
+            },
+        )
+        # Keep working/export synced after order fix
+        working = _working_copy_path(document_id)
+        export_path = _export_copy_path(document_id)
+        if os.path.isfile(docx_path):
+            os.makedirs(os.path.dirname(working), exist_ok=True)
+            os.makedirs(OUTPUT_DIR, exist_ok=True)
+            if os.path.abspath(docx_path) != os.path.abspath(working):
+                with open(docx_path, "rb") as src, open(working, "wb") as dst:
+                    dst.write(src.read())
+            with open(working, "rb") as src, open(export_path, "wb") as dst:
+                dst.write(src.read())
+    except Exception as exc:
+        print(f"[frontmatter_apply] post-detect/marker skipped: {exc}")
+
+    if status.get("applied") or status.get("order_fix"):
+        status["reason"] = status.get("reason") or "ok"
+    print(
+        f"[frontmatter_apply] doc={document_id} "
+        f"cover={status.get('generated_cover')} info={status.get('generated_info')} "
+        f"order={status.get('order_fix')}"
+    )
+    return status
+
+
+def fix_frontmatter_and_lists_order(docx_path: str) -> Dict[str, Any]:
+    """
+    Ensure document order is Cover → Info → TOC/LOF/LOT → Body.
+
+    - Repairs ``_FormatifyBodyStart`` bookmark after leading page breaks
+    - Re-arranges TOC/LOT/LOF blocks to sit just before the body bookmark
+    - Rebuilds TOC entries so cover/info headings are not listed
+    """
+    from docx import Document
+
+    from docx_fields import (
+        arrange_front_matter_lists,
+        document_has_lof,
+        document_has_lot,
+        document_has_toc,
+        find_formatify_body_start_element,
+        insert_toc_field,
+        repair_formatify_body_start_bookmark,
+        _prepare_toc_entries,
+        _remove_toc_field_block,
+        _find_section_heading_paragraph,
+        _TOC_HEADING_RE,
+    )
+
+    doc = Document(docx_path)
+    result: Dict[str, Any] = {
+        "bookmark_repaired": False,
+        "lists_rearranged": False,
+        "toc_rebuilt": False,
+    }
+
+    # How many leading page-breaks? cover-only → 1, cover+info → 2
+    breaks = 0
+    for child in list(doc.element.body)[:40]:
+        from docx_fields import _is_page_break_only_paragraph
+        from docx.oxml.ns import qn
+        if child.tag == qn("w:p") and _is_page_break_only_paragraph(child):
+            breaks += 1
+        elif breaks > 0 and child.tag == qn("w:p"):
+            # stop counting once we hit non-break after starting
+            pass
+    expected_breaks = 2 if breaks >= 2 else (1 if breaks == 1 else 2)
+
+    if find_formatify_body_start_element(doc) is None:
+        result["bookmark_repaired"] = repair_formatify_body_start_bookmark(
+            doc, expected_leading_page_breaks=max(1, min(expected_breaks, 2))
+        )
+
+    has_toc = document_has_toc(doc)
+    has_lot = document_has_lot(doc)
+    has_lof = document_has_lof(doc)
+
+    if has_toc:
+        # Rebuild TOC so entries exclude cover/info headings
+        try:
+            entries = _prepare_toc_entries(doc, "1-3")
+            _remove_toc_field_block(doc)
+            toc_heading = _find_section_heading_paragraph(doc, _TOC_HEADING_RE)
+            insert_toc_field(doc, levels="1-3", heading_para=toc_heading, entries=entries)
+            result["toc_rebuilt"] = True
+            result["toc_entry_count"] = len(entries)
+        except Exception as exc:
+            print(f"[frontmatter_apply] TOC rebuild skipped: {exc}")
+            result["toc_rebuild_error"] = str(exc)
+
+    if has_toc or has_lot or has_lof:
+        layout = arrange_front_matter_lists(
+            doc,
+            include_toc=has_toc,
+            include_lot=has_lot,
+            include_lof=has_lof,
+        )
+        result["lists_rearranged"] = True
+        result["layout"] = layout
+
+    doc.save(docx_path)
+    return result

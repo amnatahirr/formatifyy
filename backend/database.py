@@ -104,6 +104,18 @@ def init_db():
         )
     """)
 
+    # 4b. Frontmatter module columns on documents (idempotent)
+    cursor.execute("PRAGMA table_info(documents)")
+    document_columns = {row[1] for row in cursor.fetchall()}
+    if "group_id" not in document_columns:
+        cursor.execute("ALTER TABLE documents ADD COLUMN group_id INTEGER")
+    if "frontmatter_domains" not in document_columns:
+        cursor.execute("ALTER TABLE documents ADD COLUMN frontmatter_domains TEXT")
+    if "signature_path" not in document_columns:
+        cursor.execute("ALTER TABLE documents ADD COLUMN signature_path TEXT")
+    if "frontmatter_detection" not in document_columns:
+        cursor.execute("ALTER TABLE documents ADD COLUMN frontmatter_detection TEXT")
+
     # 5. Create Image Analysis table
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS image_analysis (
@@ -218,6 +230,8 @@ def init_db():
         cursor.execute(
             "ALTER TABLE fyp_groups ADD COLUMN plagiarism_flagged_at DATETIME"
         )
+    if "cosupervisor_name" not in fyp_group_columns:
+        cursor.execute("ALTER TABLE fyp_groups ADD COLUMN cosupervisor_name TEXT")
 
     # 12. Assignment requests awaiting supervisor decision
     cursor.execute("""
@@ -645,6 +659,11 @@ def init_db():
         "api_rate_limit": "10000",
         "api_timeout_seconds": "30",
         "max_file_size_mb": "100",
+        # Frontmatter cover / project-info branding
+        "university_name": "Your University Name",
+        "department_name": "Your Department",
+        "session": "Fall 2025",
+        "logo_path": "",
     }
     for key, value in default_settings.items():
         cursor.execute(

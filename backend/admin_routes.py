@@ -9,7 +9,7 @@ from datetime import date, datetime, timedelta
 from email.message import EmailMessage
 from typing import Any
 
-from fastapi import APIRouter, Body, HTTPException, Query
+from fastapi import APIRouter, Body, File, HTTPException, Query, UploadFile
 
 from database import get_db, hash_password
 
@@ -1065,3 +1065,198 @@ def update_admin_settings(
     conn.commit()
     conn.close()
     return {"success": True, "settings": settings}
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# FRONTMATTER / COVER PAGE BRANDING
+# Stored in existing admin_settings keys (university_name, department_name,
+# session, logo_path). Template DOCX files overwrite backend/templates/*.docx
+# paths already used by frontmatter_generator — no generator changes.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+_LOGO_DIR = os.path.join("uploads", "branding")
+_LOGO_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
+
+
+def _upsert_setting(cursor, key: str, value: str) -> None:
+    cursor.execute(
+        """
+        INSERT INTO admin_settings (key, value, updated_at)
+        VALUES (?, ?, CURRENT_TIMESTAMP)
+        ON CONFLICT(key) DO UPDATE SET
+            value = excluded.value,
+            updated_at = CURRENT_TIMESTAMP
+        """,
+        (key, value),
+    )
+
+
+def _settings_raw_map(cursor) -> dict[str, str]:
+    cursor.execute("SELECT key, value FROM admin_settings")
+    return {row["key"]: (row["value"] or "") for row in cursor.fetchall()}
+
+
+def _template_file_info(path: str, kind: str) -> dict[str, Any]:
+    exists = os.path.isfile(path)
+    info: dict[str, Any] = {
+        "kind": kind,
+        "filename": os.path.basename(path),
+        "path": path.replace("\\", "/"),
+        "exists": exists,
+        "size_bytes": os.path.getsize(path) if exists else 0,
+        "updated_at": None,
+    }
+    if exists:
+        info["updated_at"] = datetime.utcfromtimestamp(os.path.getmtime(path)).isoformat() + "Z"
+    return info
+
+
+def _logo_public_url(logo_path: str) -> str | None:
+    path = (logo_path or "").strip().replace("\\", "/")
+    if not path:
+        return None
+    # Prefer /uploads/... when stored under uploads/
+    if path.startswith("uploads/"):
+        return "/" + path
+    if os.path.isfile(path):
+        return "/" + path if path.startswith("uploads/") else None
+    return None
+
+
+def _load_frontmatter_config(cursor) -> dict[str, Any]:
+    from frontmatter_generator import COVER_TEMPLATE, INFO_TEMPLATE, scaffold_templates
+
+    scaffold_templates()
+    rows = _settings_raw_map(cursor)
+    logo_path = (rows.get("logo_path") or "").strip()
+    return {
+        "university_name": (rows.get("university_name") or "").strip(),
+        "department_name": (rows.get("department_name") or "").strip(),
+        "session": (rows.get("session") or "").strip(),
+        "logo_path": logo_path,
+        "logo_url": _logo_public_url(logo_path),
+        "logo_exists": bool(logo_path and os.path.isfile(logo_path)),
+        "cover_template": _template_file_info(COVER_TEMPLATE, "cover"),
+        "info_template": _template_file_info(INFO_TEMPLATE, "info"),
+    }
+
+
+@router.get("/frontmatter-config")
+def get_frontmatter_config(user_id: int | None = Query(default=None)):
+    """Branding + template status for cover / project-info generation."""
+    _require_admin(user_id)
+    conn = get_db()
+    cursor = conn.cursor()
+    try:
+        return _load_frontmatter_config(cursor)
+    finally:
+        conn.close()
+
+
+@router.put("/frontmatter-config")
+def update_frontmatter_config(
+    payload: dict[str, Any] = Body(...),
+    user_id: int | None = Query(default=None),
+):
+    """Update university_name / department_name / session text fields."""
+    _require_admin(user_id)
+    allowed = {"university_name", "department_name", "session"}
+    conn = get_db()
+    cursor = conn.cursor()
+    try:
+        for key in allowed:
+            if key not in payload:
+                continue
+            _upsert_setting(cursor, key, str(payload.get(key) or "").strip())
+        conn.commit()
+        return {"success": True, "config": _load_frontmatter_config(cursor)}
+    finally:
+        conn.close()
+
+
+@router.post("/frontmatter-config/logo")
+async def upload_frontmatter_logo(
+    file: UploadFile = File(...),
+    user_id: int | None = Query(default=None),
+):
+    """Upload university logo image; stores path in admin_settings.logo_path."""
+    _require_admin(user_id)
+    filename = file.filename or "logo.png"
+    ext = os.path.splitext(filename)[1].lower()
+    if ext not in _LOGO_EXTENSIONS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported logo type '{ext}'. Allowed: {', '.join(sorted(_LOGO_EXTENSIONS))}",
+        )
+
+    raw = await file.read()
+    if not raw:
+        raise HTTPException(status_code=400, detail="Uploaded logo file is empty.")
+
+    os.makedirs(_LOGO_DIR, exist_ok=True)
+    stored_name = f"university_logo{ext}"
+    stored_path = os.path.join(_LOGO_DIR, stored_name)
+    with open(stored_path, "wb") as out:
+        out.write(raw)
+
+    # Normalize to forward-slash relative path for portability
+    stored_rel = stored_path.replace("\\", "/")
+
+    conn = get_db()
+    cursor = conn.cursor()
+    try:
+        _upsert_setting(cursor, "logo_path", stored_rel)
+        conn.commit()
+        config = _load_frontmatter_config(cursor)
+    finally:
+        conn.close()
+
+    return {"success": True, "logo_path": stored_rel, "config": config}
+
+
+@router.post("/frontmatter-config/templates/{kind}")
+async def upload_frontmatter_template(
+    kind: str,
+    file: UploadFile = File(...),
+    user_id: int | None = Query(default=None),
+):
+    """
+    Replace cover or project-info DOCX template.
+    kind: 'cover' | 'info'
+    Overwrites the files frontmatter_generator already reads.
+    """
+    _require_admin(user_id)
+    kind_norm = (kind or "").strip().lower()
+    if kind_norm not in {"cover", "info"}:
+        raise HTTPException(status_code=400, detail="kind must be 'cover' or 'info'.")
+
+    filename = file.filename or ""
+    if not filename.lower().endswith(".docx"):
+        raise HTTPException(status_code=400, detail="Only .docx template files are supported.")
+
+    raw = await file.read()
+    if not raw:
+        raise HTTPException(status_code=400, detail="Uploaded template file is empty.")
+
+    from frontmatter_generator import COVER_TEMPLATE, INFO_TEMPLATE, TEMPLATES_DIR, scaffold_templates
+
+    scaffold_templates()
+    os.makedirs(TEMPLATES_DIR, exist_ok=True)
+    target = COVER_TEMPLATE if kind_norm == "cover" else INFO_TEMPLATE
+    with open(target, "wb") as out:
+        out.write(raw)
+
+    conn = get_db()
+    cursor = conn.cursor()
+    try:
+        config = _load_frontmatter_config(cursor)
+    finally:
+        conn.close()
+
+    return {
+        "success": True,
+        "kind": kind_norm,
+        "filename": os.path.basename(target),
+        "path": target.replace("\\", "/"),
+        "config": config,
+    }
