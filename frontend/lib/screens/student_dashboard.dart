@@ -27,6 +27,7 @@ import 'student/status_tracker_screen.dart';
 import '../widgets/notifications_panel.dart';
 import '../widgets/student/mobile_status_summary_card.dart';
 import '../utils/responsive.dart';
+import 'mobile_companion_screen.dart';
 
 /// Mobile bottom-nav → existing `_selectedIndex` targets.
 /// Notifications has no desktop sidebar entry; uses [kNotificationsTabIndex].
@@ -699,6 +700,8 @@ class _StudentDashboardState extends State<StudentDashboard> {
             children: [
               if (compact) ...[
                 const MobileStatusSummaryCard(),
+                const SizedBox(height: 16),
+                _buildSendFromPhoneCard(),
                 const SizedBox(height: 20),
               ],
               Row(
@@ -766,6 +769,77 @@ class _StudentDashboardState extends State<StudentDashboard> {
           ),
         );
       },
+    );
+  }
+
+  /// Mobile-only entry to Quick Access (Scan QR / Camera / Gallery).
+  /// Navigates to [MobileCompanionScreen] — not rebuilt here.
+  Widget _buildSendFromPhoneCard() {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () {
+          Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) => const MobileCompanionScreen(),
+            ),
+          );
+        },
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: const Color(0xFF161B22),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.white.withOpacity(0.1)),
+          ),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF6366F1).withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(
+                  Icons.qr_code_scanner_rounded,
+                  color: Color(0xFF6366F1),
+                  size: 22,
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Send Document from Phone',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Scan QR, camera, or gallery upload',
+                      style: TextStyle(
+                        color: Colors.white.withOpacity(0.5),
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(
+                Icons.chevron_right,
+                color: Colors.white.withOpacity(0.35),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 

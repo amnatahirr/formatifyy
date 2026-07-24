@@ -4,8 +4,18 @@ import 'dart:convert';
 import 'dart:async';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:app_links/app_links.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../config/api_config.dart';
 import '../config/dev_user_config.dart';
+
+/// SharedPreferences keys for the restored login session.
+/// Prefixed with `formatify.auth.` to avoid collisions with other packages/features.
+class AuthSessionKeys {
+  static const userId = 'formatify.auth.user_id';
+  static const username = 'formatify.auth.username';
+  static const email = 'formatify.auth.email';
+  static const role = 'formatify.auth.role';
+}
 
 class AuthProvider extends ChangeNotifier {
   late String baseUrl;
@@ -20,6 +30,7 @@ class AuthProvider extends ChangeNotifier {
   bool _hasGoogleDrive = false;
   String? _googleDriveEmail;
   bool _devBootstrap = false;
+  bool _sessionRestoreAttempted = false;
 
   String? get currentUser => _currentUser;
   String? get userEmail => _userEmail;
@@ -35,6 +46,7 @@ class AuthProvider extends ChangeNotifier {
   bool get hasGoogleDrive => _hasGoogleDrive;
   String? get googleDriveEmail => _googleDriveEmail;
   bool get isDevBootstrap => _devBootstrap;
+  bool get sessionRestoreAttempted => _sessionRestoreAttempted;
 
   AuthProvider({String? devUserKey}) {
     baseUrl = ApiConfig.getBaseUrl();
@@ -52,9 +64,98 @@ class AuthProvider extends ChangeNotifier {
     _userRole = DevUserConfig.role;
     _isLoggedIn = true;
     _devBootstrap = true;
+    _sessionRestoreAttempted = true;
     debugPrint(
       '[DevUser] Bootstrapped $memberKey → id=$_userId (${_currentUser})',
     );
+  }
+
+  void _applyProfile({
+    required int id,
+    required String username,
+    required String email,
+    required String role,
+  }) {
+    _userId = id;
+    _currentUser = username;
+    _userEmail = email;
+    _userRole = role;
+    _isLoggedIn = true;
+    _devBootstrap = false;
+  }
+
+  Future<void> _persistSession() async {
+    if (_userId == null) return;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(AuthSessionKeys.userId, _userId!);
+    await prefs.setString(AuthSessionKeys.username, _currentUser ?? '');
+    await prefs.setString(AuthSessionKeys.email, _userEmail ?? '');
+    await prefs.setString(AuthSessionKeys.role, _userRole ?? 'student');
+  }
+
+  Future<void> _clearPersistedSession() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(AuthSessionKeys.userId);
+    await prefs.remove(AuthSessionKeys.username);
+    await prefs.remove(AuthSessionKeys.email);
+    await prefs.remove(AuthSessionKeys.role);
+  }
+
+  /// Cold-start restore: read SharedPreferences, validate via GET /api/auth/me.
+  ///
+  /// This app has no JWT — APIs identify the user by `user_id`. Persistence
+  /// stores that profile; `/auth/me` confirms the user still exists.
+  Future<bool> tryRestoreSession() async {
+    if (_devBootstrap) {
+      _sessionRestoreAttempted = true;
+      return true;
+    }
+    if (_isLoggedIn) {
+      _sessionRestoreAttempted = true;
+      return true;
+    }
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final userId = prefs.getInt(AuthSessionKeys.userId);
+      if (userId == null) {
+        _sessionRestoreAttempted = true;
+        return false;
+      }
+
+      final response = await http
+          .get(Uri.parse('$baseUrl/auth/me?user_id=$userId'))
+          .timeout(const Duration(seconds: 10));
+
+      if (response.statusCode != 200) {
+        await _clearPersistedSession();
+        _sessionRestoreAttempted = true;
+        return false;
+      }
+
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      final restoredId = data['id'] is int
+          ? data['id'] as int
+          : int.parse('${data['id']}');
+      _applyProfile(
+        id: restoredId,
+        username: (data['username'] ?? '').toString(),
+        email: (data['email'] ?? '').toString(),
+        role: (data['role'] ?? 'student').toString(),
+      );
+      // Refresh stored profile in case username/role changed server-side.
+      await _persistSession();
+      await checkGoogleDriveStatus();
+      debugPrint('[Auth] Restored session for $_currentUser (id=$_userId)');
+      _sessionRestoreAttempted = true;
+      notifyListeners();
+      return true;
+    } catch (e) {
+      debugPrint('[Auth] Session restore failed: $e');
+      await _clearPersistedSession();
+      _sessionRestoreAttempted = true;
+      return false;
+    }
   }
 
   Future<bool> signup(
@@ -62,6 +163,7 @@ class AuthProvider extends ChangeNotifier {
     String email,
     String password, {
     int? universityId,
+    bool rememberMe = true,
   }) async {
     _isLoading = true;
     _errorMessage = null;
@@ -86,12 +188,17 @@ class AuthProvider extends ChangeNotifier {
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        _userId = data["id"];
-        _currentUser = data["username"];
-        _userEmail = data["email"];
-        _userRole = data.get("role", "student");
-        _isLoggedIn = true;
-        _devBootstrap = false;
+        _applyProfile(
+          id: data["id"] is int ? data["id"] as int : int.parse('${data["id"]}'),
+          username: data["username"],
+          email: data["email"],
+          role: data.get("role", "student"),
+        );
+        if (rememberMe) {
+          await _persistSession();
+        } else {
+          await _clearPersistedSession();
+        }
         debugPrint("[v0] Signup successful: ${data['message']}");
         return true;
       } else {
@@ -115,7 +222,11 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
-  Future<bool> login(String email, String password) async {
+  Future<bool> login(
+    String email,
+    String password, {
+    bool rememberMe = true,
+  }) async {
     _isLoading = true;
     _errorMessage = null;
     notifyListeners();
@@ -134,19 +245,23 @@ class AuthProvider extends ChangeNotifier {
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        _userId = data["id"];
-        _currentUser = data["username"];
-        _userEmail = data["email"];
-        _userRole = data["role"];
-        _isLoggedIn = true;
-        _devBootstrap = false;
+        _applyProfile(
+          id: data["id"] is int ? data["id"] as int : int.parse('${data["id"]}'),
+          username: data["username"],
+          email: data["email"],
+          role: data["role"],
+        );
+        if (rememberMe) {
+          await _persistSession();
+        } else {
+          await _clearPersistedSession();
+        }
         debugPrint(
           "[v0] Login successful for user: $_currentUser with role: $_userRole",
         );
-        
-        // Check if user has Google Drive connected
+
         await checkGoogleDriveStatus();
-        
+
         return true;
       } else {
         _errorMessage = jsonDecode(response.body)["detail"] ?? "Login failed";
@@ -169,7 +284,7 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
-  void logout() {
+  Future<void> logout() async {
     _currentUser = null;
     _userEmail = null;
     _userId = null;
@@ -178,6 +293,8 @@ class AuthProvider extends ChangeNotifier {
     _errorMessage = null;
     _hasGoogleDrive = false;
     _googleDriveEmail = null;
+    _devBootstrap = false;
+    await _clearPersistedSession();
     notifyListeners();
   }
 
@@ -382,13 +499,15 @@ class AuthProvider extends ChangeNotifier {
           if (statusResponse.statusCode == 200) {
             final data = jsonDecode(statusResponse.body);
             if (data["authenticated"] == true) {
-              _userId = data["id"];
-              _currentUser = data["username"];
-              _userEmail = data["email"];
-              _userRole = data["role"];
-              _isLoggedIn = true;
+              _applyProfile(
+                id: data["id"] is int ? data["id"] as int : int.parse('${data["id"]}'),
+                username: (data["username"] ?? '').toString(),
+                email: (data["email"] ?? '').toString(),
+                role: (data["role"] ?? 'student').toString(),
+              );
               _hasGoogleDrive = data["has_google_drive"] == true;
               _googleDriveEmail = data["google_email"];
+              await _persistSession();
               debugPrint("[v0] Google Sign-In successful: $_userEmail");
               return true;
             }
@@ -460,11 +579,13 @@ class AuthProvider extends ChangeNotifier {
           if (statusResponse.statusCode == 200) {
             final data = jsonDecode(statusResponse.body);
             if (data["authenticated"] == true) {
-              _userId = data["id"];
-              _currentUser = data["username"];
-              _userEmail = data["email"];
-              _userRole = data["role"];
-              _isLoggedIn = true;
+              _applyProfile(
+                id: data["id"] is int ? data["id"] as int : int.parse('${data["id"]}'),
+                username: (data["username"] ?? '').toString(),
+                email: (data["email"] ?? '').toString(),
+                role: (data["role"] ?? 'student').toString(),
+              );
+              await _persistSession();
               debugPrint("[v0] GitHub Sign-In successful: $_userEmail");
               return true;
             }

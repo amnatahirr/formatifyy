@@ -12,7 +12,7 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen> {
   bool _isPasswordVisible = false;
-  bool _rememberMe = false;
+  bool _rememberMe = true;
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _firstNameController = TextEditingController();
@@ -680,6 +680,7 @@ class _LoginScreenState extends State<LoginScreen> {
     final success = await auth.login(
       _emailController.text.trim(),
       _passwordController.text,
+      rememberMe: _rememberMe,
     );
 
     if (success && mounted) {
@@ -695,6 +696,7 @@ class _LoginScreenState extends State<LoginScreen> {
       _firstNameController.text.trim(),
       _emailController.text.trim(),
       _passwordController.text,
+      rememberMe: true,
     );
 
     if (success && mounted) {

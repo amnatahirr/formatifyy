@@ -81,12 +81,27 @@ class _MobileCompanionScreenState extends State<MobileCompanionScreen>
 
   @override
   Widget build(BuildContext context) {
+    final canPop = Navigator.of(context).canPop();
+
     return Scaffold(
       backgroundColor: const Color(0xFF0D1117),
+      // When pushed from the student dashboard, provide a normal back affordance.
+      // (As app home it had no AppBar — system back alone was enough only as root.)
+      appBar: canPop
+          ? AppBar(
+              backgroundColor: const Color(0xFF161B22),
+              foregroundColor: Colors.white,
+              elevation: 0,
+              title: const Text(
+                'Quick Access',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+              ),
+            )
+          : null,
       body: SafeArea(
         child: Column(
           children: [
-            _buildHeader(),
+            if (!canPop) _buildHeader(),
             Expanded(child: _buildBody()),
           ],
         ),

@@ -6,6 +6,7 @@ Base URL served:   http://localhost:8000
   Auth:
     POST /api/auth/signup      → register a new student account
     POST /api/auth/login       → login and return user profile
+    GET  /api/auth/me          → validate restored session by user_id
     GET  /api/auth/google/debug/tokens   → mock Google auth debug stub
 
   Templates (public):
@@ -305,6 +306,33 @@ async def login(payload: UserLoginRequest):
         "role": user["role"],
         "university_id": user["university_id"],
         "message": "Login successful."
+    }
+
+
+@app.get("/api/auth/me", tags=["Auth"])
+async def get_current_user(user_id: int = Query(...)):
+    """
+    Validate a restored client session (no JWT in this app — callers pass user_id).
+    Returns the same profile shape as login when the user still exists.
+    """
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT id, username, email, role, university_id FROM users WHERE id = ?",
+        (user_id,),
+    )
+    user = cursor.fetchone()
+    conn.close()
+
+    if not user:
+        raise HTTPException(status_code=401, detail="Session invalid or user not found.")
+
+    return {
+        "id": user["id"],
+        "username": user["username"],
+        "email": user["email"],
+        "role": user["role"],
+        "university_id": user["university_id"],
     }
 
 

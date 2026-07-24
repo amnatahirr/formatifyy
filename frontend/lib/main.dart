@@ -1,6 +1,5 @@
 import 'dart:async';
-import 'dart:io';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:app_links/app_links.dart';
@@ -11,7 +10,6 @@ import 'screens/admin_dashboard.dart';
 import 'screens/supervisor_dashboard.dart';
 import 'screens/mobile_qr_upload_screen.dart';
 import 'screens/mobile_qr_download_screen.dart';
-import 'screens/mobile_companion_screen.dart';
 import 'providers/auth_provider.dart';
 import 'providers/document_provider.dart';
 import 'providers/template_provider.dart';
@@ -21,11 +19,6 @@ import 'providers/collaboration_provider.dart';
 import 'providers/fyp_provider.dart';
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
-
-bool _isMobilePlatform() {
-  if (kIsWeb) return false;
-  return Platform.isAndroid || Platform.isIOS;
-}
 
 void main() {
   const userId = String.fromEnvironment('USER_ID', defaultValue: 'member1');
@@ -70,6 +63,18 @@ class _MyAppState extends State<MyApp> {
 
   void _handleDeepLink(Uri uri) {
     if (uri.scheme != 'formatify') return;
+
+    final context = navigatorKey.currentContext;
+    if (context == null) return;
+
+    // QR companion deep links must not bypass login.
+    final auth = Provider.of<AuthProvider>(context, listen: false);
+    if (!auth.isLoggedIn) {
+      debugPrint(
+        '[DeepLink] Ignored $uri — user not authenticated. Sign in first.',
+      );
+      return;
+    }
 
     final host = uri.queryParameters['host'] ?? '172.20.10.2:8000';
 
@@ -200,21 +205,52 @@ class _MyAppState extends State<MyApp> {
           primaryColor: const Color(0xFF6366F1),
         ),
         themeMode: ThemeMode.dark,
-        home: _isMobilePlatform() ? const MobileCompanionScreen() : const AuthCheck(),
+        // Same auth gate on mobile and desktop — Quick Access is reached from
+        // the authenticated student dashboard, not as the app landing screen.
+        home: const AuthCheck(),
       ),
     );
   }
 }
 
-class AuthCheck extends StatelessWidget {
+class AuthCheck extends StatefulWidget {
   const AuthCheck({Key? key}) : super(key: key);
 
   @override
+  State<AuthCheck> createState() => _AuthCheckState();
+}
+
+class _AuthCheckState extends State<AuthCheck> {
+  bool _ready = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _restore());
+  }
+
+  Future<void> _restore() async {
+    final auth = context.read<AuthProvider>();
+    if (!auth.isDevBootstrap) {
+      await auth.tryRestoreSession();
+    }
+    if (mounted) setState(() => _ready = true);
+  }
+
+  @override
   Widget build(BuildContext context) {
+    if (!_ready) {
+      return const Scaffold(
+        backgroundColor: Color(0xFF0F1419),
+        body: Center(
+          child: CircularProgressIndicator(color: Color(0xFF6366F1)),
+        ),
+      );
+    }
+
     return Consumer<AuthProvider>(
       builder: (context, authProvider, _) {
         if (authProvider.isLoggedIn) {
-          // Dev bootstrap (--dart-define=USER_ID) skips admin routing for collab testing
           if (authProvider.isDevBootstrap) {
             return const StudentDashboard();
           }
