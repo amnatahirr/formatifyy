@@ -42,6 +42,17 @@ def _is_instruction_suggestion(text: str) -> bool:
     )
 
 
+def _run_contains_drawing(run) -> bool:
+    try:
+        el = run._element
+    except Exception:
+        return False
+    drawing = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}drawing"
+    pict = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}pict"
+    blip = "{http://schemas.openxmlformats.org/drawingml/2006/main}blip"
+    return bool(list(el.iter(drawing)) or list(el.iter(pict)) or list(el.iter(blip)))
+
+
 def _replace_in_paragraph(para, original: str, suggestion: str) -> bool:
     """Replace text inside runs without destroying paragraph XML structure."""
     orig = original.strip()
@@ -49,18 +60,26 @@ def _replace_in_paragraph(para, original: str, suggestion: str) -> bool:
     if not sugg:
         return False
 
+    def _set_text_keep_images(full_text: str) -> bool:
+        text_runs = [r for r in para.runs if not _run_contains_drawing(r)]
+        if not text_runs:
+            return False
+        text_runs[0].text = full_text
+        for run in text_runs[1:]:
+            run.text = ""
+        return True
+
     if orig:
         for run in para.runs:
+            if _run_contains_drawing(run):
+                continue
             if orig in run.text:
                 run.text = run.text.replace(orig, sugg, 1)
                 return True
         full = para.text
         if orig in full:
             if para.runs:
-                para.runs[0].text = full.replace(orig, sugg, 1)
-                for run in para.runs[1:]:
-                    run.text = ""
-                return True
+                return _set_text_keep_images(full.replace(orig, sugg, 1))
             return False
         # Case-insensitive fallback
         lower_full = full.lower()
@@ -69,10 +88,7 @@ def _replace_in_paragraph(para, original: str, suggestion: str) -> bool:
             idx = lower_full.index(lower_orig)
             new_text = full[:idx] + sugg + full[idx + len(orig):]
             if para.runs:
-                para.runs[0].text = new_text
-                for run in para.runs[1:]:
-                    run.text = ""
-                return True
+                return _set_text_keep_images(new_text)
         # Full-sentence grammar correction only (never instructions)
         if (
             not _is_instruction_suggestion(sugg)
@@ -81,15 +97,9 @@ def _replace_in_paragraph(para, original: str, suggestion: str) -> bool:
             and orig[:20].lower() in full.lower()
         ):
             if para.runs:
-                para.runs[0].text = sugg
-                for run in para.runs[1:]:
-                    run.text = ""
-                return True
+                return _set_text_keep_images(sugg)
     elif para.runs:
-        para.runs[0].text = sugg
-        for run in para.runs[1:]:
-            run.text = ""
-        return True
+        return _set_text_keep_images(sugg)
 
     return False
 

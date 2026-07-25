@@ -32,8 +32,30 @@ def _paragraph_has_image(para) -> bool:
     return paragraph_has_image(para)
 
 
+def _element_has_real_image(el) -> bool:
+    """True when OOXML element contains an actual embedded picture (not caption chrome)."""
+    if el is None:
+        return False
+    if list(el.iter(BLIP_TAG)):
+        return True
+    vml = "{urn:schemas-microsoft-com:vml}imagedata"
+    if list(el.iter(vml)):
+        return True
+    pict = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}pict"
+    if list(el.iter(pict)):
+        # Legacy WordArt-only pict without imagedata is rare; treat pict as image-ish
+        return True
+    return False
+
+
 def _remove_floating_figure_captions(doc) -> int:
-    """Remove figure captions trapped in text boxes / floating drawings."""
+    """
+    Remove figure captions trapped in text boxes / floating drawings.
+
+    CRITICAL: never delete a paragraph that still holds a real image. Older logic
+    walked from txbxContent up to w:p and removed the whole paragraph — that
+    deleted pictures when Word stored a caption textbox inside the same drawing.
+    """
     removed = 0
     body = doc.element.body
     txbx_tag = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}txbxContent"
@@ -43,24 +65,41 @@ def _remove_floating_figure_captions(doc) -> int:
         combined = "".join(texts).strip()
         if not FIGURE_CAPTION_RE.match(combined):
             continue
+
+        # Find enclosing paragraph
         parent = txbx
-        for _ in range(12):
+        para_el = None
+        for _ in range(16):
             parent = parent.getparent()
             if parent is None:
                 break
             if parent.tag == W_P:
-                gp = parent.getparent()
-                if gp is not None:
-                    gp.remove(parent)
-                    removed += 1
+                para_el = parent
                 break
 
+        if para_el is not None and _element_has_real_image(para_el):
+            # Image lives here — only clear caption text inside the textbox.
+            for t_el in txbx.iter(W_T):
+                if t_el.text:
+                    t_el.text = ""
+            removed += 1
+            continue
+
+        if para_el is not None:
+            gp = para_el.getparent()
+            if gp is not None:
+                gp.remove(para_el)
+                removed += 1
+
     for p_el in list(body.iter(W_P)):
+        if _element_has_real_image(p_el):
+            continue
         texts = [t.text or "" for t in p_el.iter(W_T)]
         combined = "".join(texts).strip()
         if not FIGURE_CAPTION_RE.match(combined):
             continue
-        if p_el.findall(f".//{W_DRAWING}") and not p_el.findall(f".//{BLIP_TAG}"):
+        # Caption-only floating drawing (no embedded picture)
+        if p_el.findall(f".//{W_DRAWING}"):
             parent = p_el.getparent()
             if parent is not None:
                 parent.remove(p_el)
@@ -111,7 +150,7 @@ def _parse_figure_caption(caption: str) -> tuple[str, str]:
 def _ensure_caption_below_image(doc, img_idx: int, caption: str) -> None:
     """Place SEQ-based caption paragraph directly under the image paragraph."""
     from docx.enum.text import WD_ALIGN_PARAGRAPH
-    from docx_fields import rebuild_caption_with_seq
+    from docx_fields import attach_figure_caption_below_image
 
     paragraphs = doc.paragraphs
     if img_idx < 0 or img_idx >= len(paragraphs):
@@ -119,43 +158,17 @@ def _ensure_caption_below_image(doc, img_idx: int, caption: str) -> None:
 
     img_para = paragraphs[img_idx]
     img_para.paragraph_format.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    try:
-        img_para.paragraph_format.keep_with_next = True
-    except Exception:
-        pass
-
-    cap_para = None
-    if img_idx + 1 < len(paragraphs):
-        nxt = paragraphs[img_idx + 1]
-        if FIGURE_CAPTION_RE.match(nxt.text.strip()) and not _paragraph_has_image(nxt):
-            cap_para = nxt
 
     label, description = _parse_figure_caption(caption)
-
-    if cap_para is None:
-        cap_para = _insert_paragraph_after(img_para, "")
-        rebuild_caption_with_seq(cap_para, label, description)
-    else:
-        rebuild_caption_with_seq(cap_para, label, description)
-
+    cap_para = attach_figure_caption_below_image(
+        doc,
+        img_para,
+        description=description or "Illustration related to the document content.",
+        preferred_caption_text=caption,
+    )
     cap_para.paragraph_format.alignment = WD_ALIGN_PARAGRAPH.CENTER
-
-    # Remove duplicate figure captions elsewhere in the document
-    fig_match = FIGURE_CAPTION_RE.match(caption.strip())
-    fig_num = fig_match.group(1) if fig_match else None
-    for idx, para in enumerate(doc.paragraphs):
-        if idx in (img_idx, img_idx + 1):
-            continue
-        if not FIGURE_CAPTION_RE.match(para.text.strip()):
-            continue
-        if fig_num and f"Figure {fig_num}" not in para.text[:20]:
-            continue
-        if _paragraph_has_image(para):
-            continue
-        p_el = para._element
-        parent = p_el.getparent()
-        if parent is not None:
-            parent.remove(p_el)
+    # label kept for API compatibility / future use
+    _ = label
 
 
 async def fix_image_captions(

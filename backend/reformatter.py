@@ -588,14 +588,34 @@ def _create_formatted_docx(
     return output_path
 
 
+def _run_contains_drawing(run) -> bool:
+    """True when a run holds a picture/drawing — clearing run.text would delete it."""
+    try:
+        el = run._element
+    except Exception:
+        return False
+    drawing = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}drawing"
+    pict = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}pict"
+    blip = "{http://schemas.openxmlformats.org/drawingml/2006/main}blip"
+    if list(el.iter(drawing)) or list(el.iter(pict)) or list(el.iter(blip)):
+        return True
+    return False
+
+
 def _set_paragraph_text_preserve_style(para, new_text: str) -> None:
-    """Set paragraph text without splitting across runs unnecessarily."""
-    if para.runs:
-        para.runs[0].text = new_text
-        for run in para.runs[1:]:
-            run.text = ""
-    else:
+    """Set paragraph text without destroying image runs."""
+    if not para.runs:
         para.add_run(new_text)
+        return
+
+    text_runs = [r for r in para.runs if not _run_contains_drawing(r)]
+    if not text_runs:
+        # Paragraph is image-only — do not wipe drawings
+        return
+
+    text_runs[0].text = new_text
+    for run in text_runs[1:]:
+        run.text = ""
 
 
 def _apply_style(para, spec: dict, align_map: dict) -> None:

@@ -2128,13 +2128,22 @@ def _strip_bullets_from_headings(docx_path: str) -> int:
         # Drop visible bullet glyphs
         new_text = re.sub(r"^\s*[•*○■▪\-–—→»·]\s+", "", text)
         if new_text != text and new_text:
-            if p.runs:
-                p.runs[0].text = new_text
-                for run in p.runs[1:]:
+            text_runs = []
+            for run in p.runs:
+                el = run._element
+                has_drawing = bool(
+                    list(el.iter("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}drawing"))
+                    or list(el.iter("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}pict"))
+                    or list(el.iter("{http://schemas.openxmlformats.org/drawingml/2006/main}blip"))
+                )
+                if not has_drawing:
+                    text_runs.append(run)
+            if text_runs:
+                text_runs[0].text = new_text
+                for run in text_runs[1:]:
                     run.text = ""
-            else:
-                p.text = new_text
-            cleaned += 1
+                cleaned += 1
+            # else: image-only / mixed without clear text run — skip rewriting
     if cleaned:
         docx.save(docx_path)
         print(f"[apply-all] stripped bullets from {cleaned} heading paragraph(s)")

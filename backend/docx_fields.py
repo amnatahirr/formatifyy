@@ -227,6 +227,165 @@ def paragraph_has_image(para) -> bool:
     return False
 
 
+_JUNK_CAPTION_GAP_RE = re.compile(r"^[\s.\u00a0\u2022\u00b7\-–—]*$")
+_LOOSE_FIGURE_CAPTION_RE = re.compile(
+    r"^Figure\s*(\d+)?\s*:\s*(.*)$",
+    re.IGNORECASE,
+)
+
+
+def _is_junk_gap_text(text: str) -> bool:
+    """True for empty / '.' / bullet-only paragraphs that sit under images."""
+    return bool(_JUNK_CAPTION_GAP_RE.match((text or "").strip() or ""))
+
+
+def paragraph_is_figure_caption(para) -> bool:
+    """True when paragraph is a Figure caption (plain or SEQ), not an image."""
+    if paragraph_has_image(para):
+        return False
+    text = (para.text or "").strip()
+    if CAPTION_TEXT_RE.match(text) and text.lower().startswith("figure"):
+        return True
+    if _LOOSE_FIGURE_CAPTION_RE.match(text):
+        return True
+    return paragraph_has_seq_caption(para._element, "Figure")
+
+
+def strip_junk_text_from_image_paragraph(para) -> bool:
+    """
+    Clear stray '.' / whitespace text runs inside an image paragraph.
+    Leaves drawings/pictures untouched.
+    """
+    texts = list(para._element.iter(qn("w:t")))
+    combined = "".join((t.text or "") for t in texts).strip()
+    if not _is_junk_gap_text(combined):
+        return False
+    changed = False
+    for t_el in texts:
+        if t_el.text:
+            t_el.text = ""
+            changed = True
+    return changed
+
+
+def _next_body_paragraphs(doc, img_para, limit: int = 16):
+    """Yield following body-level paragraphs after img_para (same parent)."""
+    el = img_para._element.getnext()
+    seen = 0
+    while el is not None and seen < limit:
+        if el.tag == qn("w:p"):
+            yield Paragraph(el, img_para._parent)
+            seen += 1
+        el = el.getnext()
+
+
+def _remove_paragraph_element(para) -> None:
+    el = para._element
+    parent = el.getparent()
+    if parent is not None:
+        parent.remove(el)
+
+
+def _move_paragraph_after(ref_para, move_para) -> None:
+    """Move move_para XML so it sits immediately after ref_para."""
+    move_el = move_para._element
+    if move_el.getprevious() is ref_para._element:
+        return
+    parent = move_el.getparent()
+    if parent is not None:
+        parent.remove(move_el)
+    ref_para._element.addnext(move_el)
+
+
+def attach_figure_caption_below_image(
+    doc,
+    img_para,
+    *,
+    description: str = "Illustration related to the document content.",
+    preferred_caption_text: str | None = None,
+) -> Paragraph:
+    """
+    Guarantee a SEQ Figure caption is the paragraph immediately under the image.
+
+    Handles layouts where body text (or a stray '.') sits between the picture
+    and an existing 'Figure N: …' caption — moves that caption up.
+    """
+    strip_junk_text_from_image_paragraph(img_para)
+    try:
+        img_para.paragraph_format.keep_with_next = True
+    except Exception:
+        pass
+
+    # Drop orphan junk paragraphs ('.') sitting right under the image.
+    for nxt in list(_next_body_paragraphs(doc, img_para, limit=4)):
+        if paragraph_has_image(nxt):
+            break
+        if paragraph_is_figure_caption(nxt):
+            break
+        if _is_junk_gap_text(nxt.text or ""):
+            _remove_paragraph_element(nxt)
+            continue
+        break
+
+    cap_para = None
+    desc = (description or "").strip() or "Illustration related to the document content."
+
+    if preferred_caption_text:
+        m = _LOOSE_FIGURE_CAPTION_RE.match(preferred_caption_text.strip())
+        if m and (m.group(2) or "").strip():
+            desc = m.group(2).strip()
+        elif ":" in preferred_caption_text:
+            desc = preferred_caption_text.split(":", 1)[1].strip() or desc
+
+    followers = list(_next_body_paragraphs(doc, img_para, limit=12))
+    if followers and paragraph_is_figure_caption(followers[0]):
+        cap_para = followers[0]
+    else:
+        for cand in followers:
+            if paragraph_has_image(cand):
+                break
+            if paragraph_is_figure_caption(cand):
+                m = _LOOSE_FIGURE_CAPTION_RE.match((cand.text or "").strip())
+                if m and (m.group(2) or "").strip():
+                    desc = m.group(2).strip()
+                else:
+                    cm = CAPTION_TEXT_RE.match((cand.text or "").strip())
+                    if cm and cm.group(3).strip():
+                        desc = cm.group(3).strip()
+                _move_paragraph_after(img_para, cand)
+                cap_para = cand
+                break
+
+    if cap_para is None:
+        cap_para = _insert_paragraph_after(doc, img_para._element)
+        rebuild_caption_with_seq(cap_para, "Figure", desc)
+    elif not paragraph_has_seq_caption(cap_para._element, "Figure"):
+        m = CAPTION_TEXT_RE.match((cap_para.text or "").strip())
+        if m and m.group(1).lower() == "figure":
+            desc = m.group(3).strip() or desc
+        rebuild_caption_with_seq(cap_para, "Figure", desc)
+    elif preferred_caption_text and desc:
+        rebuild_caption_with_seq(cap_para, "Figure", desc)
+
+    # Remove duplicate captions further down (same description), stop at next image.
+    for cand in list(_next_body_paragraphs(doc, cap_para, limit=20)):
+        if paragraph_has_image(cand):
+            break
+        if not paragraph_is_figure_caption(cand):
+            continue
+        cand_text = (cand.text or "").strip()
+        cand_desc = ""
+        m = _LOOSE_FIGURE_CAPTION_RE.match(cand_text)
+        if m:
+            cand_desc = (m.group(2) or "").strip()
+        if cand_desc and desc and cand_desc.lower() == desc.lower():
+            _remove_paragraph_element(cand)
+        elif not cand_desc and paragraph_has_seq_caption(cand._element, "Figure"):
+            _remove_paragraph_element(cand)
+
+    return cap_para
+
+
 def _paragraph_in_generated_list(para) -> bool:
     """True when paragraph belongs to a generated TOC/LOT/LOF block."""
     p_el = para._element
@@ -386,45 +545,29 @@ def sanitize_document_headings_for_lists(
 
 
 def ensure_figure_captions_for_lists(doc) -> Dict[str, Any]:
-    """Ensure every detected figure has a SEQ-based caption for LOF."""
+    """Ensure every detected figure has a SEQ-based caption directly under it."""
     added = 0
     body_start = find_formatify_body_start_element(doc)
-    image_indices = [
-        i for i, p in enumerate(doc.paragraphs)
+
+    # Element identity (not stale indices) so inserts don't attach captions to body text.
+    image_paras = [
+        p
+        for p in doc.paragraphs
         if paragraph_has_image(p)
         and not _paragraph_is_before_body_start(doc, p, body_start)
     ]
 
-    for fig_num, img_idx in enumerate(image_indices, start=1):
-        para = doc.paragraphs[img_idx]
-        cap_para = None
-        if img_idx + 1 < len(doc.paragraphs):
-            nxt = doc.paragraphs[img_idx + 1]
-            nxt_text = nxt.text.strip()
-            if (
-                not paragraph_has_image(nxt)
-                and (
-                    CAPTION_TEXT_RE.match(nxt_text)
-                    or paragraph_has_seq_caption(nxt._element, "Figure")
-                )
-            ):
-                cap_para = nxt
+    for para in image_paras:
+        had_immediate = False
+        followers = list(_next_body_paragraphs(doc, para, limit=1))
+        if followers and paragraph_is_figure_caption(followers[0]):
+            had_immediate = True
 
-        if cap_para is None:
-            cap_para = _insert_paragraph_after(doc, para._element)
-            rebuild_caption_with_seq(
-                cap_para,
-                "Figure",
-                "Illustration related to the document content.",
-            )
-            added += 1
-        elif not paragraph_has_seq_caption(cap_para._element, "Figure"):
-            m = CAPTION_TEXT_RE.match(cap_para.text.strip())
-            description = m.group(3) if m else cap_para.text.strip()
-            rebuild_caption_with_seq(cap_para, "Figure", description)
+        attach_figure_caption_below_image(doc, para)
+        if not had_immediate:
             added += 1
 
-    return {"captions_ensured": len(image_indices), "captions_added": added}
+    return {"captions_ensured": len(image_paras), "captions_added": added}
 
 
 def _heading_level_from_paragraph(para) -> Optional[int]:
