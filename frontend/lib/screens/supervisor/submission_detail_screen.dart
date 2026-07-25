@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../models/supervisor_models.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/supervisor_api_service.dart';
+import '../../utils/responsive.dart';
 import '../../widgets/admin/admin_ui.dart';
 import 'document_review_screen.dart';
 
@@ -408,47 +409,12 @@ class _SubmissionDetailScreenState extends State<SubmissionDetailScreen> {
           ),
           const SizedBox(height: 24),
           if (canDecide)
-            Row(
-              children: [
-                Expanded(
-                  child: ElevatedButton.icon(
-                    onPressed: _busy ? null : _approve,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AdminColors.success,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                    ),
-                    icon: const Icon(Icons.check_rounded, size: 18),
-                    label: const Text('Approve'),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: ElevatedButton.icon(
-                    onPressed: _busy ? null : _requestRevision,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AdminColors.warning,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                    ),
-                    icon: const Icon(Icons.edit_note_rounded, size: 18),
-                    label: const Text('Request Revision'),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: _busy ? null : _reject,
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: AdminColors.danger,
-                      side: BorderSide(color: AdminColors.danger.withOpacity(0.75)),
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                    ),
-                    icon: const Icon(Icons.close_rounded, size: 18),
-                    label: const Text('Reject'),
-                  ),
-                ),
-              ],
+            _DecisionActions(
+              busy: _busy,
+              stacked: isCompact(context),
+              onApprove: _approve,
+              onRevision: _requestRevision,
+              onReject: _reject,
             )
           else
             AdminSectionCard(
@@ -461,6 +427,79 @@ class _SubmissionDetailScreenState extends State<SubmissionDetailScreen> {
             ),
         ],
       ),
+    );
+  }
+}
+
+class _DecisionActions extends StatelessWidget {
+  final bool busy;
+  final bool stacked;
+  final VoidCallback onApprove;
+  final VoidCallback onRevision;
+  final VoidCallback onReject;
+
+  const _DecisionActions({
+    required this.busy,
+    required this.stacked,
+    required this.onApprove,
+    required this.onRevision,
+    required this.onReject,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final approve = ElevatedButton.icon(
+      onPressed: busy ? null : onApprove,
+      style: ElevatedButton.styleFrom(
+        backgroundColor: AdminColors.success,
+        foregroundColor: Colors.white,
+        padding: const EdgeInsets.symmetric(vertical: 14),
+      ),
+      icon: const Icon(Icons.check_rounded, size: 18),
+      label: const Text('Approve'),
+    );
+    final revision = ElevatedButton.icon(
+      onPressed: busy ? null : onRevision,
+      style: ElevatedButton.styleFrom(
+        backgroundColor: AdminColors.warning,
+        foregroundColor: Colors.white,
+        padding: const EdgeInsets.symmetric(vertical: 14),
+      ),
+      icon: const Icon(Icons.edit_note_rounded, size: 18),
+      label: const Text('Request Revision'),
+    );
+    final reject = OutlinedButton.icon(
+      onPressed: busy ? null : onReject,
+      style: OutlinedButton.styleFrom(
+        foregroundColor: AdminColors.danger,
+        side: BorderSide(color: AdminColors.danger.withOpacity(0.75)),
+        padding: const EdgeInsets.symmetric(vertical: 14),
+      ),
+      icon: const Icon(Icons.close_rounded, size: 18),
+      label: const Text('Reject'),
+    );
+
+    if (stacked) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          approve,
+          const SizedBox(height: 10),
+          revision,
+          const SizedBox(height: 10),
+          reject,
+        ],
+      );
+    }
+
+    return Row(
+      children: [
+        Expanded(child: approve),
+        const SizedBox(width: 10),
+        Expanded(child: revision),
+        const SizedBox(width: 10),
+        Expanded(child: reject),
+      ],
     );
   }
 }

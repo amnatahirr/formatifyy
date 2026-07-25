@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../utils/responsive.dart';
+
 class AdminColors {
   static const background = Color(0xFF0F1419);
   static const surface = Color(0xFF141B27);
@@ -40,8 +42,14 @@ class AdminPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final compact = isCompact(context);
     final content = Padding(
-      padding: const EdgeInsets.fromLTRB(28, 24, 28, 28),
+      padding: EdgeInsets.fromLTRB(
+        compact ? 16 : 28,
+        compact ? 16 : 24,
+        compact ? 16 : 28,
+        compact ? 20 : 28,
+      ),
       child: child,
     );
     if (!scrollable) {
@@ -247,6 +255,7 @@ class AdminPageHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final compact = isCompact(context);
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -256,10 +265,20 @@ class AdminPageHeader extends StatelessWidget {
             children: [
               Text(
                 title,
-                style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w700, color: Colors.white),
+                style: TextStyle(
+                  fontSize: compact ? 20 : 28,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.white,
+                ),
               ),
-              const SizedBox(height: 6),
-              Text(subtitle, style: TextStyle(fontSize: 14, color: Colors.white.withOpacity(0.65))),
+              const SizedBox(height: 4),
+              Text(
+                subtitle,
+                style: TextStyle(
+                  fontSize: compact ? 12 : 14,
+                  color: Colors.white.withOpacity(0.65),
+                ),
+              ),
             ],
           ),
         ),
@@ -764,15 +783,23 @@ Widget adminResponsiveGrid({
   return LayoutBuilder(
     builder: (context, constraints) {
       final width = constraints.maxWidth;
-      final columns = width >= 1200 ? 4 : width >= 900 ? 3 : width >= 620 ? 2 : 1;
+      final columns = width >= 1200
+          ? 4
+          : width >= 900
+              ? 3
+              : width >= 620
+                  ? 2
+                  : 2;
+      // Phone: 2-column compact tiles; avoid fixed aspect that clips tall cards.
+      final aspect = width < 620 ? 2.35 : (columns == 1 ? 2.8 : 1.45);
       return GridView.builder(
         shrinkWrap: true,
         physics: const NeverScrollableScrollPhysics(),
         gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: columns,
-          crossAxisSpacing: 18,
-          mainAxisSpacing: 18,
-          childAspectRatio: columns == 1 ? 2.8 : 1.45,
+          crossAxisCount: columns.clamp(1, 4),
+          crossAxisSpacing: width < 620 ? 10 : 18,
+          mainAxisSpacing: width < 620 ? 10 : 18,
+          childAspectRatio: aspect,
         ),
         itemCount: itemCount,
         itemBuilder: itemBuilder,

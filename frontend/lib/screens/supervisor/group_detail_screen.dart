@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../models/supervisor_models.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/supervisor_api_service.dart';
+import '../../utils/responsive.dart';
 import '../../widgets/admin/admin_ui.dart';
 import 'document_review_screen.dart';
 import 'meeting_notes_screen.dart';
@@ -258,47 +259,89 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
                   ),
           ),
           const SizedBox(height: 24),
-          Row(
-            children: [
-              Expanded(
-                child: ElevatedButton.icon(
-                  onPressed: _openDocumentReview,
-                  icon: const Icon(Icons.rate_review_outlined, size: 18),
-                  label: const Text('Document Review'),
-                  style: ElevatedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                  ),
+          if (isCompact(context)) ...[
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: _openDocumentReview,
+                icon: const Icon(Icons.rate_review_outlined, size: 18),
+                label: const Text('Document Review'),
+                style: ElevatedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 14),
                 ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: _openMeetingNotes,
-                  icon: const Icon(Icons.sticky_note_2_outlined, size: 18),
-                  label: const Text('Meeting Notes'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: Colors.white,
-                    side: const BorderSide(color: AdminColors.border),
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          SizedBox(
-            width: double.infinity,
-            child: OutlinedButton.icon(
-              onPressed: _openPlagiarismMonitor,
-              icon: const Icon(Icons.policy_rounded, size: 18),
-              label: const Text('Plagiarism Monitor'),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: AdminColors.warning,
-                side: BorderSide(color: AdminColors.warning.withOpacity(0.55)),
-                padding: const EdgeInsets.symmetric(vertical: 14),
               ),
             ),
-          ),
+            const SizedBox(height: 10),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: _openMeetingNotes,
+                icon: const Icon(Icons.sticky_note_2_outlined, size: 18),
+                label: const Text('Meeting Notes'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.white,
+                  side: const BorderSide(color: AdminColors.border),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                ),
+              ),
+            ),
+            const SizedBox(height: 10),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: _openPlagiarismMonitor,
+                icon: const Icon(Icons.policy_rounded, size: 18),
+                label: const Text('Plagiarism Monitor'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AdminColors.warning,
+                  side: BorderSide(color: AdminColors.warning.withOpacity(0.55)),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                ),
+              ),
+            ),
+          ] else ...[
+            Row(
+              children: [
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: _openDocumentReview,
+                    icon: const Icon(Icons.rate_review_outlined, size: 18),
+                    label: const Text('Document Review'),
+                    style: ElevatedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: _openMeetingNotes,
+                    icon: const Icon(Icons.sticky_note_2_outlined, size: 18),
+                    label: const Text('Meeting Notes'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.white,
+                      side: const BorderSide(color: AdminColors.border),
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: _openPlagiarismMonitor,
+                icon: const Icon(Icons.policy_rounded, size: 18),
+                label: const Text('Plagiarism Monitor'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AdminColors.warning,
+                  side: BorderSide(color: AdminColors.warning.withOpacity(0.55)),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );

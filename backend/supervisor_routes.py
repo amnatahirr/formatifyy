@@ -371,12 +371,13 @@ def get_supervisor_home(user_id: Annotated[int | None, Query()] = None):
     )
     documents_to_review = cursor.fetchone()[0]
 
+    supervisor_email = (supervisor.get("email") or "").strip().lower()
     cursor.execute(
         """
-        SELECT COUNT(*) FROM group_replies
-        WHERE supervisor_id = ? AND is_read = 0
+        SELECT COUNT(*) FROM notifications
+        WHERE LOWER(TRIM(recipient_email)) = LOWER(?) AND is_read = 0
         """,
-        (supervisor_id,),
+        (supervisor_email,),
     )
     unread_replies = cursor.fetchone()[0]
 
@@ -2008,3 +2009,120 @@ def create_meeting_note(
         raise HTTPException(status_code=500, detail="Could not save meeting note.")
     finally:
         conn.close()
+
+
+@router.get("/notifications")
+def list_supervisor_notifications(
+    user_id: Annotated[int | None, Query()] = None,
+    unread_only: Annotated[bool, Query()] = False,
+):
+    """Inbox for supervisor mobile/desktop: submissions, student replies, etc."""
+    supervisor = _require_supervisor(user_id)
+    email = (supervisor.get("email") or "").strip().lower()
+    if not email:
+        raise HTTPException(status_code=400, detail="Supervisor account has no email.")
+
+    conn = get_db()
+    cursor = conn.cursor()
+    try:
+        sql = """
+            SELECT id, recipient_email, title, message, type, is_read,
+                   related_type, related_id, created_at
+            FROM notifications
+            WHERE LOWER(TRIM(recipient_email)) = LOWER(?)
+        """
+        params: list[Any] = [email]
+        if unread_only:
+            sql += " AND is_read = 0"
+        sql += " ORDER BY datetime(created_at) DESC, id DESC LIMIT 100"
+        cursor.execute(sql, params)
+        rows = [_serialize_supervisor_notification(r, cursor) for r in cursor.fetchall()]
+        unread = sum(1 for r in rows if not r["is_read"])
+        return {
+            "notifications": rows,
+            "count": len(rows),
+            "unread_count": unread,
+            "recipient_email": email,
+        }
+    finally:
+        conn.close()
+
+
+@router.post("/notifications/{notification_id}/read")
+def mark_supervisor_notification_read(
+    notification_id: int,
+    user_id: Annotated[int | None, Query()] = None,
+):
+    supervisor = _require_supervisor(user_id)
+    email = (supervisor.get("email") or "").strip().lower()
+    conn = get_db()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            """
+            SELECT id FROM notifications
+            WHERE id = ? AND LOWER(TRIM(recipient_email)) = LOWER(?)
+            """,
+            (notification_id, email),
+        )
+        row = cursor.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Notification not found.")
+        cursor.execute("UPDATE notifications SET is_read = 1 WHERE id = ?", (notification_id,))
+        conn.commit()
+        return {"success": True, "id": notification_id, "is_read": True}
+    except HTTPException:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def _serialize_supervisor_notification(row, cursor=None) -> dict[str, Any]:
+    result: dict[str, Any] = {
+        "id": row["id"],
+        "recipient_email": row["recipient_email"] or "",
+        "title": row["title"] or "",
+        "message": row["message"] or "",
+        "type": row["type"] or "info",
+        "is_read": bool(row["is_read"]),
+        "related_type": row["related_type"] or "",
+        "related_id": row["related_id"],
+        "created_at": row["created_at"] or "",
+    }
+    related_type = (result["related_type"] or "").strip().lower()
+    related_id = result["related_id"]
+    if cursor is None or related_id is None:
+        return result
+
+    if related_type == "document_comment":
+        cursor.execute(
+            """
+            SELECT dc.id AS comment_id, dc.document_id, gd.group_id, gd.title AS document_title
+            FROM document_comments dc
+            JOIN group_documents gd ON gd.id = dc.document_id
+            WHERE dc.id = ?
+            """,
+            (related_id,),
+        )
+        link = cursor.fetchone()
+        if link:
+            result["comment_id"] = link["comment_id"]
+            result["document_id"] = link["document_id"]
+            result["group_id"] = link["group_id"]
+            result["document_title"] = link["document_title"] or ""
+    elif related_type == "final_submission":
+        cursor.execute(
+            """
+            SELECT id, group_id, title, group_document_id
+            FROM final_submissions WHERE id = ?
+            """,
+            (related_id,),
+        )
+        link = cursor.fetchone()
+        if link:
+            result["submission_id"] = link["id"]
+            result["group_id"] = link["group_id"]
+            result["document_id"] = link["group_document_id"]
+            result["submission_title"] = link["title"] or ""
+    return result

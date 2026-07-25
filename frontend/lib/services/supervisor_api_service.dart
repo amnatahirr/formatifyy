@@ -409,4 +409,35 @@ class SupervisorApiService {
     final map = Map<String, dynamic>.from(data as Map);
     return MeetingNoteModel.fromJson(Map<String, dynamic>.from(map['note'] as Map));
   }
+
+  Future<List<Map<String, dynamic>>> fetchNotifications(
+    int userId, {
+    bool unreadOnly = false,
+  }) async {
+    final data = await _request(
+      'GET',
+      '/supervisor/notifications',
+      queryParameters: {
+        'user_id': userId,
+        'unread_only': unreadOnly,
+      },
+    );
+    final map = Map<String, dynamic>.from(data as Map);
+    return List<Map<String, dynamic>>.from(
+      (map['notifications'] as List? ?? const []).map(
+        (e) => Map<String, dynamic>.from(e as Map),
+      ),
+    );
+  }
+
+  Future<void> markNotificationRead({
+    required int userId,
+    required int notificationId,
+  }) async {
+    await _request(
+      'POST',
+      '/supervisor/notifications/$notificationId/read',
+      queryParameters: {'user_id': userId},
+    );
+  }
 }

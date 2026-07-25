@@ -1648,6 +1648,33 @@ def reply_to_student_comment(
             ),
         )
         reply_id = cursor.lastrowid
+
+        # Notify supervisor so they can open review from their mobile inbox
+        cursor.execute(
+            "SELECT email, name FROM supervisors WHERE id = ?",
+            (parent["supervisor_id"],),
+        )
+        supervisor = cursor.fetchone()
+        student_name = (student.get("username") or student.get("name") or "Student").strip()
+        if supervisor and supervisor["email"]:
+            snippet = reply_text[:120] + ("…" if len(reply_text) > 120 else "")
+            cursor.execute(
+                """
+                INSERT INTO notifications
+                    (user_id, recipient_email, title, message, type, is_read, related_type, related_id)
+                VALUES (?, ?, ?, ?, ?, 0, ?, ?)
+                """,
+                (
+                    None,
+                    supervisor["email"],
+                    "Student replied to your comment",
+                    f"{student_name}: {snippet}",
+                    "student_reply",
+                    "document_comment",
+                    reply_id,
+                ),
+            )
+
         conn.commit()
         paragraphs = _serialize_student_review_paragraphs(cursor, parent["document_id"])
         return {
