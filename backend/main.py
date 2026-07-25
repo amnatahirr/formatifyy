@@ -57,7 +57,7 @@ from database import get_db, hash_password, init_db, verify_password
 from dispatcher import dispatch_all
 from models import AnalysisReport, UserLoginRequest, UserSignupRequest, TemplateCreateRequest, TemplateUpdateRequest, ChangePasswordRequest
 from parser import parse_file, parse_text
-from reformatter import reformat_document
+from reformatter import reformat_document, convert_docx_to_pdf
 from issue_utils import (
     build_document_blocks,
     normalize_issues,
@@ -1699,8 +1699,16 @@ async def preview_document(document_id: int, user_id: int = Query(...)):
 
 
 @app.get("/api/format-document/export/{document_id}", tags=["Documents"])
-def export_formatted_document(document_id: int, user_id: int = Query(...)):
-    """Download the formatted DOCX — uses working copy with all applied fixes."""
+def export_formatted_document(
+    document_id: int,
+    user_id: int = Query(...),
+    format: str = Query(default="docx"),
+):
+    """Download the formatted document as DOCX or PDF."""
+    export_format = (format or "docx").strip().lower()
+    if export_format not in {"docx", "pdf"}:
+        raise HTTPException(status_code=400, detail="format must be 'docx' or 'pdf'")
+
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM documents WHERE id = ? AND user_id = ?", (document_id, user_id))
@@ -1744,10 +1752,22 @@ def export_formatted_document(document_id: int, user_id: int = Query(...)):
     except Exception as exc:
         print(f"[export] frontmatter apply error (non-fatal): {exc}")
 
-    download_name = f"formatted_{doc['filename']}"
-    if not download_name.endswith(".docx"):
-        download_name += ".docx"
+    base_name = f"formatted_{os.path.splitext(doc['filename'] or 'document')[0]}"
 
+    if export_format == "pdf":
+        pdf_path = convert_docx_to_pdf(output_path)
+        if not pdf_path or not os.path.exists(pdf_path):
+            raise HTTPException(
+                status_code=500,
+                detail="Could not convert document to PDF. Try Word (.docx) instead.",
+            )
+        return FileResponse(
+            path=pdf_path,
+            filename=f"{base_name}.pdf",
+            media_type="application/pdf",
+        )
+
+    download_name = f"{base_name}.docx"
     return FileResponse(
         path=output_path,
         filename=download_name,

@@ -456,9 +456,20 @@ if (contentDisposition != null && contentDisposition.contains('filename=')) {
   }
 }
 
-      // Get downloads directory
-      final directory = await getDownloadsDirectory() ?? 
-                       await getApplicationDocumentsDirectory();
+      // Prefer public Downloads on Android phones; otherwise app documents.
+      Directory directory;
+      if (Platform.isAndroid) {
+        final downloads = Directory('/storage/emulated/0/Download');
+        directory = await downloads.exists()
+            ? downloads
+            : (await getDownloadsDirectory() ??
+                await getApplicationDocumentsDirectory());
+      } else if (Platform.isIOS) {
+        directory = await getApplicationDocumentsDirectory();
+      } else {
+        directory = await getDownloadsDirectory() ??
+            await getApplicationDocumentsDirectory();
+      }
       final file = File('${directory.path}/$fileName');
       
       // Write file

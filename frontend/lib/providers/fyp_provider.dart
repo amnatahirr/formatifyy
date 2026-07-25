@@ -285,6 +285,7 @@ class FypProvider extends ChangeNotifier {
     required String studentLeaderEmail,
     required List<String> memberNames,
     int? departmentId,
+    String? cosupervisorName,
   }) async {
     _isSubmitting = true;
     _errorMessage = null;
@@ -301,6 +302,8 @@ class FypProvider extends ChangeNotifier {
           'student_leader_email': studentLeaderEmail,
           'member_names': memberNames,
           'department_id': departmentId,
+          if (cosupervisorName != null && cosupervisorName.trim().isNotEmpty)
+            'cosupervisor_name': cosupervisorName.trim(),
         }),
       );
       final body = response.body.isEmpty ? null : jsonDecode(response.body);

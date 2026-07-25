@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../../providers/auth_provider.dart';
 import '../../providers/fyp_provider.dart';
+import '../../utils/responsive.dart';
 
 /// Student form to request an FYP supervisor (creates assignment_requests row).
 class SupervisorSelectionScreen extends StatefulWidget {
@@ -13,16 +14,31 @@ class SupervisorSelectionScreen extends StatefulWidget {
       _SupervisorSelectionScreenState();
 }
 
+class _MemberFields {
+  final TextEditingController name;
+  final TextEditingController email;
+
+  _MemberFields({String name = '', String email = ''})
+      : name = TextEditingController(text: name),
+        email = TextEditingController(text: email);
+
+  void dispose() {
+    name.dispose();
+    email.dispose();
+  }
+}
+
 class _SupervisorSelectionScreenState extends State<SupervisorSelectionScreen> {
   final _formKey = GlobalKey<FormState>();
   final _groupName = TextEditingController();
   final _projectTitle = TextEditingController();
   final _leaderName = TextEditingController();
   final _leaderEmail = TextEditingController();
-  final _memberControllers = <TextEditingController>[];
+  final _members = <_MemberFields>[];
 
   int? _departmentId;
   int? _supervisorId;
+  int? _cosupervisorId;
   bool _prefilled = false;
 
   static const _card = Color(0xFF161B22);
@@ -58,51 +74,78 @@ class _SupervisorSelectionScreenState extends State<SupervisorSelectionScreen> {
     _projectTitle.dispose();
     _leaderName.dispose();
     _leaderEmail.dispose();
-    for (final c in _memberControllers) {
-      c.dispose();
+    for (final m in _members) {
+      m.dispose();
     }
     super.dispose();
   }
 
-  void _addMemberField({String initial = ''}) {
+  void _addMember() {
+    setState(() => _members.add(_MemberFields()));
+  }
+
+  void _removeMember(int index) {
     setState(() {
-      final c = TextEditingController(text: initial);
-      _memberControllers.add(c);
+      _members[index].dispose();
+      _members.removeAt(index);
     });
   }
 
-  void _removeMemberField(int index) {
-    setState(() {
-      _memberControllers[index].dispose();
-      _memberControllers.removeAt(index);
-    });
-  }
-
-  InputDecoration _dec(String label, {String? hint}) {
+  InputDecoration _dec(String label, {String? hint, Widget? prefixIcon}) {
     return InputDecoration(
       labelText: label,
       hintText: hint,
+      prefixIcon: prefixIcon,
       filled: true,
       fillColor: _surface,
-      labelStyle: TextStyle(color: Colors.white.withOpacity(0.65)),
-      hintStyle: TextStyle(color: Colors.white.withOpacity(0.35)),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+      labelStyle: TextStyle(color: Colors.white.withOpacity(0.65), fontSize: 13),
+      hintStyle: TextStyle(color: Colors.white.withOpacity(0.35), fontSize: 13),
       enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(12),
         borderSide: const BorderSide(color: _border),
       ),
       focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(12),
         borderSide: const BorderSide(color: _accent),
       ),
       errorBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(12),
         borderSide: const BorderSide(color: Color(0xFFEF4444)),
       ),
       focusedErrorBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(12),
         borderSide: const BorderSide(color: Color(0xFFEF4444)),
       ),
     );
+  }
+
+  String? _emailValidator(String? v, {bool required = false}) {
+    final value = (v ?? '').trim();
+    if (value.isEmpty) {
+      return required ? 'Email required' : null;
+    }
+    if (!value.contains('@') || !value.contains('.')) {
+      return 'Enter a valid email';
+    }
+    return null;
+  }
+
+  List<String> _buildMemberPayload() {
+    final out = <String>[];
+    for (final m in _members) {
+      final name = m.name.text.trim();
+      final email = m.email.text.trim();
+      if (name.isEmpty && email.isEmpty) continue;
+      if (name.isNotEmpty && email.isNotEmpty) {
+        out.add('$name <$email>');
+      } else if (name.isNotEmpty) {
+        out.add(name);
+      } else {
+        out.add(email);
+      }
+    }
+    return out;
   }
 
   Future<void> _submit() async {
@@ -121,12 +164,15 @@ class _SupervisorSelectionScreenState extends State<SupervisorSelectionScreen> {
     final userId = auth.userId;
     if (userId == null) return;
 
-    final members = _memberControllers
-        .map((c) => c.text.trim())
-        .where((s) => s.isNotEmpty)
-        .toList();
-
     final fyp = context.read<FypProvider>();
+    String? cosupervisorName;
+    if (_cosupervisorId != null) {
+      final match = fyp.supervisors.where((s) => s['id'] == _cosupervisorId);
+      if (match.isNotEmpty) {
+        cosupervisorName = (match.first['name'] ?? '').toString();
+      }
+    }
+
     final result = await fyp.createAssignmentRequest(
       userId: userId,
       supervisorId: _supervisorId!,
@@ -134,8 +180,9 @@ class _SupervisorSelectionScreenState extends State<SupervisorSelectionScreen> {
       projectTitle: _projectTitle.text.trim(),
       studentLeaderName: _leaderName.text.trim(),
       studentLeaderEmail: _leaderEmail.text.trim(),
-      memberNames: members,
+      memberNames: _buildMemberPayload(),
       departmentId: _departmentId,
+      cosupervisorName: cosupervisorName,
     );
 
     if (!mounted) return;
@@ -150,10 +197,11 @@ class _SupervisorSelectionScreenState extends State<SupervisorSelectionScreen> {
       _projectTitle.clear();
       setState(() {
         _supervisorId = null;
-        for (final c in _memberControllers) {
-          c.dispose();
+        _cosupervisorId = null;
+        for (final m in _members) {
+          m.dispose();
         }
-        _memberControllers.clear();
+        _members.clear();
       });
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -176,10 +224,41 @@ class _SupervisorSelectionScreenState extends State<SupervisorSelectionScreen> {
     }
   }
 
+  Widget _sectionTitle(String title, {String? subtitle}) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 15,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        if (subtitle != null) ...[
+          const SizedBox(height: 4),
+          Text(
+            subtitle,
+            style: TextStyle(
+              color: Colors.white.withOpacity(0.45),
+              fontSize: 12,
+              height: 1.35,
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final fyp = context.watch<FypProvider>();
+    final compact = isCompact(context);
     final filteredSupervisors = fyp.supervisorsForDepartment(_departmentId);
+    final coOptions = filteredSupervisors
+        .where((s) => s['id'] != _supervisorId)
+        .toList();
 
     if (fyp.isLoading && fyp.supervisors.isEmpty) {
       return const Center(child: CircularProgressIndicator(color: _accent));
@@ -190,129 +269,213 @@ class _SupervisorSelectionScreenState extends State<SupervisorSelectionScreen> {
       backgroundColor: _card,
       onRefresh: _bootstrap,
       child: ListView(
-        padding: const EdgeInsets.all(32),
+        padding: EdgeInsets.fromLTRB(
+          compact ? 16 : 32,
+          compact ? 12 : 24,
+          compact ? 16 : 32,
+          compact ? 100 : 40,
+        ),
         children: [
           Text(
             'Request an FYP supervisor for your group. Your request stays pending until they accept.',
-            style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 14),
+            style: TextStyle(
+              color: Colors.white.withOpacity(0.6),
+              fontSize: 13,
+              height: 1.4,
+            ),
           ),
-          const SizedBox(height: 22),
+          const SizedBox(height: 18),
           Container(
-            padding: const EdgeInsets.all(22),
+            padding: EdgeInsets.all(compact ? 16 : 22),
             decoration: BoxDecoration(
               color: _card,
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(16),
               border: Border.all(color: _border),
             ),
             child: Form(
               key: _formKey,
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  const Text(
-                    'Group details',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w700,
-                    ),
+                  _sectionTitle(
+                    'Project details',
+                    subtitle: 'Group identity and project topic',
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 14),
                   TextFormField(
                     controller: _groupName,
                     style: const TextStyle(color: Colors.white),
-                    decoration: _dec('Group name'),
+                    decoration: _dec(
+                      'Group name',
+                      prefixIcon: Icon(
+                        Icons.groups_outlined,
+                        size: 18,
+                        color: Colors.white.withOpacity(0.45),
+                      ),
+                    ),
                     validator: (v) =>
                         (v == null || v.trim().isEmpty) ? 'Required' : null,
                   ),
-                  const SizedBox(height: 14),
+                  const SizedBox(height: 12),
                   TextFormField(
                     controller: _projectTitle,
                     style: const TextStyle(color: Colors.white),
-                    decoration: _dec('Project title / topic'),
+                    decoration: _dec(
+                      'Project title / topic',
+                      prefixIcon: Icon(
+                        Icons.topic_outlined,
+                        size: 18,
+                        color: Colors.white.withOpacity(0.45),
+                      ),
+                    ),
                     validator: (v) =>
                         (v == null || v.trim().isEmpty) ? 'Required' : null,
                   ),
+                  const SizedBox(height: 22),
+                  _sectionTitle(
+                    'Group leader',
+                    subtitle: 'Email is taken from your signed-in account',
+                  ),
                   const SizedBox(height: 14),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: TextFormField(
-                          controller: _leaderName,
-                          style: const TextStyle(color: Colors.white),
-                          decoration: _dec('Student leader name'),
-                          validator: (v) => (v == null || v.trim().isEmpty)
-                              ? 'Required'
-                              : null,
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: TextFormField(
-                          controller: _leaderEmail,
-                          readOnly: true,
-                          style: TextStyle(color: Colors.white.withOpacity(0.85)),
-                          decoration: _dec(
-                            'Student leader email',
-                            hint: 'From your account',
-                          ),
-                        ),
-                      ),
-                    ],
+                  TextFormField(
+                    controller: _leaderName,
+                    style: const TextStyle(color: Colors.white),
+                    decoration: _dec('Leader name'),
+                    validator: (v) =>
+                        (v == null || v.trim().isEmpty) ? 'Required' : null,
+                  ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: _leaderEmail,
+                    readOnly: true,
+                    style: TextStyle(color: Colors.white.withOpacity(0.85)),
+                    decoration: _dec(
+                      'Leader email',
+                      hint: 'From your account',
+                    ),
                   ),
                   const SizedBox(height: 22),
                   Row(
                     children: [
-                      const Text(
-                        'Member names',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 15,
-                          fontWeight: FontWeight.w600,
+                      Expanded(
+                        child: _sectionTitle(
+                          'Team members',
+                          subtitle: 'Name + email for each member',
                         ),
                       ),
-                      const Spacer(),
                       TextButton.icon(
-                        onPressed: () => _addMemberField(),
+                        onPressed: _addMember,
                         icon: const Icon(Icons.person_add_alt_1, size: 18),
-                        label: const Text('Add member'),
+                        label: const Text('Add'),
+                        style: TextButton.styleFrom(
+                          foregroundColor: _accent,
+                        ),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 8),
-                  if (_memberControllers.isEmpty)
-                    Text(
-                      'Optional — add other group members. Leader is included automatically.',
-                      style: TextStyle(
-                        color: Colors.white.withOpacity(0.5),
-                        fontSize: 12,
+                  const SizedBox(height: 10),
+                  if (_members.isEmpty)
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: _surface,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: _border),
                       ),
-                    ),
-                  ...List.generate(_memberControllers.length, (i) {
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 10),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: TextFormField(
-                              controller: _memberControllers[i],
-                              style: const TextStyle(color: Colors.white),
-                              decoration: _dec('Member ${i + 1}'),
-                            ),
-                          ),
-                          IconButton(
-                            onPressed: () => _removeMemberField(i),
-                            icon: const Icon(Icons.close, color: Color(0xFF94A3B8)),
-                          ),
-                        ],
+                      child: Text(
+                        'Optional — add other members with their university emails. Leader is included automatically.',
+                        style: TextStyle(
+                          color: Colors.white.withOpacity(0.5),
+                          fontSize: 12,
+                          height: 1.4,
+                        ),
                       ),
-                    );
-                  }),
-                  const SizedBox(height: 18),
+                    )
+                  else
+                    ...List.generate(_members.length, (i) {
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: _surface,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: _border),
+                          ),
+                          child: Column(
+                            children: [
+                              Row(
+                                children: [
+                                  Text(
+                                    'Member ${i + 1}',
+                                    style: TextStyle(
+                                      color: Colors.white.withOpacity(0.7),
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                  const Spacer(),
+                                  IconButton(
+                                    onPressed: () => _removeMember(i),
+                                    visualDensity: VisualDensity.compact,
+                                    icon: const Icon(
+                                      Icons.close,
+                                      size: 18,
+                                      color: Color(0xFF94A3B8),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              TextFormField(
+                                controller: _members[i].name,
+                                style: const TextStyle(color: Colors.white),
+                                decoration: _dec('Full name'),
+                                validator: (v) {
+                                  final name = (v ?? '').trim();
+                                  final email =
+                                      _members[i].email.text.trim();
+                                  if (name.isEmpty && email.isNotEmpty) {
+                                    return 'Name required with email';
+                                  }
+                                  return null;
+                                },
+                              ),
+                              const SizedBox(height: 10),
+                              TextFormField(
+                                controller: _members[i].email,
+                                keyboardType: TextInputType.emailAddress,
+                                style: const TextStyle(color: Colors.white),
+                                decoration: _dec(
+                                  'University email',
+                                  hint: 'name@university.edu',
+                                ),
+                                validator: (v) {
+                                  final email = (v ?? '').trim();
+                                  final name =
+                                      _members[i].name.text.trim();
+                                  if (name.isNotEmpty && email.isEmpty) {
+                                    return 'Email required';
+                                  }
+                                  return _emailValidator(v);
+                                },
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    }),
+                  const SizedBox(height: 22),
+                  _sectionTitle(
+                    'Supervision',
+                    subtitle: 'Pick department, supervisor, and optional co-supervisor',
+                  ),
+                  const SizedBox(height: 14),
                   DropdownButtonFormField<int>(
                     value: _departmentId,
+                    isExpanded: true,
                     dropdownColor: _card,
-                    style: const TextStyle(color: Colors.white),
+                    style: const TextStyle(color: Colors.white, fontSize: 14),
                     decoration: _dec('Department'),
                     items: [
                       const DropdownMenuItem<int>(
@@ -324,6 +487,7 @@ class _SupervisorSelectionScreenState extends State<SupervisorSelectionScreen> {
                           value: d['id'] as int?,
                           child: Text(
                             '${d['name'] ?? ''}${d['code'] != null ? ' (${d['code']})' : ''}',
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
                       ),
@@ -331,21 +495,28 @@ class _SupervisorSelectionScreenState extends State<SupervisorSelectionScreen> {
                     onChanged: (v) {
                       setState(() {
                         _departmentId = v;
-                        // Clear supervisor if no longer in filtered list
                         if (_supervisorId != null &&
                             !fyp
                                 .supervisorsForDepartment(v)
                                 .any((s) => s['id'] == _supervisorId)) {
                           _supervisorId = null;
                         }
+                        if (_cosupervisorId != null &&
+                            (_cosupervisorId == _supervisorId ||
+                                !fyp
+                                    .supervisorsForDepartment(v)
+                                    .any((s) => s['id'] == _cosupervisorId))) {
+                          _cosupervisorId = null;
+                        }
                       });
                     },
                   ),
-                  const SizedBox(height: 14),
+                  const SizedBox(height: 12),
                   DropdownButtonFormField<int>(
                     value: _supervisorId,
+                    isExpanded: true,
                     dropdownColor: _card,
-                    style: const TextStyle(color: Colors.white),
+                    style: const TextStyle(color: Colors.white, fontSize: 14),
                     decoration: _dec('Supervisor'),
                     items: filteredSupervisors.map((s) {
                       final id = s['id'] as int;
@@ -364,7 +535,44 @@ class _SupervisorSelectionScreenState extends State<SupervisorSelectionScreen> {
                       );
                     }).toList(),
                     validator: (v) => v == null ? 'Select a supervisor' : null,
-                    onChanged: (v) => setState(() => _supervisorId = v),
+                    onChanged: (v) {
+                      setState(() {
+                        _supervisorId = v;
+                        if (_cosupervisorId == v) {
+                          _cosupervisorId = null;
+                        }
+                      });
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<int>(
+                    value: _cosupervisorId,
+                    isExpanded: true,
+                    dropdownColor: _card,
+                    style: const TextStyle(color: Colors.white, fontSize: 14),
+                    decoration: _dec(
+                      'Co-supervisor (optional)',
+                      hint: 'None',
+                    ),
+                    items: [
+                      const DropdownMenuItem<int>(
+                        value: null,
+                        child: Text('None'),
+                      ),
+                      ...coOptions.map((s) {
+                        final id = s['id'] as int;
+                        final dept = s['department_name'] ?? '';
+                        return DropdownMenuItem<int>(
+                          value: id,
+                          child: Text(
+                            '${s['name'] ?? 'Supervisor'}'
+                            '${dept.toString().isNotEmpty ? ' — $dept' : ''}',
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        );
+                      }),
+                    ],
+                    onChanged: (v) => setState(() => _cosupervisorId = v),
                   ),
                   if (filteredSupervisors.isEmpty) ...[
                     const SizedBox(height: 8),
@@ -377,8 +585,9 @@ class _SupervisorSelectionScreenState extends State<SupervisorSelectionScreen> {
                     ),
                   ],
                   const SizedBox(height: 22),
-                  Align(
-                    alignment: Alignment.centerRight,
+                  SizedBox(
+                    width: double.infinity,
+                    height: 48,
                     child: ElevatedButton.icon(
                       onPressed: fyp.isSubmitting ? null : _submit,
                       icon: fyp.isSubmitting
@@ -390,16 +599,16 @@ class _SupervisorSelectionScreenState extends State<SupervisorSelectionScreen> {
                                 color: Colors.white,
                               ),
                             )
-                          : const Icon(Icons.send, size: 18),
+                          : const Icon(Icons.send_rounded, size: 18),
                       label: Text(
                         fyp.isSubmitting ? 'Submitting…' : 'Send request',
+                        style: const TextStyle(fontWeight: FontWeight.w700),
                       ),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: _accent,
                         foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 22,
-                          vertical: 14,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
                         ),
                       ),
                     ),
@@ -408,7 +617,7 @@ class _SupervisorSelectionScreenState extends State<SupervisorSelectionScreen> {
               ),
             ),
           ),
-          const SizedBox(height: 28),
+          const SizedBox(height: 24),
           const Text(
             'Your requests',
             style: TextStyle(
@@ -423,7 +632,7 @@ class _SupervisorSelectionScreenState extends State<SupervisorSelectionScreen> {
               padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(
                 color: _card,
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: BorderRadius.circular(14),
                 border: Border.all(color: _border),
               ),
               child: Text(
@@ -435,16 +644,18 @@ class _SupervisorSelectionScreenState extends State<SupervisorSelectionScreen> {
             ...fyp.requests.map((r) {
               final status = (r['status'] ?? 'pending').toString();
               final color = _statusColor(status);
+              final co = (r['cosupervisor_name'] ?? '').toString().trim();
               return Padding(
                 padding: const EdgeInsets.only(bottom: 10),
                 child: Container(
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
                     color: _card,
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(14),
                     border: Border.all(color: _border),
                   ),
                   child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Expanded(
                         child: Column(
@@ -459,12 +670,28 @@ class _SupervisorSelectionScreenState extends State<SupervisorSelectionScreen> {
                             ),
                             const SizedBox(height: 4),
                             Text(
-                              '${r['project_title'] ?? ''} · ${r['supervisor_name'] ?? 'Supervisor'}',
+                              '${r['project_title'] ?? ''}',
                               style: TextStyle(
                                 color: Colors.white.withOpacity(0.55),
                                 fontSize: 12,
                               ),
                             ),
+                            const SizedBox(height: 6),
+                            Text(
+                              'Supervisor: ${r['supervisor_name'] ?? '—'}',
+                              style: TextStyle(
+                                color: Colors.white.withOpacity(0.55),
+                                fontSize: 12,
+                              ),
+                            ),
+                            if (co.isNotEmpty)
+                              Text(
+                                'Co-supervisor: $co',
+                                style: TextStyle(
+                                  color: Colors.white.withOpacity(0.55),
+                                  fontSize: 12,
+                                ),
+                              ),
                             if ((r['rejection_reason'] ?? '')
                                 .toString()
                                 .isNotEmpty) ...[

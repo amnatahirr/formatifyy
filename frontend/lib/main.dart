@@ -21,16 +21,23 @@ import 'providers/fyp_provider.dart';
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
 void main() {
-  const userId = String.fromEnvironment('USER_ID', defaultValue: 'member1');
-  DevUserConfig.initialize(userId);
-  runApp(MyApp(devUserKey: userId));
+  // Dev auto-login is OFF unless BOTH dart-defines are set:
+  //   flutter run --dart-define=USER_ID=member2 --dart-define=ENABLE_DEV_BOOTSTRAP=true
+  const userId = String.fromEnvironment('USER_ID', defaultValue: '');
+  const enableBootstrap =
+      bool.fromEnvironment('ENABLE_DEV_BOOTSTRAP', defaultValue: false);
+  final shouldBootstrap = enableBootstrap && userId.isNotEmpty;
+  if (shouldBootstrap) {
+    DevUserConfig.initialize(userId);
+  }
+  runApp(MyApp(devUserKey: shouldBootstrap ? userId : null));
 }
 
 
 class MyApp extends StatefulWidget {
-  final String devUserKey;
+  final String? devUserKey;
 
-  const MyApp({Key? key, required this.devUserKey}) : super(key: key);
+  const MyApp({Key? key, this.devUserKey}) : super(key: key);
 
   @override
   State<MyApp> createState() => _MyAppState();
@@ -122,7 +129,7 @@ class _MyAppState extends State<MyApp> {
       child: MaterialApp(
         navigatorKey: navigatorKey,
         debugShowCheckedModeBanner: false,
-        title: 'FORMATIFY — ${widget.devUserKey}',
+        title: 'FORMATIFY',
         theme: ThemeData(
           useMaterial3: true,
           brightness: Brightness.dark,
@@ -231,9 +238,10 @@ class _AuthCheckState extends State<AuthCheck> {
 
   Future<void> _restore() async {
     final auth = context.read<AuthProvider>();
-    if (!auth.isDevBootstrap) {
-      await auth.tryRestoreSession();
-    }
+    // Always clear leftover bootstrap/dev sessions and never auto-login on
+    // launch/hot-restart. User must sign in explicitly each cold start unless
+    // we later re-enable opt-in "Remember me" restore.
+    await auth.ensureCleanLaunch();
     if (mounted) setState(() => _ready = true);
   }
 
@@ -251,6 +259,7 @@ class _AuthCheckState extends State<AuthCheck> {
     return Consumer<AuthProvider>(
       builder: (context, authProvider, _) {
         if (authProvider.isLoggedIn) {
+          // Explicit --dart-define=USER_ID=… collab bootstrap stays on student shell.
           if (authProvider.isDevBootstrap) {
             return const StudentDashboard();
           }

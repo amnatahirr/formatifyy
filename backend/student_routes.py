@@ -66,6 +66,7 @@ def _serialize_assignment_request(row) -> dict[str, Any]:
         "student_leader_name": data.get("student_leader_name") or "",
         "student_leader_email": data.get("student_leader_email") or "",
         "member_names": members,
+        "cosupervisor_name": (data.get("cosupervisor_name") or "").strip(),
         "department_id": data.get("department_id"),
         "department_name": data.get("department_name") or "",
         "department_code": data.get("department_code") or "",
@@ -586,6 +587,7 @@ def create_assignment_request(
     if student_leader_name and student_leader_name not in members:
         members = [student_leader_name, *[m for m in members if m != student_leader_name]]
     member_names_json = json.dumps(members)
+    cosupervisor_name = str(payload.get("cosupervisor_name") or "").strip()
 
     conn = get_db()
     cursor = conn.cursor()
@@ -634,8 +636,9 @@ def create_assignment_request(
             """
             INSERT INTO assignment_requests
                 (supervisor_id, group_name, project_title, student_leader_name,
-                 student_leader_email, member_names, department_id, status, fyp_group_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', NULL)
+                 student_leader_email, member_names, cosupervisor_name,
+                 department_id, status, fyp_group_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', NULL)
             """,
             (
                 supervisor_id,
@@ -644,6 +647,7 @@ def create_assignment_request(
                 student_leader_name,
                 student_leader_email,
                 member_names_json,
+                cosupervisor_name or None,
                 department_id,
             ),
         )

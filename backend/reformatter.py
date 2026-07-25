@@ -646,10 +646,14 @@ def _apply_style(para, spec: dict, align_map: dict) -> None:
 def convert_docx_to_pdf(docx_path: str) -> Optional[str]:
     """
     Convert a DOCX to PDF using LibreOffice's headless mode.
-    Returns the PDF path on success, None if LibreOffice is not available.
+    Falls back to a text-based PyMuPDF render if LibreOffice is unavailable.
+    Returns the PDF path on success, None on failure.
     """
+    output_dir = os.path.dirname(docx_path)
+    base = os.path.splitext(os.path.basename(docx_path))[0]
+    pdf_path = os.path.join(output_dir, f"{base}.pdf")
+
     try:
-        output_dir = os.path.dirname(docx_path)
         subprocess.run(
             [
                 "soffice",
@@ -662,10 +666,68 @@ def convert_docx_to_pdf(docx_path: str) -> Optional[str]:
             capture_output=True,
             timeout=60,
         )
-        base = os.path.splitext(os.path.basename(docx_path))[0]
-        pdf_path = os.path.join(output_dir, f"{base}.pdf")
         if os.path.exists(pdf_path):
             return pdf_path
     except (FileNotFoundError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
-        print(f"[reformatter] PDF conversion failed (LibreOffice may not be installed): {exc}")
+        print(f"[reformatter] LibreOffice PDF conversion unavailable: {exc}")
+
+    # Fallback: extract text from DOCX and write a simple multi-page PDF.
+    try:
+        import fitz  # PyMuPDF
+        from docx import Document as DocxDocument
+
+        doc = DocxDocument(docx_path)
+        paragraphs = [p.text.strip() for p in doc.paragraphs if p.text and p.text.strip()]
+        if not paragraphs:
+            paragraphs = ["(Empty document)"]
+
+        pdf = fitz.open()
+        page = pdf.new_page(width=595, height=842)  # A4
+        margin = 50
+        y = margin
+        font_size = 11
+        line_height = font_size + 6
+        max_width = 595 - (margin * 2)
+
+        for para in paragraphs:
+            # Soft-wrap long lines
+            words = para.split()
+            lines: list[str] = []
+            current = ""
+            for word in words:
+                trial = f"{current} {word}".strip()
+                # Approx wrap width without relying on get_text_length API variants.
+                approx_width = len(trial) * (font_size * 0.55)
+                if approx_width <= max_width:
+                    current = trial
+                else:
+                    if current:
+                        lines.append(current)
+                    current = word
+            if current:
+                lines.append(current)
+            if not lines:
+                lines = [""]
+
+            for line in lines:
+                if y + line_height > 842 - margin:
+                    page = pdf.new_page(width=595, height=842)
+                    y = margin
+                page.insert_text(
+                    (margin, y),
+                    line,
+                    fontsize=font_size,
+                    fontname="helv",
+                    color=(0, 0, 0),
+                )
+                y += line_height
+            y += 8  # paragraph gap
+
+        pdf.save(pdf_path)
+        pdf.close()
+        if os.path.exists(pdf_path):
+            return pdf_path
+    except Exception as exc:
+        print(f"[reformatter] PyMuPDF PDF fallback failed: {exc}")
+
     return None

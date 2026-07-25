@@ -150,6 +150,10 @@ def _serialize_assignment_request(row) -> dict[str, Any]:
     members = _parse_member_names(row["member_names"])
     if not members and row["student_leader_name"]:
         members = [row["student_leader_name"]]
+    keys = set(row.keys()) if hasattr(row, "keys") else set()
+    cosupervisor = ""
+    if "cosupervisor_name" in keys and row["cosupervisor_name"]:
+        cosupervisor = str(row["cosupervisor_name"]).strip()
     return {
         "id": row["id"],
         "group_name": row["group_name"],
@@ -158,6 +162,7 @@ def _serialize_assignment_request(row) -> dict[str, Any]:
         "student_leader_name": row["student_leader_name"] or "",
         "student_leader_email": row["student_leader_email"] or "",
         "member_names": members,
+        "cosupervisor_name": cosupervisor,
         "department_id": row["department_id"],
         "department_name": row["department_name"] or "",
         "department_code": row["department_code"] or "",
@@ -516,12 +521,19 @@ def accept_assignment_request(
         if not members and request_row["student_leader_name"]:
             members = json.dumps([request_row["student_leader_name"]])
         deadline = _resolve_default_deadline(cursor, department_id)
+        req_keys = set(request_row.keys()) if hasattr(request_row, "keys") else set()
+        cosupervisor_name = (
+            str(request_row["cosupervisor_name"]).strip()
+            if "cosupervisor_name" in req_keys and request_row["cosupervisor_name"]
+            else None
+        )
 
         cursor.execute(
             """
             INSERT INTO fyp_groups
-                (supervisor_id, title, project_title, status, progress, member_names, deadline_date, department_id, student_contact_email)
-            VALUES (?, ?, ?, 'accepted', 0, ?, ?, ?, ?)
+                (supervisor_id, title, project_title, status, progress, member_names,
+                 deadline_date, department_id, student_contact_email, cosupervisor_name)
+            VALUES (?, ?, ?, 'accepted', 0, ?, ?, ?, ?, ?)
             """,
             (
                 supervisor_id,
@@ -531,6 +543,7 @@ def accept_assignment_request(
                 deadline,
                 department_id,
                 (request_row["student_leader_email"] or "").strip() or None,
+                cosupervisor_name,
             ),
         )
         group_id = cursor.lastrowid

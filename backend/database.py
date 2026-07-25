@@ -268,6 +268,10 @@ def init_db():
         cursor.execute("ALTER TABLE assignment_requests ADD COLUMN fyp_group_id INTEGER")
     if "resolved_at" not in assignment_columns:
         cursor.execute("ALTER TABLE assignment_requests ADD COLUMN resolved_at DATETIME")
+    if "cosupervisor_name" not in assignment_columns:
+        cursor.execute(
+            "ALTER TABLE assignment_requests ADD COLUMN cosupervisor_name TEXT"
+        )
 
     # 12b. In-app notifications (student / supervisor alerts)
     cursor.execute("""

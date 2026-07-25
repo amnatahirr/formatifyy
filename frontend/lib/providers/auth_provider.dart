@@ -50,7 +50,8 @@ class AuthProvider extends ChangeNotifier {
 
   AuthProvider({String? devUserKey}) {
     baseUrl = ApiConfig.getBaseUrl();
-    if (devUserKey != null) {
+    // Auto-login only when an explicit --dart-define=USER_ID=member1|member2 is set.
+    if (devUserKey != null && devUserKey.isNotEmpty) {
       _bootstrapDevUser(devUserKey);
     }
   }
@@ -101,10 +102,31 @@ class AuthProvider extends ChangeNotifier {
     await prefs.remove(AuthSessionKeys.role);
   }
 
+  /// Wipe any leftover auto-login / remembered profile so launch always
+  /// starts signed-out (fixes hot-restart landing on student2).
+  Future<void> ensureCleanLaunch() async {
+    if (_devBootstrap) {
+      // Hard-disable accidental bootstrap: treat as signed out unless an
+      // explicit --dart-define=USER_ID was intentionally provided.
+      // (Keep bootstrap only for that opt-in path.)
+      _sessionRestoreAttempted = true;
+      return;
+    }
+    await _clearPersistedSession();
+    _currentUser = null;
+    _userEmail = null;
+    _userId = null;
+    _userRole = null;
+    _isLoggedIn = false;
+    _errorMessage = null;
+    _sessionRestoreAttempted = true;
+    notifyListeners();
+  }
+
   /// Cold-start restore: read SharedPreferences, validate via GET /api/auth/me.
   ///
-  /// This app has no JWT — APIs identify the user by `user_id`. Persistence
-  /// stores that profile; `/auth/me` confirms the user still exists.
+  /// Currently unused at launch (see [ensureCleanLaunch]). Kept for an
+  /// optional future "Remember me" path.
   Future<bool> tryRestoreSession() async {
     if (_devBootstrap) {
       _sessionRestoreAttempted = true;
@@ -143,7 +165,6 @@ class AuthProvider extends ChangeNotifier {
         email: (data['email'] ?? '').toString(),
         role: (data['role'] ?? 'student').toString(),
       );
-      // Refresh stored profile in case username/role changed server-side.
       await _persistSession();
       await checkGoogleDriveStatus();
       debugPrint('[Auth] Restored session for $_currentUser (id=$_userId)');
