@@ -52,6 +52,146 @@ def _parse_member_names(raw: Any) -> list[str]:
     return [part.strip() for part in text.split(",") if part.strip()]
 
 
+def _email_from_member_label(label: str) -> str | None:
+    import re
+
+    text = (label or "").strip()
+    if not text:
+        return None
+    match = re.search(r"<([^>]+@[^>]+)>", text)
+    if match:
+        return match.group(1).strip().lower()
+    if "@" in text and " " not in text:
+        return text.lower()
+    match = re.search(r"([^\s<>]+@[^\s<>]+)", text)
+    if match:
+        return match.group(1).strip().lower()
+    return None
+
+
+def _extract_docx_paragraphs(file_path: str, limit: int = 250) -> list[str]:
+    """Pull visible paragraph text from a DOCX for in-app review."""
+    import os
+
+    if not file_path or not os.path.exists(file_path):
+        return []
+    ext = os.path.splitext(file_path)[1].lower()
+    if ext != ".docx":
+        return []
+    try:
+        from docx import Document as DocxDocument
+
+        doc = DocxDocument(file_path)
+        paragraphs: list[str] = []
+        for p in doc.paragraphs:
+            text = (p.text or "").strip()
+            if text:
+                paragraphs.append(text)
+            if len(paragraphs) >= limit:
+                break
+        return paragraphs
+    except Exception as exc:
+        logger.warning("Failed to extract paragraphs from %s: %s", file_path, exc)
+        return []
+
+
+def _create_group_document_for_submission(
+    cursor,
+    *,
+    group_id: int,
+    supervisor_id: int,
+    title: str,
+    filename: str | None,
+    source_document_id: int | None,
+    contact_email: str,
+) -> int:
+    """
+    Create a group_documents row + real paragraphs so supervisor can preview/comment
+    and students can resolve issues in DocumentFeedbackScreen.
+    """
+    import os
+    import shutil
+
+    file_path = None
+    if source_document_id is not None:
+        cursor.execute(
+            "SELECT file_path, filename FROM documents WHERE id = ?",
+            (source_document_id,),
+        )
+        doc_row = cursor.fetchone()
+        if doc_row:
+            file_path = doc_row["file_path"]
+            if not filename:
+                filename = doc_row["filename"]
+
+    # Prefer working copy if present
+    if source_document_id is not None:
+        working = os.path.join("uploads", "working", f"doc_{source_document_id}_working.docx")
+        if os.path.exists(working):
+            file_path = working
+
+    cursor.execute(
+        """
+        INSERT INTO group_documents
+            (group_id, supervisor_id, title, filename, file_url, status,
+             source_document_id, version_number)
+        VALUES (?, ?, ?, ?, ?, 'pending', ?, 1)
+        """,
+        (
+            group_id,
+            supervisor_id,
+            title,
+            filename,
+            file_path,
+            source_document_id,
+        ),
+    )
+    group_document_id = cursor.lastrowid
+
+    paragraphs = _extract_docx_paragraphs(file_path or "")
+    if not paragraphs:
+        paragraphs = [
+            f"{title}: Document submitted for supervisor review.",
+            "Open the downloaded file for full formatting; comment on sections below.",
+        ]
+    for order, text in enumerate(paragraphs, start=1):
+        cursor.execute(
+            """
+            INSERT INTO document_paragraphs (document_id, sort_order, text)
+            VALUES (?, ?, ?)
+            """,
+            (group_document_id, order, text),
+        )
+    return int(group_document_id)
+
+
+def _student_in_accepted_group(cursor, group_id: int, student_email: str):
+    """Return group row if [student_email] is leader or listed member of an accepted group."""
+    email = (student_email or "").strip().lower()
+    cursor.execute(
+        """
+        SELECT id, title, project_title, supervisor_id, student_contact_email, member_names, status
+        FROM fyp_groups
+        WHERE id = ? AND status = 'accepted'
+        """,
+        (group_id,),
+    )
+    group = cursor.fetchone()
+    if not group or not email:
+        return None
+
+    contact = (group["student_contact_email"] or "").strip().lower()
+    if contact and contact == email:
+        return group
+
+    for member in _parse_member_names(group["member_names"]):
+        member_email = _email_from_member_label(member)
+        if member_email and member_email == email:
+            return group
+
+    return None
+
+
 def _serialize_assignment_request(row) -> dict[str, Any]:
     """Match supervisor GET /assignment-requests response shape."""
     data = _row_to_dict(row)
@@ -679,11 +819,11 @@ def create_assignment_request(
 
 def _serialize_student_final_submission(row) -> dict[str, Any]:
     """Match supervisor GET /submissions list fields (without full report by default)."""
+    keys = set(row.keys()) if hasattr(row, "keys") else set()
     return {
         "id": row["id"],
         "group_id": row["group_id"],
-        "group_title": row["group_title"] if "group_title" in row.keys() else "",
-        "project_title": row["project_title"] if "project_title" in row.keys() else "",
+        "group_title": row["group_title"] if "group_title" in keys else "",
         "title": row["title"],
         "filename": row["filename"] or "",
         "status": row["status"],
@@ -691,7 +831,8 @@ def _serialize_student_final_submission(row) -> dict[str, Any]:
         "resolved_at": row["resolved_at"],
         "decision_note": row["decision_note"] or "",
         "student_contact_email": row["student_contact_email"] or "",
-        "source_document_id": row["source_document_id"],
+        "source_document_id": row["source_document_id"] if "source_document_id" in keys else None,
+        "group_document_id": row["group_document_id"] if "group_document_id" in keys else None,
         "analysis_summary": _analysis_summary_from_report_row(row),
     }
 
@@ -747,17 +888,7 @@ def create_final_submission(
     conn = get_db()
     cursor = conn.cursor()
     try:
-        cursor.execute(
-            """
-            SELECT id, title, project_title, supervisor_id, student_contact_email, status
-            FROM fyp_groups
-            WHERE id = ?
-              AND status = 'accepted'
-              AND LOWER(TRIM(student_contact_email)) = LOWER(?)
-            """,
-            (group_id, student_email),
-        )
-        group = cursor.fetchone()
+        group = _student_in_accepted_group(cursor, group_id, student_email)
         if not group:
             raise HTTPException(
                 status_code=404,
@@ -780,8 +911,8 @@ def create_final_submission(
             """
             INSERT INTO final_submissions
                 (group_id, supervisor_id, title, filename, status, analysis_report,
-                 source_document_id, student_contact_email)
-            VALUES (?, ?, ?, ?, 'pending', ?, ?, ?)
+                 source_document_id, student_contact_email, group_document_id)
+            VALUES (?, ?, ?, ?, 'pending', ?, ?, ?, ?)
             """,
             (
                 group_id,
@@ -791,9 +922,24 @@ def create_final_submission(
                 report_json,
                 source_document_id,
                 contact_email,
+                None,
             ),
         )
         submission_id = cursor.lastrowid
+
+        group_document_id = _create_group_document_for_submission(
+            cursor,
+            group_id=group_id,
+            supervisor_id=supervisor_id,
+            title=title,
+            filename=filename,
+            source_document_id=source_document_id,
+            contact_email=contact_email,
+        )
+        cursor.execute(
+            "UPDATE final_submissions SET group_document_id = ? WHERE id = ?",
+            (group_document_id, submission_id),
+        )
 
         cursor.execute("SELECT email, name FROM supervisors WHERE id = ?", (supervisor_id,))
         supervisor = cursor.fetchone()
@@ -1152,6 +1298,7 @@ def _analysis_summary_from_report_row(row) -> dict[str, Any]:
 
 def _serialize_status_tracker_submission(row) -> dict[str, Any]:
     stage = _submission_stage(row["status"] if "status" in row.keys() else None)
+    keys = set(row.keys()) if hasattr(row, "keys") else set()
     return {
         "id": row["id"],
         "group_id": row["group_id"],
@@ -1166,6 +1313,7 @@ def _serialize_status_tracker_submission(row) -> dict[str, Any]:
         "submitted_at": row["submitted_at"],
         "resolved_at": row["resolved_at"],
         "source_document_id": row["source_document_id"],
+        "group_document_id": row["group_document_id"] if "group_document_id" in keys else None,
         "student_contact_email": row["student_contact_email"] or "",
         # Formatting % / issues — same analysis_report fields as supervisor list
         "analysis_summary": _analysis_summary_from_report_row(row),
@@ -1193,8 +1341,8 @@ def list_group_final_submissions(
         cursor.execute(
             """
             SELECT id, group_id, title, filename, status, decision_note,
-                   submitted_at, resolved_at, source_document_id, student_contact_email,
-                   analysis_report
+                   submitted_at, resolved_at, source_document_id, group_document_id,
+                   student_contact_email, analysis_report
             FROM final_submissions
             WHERE group_id = ?
             ORDER BY datetime(submitted_at) DESC, id DESC

@@ -32,6 +32,7 @@ class _DocumentReviewScreenState extends State<DocumentReviewScreen> {
   String? _error;
   bool _loading = true;
   bool _busy = false;
+  bool _downloading = false;
 
   @override
   void initState() {
@@ -57,6 +58,26 @@ class _DocumentReviewScreenState extends State<DocumentReviewScreen> {
       if (mounted) setState(() => _error = e.toString());
     } finally {
       if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _downloadFile() async {
+    final userId = context.read<AuthProvider>().userId;
+    if (userId == null) return;
+    setState(() => _downloading = true);
+    try {
+      final path = await _api.downloadGroupDocument(
+        userId: userId,
+        groupId: widget.groupId,
+        documentId: widget.documentId,
+        preferredFilename: _review?.document.filename,
+      );
+      if (!mounted) return;
+      showAdminSnackBar(context, 'Saved to $path');
+    } catch (e) {
+      if (mounted) showAdminSnackBar(context, e.toString(), isError: true);
+    } finally {
+      if (mounted) setState(() => _downloading = false);
     }
   }
 
@@ -287,15 +308,20 @@ class _DocumentReviewScreenState extends State<DocumentReviewScreen> {
                     ],
                   ),
                 ),
-                if (_busy)
+                if (_busy || _downloading)
                   const Padding(
-                    padding: EdgeInsets.only(right: 12),
+                    padding: EdgeInsets.only(right: 8),
                     child: SizedBox(
                       width: 18,
                       height: 18,
                       child: CircularProgressIndicator(strokeWidth: 2, color: AdminColors.primary),
                     ),
                   ),
+                IconButton(
+                  tooltip: 'Download file',
+                  onPressed: (_busy || _downloading) ? null : _downloadFile,
+                  icon: const Icon(Icons.download_rounded, color: Colors.white),
+                ),
               ],
             ),
           ),

@@ -4,6 +4,13 @@ int _asInt(dynamic value, [int fallback = 0]) {
   return int.tryParse('$value') ?? fallback;
 }
 
+int? _asIntOrNull(dynamic value) {
+  if (value == null) return null;
+  if (value is int) return value;
+  if (value is num) return value.toInt();
+  return int.tryParse('$value');
+}
+
 double _asDouble(dynamic value, [double fallback = 0]) {
   if (value is double) return value;
   if (value is num) return value.toDouble();
@@ -384,6 +391,8 @@ class FinalSubmissionModel {
   final String status;
   final String submittedAt;
   final String decisionNote;
+  final int? sourceDocumentId;
+  final int? groupDocumentId;
   final AnalysisSummaryModel analysisSummary;
   final List<AnalysisIssueModel> grammarIssues;
   final List<AnalysisIssueModel> plagiarismIssues;
@@ -398,10 +407,14 @@ class FinalSubmissionModel {
     required this.status,
     required this.submittedAt,
     required this.decisionNote,
+    this.sourceDocumentId,
+    this.groupDocumentId,
     required this.analysisSummary,
     required this.grammarIssues,
     required this.plagiarismIssues,
   });
+
+  bool get canPreviewInApp => groupDocumentId != null;
 
   String get statusLabel {
     switch (status.toLowerCase()) {
@@ -428,6 +441,8 @@ class FinalSubmissionModel {
       status: (json['status'] ?? 'pending').toString(),
       submittedAt: (json['submitted_at'] ?? '').toString(),
       decisionNote: (json['decision_note'] ?? '').toString(),
+      sourceDocumentId: _asIntOrNull(json['source_document_id']),
+      groupDocumentId: _asIntOrNull(json['group_document_id']),
       analysisSummary: AnalysisSummaryModel.fromJson(summaryJson),
       grammarIssues: List<Map<String, dynamic>>.from(json['grammar_issues'] ?? const [])
           .map(AnalysisIssueModel.fromJson)

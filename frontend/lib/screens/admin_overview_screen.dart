@@ -145,12 +145,14 @@ class _AdminOverviewScreenState extends State<AdminOverviewScreen> {
           LayoutBuilder(
             builder: (context, constraints) {
               final stacked = constraints.maxWidth < 980;
+              final activeDays =
+                  overview.recentActivity.where((day) => day.count > 0).toList();
               final activity = AdminSectionCard(
                 title: 'Recent Activity',
-                child: overview.recentActivity.isEmpty
+                child: activeDays.isEmpty
                     ? Text('No documents were processed in the last 7 days.', style: TextStyle(color: Colors.white.withOpacity(0.6)))
                     : Column(
-                        children: overview.recentActivity.map((day) {
+                        children: activeDays.map((day) {
                           return Padding(
                             padding: const EdgeInsets.only(bottom: 12),
                             child: Row(

@@ -6,6 +6,7 @@ from datetime import date, datetime, timedelta
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Body, HTTPException, Query
+from fastapi.responses import FileResponse
 
 from database import get_db
 
@@ -32,6 +33,73 @@ def _parse_member_names(raw: Any) -> list[str]:
     except json.JSONDecodeError:
         pass
     return [part.strip() for part in text.split(",") if part.strip()]
+
+
+def _email_from_member_label(label: str) -> str | None:
+    """Extract email from 'Name <email@x.com>' or a bare email string."""
+    import re
+
+    text = (label or "").strip()
+    if not text:
+        return None
+    match = re.search(r"<([^>]+@[^>]+)>", text)
+    if match:
+        return match.group(1).strip().lower()
+    if "@" in text and " " not in text:
+        return text.lower()
+    # trailing email without angle brackets: "Name email@x.com"
+    match = re.search(r"([^\s<>]+@[^\s<>]+)", text)
+    if match:
+        return match.group(1).strip().lower()
+    return None
+
+
+def _get_group_notify_emails(cursor, group_id: int, supervisor_id: int | None = None) -> list[str]:
+    """All group emails that should receive supervisor comment notifications."""
+    emails: list[str] = []
+    seen: set[str] = set()
+
+    def _add(raw: str | None) -> None:
+        email = (raw or "").strip().lower()
+        if email and "@" in email and email not in seen:
+            seen.add(email)
+            emails.append(email)
+
+    cursor.execute(
+        """
+        SELECT student_contact_email, member_names
+        FROM fyp_groups
+        WHERE id = ?
+        """,
+        (group_id,),
+    )
+    row = cursor.fetchone()
+    if row:
+        _add(row["student_contact_email"])
+        for member in _parse_member_names(row["member_names"]):
+            _add(_email_from_member_label(member))
+
+    # Fallback: assignment request leader + members if group fields empty
+    if not emails:
+        leader = _get_group_student_email(cursor, group_id, supervisor_id)
+        _add(leader)
+        cursor.execute(
+            """
+            SELECT member_names, student_leader_email
+            FROM assignment_requests
+            WHERE fyp_group_id = ?
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+            (group_id,),
+        )
+        req = cursor.fetchone()
+        if req:
+            _add(req["student_leader_email"])
+            for member in _parse_member_names(req["member_names"]):
+                _add(_email_from_member_label(member))
+
+    return emails
 
 
 def _parse_date(value: Any) -> date | None:
@@ -762,25 +830,57 @@ def _require_group_document(cursor, *, group_id: int, document_id: int, supervis
     return row
 
 
-def _ensure_document_paragraphs(cursor, document_id: int, document_title: str = "") -> None:
+def _ensure_document_paragraphs(
+    cursor,
+    document_id: int,
+    document_title: str = "",
+    file_path: str | None = None,
+) -> None:
     cursor.execute("SELECT COUNT(*) FROM document_paragraphs WHERE document_id = ?", (document_id,))
     if cursor.fetchone()[0] > 0:
         return
-    samples = [
-        "This section introduces the goals of the submitted work and frames the problem statement.",
-        "Related work is summarized to highlight gaps that the proposed approach intends to fill.",
-        "The methodology describes data collection, tooling, and evaluation criteria used in the study.",
-        "Results are presented with observations that will guide the next revision cycle.",
-        "The conclusion outlines remaining risks and planned improvements before final submission.",
-    ]
-    for order, text in enumerate(samples, start=1):
-        para = f"{document_title}: {text}" if order == 1 and document_title else text
+
+    paragraphs: list[str] = []
+    path = file_path
+    if not path:
+        cursor.execute(
+            "SELECT file_url, source_document_id FROM group_documents WHERE id = ?",
+            (document_id,),
+        )
+        row = cursor.fetchone()
+        if row:
+            path = row["file_url"]
+            if (not path or not str(path).strip()) and row["source_document_id"]:
+                cursor.execute(
+                    "SELECT file_path FROM documents WHERE id = ?",
+                    (row["source_document_id"],),
+                )
+                src = cursor.fetchone()
+                if src:
+                    path = src["file_path"]
+
+    if path:
+        import os
+        from student_routes import _extract_docx_paragraphs
+
+        if os.path.exists(str(path)):
+            paragraphs = _extract_docx_paragraphs(str(path))
+
+    if not paragraphs:
+        paragraphs = [
+            f"{document_title}: Document submitted for supervisor review."
+            if document_title
+            else "Document submitted for supervisor review.",
+            "Download the original file for full layout; use comments on sections below.",
+        ]
+
+    for order, text in enumerate(paragraphs, start=1):
         cursor.execute(
             """
             INSERT INTO document_paragraphs (document_id, sort_order, text)
             VALUES (?, ?, ?)
             """,
-            (document_id, order, para),
+            (document_id, order, text),
         )
 
 
@@ -898,7 +998,7 @@ def add_document_comment(
     user_id: Annotated[int | None, Query()] = None,
     payload: dict[str, Any] = Body(default_factory=dict),
 ):
-    """Add a comment on a paragraph and notify the student group leader."""
+    """Add a comment on a paragraph and notify all group members."""
     supervisor = _require_supervisor(user_id)
     supervisor_id = supervisor["id"]
     comment_text = (payload.get("comment_text") or payload.get("comment") or "").strip()
@@ -935,21 +1035,22 @@ def add_document_comment(
         )
         comment_id = cursor.lastrowid
 
-        student_email = _get_group_student_email(cursor, group_id, supervisor_id)
+        student_emails = _get_group_notify_emails(cursor, group_id, supervisor_id)
         supervisor_name = supervisor.get("name") or "Your supervisor"
         snippet = paragraph["text"][:80] + ("…" if len(paragraph["text"] or "") > 80 else "")
-        _create_notification(
-            cursor,
-            recipient_email=student_email,
-            title="New document comment",
-            message=(
-                f"{supervisor_name} commented on '{doc['title']}': {comment_text} "
-                f"(paragraph: {snippet})"
-            ),
-            notification_type="document_comment",
-            related_type="document_comment",
-            related_id=comment_id,
-        )
+        for student_email in student_emails:
+            _create_notification(
+                cursor,
+                recipient_email=student_email,
+                title="New document comment",
+                message=(
+                    f"{supervisor_name} commented on '{doc['title']}': {comment_text} "
+                    f"(paragraph: {snippet})"
+                ),
+                notification_type="document_comment",
+                related_type="document_comment",
+                related_id=comment_id,
+            )
 
         # Mark document as needing revision when a new unresolved comment is added
         cursor.execute(
@@ -961,10 +1062,14 @@ def add_document_comment(
         paragraphs = _serialize_review_paragraphs(cursor, document_id)
         return {
             "success": True,
-            "message": "Comment added. Student has been notified.",
+            "message": (
+                f"Comment added. Notified {len(student_emails)} group member"
+                f"{'' if len(student_emails) == 1 else 's'}."
+            ),
             "comment_id": comment_id,
             "paragraphs": paragraphs,
-            "notified_email": student_email or "",
+            "notified_email": student_emails[0] if student_emails else "",
+            "notified_emails": student_emails,
         }
     except HTTPException:
         conn.rollback()
@@ -1072,11 +1177,12 @@ def _analysis_summary(report: dict[str, Any]) -> dict[str, Any]:
 def _serialize_final_submission(row, *, include_report: bool = False) -> dict[str, Any]:
     report = _parse_analysis_report(row["analysis_report"] if "analysis_report" in row.keys() else None)
     summary = _analysis_summary(report)
+    keys = set(row.keys()) if hasattr(row, "keys") else set()
     payload = {
         "id": row["id"],
         "group_id": row["group_id"],
-        "group_title": row["group_title"] if "group_title" in row.keys() else "",
-        "project_title": row["project_title"] if "project_title" in row.keys() else "",
+        "group_title": row["group_title"] if "group_title" in keys else "",
+        "project_title": row["project_title"] if "project_title" in keys else "",
         "title": row["title"],
         "filename": row["filename"] or "",
         "status": row["status"],
@@ -1084,6 +1190,8 @@ def _serialize_final_submission(row, *, include_report: bool = False) -> dict[st
         "resolved_at": row["resolved_at"],
         "decision_note": row["decision_note"] or "",
         "student_contact_email": row["student_contact_email"] or "",
+        "source_document_id": row["source_document_id"] if "source_document_id" in keys else None,
+        "group_document_id": row["group_document_id"] if "group_document_id" in keys else None,
         "analysis_summary": summary,
     }
     if include_report:
@@ -1156,6 +1264,125 @@ def get_final_submission(
         conn.close()
 
 
+def _resolve_submission_file_path(cursor, row) -> tuple[str, str]:
+    """Return (absolute_or_relative_path, download_filename) for a submission row."""
+    import os
+
+    keys = set(row.keys()) if hasattr(row, "keys") else set()
+    filename = (row["filename"] or "submission.docx") if "filename" in keys else "submission.docx"
+    path = None
+
+    # Prefer linked group_document.file_url
+    if "group_document_id" in keys and row["group_document_id"]:
+        cursor.execute(
+            "SELECT file_url, filename, source_document_id FROM group_documents WHERE id = ?",
+            (row["group_document_id"],),
+        )
+        gd = cursor.fetchone()
+        if gd:
+            path = gd["file_url"]
+            if gd["filename"]:
+                filename = gd["filename"]
+            if (not path or not os.path.exists(str(path))) and gd["source_document_id"]:
+                cursor.execute(
+                    "SELECT file_path, filename FROM documents WHERE id = ?",
+                    (gd["source_document_id"],),
+                )
+                src = cursor.fetchone()
+                if src:
+                    path = src["file_path"]
+                    if src["filename"]:
+                        filename = src["filename"]
+
+    if (not path or not os.path.exists(str(path))) and "source_document_id" in keys and row["source_document_id"]:
+        sid = row["source_document_id"]
+        working = os.path.join("uploads", "working", f"doc_{sid}_working.docx")
+        if os.path.exists(working):
+            path = working
+        else:
+            cursor.execute(
+                "SELECT file_path, filename FROM documents WHERE id = ?",
+                (sid,),
+            )
+            src = cursor.fetchone()
+            if src:
+                path = src["file_path"]
+                if src["filename"]:
+                    filename = src["filename"]
+
+    if not path or not os.path.exists(str(path)):
+        raise HTTPException(status_code=404, detail="Submitted file not found on server.")
+    return str(path), str(filename)
+
+
+@router.get("/submissions/{submission_id}/download")
+def download_final_submission(
+    submission_id: int,
+    user_id: Annotated[int | None, Query()] = None,
+):
+    """Download the original submitted DOCX/PDF for supervisor review."""
+    supervisor = _require_supervisor(user_id)
+    conn = get_db()
+    cursor = conn.cursor()
+    try:
+        row = _load_submission_row(cursor, submission_id, supervisor["id"])
+        path, filename = _resolve_submission_file_path(cursor, row)
+        return FileResponse(
+            path=path,
+            filename=filename,
+            media_type="application/octet-stream",
+        )
+    finally:
+        conn.close()
+
+
+@router.get("/groups/{group_id}/documents/{document_id}/download")
+def download_group_document(
+    group_id: int,
+    document_id: int,
+    user_id: Annotated[int | None, Query()] = None,
+):
+    """Download a group document file under review."""
+    import os
+
+    supervisor = _require_supervisor(user_id)
+    conn = get_db()
+    cursor = conn.cursor()
+    try:
+        doc = _require_group_document(
+            cursor,
+            group_id=group_id,
+            document_id=document_id,
+            supervisor_id=supervisor["id"],
+        )
+        path = doc["file_url"] if "file_url" in doc.keys() else None
+        filename = doc["filename"] or "document.docx"
+        source_id = doc["source_document_id"] if "source_document_id" in doc.keys() else None
+        if (not path or not os.path.exists(str(path))) and source_id:
+            working = os.path.join("uploads", "working", f"doc_{source_id}_working.docx")
+            if os.path.exists(working):
+                path = working
+            else:
+                cursor.execute(
+                    "SELECT file_path, filename FROM documents WHERE id = ?",
+                    (source_id,),
+                )
+                src = cursor.fetchone()
+                if src:
+                    path = src["file_path"]
+                    if src["filename"]:
+                        filename = src["filename"]
+        if not path or not os.path.exists(str(path)):
+            raise HTTPException(status_code=404, detail="Document file not found on server.")
+        return FileResponse(
+            path=str(path),
+            filename=str(filename),
+            media_type="application/octet-stream",
+        )
+    finally:
+        conn.close()
+
+
 def _decide_submission(
     *,
     submission_id: int,
@@ -1184,29 +1411,42 @@ def _decide_submission(
             (new_status, note or None, resolved_at, submission_id),
         )
 
-        student_email = (row["student_contact_email"] or "").strip() or _get_group_student_email(
-            cursor, row["group_id"], supervisor_id
-        )
-        _create_notification(
-            cursor,
-            recipient_email=student_email,
-            title=notify_title,
-            message=notify_message,
-            notification_type=f"submission_{new_status}",
-            related_type="final_submission",
-            related_id=submission_id,
-        )
-
-        # Keep group document status in sync when a matching pending doc exists
-        if new_status == "approved":
-            cursor.execute(
-                """
-                UPDATE group_documents
-                SET status = 'approved'
-                WHERE group_id = ? AND supervisor_id = ? AND status IN ('pending', 'pending_review', 'revision')
-                """,
-                (row["group_id"], supervisor_id),
+        student_emails = _get_group_notify_emails(cursor, row["group_id"], supervisor_id)
+        if not student_emails:
+            fallback = (row["student_contact_email"] or "").strip() or _get_group_student_email(
+                cursor, row["group_id"], supervisor_id
             )
+            if fallback:
+                student_emails = [fallback]
+
+        for student_email in student_emails:
+            _create_notification(
+                cursor,
+                recipient_email=student_email,
+                title=notify_title,
+                message=notify_message,
+                notification_type=f"submission_{new_status}",
+                related_type="final_submission",
+                related_id=submission_id,
+            )
+
+        group_doc_id = row["group_document_id"] if "group_document_id" in row.keys() else None
+        if new_status == "approved":
+            if group_doc_id:
+                cursor.execute(
+                    "UPDATE group_documents SET status = 'approved' WHERE id = ?",
+                    (group_doc_id,),
+                )
+            else:
+                cursor.execute(
+                    """
+                    UPDATE group_documents
+                    SET status = 'approved'
+                    WHERE group_id = ? AND supervisor_id = ?
+                      AND status IN ('pending', 'pending_review', 'revision')
+                    """,
+                    (row["group_id"], supervisor_id),
+                )
             cursor.execute(
                 """
                 UPDATE group_milestones
@@ -1216,14 +1456,21 @@ def _decide_submission(
                 (resolved_at, row["group_id"]),
             )
         elif new_status == "revision":
-            cursor.execute(
-                """
-                UPDATE group_documents
-                SET status = 'revision'
-                WHERE group_id = ? AND supervisor_id = ? AND status IN ('pending', 'pending_review')
-                """,
-                (row["group_id"], supervisor_id),
-            )
+            if group_doc_id:
+                cursor.execute(
+                    "UPDATE group_documents SET status = 'revision' WHERE id = ?",
+                    (group_doc_id,),
+                )
+            else:
+                cursor.execute(
+                    """
+                    UPDATE group_documents
+                    SET status = 'revision'
+                    WHERE group_id = ? AND supervisor_id = ?
+                      AND status IN ('pending', 'pending_review')
+                    """,
+                    (row["group_id"], supervisor_id),
+                )
 
         conn.commit()
         updated = _load_submission_row(cursor, submission_id, supervisor_id)
@@ -1231,7 +1478,8 @@ def _decide_submission(
             "success": True,
             "message": notify_title,
             "submission": _serialize_final_submission(updated, include_report=True),
-            "notified_email": student_email or "",
+            "notified_email": student_emails[0] if student_emails else "",
+            "notified_emails": student_emails,
         }
     except HTTPException:
         conn.rollback()

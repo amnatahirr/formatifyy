@@ -73,7 +73,6 @@ class AppSidebar extends StatelessWidget {
                 _buildSidebarItem(1, Icons.add_circle_outline, 'New Report'),
                 _buildSidebarItem(2, Icons.folder, 'My Reports'),
                 _buildSidebarItem(3, Icons.people_outline, 'Collaboration'),
-                _buildSidebarItem(4, Icons.auto_awesome, 'AI Tools'),
                 _buildSidebarItem(5, Icons.layers, 'Templates'),
                 _buildSidebarItem(6, Icons.settings, 'Settings'),
               ],

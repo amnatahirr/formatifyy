@@ -7,7 +7,10 @@ import '../../utils/responsive.dart';
 
 /// Student form to request an FYP supervisor (creates assignment_requests row).
 class SupervisorSelectionScreen extends StatefulWidget {
-  const SupervisorSelectionScreen({super.key});
+  /// Called after a request is submitted successfully (e.g. switch to My Supervisor).
+  final VoidCallback? onRequestSubmitted;
+
+  const SupervisorSelectionScreen({super.key, this.onRequestSubmitted});
 
   @override
   State<SupervisorSelectionScreen> createState() =>
@@ -203,6 +206,7 @@ class _SupervisorSelectionScreenState extends State<SupervisorSelectionScreen> {
         }
         _members.clear();
       });
+      widget.onRequestSubmitted?.call();
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(

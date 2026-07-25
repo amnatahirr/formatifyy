@@ -13,6 +13,7 @@ import '../providers/auth_provider.dart';
 import '../providers/document_provider.dart';
 import '../providers/template_provider.dart';
 import '../providers/collaboration_provider.dart';
+import '../providers/fyp_provider.dart';
 import 'new_report_screen.dart';
 import 'analyze_screen.dart';
 import '../widgets/export_dialog.dart';
@@ -94,6 +95,13 @@ class _StudentDashboardState extends State<StudentDashboard> {
         context.read<TemplateProvider>().fetchUserTemplates(auth.userId!);
         context.read<DocumentProvider>().fetchDocuments(auth.userId!);
         context.read<CollaborationProvider>().fetchProjects();
+        final email = (auth.userEmail ?? auth.email ?? '').trim();
+        if (email.isNotEmpty) {
+          context.read<FypProvider>().fetchAssignmentStatus(
+                userId: auth.userId!,
+                email: email,
+              );
+        }
         //Start auto-refresh polling every 30 seconds
         _refreshTimer = Timer.periodic(const Duration(seconds: 10), (_) {
           final a = context.read<AuthProvider>();
@@ -288,19 +296,21 @@ class _StudentDashboardState extends State<StudentDashboard> {
                   'Collaboration',
                 ),
                 _buildSidebarItem(
-                  4,
-                  Icons.auto_awesome,
-                  'AI Tools',
-                ),
-                _buildSidebarItem(
                   5,
                   Icons.layers,
                   'Templates',
                 ),
-                _buildSidebarItem(
-                  6,
-                  Icons.school_outlined,
-                  'Choose Supervisor',
+                Consumer<FypProvider>(
+                  builder: (context, fyp, _) {
+                    if (!fyp.canChooseSupervisor) {
+                      return const SizedBox.shrink();
+                    }
+                    return _buildSidebarItem(
+                      6,
+                      Icons.school_outlined,
+                      'Choose Supervisor',
+                    );
+                  },
                 ),
                 _buildSidebarItem(
                   7,
@@ -634,24 +644,67 @@ class _StudentDashboardState extends State<StudentDashboard> {
           onOpenProject: _openProjectById,
         );
       case 4:
-        return _buildAIToolsPage();
+        // AI Tools tab removed — bounce back to Dashboard.
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          if (_selectedIndex == 4) {
+            setState(() {
+              _selectedIndex = 0;
+              _activeProjectId = null;
+            });
+          }
+        });
+        return _buildDashboardContent();
       case 5:
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          final auth = context.read<AuthProvider>();
+          if (auth.userId != null) {
+            context.read<TemplateProvider>().fetchUserTemplates(auth.userId!);
+          }
+        });
         return _buildTemplatesPage();
       case 6:
-        return const SupervisorSelectionScreen();
-      case 7:
-        return MySupervisorScreen(
-          onChooseSupervisor: () => setState(() {
-            _selectedIndex = 6;
+        // After choosing (pending/accepted), leave this screen permanently.
+        if (context.watch<FypProvider>().hasChosenSupervisor) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted) return;
+            if (_selectedIndex == 6) {
+              setState(() {
+                _selectedIndex = 7;
+                _activeProjectId = null;
+              });
+            }
+          });
+          return MySupervisorScreen(
+            onChooseSupervisor: () => setState(() {
+              _selectedIndex = 6;
+              _activeProjectId = null;
+            }),
+          );
+        }
+        return SupervisorSelectionScreen(
+          onRequestSubmitted: () => setState(() {
+            _selectedIndex = 7;
             _activeProjectId = null;
           }),
         );
+      case 7:
+        return MySupervisorScreen(
+          onChooseSupervisor: context.watch<FypProvider>().canChooseSupervisor
+              ? () => setState(() {
+                    _selectedIndex = 6;
+                    _activeProjectId = null;
+                  })
+              : null,
+        );
       case 8:
         return FypMilestonesScreen(
-          onChooseSupervisor: () => setState(() {
-            _selectedIndex = 6;
-            _activeProjectId = null;
-          }),
+          onChooseSupervisor: context.watch<FypProvider>().canChooseSupervisor
+              ? () => setState(() {
+                    _selectedIndex = 6;
+                    _activeProjectId = null;
+                  })
+              : null,
           onOpenMySupervisor: () => setState(() {
             _selectedIndex = 7;
             _activeProjectId = null;
@@ -661,10 +714,12 @@ class _StudentDashboardState extends State<StudentDashboard> {
         return const StudentMeetingNotesScreen();
       case 10:
         return PlagiarismReportScreen(
-          onChooseSupervisor: () => setState(() {
-            _selectedIndex = 6;
-            _activeProjectId = null;
-          }),
+          onChooseSupervisor: context.watch<FypProvider>().canChooseSupervisor
+              ? () => setState(() {
+                    _selectedIndex = 6;
+                    _activeProjectId = null;
+                  })
+              : null,
           onOpenMySupervisor: () => setState(() {
             _selectedIndex = 7;
             _activeProjectId = null;
@@ -676,10 +731,12 @@ class _StudentDashboardState extends State<StudentDashboard> {
         );
       case 11:
         return StatusTrackerScreen(
-          onChooseSupervisor: () => setState(() {
-            _selectedIndex = 6;
-            _activeProjectId = null;
-          }),
+          onChooseSupervisor: context.watch<FypProvider>().canChooseSupervisor
+              ? () => setState(() {
+                    _selectedIndex = 6;
+                    _activeProjectId = null;
+                  })
+              : null,
           onOpenMySupervisor: () => setState(() {
             _selectedIndex = 7;
             _activeProjectId = null;
@@ -1674,36 +1731,28 @@ class _StudentDashboardState extends State<StudentDashboard> {
     final auth = context.read<AuthProvider>();
     return Consumer<DocumentProvider>(
       builder: (context, docProvider, _) {
-        // Apply search filter
+        // Apply search
         List<Map<String, dynamic>> filteredDocs = docProvider.documents
             .where((d) => (d['filename'] ?? '')
                 .toLowerCase()
                 .contains(_searchQuery.toLowerCase()))
             .toList();
-        
-        // Apply status filter
-        if (_selectedFilter == 'completed') {
-          filteredDocs = filteredDocs.where((d) => d['status'] == 'completed').toList();
-        } else if (_selectedFilter == 'in_progress') {
-          filteredDocs = filteredDocs.where((d) => d['status'] == 'processing').toList();
-        } else if (_selectedFilter == 'draft') {
-          filteredDocs = filteredDocs.where((d) => d['status'] == 'draft').toList();
-        }
-        
-        // Apply sorting
-        if (_sortBy == 'recent') {
+
+        // Sort by recent or name
+        if (_sortBy == 'name') {
+          filteredDocs.sort((a, b) =>
+              (a['filename'] ?? '').compareTo(b['filename'] ?? ''));
+        } else {
           filteredDocs.sort((a, b) {
             final dateA = DateTime.tryParse(a['created_at'] ?? '') ?? DateTime.now();
             final dateB = DateTime.tryParse(b['created_at'] ?? '') ?? DateTime.now();
             return dateB.compareTo(dateA);
           });
-        } else if (_sortBy == 'name') {
-          filteredDocs.sort((a, b) => 
-              (a['filename'] ?? '').compareTo(b['filename'] ?? ''));
         }
         
         // Calculate pagination
         int totalPages = (filteredDocs.length / _itemsPerPage).ceil();
+        if (totalPages < 1) totalPages = 1;
         int startIndex = (_currentPage - 1) * _itemsPerPage;
         int endIndex = startIndex + _itemsPerPage;
         List<Map<String, dynamic>> paginatedDocs = filteredDocs
@@ -1726,7 +1775,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Search, Filter, Sort Bar
+              // Search + Sort only
               if (compact) ...[
                 Container(
                   decoration: BoxDecoration(
@@ -1759,44 +1808,19 @@ class _StudentDashboardState extends State<StudentDashboard> {
                   ),
                 ),
                 const SizedBox(height: 10),
-                Row(
-                  children: [
-                    Expanded(
-                      child: _buildReportsMenuButton(
-                        icon: Icons.filter_list,
-                        label: 'Filter',
-                        items: const [
-                          PopupMenuItem(value: 'all', child: Text('All Reports')),
-                          PopupMenuItem(value: 'completed', child: Text('Completed')),
-                          PopupMenuItem(value: 'in_progress', child: Text('In Progress')),
-                          PopupMenuItem(value: 'draft', child: Text('Drafts')),
-                        ],
-                        onSelected: (value) {
-                          setState(() {
-                            _selectedFilter = value;
-                            _currentPage = 1;
-                          });
-                        },
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: _buildReportsMenuButton(
-                        icon: Icons.swap_vert,
-                        label: 'Sort',
-                        items: const [
-                          PopupMenuItem(value: 'recent', child: Text('Most Recent')),
-                          PopupMenuItem(value: 'name', child: Text('Name A-Z')),
-                        ],
-                        onSelected: (value) {
-                          setState(() {
-                            _sortBy = value;
-                            _currentPage = 1;
-                          });
-                        },
-                      ),
-                    ),
+                _buildReportsMenuButton(
+                  icon: Icons.swap_vert,
+                  label: _sortBy == 'name' ? 'Name A-Z' : 'Most Recent',
+                  items: const [
+                    PopupMenuItem(value: 'recent', child: Text('Most Recent')),
+                    PopupMenuItem(value: 'name', child: Text('Name A-Z')),
                   ],
+                  onSelected: (value) {
+                    setState(() {
+                      _sortBy = value;
+                      _currentPage = 1;
+                    });
+                  },
                 ),
               ] else
               Row(
@@ -1849,44 +1873,6 @@ class _StudentDashboardState extends State<StudentDashboard> {
                     child: PopupMenuButton<String>(
                       onSelected: (value) {
                         setState(() {
-                          _selectedFilter = value;
-                          _currentPage = 1;
-                        });
-                      },
-                      itemBuilder: (context) => [
-                        const PopupMenuItem(value: 'all', child: Text('All Reports')),
-                        const PopupMenuItem(value: 'completed', child: Text('Completed')),
-                        const PopupMenuItem(value: 'in_progress', child: Text('In Progress')),
-                        const PopupMenuItem(value: 'draft', child: Text('Drafts')),
-                      ],
-                      child: Row(
-                        children: [
-                          Icon(Icons.filter_list, color: Colors.white.withOpacity(0.6), size: 18),
-                          const SizedBox(width: 8),
-                          Text(
-                            'Filter',
-                            style: TextStyle(
-                              color: Colors.white.withOpacity(0.7),
-                              fontSize: 13,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Container(
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF161B22),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(
-                        color: Colors.white.withOpacity(0.1),
-                      ),
-                    ),
-                    padding: const EdgeInsets.symmetric(horizontal: 12),
-                    child: PopupMenuButton<String>(
-                      onSelected: (value) {
-                        setState(() {
                           _sortBy = value;
                           _currentPage = 1;
                         });
@@ -1900,7 +1886,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
                           Icon(Icons.swap_vert, color: Colors.white.withOpacity(0.6), size: 18),
                           const SizedBox(width: 8),
                           Text(
-                            'Sort',
+                            _sortBy == 'name' ? 'Name A-Z' : 'Most Recent',
                             style: TextStyle(
                               color: Colors.white.withOpacity(0.7),
                               fontSize: 13,
@@ -1912,20 +1898,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
                   ),
                 ],
               ),
-              const SizedBox(height: 20),
-              // Tabs
-              SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: Row(
-                  children: [
-                    _buildTabButton('All Reports', 'all'),
-                    _buildTabButton('Completed', 'completed'),
-                    _buildTabButton('In Progress', 'in_progress'),
-                    _buildTabButton('Drafts', 'draft'),
-                  ],
-                ),
-              ),
-              SizedBox(height: compact ? 20 : 32),
+              SizedBox(height: compact ? 20 : 28),
               // Grid / list of Reports
               if (docProvider.isLoading)
                 const Center(child: CircularProgressIndicator())
@@ -2072,14 +2045,13 @@ class _StudentDashboardState extends State<StudentDashboard> {
                                   Row(
                                     children: [
                                       Expanded(
-                                        flex: 2,
                                         child: ElevatedButton.icon(
-                                          onPressed: () => _openAnalyzeScreen(doc),
-                                          icon: const Icon(Icons.analytics_outlined, size: 14),
+                                          onPressed: () => _sendReportToSupervisor(doc),
+                                          icon: const Icon(Icons.send_rounded, size: 14),
                                           label: const Text(
-                                            'Analyze',
+                                            'Send to Supervisor',
                                             style: TextStyle(
-                                              fontSize: 12,
+                                              fontSize: 11,
                                               fontWeight: FontWeight.w600,
                                             ),
                                           ),
@@ -2095,10 +2067,16 @@ class _StudentDashboardState extends State<StudentDashboard> {
                                       ),
                                       const SizedBox(width: 6),
                                       Expanded(
-                                        child: OutlinedButton(
-                                          onPressed: () {
-                                            _showEditDialog(doc, auth.userId!);
-                                          },
+                                        child: OutlinedButton.icon(
+                                          onPressed: () => _handleDownload(doc),
+                                          icon: const Icon(Icons.download, size: 14),
+                                          label: const Text(
+                                            'Download',
+                                            style: TextStyle(
+                                              fontSize: 11,
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                          ),
                                           style: OutlinedButton.styleFrom(
                                             foregroundColor: const Color(0xFF3B82F6),
                                             side: const BorderSide(color: Color(0xFF3B82F6)),
@@ -2107,27 +2085,6 @@ class _StudentDashboardState extends State<StudentDashboard> {
                                               borderRadius: BorderRadius.circular(6),
                                             ),
                                           ),
-                                          child: const Text(
-                                            'Edit',
-                                            style: TextStyle(
-                                              fontSize: 11,
-                                              fontWeight: FontWeight.w600,
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                      const SizedBox(width: 4),
-                                      IconButton(
-                                        onPressed: () {
-                                          _handleDownload(doc);
-                                        },
-                                        icon: const Icon(Icons.download, size: 16),
-                                        tooltip: 'Download',
-                                        color: Colors.white.withOpacity(0.6),
-                                        padding: EdgeInsets.zero,
-                                        constraints: const BoxConstraints(
-                                          minWidth: 24,
-                                          minHeight: 24,
                                         ),
                                       ),
                                       const SizedBox(width: 4),
@@ -2137,10 +2094,8 @@ class _StudentDashboardState extends State<StudentDashboard> {
                                             _openAnalyzeScreen(doc);
                                           } else if (value == 'preview') {
                                             _showPreview(doc);
-                                          } else if (value == 'download') {
-                                            _handleDownload(doc);
-                                          } else if (value == 'share') {
-                                            _handleShare(doc);
+                                          } else if (value == 'edit') {
+                                            _showEditDialog(doc, auth.userId!);
                                           } else if (value == 'delete') {
                                             _handleDelete(doc);
                                           }
@@ -2167,12 +2122,12 @@ class _StudentDashboardState extends State<StudentDashboard> {
                                             ),
                                           ),
                                           PopupMenuItem(
-                                            value: 'download',
+                                            value: 'edit',
                                             child: Row(
                                               children: [
-                                                Icon(Icons.download, size: 16),
+                                                Icon(Icons.edit_outlined, size: 16),
                                                 SizedBox(width: 8),
-                                                Text('Download'),
+                                                Text('Edit'),
                                               ],
                                             ),
                                           ),
@@ -2304,6 +2259,121 @@ class _StudentDashboardState extends State<StudentDashboard> {
     );
   }
 
+  Future<void> _sendReportToSupervisor(Map<String, dynamic> doc) async {
+    final auth = context.read<AuthProvider>();
+    final fyp = context.read<FypProvider>();
+    final docs = context.read<DocumentProvider>();
+
+    final userId = auth.userId;
+    final email = (auth.userEmail ?? auth.email ?? '').trim();
+    if (userId == null || email.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please sign in again to send'),
+          backgroundColor: Color(0xFFEF4444),
+        ),
+      );
+      return;
+    }
+
+    var groupId = fyp.fypGroupId;
+    if (groupId == null) {
+      await fyp.fetchAssignmentStatus(userId: userId, email: email);
+      groupId = fyp.fypGroupId;
+    }
+    if (groupId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'No accepted supervisor yet. Choose a supervisor and wait for acceptance first.',
+          ),
+          backgroundColor: Color(0xFFEF4444),
+        ),
+      );
+      return;
+    }
+
+    final docId = doc['id'];
+    if (docId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Invalid document'),
+          backgroundColor: Color(0xFFEF4444),
+        ),
+      );
+      return;
+    }
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF161B22),
+        title: const Text(
+          'Send to Supervisor?',
+          style: TextStyle(color: Colors.white),
+        ),
+        content: Text(
+          'Send "${doc['filename'] ?? 'this report'}" for supervisor review?',
+          style: TextStyle(color: Colors.white.withOpacity(0.75)),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF10B981),
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Send'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(
+        child: CircularProgressIndicator(color: Color(0xFF10B981)),
+      ),
+    );
+
+    final result = await docs.submitFinalSubmission(
+      userId: userId,
+      groupId: groupId,
+      title: (doc['filename'] ?? 'Report').toString(),
+      filename: (doc['filename'] ?? 'document.docx').toString(),
+      studentContactEmail: email,
+      sourceDocumentId: docId is int ? docId : int.tryParse(docId.toString()),
+      analysisReport: docs.analysisReportFor(
+        docId is int ? docId : int.tryParse(docId.toString()) ?? -1,
+      ),
+    );
+
+    if (!mounted) return;
+    Navigator.of(context, rootNavigator: true).pop();
+
+    if (result != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Sent to supervisor for review'),
+          backgroundColor: Color(0xFF10B981),
+        ),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(docs.errorMessage ?? 'Failed to send'),
+          backgroundColor: const Color(0xFFEF4444),
+        ),
+      );
+    }
+  }
+
   Widget _buildReportsMenuButton({
     required IconData icon,
     required String label,
@@ -2423,16 +2493,16 @@ class _StudentDashboardState extends State<StudentDashboard> {
           const SizedBox(height: 12),
           SizedBox(
             width: double.infinity,
-            height: 40,
+            height: 42,
             child: ElevatedButton.icon(
-              onPressed: () => _handleDownload(doc),
-              icon: const Icon(Icons.download_rounded, size: 18),
+              onPressed: () => _sendReportToSupervisor(doc),
+              icon: const Icon(Icons.send_rounded, size: 16),
               label: const Text(
-                'Download',
+                'Send to Supervisor',
                 style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
               ),
               style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF3B82F6),
+                backgroundColor: const Color(0xFF10B981),
                 foregroundColor: Colors.white,
                 elevation: 0,
                 shape: RoundedRectangleBorder(
@@ -2441,40 +2511,27 @@ class _StudentDashboardState extends State<StudentDashboard> {
               ),
             ),
           ),
+          const SizedBox(height: 8),
+          SizedBox(
+            width: double.infinity,
+            height: 40,
+            child: OutlinedButton.icon(
+              onPressed: () => _handleDownload(doc),
+              icon: const Icon(Icons.download_rounded, size: 18),
+              label: const Text(
+                'Download',
+                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+              ),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: const Color(0xFF3B82F6),
+                side: const BorderSide(color: Color(0xFF3B82F6)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              ),
+            ),
+          ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildTabButton(String label, String value) {
-    final isSelected = _selectedFilter == value;
-    return GestureDetector(
-      onTap: () {
-        setState(() {
-          _selectedFilter = value;
-          _currentPage = 1;
-        });
-      },
-      child: Container(
-        margin: const EdgeInsets.only(right: 12),
-        decoration: BoxDecoration(
-          color: isSelected ? const Color(0xFF3B82F6) : Colors.transparent,
-          borderRadius: BorderRadius.circular(6),
-          border: Border.all(
-            color: isSelected
-                ? const Color(0xFF3B82F6)
-                : Colors.white.withOpacity(0.1),
-          ),
-        ),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        child: Text(
-          label,
-          style: TextStyle(
-            fontSize: 13,
-            fontWeight: FontWeight.w500,
-            color: isSelected ? Colors.white : Colors.white.withOpacity(0.7),
-          ),
-        ),
       ),
     );
   }
@@ -2951,51 +3008,6 @@ class _StudentDashboardState extends State<StudentDashboard> {
     );
   }
 
-  Widget _buildAIToolsPage() {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(32),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          GridView.count(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            crossAxisCount: 2,
-            crossAxisSpacing: 16,
-            mainAxisSpacing: 16,
-            childAspectRatio: 1.2,
-            children: [
-              _buildAIToolCard(
-                'Auto Format',
-                'Automatically format your report according to academic standards',
-                Icons.auto_awesome,
-                const Color(0xFF3B82F6),
-              ),
-              _buildAIToolCard(
-                'Citation Helper',
-                'Generate and format citations in APA, MLA, or Chicago style',
-                Icons.format_quote,
-                const Color(0xFF8B5CF6),
-              ),
-              _buildAIToolCard(
-                'Grammar Check',
-                'AI-powered grammar and style suggestions for academic writing',
-                Icons.check_circle,
-                const Color(0xFF10B981),
-              ),
-              _buildAIToolCard(
-                'Plagiarism Detector',
-                'Check your content against millions of sources',
-                Icons.search,
-                const Color(0xFFD97706),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildTemplatesPage() {
     final templateColors = [
       const Color(0xFF3B82F6), // Blue
@@ -3229,28 +3241,65 @@ class _StudentDashboardState extends State<StudentDashboard> {
                 ),
               const SizedBox(height: 48),
 
-              // Popular Templates section
+              // Templates from database only
               const Text(
-                'Popular Templates',
+                'Available Templates',
                 style: TextStyle(
                   fontSize: 20,
                   fontWeight: FontWeight.w700,
                   color: Colors.white,
                 ),
               ),
+              const SizedBox(height: 8),
+              Text(
+                'Loaded from your university database',
+                style: TextStyle(
+                  fontSize: 13,
+                  color: Colors.white.withOpacity(0.5),
+                ),
+              ),
               const SizedBox(height: 20),
               if (templateProvider.isLoading)
                 const Center(child: CircularProgressIndicator())
+              else if (templateProvider.errorMessage != null)
+                Center(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 48),
+                    child: Column(
+                      children: [
+                        Text(
+                          templateProvider.errorMessage!,
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: Colors.white.withOpacity(0.6),
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: 12),
+                        TextButton(
+                          onPressed: () {
+                            final userId = context.read<AuthProvider>().userId;
+                            if (userId != null) {
+                              templateProvider.fetchUserTemplates(userId);
+                            }
+                          },
+                          child: const Text('Retry'),
+                        ),
+                      ],
+                    ),
+                  ),
+                )
               else if (templateProvider.templates.isEmpty)
                 Center(
                   child: Padding(
                     padding: const EdgeInsets.symmetric(vertical: 48),
                     child: Text(
-                      'No templates available',
+                      'No templates yet. Ask your admin to add templates in Template Manager.',
                       style: TextStyle(
                         fontSize: 14,
                         color: Colors.white.withOpacity(0.5),
                       ),
+                      textAlign: TextAlign.center,
                     ),
                   ),
                 )
@@ -3258,45 +3307,19 @@ class _StudentDashboardState extends State<StudentDashboard> {
                 GridView.builder(
                   shrinkWrap: true,
                   physics: const NeverScrollableScrollPhysics(),
-                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 3,
+                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: isCompact(context) ? 1 : 3,
                     crossAxisSpacing: 20,
                     mainAxisSpacing: 20,
+                    childAspectRatio: isCompact(context) ? 1.35 : 0.85,
                   ),
-                  itemCount: templateProvider.templates.length < 3 ? templateProvider.templates.length : 3,
+                  itemCount: templateProvider.templates.length,
                   itemBuilder: (context, index) {
                     final template = templateProvider.templates[index];
                     final color = templateColors[index % templateColors.length];
-                    return _buildTemplateCardNew(template, color, index == 0);
+                    return _buildTemplateCardNew(template, color);
                   },
                 ),
-              const SizedBox(height: 48),
-
-              // All Templates section
-              const Text(
-                'All Templates',
-                style: TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w700,
-                  color: Colors.white,
-                ),
-              ),
-              const SizedBox(height: 20),
-              GridView.builder(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 3,
-                  crossAxisSpacing: 20,
-                  mainAxisSpacing: 20,
-                ),
-                itemCount: templateProvider.templates.length,
-                itemBuilder: (context, index) {
-                  final template = templateProvider.templates[index];
-                  final color = templateColors[index % templateColors.length];
-                  return _buildTemplateCardNew(template, color, false);
-                },
-              ),
               const SizedBox(height: 48),
 
               // Request custom template section
@@ -3476,83 +3499,37 @@ class _StudentDashboardState extends State<StudentDashboard> {
     );
   }
 
-  Widget _buildTemplateCardNew(Map<String, dynamic> template, Color cardColor, bool isPopular) {
-    final templateNames = {
-      'mit_engineering': 'MIT Engineering',
-      'stanford_cs': 'Stanford CS',
-      'harvard_business': 'Harvard Business',
-      'oxford_sciences': 'Oxford Sciences',
-      'cambridge_arts': 'Cambridge Arts',
-      'generic': 'Generic Template',
-      'berkeley_engineering': 'UC Berkeley Engineering',
-      'yale_law': 'Yale Law',
-      'imperial_medicine': 'Imperial Medicine',
-    };
+  Widget _buildTemplateCardNew(Map<String, dynamic> template, Color cardColor) {
+    final displayName = (template['name'] ?? 'Template').toString();
+    final description = (template['description'] ?? '').toString().trim();
+    final sections = List<dynamic>.from(template['required_sections'] ?? const []);
+    final rules = Map<String, dynamic>.from(
+      (template['formatting_rules'] is Map)
+          ? Map<String, dynamic>.from(template['formatting_rules'] as Map)
+          : const {},
+    );
 
-    final templateDescriptions = {
-      'mit_engineering': 'Standard format for engineering FYP reports with IEEE citation style',
-      'stanford_cs': 'CS department template with ACM citation format and code blocks',
-      'harvard_business': 'MBA thesis format with Harvard citation and executive summary',
-      'oxford_sciences': 'Natural sciences format with APA citation and lab report structure',
-      'cambridge_arts': 'Humanities template with MLA citation and footnote support',
-      'generic': 'Universal format suitable for most academic institutions',
-      'berkeley_engineering': 'Engineering thesis format with technical documentation style',
-      'yale_law': 'Legal research format with Bluebook citation style',
-      'imperial_medicine': 'Medical research format with Vancouver citation style',
-    };
-
-    final templateDetails = {
-      'mit_engineering': [
-        'IEEE Citation Style',
-        '1-inch margins, Times New Roman 12pt',
-        'Double-spaced numbered sections',
-      ],
-      'stanford_cs': [
-        'ACM Citation Style',
-        'Code syntax highlighting support',
-        '1.5 spacing, Helvetica 11pt',
-      ],
-      'harvard_business': [
-        'Harvard Citation Style',
-        'Executive summary template',
-        '1.5 spacing, Calibri 11pt',
-      ],
-      'oxford_sciences': [
-        'APA Citation Style',
-        'Lab report sections included',
-        'Single-spaced with formatted equations',
-      ],
-      'cambridge_arts': [
-        'MLA Citation Style',
-        'Footnotes and endnote support',
-        'Customizable formatting',
-      ],
-      'generic': [
-        'Flexible citation styles',
-        'Customizable formatting',
-        'Works for most institutions',
-      ],
-      'berkeley_engineering': [
-        'IEEE Citation Style',
-        'Technical diagram support',
-        'Technical documentation structure',
-      ],
-      'yale_law': [
-        'Bluebook Citation Style',
-        'Legal document structure',
-        'Legal formatting conventions',
-      ],
-      'imperial_medicine': [
-        'Vancouver Citation Style',
-        'Clinical trial structure',
-        'Medical formatting standards',
-      ],
-    };
-
-    final templateKey = template['name']?.toLowerCase().replaceAll(' ', '_') ?? 'generic';
-    final displayName = templateNames[templateKey] ?? template['name'] ?? 'Template';
-    final description = templateDescriptions[templateKey] ?? 'Academic report template';
-    final details = templateDetails[templateKey] ?? ['Standard formatting', 'Citation support'];
+    final details = <String>[];
+    if (sections.isNotEmpty) {
+      details.add('${sections.length} required section${sections.length == 1 ? '' : 's'}');
+    }
+    final bodyFont = (rules['body_font'] ?? '').toString().trim();
+    final bodySize = rules['body_size'];
+    if (bodyFont.isNotEmpty || bodySize != null) {
+      details.add(
+        [
+          if (bodyFont.isNotEmpty) bodyFont,
+          if (bodySize != null) '${bodySize}pt',
+        ].join(' · '),
+      );
+    }
+    final pageSize = (rules['page_size'] ?? '').toString().trim();
+    if (pageSize.isNotEmpty) {
+      details.add('Page size: $pageSize');
+    }
+    if (details.isEmpty) {
+      details.add('University formatting template');
+    }
 
     return Container(
       decoration: BoxDecoration(
@@ -3563,71 +3540,43 @@ class _StudentDashboardState extends State<StudentDashboard> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Colored header
           Container(
             width: double.infinity,
-            height: 140,
+            height: 120,
             decoration: BoxDecoration(
               color: cardColor,
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
               gradient: LinearGradient(
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
                 colors: [cardColor, cardColor.withOpacity(0.8)],
               ),
             ),
-            child: Stack(
-              children: [
-                // Template title in header
-                Padding(
-                  padding: const EdgeInsets.all(20),
-                  child: Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text(
-                      displayName,
-                      style: const TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.white,
-                      ),
-                    ),
-                  ),
+            padding: const EdgeInsets.all(20),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                displayName,
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.white,
                 ),
-                // Status badge
-                if (isPopular)
-                  Positioned(
-                    top: 12,
-                    right: 12,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.2),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: Colors.white.withOpacity(0.4)),
-                      ),
-                      child: const Text(
-                        'Popular',
-                        style: TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.white,
-                        ),
-                      ),
-                    ),
-                  ),
-              ],
+              ),
             ),
           ),
-
-          // Content section
           Expanded(
             child: Padding(
               padding: const EdgeInsets.all(16),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Title
                   Text(
-                    '$displayName Template',
+                    displayName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
@@ -3635,10 +3584,10 @@ class _StudentDashboardState extends State<StudentDashboard> {
                     ),
                   ),
                   const SizedBox(height: 6),
-
-                  // Description
                   Text(
-                    description,
+                    description.isEmpty
+                        ? 'No description provided'
+                        : description,
                     style: TextStyle(
                       fontSize: 12,
                       color: Colors.white.withOpacity(0.6),
@@ -3647,37 +3596,34 @@ class _StudentDashboardState extends State<StudentDashboard> {
                     overflow: TextOverflow.ellipsis,
                   ),
                   const SizedBox(height: 12),
-
-                  // Details list
-                  ...details.map((detail) => Padding(
-                    padding: const EdgeInsets.only(bottom: 6),
-                    child: Row(
-                      children: [
-                        Text(
-                          '• ',
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: Colors.white.withOpacity(0.5),
-                          ),
-                        ),
-                        Expanded(
-                          child: Text(
-                            detail,
+                  ...details.take(3).map(
+                    (detail) => Padding(
+                      padding: const EdgeInsets.only(bottom: 6),
+                      child: Row(
+                        children: [
+                          Text(
+                            '• ',
                             style: TextStyle(
                               fontSize: 11,
                               color: Colors.white.withOpacity(0.5),
                             ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
                           ),
-                        ),
-                      ],
+                          Expanded(
+                            child: Text(
+                              detail,
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: Colors.white.withOpacity(0.5),
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                  )).toList(),
-
+                  ),
                   const Spacer(),
-
-                  // Action buttons
                   Row(
                     children: [
                       Expanded(
@@ -3705,10 +3651,9 @@ class _StudentDashboardState extends State<StudentDashboard> {
                           onPressed: () {
                             setState(() {
                               _selectedTemplate = template;
-                              _selectedIndex = 1; // Switch to New Report tab
+                              _selectedIndex = 1;
                               _activeProjectId = null;
                             });
-                            Navigator.pop(context);
                           },
                           style: ElevatedButton.styleFrom(
                             backgroundColor: Colors.white.withOpacity(0.1),
@@ -3717,7 +3662,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
                             ),
                           ),
                           child: const Text(
-                            'Select Template',
+                            'Select',
                             style: TextStyle(
                               fontSize: 11,
                               fontWeight: FontWeight.w600,

@@ -49,6 +49,7 @@ class TemplateProvider extends ChangeNotifier {
             (template) => {
               'id': template['id'],
               'name': template['name'],
+              'description': template['description'] ?? '',
               'required_sections': template['required_sections'] ?? [],
               'formatting_rules': template['formatting_rules'] ?? {},
               'university_id': template['university_id'],
@@ -94,6 +95,7 @@ class TemplateProvider extends ChangeNotifier {
             (template) => {
               'id': template['id'],
               'name': template['name'],
+              'description': template['description'] ?? '',
               'required_sections': template['required_sections'] ?? [],
               'formatting_rules': template['formatting_rules'] ?? {},
               'university_id': template['university_id'],

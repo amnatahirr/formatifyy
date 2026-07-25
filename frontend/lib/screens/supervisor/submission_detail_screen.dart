@@ -5,6 +5,7 @@ import '../../models/supervisor_models.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/supervisor_api_service.dart';
 import '../../widgets/admin/admin_ui.dart';
+import 'document_review_screen.dart';
 
 class SubmissionDetailScreen extends StatefulWidget {
   final int submissionId;
@@ -26,6 +27,7 @@ class _SubmissionDetailScreenState extends State<SubmissionDetailScreen> {
   String? _error;
   bool _loading = true;
   bool _busy = false;
+  bool _downloading = false;
 
   @override
   void initState() {
@@ -164,6 +166,48 @@ class _SubmissionDetailScreenState extends State<SubmissionDetailScreen> {
     }
   }
 
+  Future<void> _downloadFile() async {
+    final item = _submission;
+    final userId = context.read<AuthProvider>().userId;
+    if (item == null || userId == null) return;
+    setState(() => _downloading = true);
+    try {
+      final path = await _api.downloadSubmissionFile(
+        userId: userId,
+        submissionId: item.id,
+        preferredFilename: item.filename.isNotEmpty ? item.filename : null,
+      );
+      if (!mounted) return;
+      showAdminSnackBar(context, 'Saved to $path');
+    } catch (e) {
+      if (mounted) showAdminSnackBar(context, e.toString(), isError: true);
+    } finally {
+      if (mounted) setState(() => _downloading = false);
+    }
+  }
+
+  Future<void> _openPreviewAndComment() async {
+    final item = _submission;
+    final groupDocId = item?.groupDocumentId;
+    if (item == null || groupDocId == null) {
+      showAdminSnackBar(
+        context,
+        'In-app preview is not available for this submission yet.',
+        isError: true,
+      );
+      return;
+    }
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => DocumentReviewScreen(
+          groupId: item.groupId,
+          documentId: groupDocId,
+          documentTitle: item.title,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final title = _submission?.title.isNotEmpty == true
@@ -254,6 +298,51 @@ class _SubmissionDetailScreenState extends State<SubmissionDetailScreen> {
                 if (item.submittedAt.isNotEmpty) ...[
                   const SizedBox(height: 8),
                   Text('Submitted: ${item.submittedAt}', style: TextStyle(color: Colors.white.withOpacity(0.45), fontSize: 12)),
+                ],
+                const SizedBox(height: 14),
+                Text(
+                  'Download the file, or preview paragraphs in-app and add comments for the student to resolve.',
+                  style: TextStyle(color: Colors.white.withOpacity(0.55), fontSize: 12, height: 1.4),
+                ),
+                const SizedBox(height: 14),
+                Wrap(
+                  spacing: 10,
+                  runSpacing: 10,
+                  children: [
+                    ElevatedButton.icon(
+                      onPressed: (_busy || _downloading) ? null : _downloadFile,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AdminColors.primary,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                      ),
+                      icon: _downloading
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                            )
+                          : const Icon(Icons.download_rounded, size: 18),
+                      label: Text(_downloading ? 'Downloading…' : 'Download'),
+                    ),
+                    OutlinedButton.icon(
+                      onPressed: (_busy || !item.canPreviewInApp) ? null : _openPreviewAndComment,
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.white,
+                        side: BorderSide(color: Colors.white.withOpacity(0.35)),
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                      ),
+                      icon: const Icon(Icons.rate_review_outlined, size: 18),
+                      label: const Text('Preview & Comment'),
+                    ),
+                  ],
+                ),
+                if (!item.canPreviewInApp) ...[
+                  const SizedBox(height: 10),
+                  Text(
+                    'Preview & comments need a linked review document. Ask the student to re-submit if this is an older submission.',
+                    style: TextStyle(color: AdminColors.warning.withOpacity(0.9), fontSize: 12, height: 1.35),
+                  ),
                 ],
               ],
             ),

@@ -2,7 +2,7 @@
 database.py — SQLite database utility layer for Formatify.
 
 Defines connections, table initializations, and handles auto-seeding of the
-default university, admin/student user, and 3 predefined templates.
+default university, admin/student user (templates are admin-created only).
 """
 
 from __future__ import annotations
@@ -327,6 +327,10 @@ def init_db():
         cursor.execute(
             "ALTER TABLE group_documents ADD COLUMN grammar_report_ref TEXT"
         )
+    if "source_document_id" not in group_doc_columns:
+        cursor.execute(
+            "ALTER TABLE group_documents ADD COLUMN source_document_id INTEGER"
+        )
 
     # 14. Replies from group members to the supervisor
     cursor.execute("""
@@ -405,6 +409,7 @@ def init_db():
             status TEXT DEFAULT 'pending',
             analysis_report TEXT,
             source_document_id INTEGER,
+            group_document_id INTEGER,
             student_contact_email TEXT,
             submitted_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             resolved_at DATETIME,
@@ -414,6 +419,13 @@ def init_db():
             FOREIGN KEY (source_document_id) REFERENCES documents(id)
         )
     """)
+
+    cursor.execute("PRAGMA table_info(final_submissions)")
+    final_sub_columns = {row[1] for row in cursor.fetchall()}
+    if "group_document_id" not in final_sub_columns:
+        cursor.execute(
+            "ALTER TABLE final_submissions ADD COLUMN group_document_id INTEGER"
+        )
 
     # 19. Supervisor meeting notes per FYP group (visible read-only to students)
     cursor.execute("""
@@ -480,160 +492,17 @@ def init_db():
         )
         conn.commit()
 
-    # C. Seed default templates
-    cursor.execute("SELECT COUNT(*) FROM templates")
-    if cursor.fetchone()[0] == 0:
-        # 1. Academic Research Paper Rules
-        academic_rules = {
-            "heading1_font": "Times New Roman",
-            "heading1_size": 16,
-            "heading1_bold": True,
-            "heading1_italic": False,
-            "heading1_line_spacing": 1.5,
-            "heading1_space_before": 24.0,
-            "heading1_space_after": 12.0,
-            "heading2_font": "Times New Roman",
-            "heading2_size": 14,
-            "heading2_bold": True,
-            "heading2_italic": False,
-            "heading2_line_spacing": 1.5,
-            "heading2_space_before": 18.0,
-            "heading2_space_after": 8.0,
-            "heading3_font": "Times New Roman",
-            "heading3_size": 12,
-            "heading3_bold": True,
-            "heading3_italic": True,
-            "heading3_line_spacing": 1.5,
-            "heading3_space_before": 12.0,
-            "heading3_space_after": 6.0,
-            "body_font": "Times New Roman",
-            "body_size": 12,
-            "body_line_spacing": 2.0,
-            "body_space_before": 0.0,
-            "body_space_after": 0.0,
-            "margin_top": 1.0,
-            "margin_bottom": 1.0,
-            "margin_left": 1.0,
-            "margin_right": 1.0,
-            "page_size": "A4",
-            "line_number_enabled": False,
-            "first_line_indent": 0.5
-        }
-        cursor.execute(
-            """
-            INSERT INTO templates (id, university_id, name, description, required_sections, formatting_rules, created_by)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                1, 1, "Academic Research Paper",
-                "Standard academic research formats (Times New Roman, 12pt, double spaced, justified alignment).",
-                json.dumps(["Title Page", "Abstract", "Introduction", "Literature Review", "Methodology", "Results", "Discussion", "Conclusion", "References"]),
-                json.dumps(academic_rules),
-                1
-            )
-        )
-
-        # 2. Business Report Rules
-        business_rules = {
-            "heading1_font": "Arial",
-            "heading1_size": 18,
-            "heading1_bold": True,
-            "heading1_italic": False,
-            "heading1_line_spacing": 1.15,
-            "heading1_space_before": 24.0,
-            "heading1_space_after": 12.0,
-            "heading2_font": "Arial",
-            "heading2_size": 14,
-            "heading2_bold": True,
-            "heading2_italic": False,
-            "heading2_line_spacing": 1.15,
-            "heading2_space_before": 18.0,
-            "heading2_space_after": 8.0,
-            "heading3_font": "Arial",
-            "heading3_size": 12,
-            "heading3_bold": True,
-            "heading3_italic": False,
-            "heading3_line_spacing": 1.15,
-            "heading3_space_before": 12.0,
-            "heading3_space_after": 6.0,
-            "body_font": "Arial",
-            "body_size": 11,
-            "body_line_spacing": 1.15,
-            "body_space_before": 0.0,
-            "body_space_after": 6.0,
-            "margin_top": 1.0,
-            "margin_bottom": 1.0,
-            "margin_left": 1.25,
-            "margin_right": 1.0,
-            "page_size": "Letter",
-            "line_number_enabled": False,
-            "first_line_indent": 0.0
-        }
-        cursor.execute(
-            """
-            INSERT INTO templates (id, university_id, name, description, required_sections, formatting_rules, created_by)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                2, 1, "Business Report",
-                "Professional business reports (Arial, 11pt, 1.15 line spacing, left aligned).",
-                json.dumps(["Title Page", "Executive Summary", "Introduction", "Background", "Analysis", "Recommendations", "Conclusion", "References"]),
-                json.dumps(business_rules),
-                1
-            )
-        )
-
-        # 3. University Thesis Rules
-        thesis_rules = {
-            "heading1_font": "Times New Roman",
-            "heading1_size": 18,
-            "heading1_bold": True,
-            "heading1_italic": False,
-            "heading1_line_spacing": 1.5,
-            "heading1_space_before": 36.0,
-            "heading1_space_after": 18.0,
-            "heading2_font": "Times New Roman",
-            "heading2_size": 14,
-            "heading2_bold": True,
-            "heading2_italic": False,
-            "heading2_line_spacing": 1.5,
-            "heading2_space_before": 24.0,
-            "heading2_space_after": 12.0,
-            "heading3_font": "Times New Roman",
-            "heading3_size": 12,
-            "heading3_bold": True,
-            "heading3_italic": False,
-            "heading3_line_spacing": 1.5,
-            "heading3_space_before": 12.0,
-            "heading3_space_after": 6.0,
-            "body_font": "Times New Roman",
-            "body_size": 12,
-            "body_line_spacing": 1.5,
-            "body_space_before": 0.0,
-            "body_space_after": 0.0,
-            "margin_top": 1.0,
-            "margin_bottom": 1.0,
-            "margin_left": 1.5,
-            "margin_right": 1.0,
-            "page_size": "A4",
-            "line_number_enabled": False,
-            "first_line_indent": 0.5
-        }
-        cursor.execute(
-            """
-            INSERT INTO templates (id, university_id, name, description, required_sections, formatting_rules, created_by)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                3, 1, "University Thesis",
-                "Formal academic dissertation layout (Times New Roman, 1.5 spacing, 1.5-inch left margin for binding).",
-                json.dumps(["Title Page", "Declaration", "Acknowledgements", "Abstract", "Table of Contents", "Introduction", "Literature Review", "Methodology", "Results", "Conclusion", "References"]),
-                json.dumps(thesis_rules),
-                1
-            )
-        )
-
-        conn.commit()
+    # C. Do NOT auto-seed templates — only admin-created templates from DB.
+    # Remove legacy demo templates that older installs may still have.
+    cursor.executemany(
+        "DELETE FROM templates WHERE id = ? AND name = ?",
+        [
+            (1, "Academic Research Paper"),
+            (2, "Business Report"),
+            (3, "University Thesis"),
+        ],
+    )
+    conn.commit()
 
     # D. Seed default departments
     cursor.execute("SELECT COUNT(*) FROM departments")

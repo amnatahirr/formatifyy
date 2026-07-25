@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/document_provider.dart';
 import '../../providers/fyp_provider.dart';
+import 'document_feedback_screen.dart';
 
 /// Status Tracker — reads final_submissions (not remarks).
 class StatusTrackerScreen extends StatefulWidget {
@@ -109,6 +110,34 @@ class _StatusTrackerScreenState extends State<StatusTrackerScreen> {
       filename: (submission['filename'] ?? 'document.docx').toString(),
     );
     widget.onUploadNewVersion?.call();
+  }
+
+  int? _asInt(dynamic value) {
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    if (value == null) return null;
+    return int.tryParse(value.toString());
+  }
+
+  void _openResolveComments(Map<String, dynamic> submission) {
+    final groupId = context.read<FypProvider>().fypGroupId;
+    final documentId = _asInt(submission['group_document_id']);
+    if (groupId == null || documentId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No review document linked to this submission yet.'),
+        ),
+      );
+      return;
+    }
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => DocumentFeedbackScreen(
+          groupId: groupId,
+          documentId: documentId,
+        ),
+      ),
+    );
   }
 
   @override
@@ -299,6 +328,26 @@ class _StatusTrackerScreenState extends State<StatusTrackerScreen> {
                 style: ElevatedButton.styleFrom(
                   backgroundColor: _warn,
                   foregroundColor: Colors.black,
+                ),
+              ),
+            ),
+          ],
+          if (_asInt(s['group_document_id']) != null) ...[
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              height: 44,
+              child: OutlinedButton.icon(
+                onPressed: () => _openResolveComments(s),
+                icon: const Icon(Icons.rate_review_outlined, size: 18),
+                label: Text(
+                  status == 'revision'
+                      ? 'Open document & resolve comments'
+                      : 'Open document & comments',
+                ),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.white,
+                  side: BorderSide(color: Colors.white.withOpacity(0.28)),
                 ),
               ),
             ),

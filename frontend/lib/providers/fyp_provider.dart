@@ -36,6 +36,17 @@ class FypProvider extends ChangeNotifier {
   Map<String, dynamic>? get assignmentStatus => _assignmentStatus;
   /// Cached group id from an accepted assignment — key for other FYP screens.
   int? get fypGroupId => _fypGroupId;
+
+  /// True when student already has a pending or accepted supervisor request.
+  /// Used to hide "Choose Supervisor" from the dashboard.
+  bool get hasChosenSupervisor {
+    if (_fypGroupId != null) return true;
+    final status = (_assignmentStatus?['status'] ?? '').toString().toLowerCase();
+    return status == 'pending' || status == 'accepted';
+  }
+
+  /// Show Choose Supervisor only when none exists or the last request was rejected.
+  bool get canChooseSupervisor => !hasChosenSupervisor;
   List<Map<String, dynamic>> get milestones => _milestones;
   Map<String, dynamic>? get plagiarismReport => _plagiarismReport;
   List<Map<String, dynamic>> get submissions => _submissions;
@@ -311,6 +322,19 @@ class FypProvider extends ChangeNotifier {
         final map = Map<String, dynamic>.from(body as Map);
         final request = Map<String, dynamic>.from(map['request'] as Map);
         _requests = [request, ..._requests];
+        // Immediately mark as chosen so Choose Supervisor disappears from nav.
+        _assignmentStatus = {
+          'found': true,
+          'status': 'pending',
+          'id': request['id'],
+          'group_name': request['group_name'] ?? groupName,
+          'project_title': request['project_title'] ?? projectTitle,
+          'supervisor_id': request['supervisor_id'] ?? supervisorId,
+          'supervisor_name': request['supervisor_name'] ?? '',
+          'cosupervisor_name': request['cosupervisor_name'] ?? cosupervisorName ?? '',
+          'fyp_group_id': null,
+          'rejection_reason': '',
+        };
         return request;
       }
       _errorMessage = body is Map && body['detail'] != null

@@ -1,6 +1,8 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:http/http.dart' as http;
+import 'package:path_provider/path_provider.dart';
 
 import '../config/api_config.dart';
 import '../models/supervisor_models.dart';
@@ -16,6 +18,49 @@ class SupervisorApiService {
       }
     });
     return Uri.parse('$_baseUrl$path').replace(queryParameters: filtered);
+  }
+
+  Future<Directory> _downloadDirectory() async {
+    if (Platform.isAndroid) {
+      final downloads = Directory('/storage/emulated/0/Download');
+      if (await downloads.exists()) return downloads;
+    }
+    if (Platform.isIOS) {
+      return getApplicationDocumentsDirectory();
+    }
+    return await getDownloadsDirectory() ?? await getApplicationDocumentsDirectory();
+  }
+
+  String _filenameFromHeaders(http.Response response, String fallback) {
+    final disposition = response.headers['content-disposition'];
+    if (disposition != null && disposition.contains('filename=')) {
+      final parts = disposition.split('filename=');
+      if (parts.length > 1) {
+        return parts[1].replaceAll('"', '').trim();
+      }
+    }
+    return fallback;
+  }
+
+  Future<String> _saveDownloadBytes({
+    required http.Response response,
+    required String fallbackFilename,
+  }) async {
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      String message = 'Download failed (${response.statusCode})';
+      try {
+        final data = jsonDecode(response.body);
+        if (data is Map<String, dynamic>) {
+          message = (data['detail'] ?? data['message'] ?? message).toString();
+        }
+      } catch (_) {}
+      throw Exception(message);
+    }
+    final filename = _filenameFromHeaders(response, fallbackFilename);
+    final directory = await _downloadDirectory();
+    final file = File('${directory.path}/$filename');
+    await file.writeAsBytes(response.bodyBytes);
+    return file.path;
   }
 
   Future<dynamic> _request(
@@ -213,6 +258,45 @@ class SupervisorApiService {
       queryParameters: {'user_id': userId},
     );
     return FinalSubmissionModel.fromJson(Map<String, dynamic>.from(data as Map));
+  }
+
+  /// Download the original file attached to a final submission.
+  Future<String> downloadSubmissionFile({
+    required int userId,
+    required int submissionId,
+    String? preferredFilename,
+  }) async {
+    final uri = _uri(
+      '/supervisor/submissions/$submissionId/download',
+      {'user_id': userId},
+    );
+    final response = await http.get(uri);
+    return _saveDownloadBytes(
+      response: response,
+      fallbackFilename: preferredFilename?.trim().isNotEmpty == true
+          ? preferredFilename!.trim()
+          : 'submission_$submissionId.docx',
+    );
+  }
+
+  /// Download a group document under review.
+  Future<String> downloadGroupDocument({
+    required int userId,
+    required int groupId,
+    required int documentId,
+    String? preferredFilename,
+  }) async {
+    final uri = _uri(
+      '/supervisor/groups/$groupId/documents/$documentId/download',
+      {'user_id': userId},
+    );
+    final response = await http.get(uri);
+    return _saveDownloadBytes(
+      response: response,
+      fallbackFilename: preferredFilename?.trim().isNotEmpty == true
+          ? preferredFilename!.trim()
+          : 'document_$documentId.docx',
+    );
   }
 
   Future<FinalSubmissionModel> approveSubmission(int userId, int submissionId, {String? note}) async {
