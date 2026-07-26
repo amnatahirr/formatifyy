@@ -25,11 +25,14 @@ class DocumentFeedbackScreen extends StatefulWidget {
 class _DocumentFeedbackScreenState extends State<DocumentFeedbackScreen> {
   final StudentApiService _api = StudentApiService();
   final Map<int, TextEditingController> _replyControllers = {};
+  final ScrollController _scrollController = ScrollController();
+  final Map<int, GlobalKey> _commentKeys = {};
 
   DocumentReviewModel? _review;
   bool _loading = true;
   String? _error;
   int? _busyCommentId;
+  bool _didFocusComment = false;
 
   static const _card = Color(0xFF161B22);
   static const _border = Color(0x22FFFFFF);
@@ -50,11 +53,16 @@ class _DocumentFeedbackScreenState extends State<DocumentFeedbackScreen> {
     for (final c in _replyControllers.values) {
       c.dispose();
     }
+    _scrollController.dispose();
     super.dispose();
   }
 
   TextEditingController _controllerFor(int commentId) {
     return _replyControllers.putIfAbsent(commentId, TextEditingController.new);
+  }
+
+  GlobalKey _keyFor(int commentId) {
+    return _commentKeys.putIfAbsent(commentId, GlobalKey.new);
   }
 
   Future<void> _load() async {
@@ -82,13 +90,33 @@ class _DocumentFeedbackScreenState extends State<DocumentFeedbackScreen> {
         _review = review;
         _loading = false;
       });
+      _scheduleFocusComment();
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _error = e.toString();
+        _error = e.toString().replaceFirst(RegExp(r'^Exception:\s*'), '');
         _loading = false;
       });
     }
+  }
+
+  void _scheduleFocusComment() {
+    final focusId = widget.focusCommentId;
+    if (focusId == null || _didFocusComment) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _didFocusComment) return;
+      final key = _commentKeys[focusId];
+      final ctx = key?.currentContext;
+      if (ctx != null) {
+        _didFocusComment = true;
+        Scrollable.ensureVisible(
+          ctx,
+          duration: const Duration(milliseconds: 350),
+          alignment: 0.2,
+          curve: Curves.easeOutCubic,
+        );
+      }
+    });
   }
 
   Future<void> _resolve(DocumentCommentModel comment) async {
@@ -206,12 +234,21 @@ class _DocumentFeedbackScreenState extends State<DocumentFeedbackScreen> {
 
     final hasAnyComments =
         review.paragraphs.any((p) => p.comments.isNotEmpty);
+    final unresolvedCount = review.paragraphs.fold<int>(
+      0,
+      (sum, p) =>
+          sum +
+          p.comments
+              .where((c) => !c.isResolved && c.parentCommentId == null)
+              .length,
+    );
 
     return RefreshIndicator(
       color: _accent,
       backgroundColor: _card,
       onRefresh: _load,
       child: ListView(
+        controller: _scrollController,
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
         children: [
           Text(
@@ -223,6 +260,17 @@ class _DocumentFeedbackScreenState extends State<DocumentFeedbackScreen> {
               fontSize: 13,
             ),
           ),
+          if (unresolvedCount > 0) ...[
+            const SizedBox(height: 10),
+            Text(
+              '$unresolvedCount open supervisor comment${unresolvedCount == 1 ? '' : 's'} — reply or mark resolved below.',
+              style: const TextStyle(
+                color: Color(0xFFFBBF24),
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
           if (!hasAnyComments) ...[
             const SizedBox(height: 20),
             Container(
@@ -298,8 +346,10 @@ class _DocumentFeedbackScreenState extends State<DocumentFeedbackScreen> {
     final strong = darkText ? const Color(0xFF111827) : Colors.white;
     final isReply = comment.parentCommentId != null;
     final busy = _busyCommentId == comment.id;
+    final isFocused = widget.focusCommentId == comment.id;
 
     return Padding(
+      key: _keyFor(comment.id),
       padding: EdgeInsets.only(left: isReply ? 12 : 0, bottom: 12, top: 4),
       child: Container(
         width: double.infinity,
@@ -310,9 +360,12 @@ class _DocumentFeedbackScreenState extends State<DocumentFeedbackScreen> {
               : Colors.black.withOpacity(0.25),
           borderRadius: BorderRadius.circular(8),
           border: Border.all(
-            color: comment.isResolved
-                ? Colors.white24
-                : const Color(0xFFF59E0B).withOpacity(0.45),
+            color: isFocused
+                ? _accent
+                : comment.isResolved
+                    ? Colors.white24
+                    : const Color(0xFFF59E0B).withOpacity(0.45),
+            width: isFocused ? 2 : 1,
           ),
         ),
         child: Column(
@@ -403,7 +456,7 @@ class _DocumentFeedbackScreenState extends State<DocumentFeedbackScreen> {
                   ),
                 ],
               ),
-            ] else if (comment.isResolved) ...[
+            ] else if (comment.isResolved && !isReply) ...[
               const SizedBox(height: 8),
               Text(
                 'Resolved',

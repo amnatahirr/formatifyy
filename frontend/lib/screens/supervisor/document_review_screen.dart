@@ -448,8 +448,11 @@ class _ParagraphCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final unresolved = paragraph.comments.where((c) => !c.isResolved).toList();
-    final resolved = paragraph.comments.where((c) => c.isResolved).toList();
+    final topLevel = paragraph.comments.where((c) => c.parentCommentId == null);
+    final unresolved = topLevel.where((c) => !c.isResolved).toList();
+    final resolvedTop = topLevel.where((c) => c.isResolved).toList();
+    final replies =
+        paragraph.comments.where((c) => c.parentCommentId != null).toList();
 
     return Material(
       color: Colors.transparent,
@@ -529,10 +532,27 @@ class _ParagraphCard extends StatelessWidget {
                   ),
                 ),
               ],
-              if (resolved.isNotEmpty && unresolved.isEmpty) ...[
+              if (replies.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                ...replies.map(
+                  (reply) => Padding(
+                    padding: const EdgeInsets.only(bottom: 6, left: 10),
+                    child: Text(
+                      'Student reply: ${reply.commentText}',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        height: 1.35,
+                        color: Color(0xFF1D4ED8),
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+              if (resolvedTop.isNotEmpty && unresolved.isEmpty) ...[
                 const SizedBox(height: 10),
                 Text(
-                  '${resolved.length} resolved comment${resolved.length == 1 ? '' : 's'}',
+                  '${resolvedTop.length} resolved comment${resolvedTop.length == 1 ? '' : 's'}',
                   style: const TextStyle(
                     fontSize: 11,
                     color: Color(0xFF374151),

@@ -61,6 +61,81 @@ class _MyGroupsScreenState extends State<MyGroupsScreen> {
     await _loadGroups();
   }
 
+  Future<void> _discardGroup(SupervisorGroupSummary group) async {
+    final reasonController = TextEditingController();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          backgroundColor: AdminColors.surface,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Text('Discard group?'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Remove "${group.title}" from My Groups and free one supervision slot so you can accept a new student request.',
+                style: TextStyle(color: Colors.white.withOpacity(0.75), height: 1.4),
+              ),
+              const SizedBox(height: 14),
+              TextField(
+                controller: reasonController,
+                maxLines: 2,
+                decoration: InputDecoration(
+                  labelText: 'Reason (optional)',
+                  hintText: 'e.g. Group inactive / wrong allotment',
+                  filled: true,
+                  fillColor: AdminColors.card,
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AdminColors.danger,
+                foregroundColor: Colors.white,
+              ),
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('Discard'),
+            ),
+          ],
+        );
+      },
+    );
+    final reason = reasonController.text.trim();
+    reasonController.dispose();
+    if (confirmed != true || !mounted) return;
+
+    final userId = context.read<AuthProvider>().userId;
+    if (userId == null) return;
+    try {
+      final result = await _api.discardGroup(
+        userId: userId,
+        groupId: group.id,
+        reason: reason.isEmpty ? null : reason,
+      );
+      if (!mounted) return;
+      final slots = result['slots_used'];
+      final max = result['max_groups'];
+      showAdminSnackBar(
+        context,
+        slots != null && max != null
+            ? 'Group discarded. Slots used: $slots / $max'
+            : 'Group discarded. Slot freed.',
+      );
+      await _loadGroups();
+    } catch (e) {
+      if (mounted) showAdminSnackBar(context, e.toString(), isError: true);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_loading && _groups.isEmpty && _error == null) {
@@ -113,8 +188,8 @@ class _MyGroupsScreenState extends State<MyGroupsScreen> {
               (group) => Padding(
                 padding: const EdgeInsets.only(bottom: 14),
                 child: InkWell(
-                  onTap: () {
-                    Navigator.of(context).push(
+                  onTap: () async {
+                    await Navigator.of(context).push(
                       MaterialPageRoute(
                         builder: (_) => GroupDetailScreen(
                           groupId: group.id,
@@ -122,9 +197,13 @@ class _MyGroupsScreenState extends State<MyGroupsScreen> {
                         ),
                       ),
                     );
+                    if (mounted) _loadGroups();
                   },
                   borderRadius: BorderRadius.circular(14),
-                  child: _MyGroupCard(group: group),
+                  child: _MyGroupCard(
+                    group: group,
+                    onDiscard: () => _discardGroup(group),
+                  ),
                 ),
               ),
             ),
@@ -136,8 +215,9 @@ class _MyGroupsScreenState extends State<MyGroupsScreen> {
 
 class _MyGroupCard extends StatelessWidget {
   final SupervisorGroupSummary group;
+  final VoidCallback onDiscard;
 
-  const _MyGroupCard({required this.group});
+  const _MyGroupCard({required this.group, required this.onDiscard});
 
   @override
   Widget build(BuildContext context) {
@@ -197,6 +277,20 @@ class _MyGroupCard extends StatelessWidget {
               Column(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
+                  PopupMenuButton<String>(
+                    tooltip: 'Group actions',
+                    color: AdminColors.surface,
+                    onSelected: (value) {
+                      if (value == 'discard') onDiscard();
+                    },
+                    itemBuilder: (context) => const [
+                      PopupMenuItem(
+                        value: 'discard',
+                        child: Text('Discard group'),
+                      ),
+                    ],
+                    icon: Icon(Icons.more_vert_rounded, color: Colors.white.withOpacity(0.65)),
+                  ),
                   Text(
                     '${group.progress.round()}%',
                     style: TextStyle(

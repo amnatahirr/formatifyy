@@ -138,6 +138,23 @@ class SupervisorApiService {
     return SupervisorGroupDetailModel.fromJson(Map<String, dynamic>.from(data as Map));
   }
 
+  /// Discard an accepted group — frees a supervision slot (My Groups).
+  Future<Map<String, dynamic>> discardGroup({
+    required int userId,
+    required int groupId,
+    String? reason,
+  }) async {
+    final data = await _request(
+      'POST',
+      '/supervisor/groups/$groupId/discard',
+      queryParameters: {'user_id': userId},
+      body: {
+        if (reason != null && reason.trim().isNotEmpty) 'reason': reason.trim(),
+      },
+    );
+    return Map<String, dynamic>.from(data as Map? ?? const {});
+  }
+
   Future<List<AssignmentRequestModel>> fetchAssignmentRequests(
     int userId, {
     String status = 'pending',

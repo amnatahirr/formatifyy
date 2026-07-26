@@ -30,7 +30,9 @@ class _MeetingNotesScreenState extends State<MeetingNotesScreen> {
   @override
   void initState() {
     super.initState();
-    _load();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _load();
+    });
   }
 
   Future<void> _load() async {
@@ -51,92 +53,13 @@ class _MeetingNotesScreenState extends State<MeetingNotesScreen> {
   }
 
   Future<void> _openAddNote() async {
-    final dateController = TextEditingController(
-      text: DateTime.now().toIso8601String().substring(0, 10),
-    );
-    final topicController = TextEditingController();
-    final actionsController = TextEditingController();
-    final formKey = GlobalKey<FormState>();
-
-    final saved = await showDialog<bool>(
+    final draft = await showDialog<_MeetingNoteDraft>(
       context: context,
-      builder: (dialogContext) {
-        return AlertDialog(
-          backgroundColor: AdminColors.surface,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          title: const Text('Add Note'),
-          content: SizedBox(
-            width: 460,
-            child: Form(
-              key: formKey,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  TextFormField(
-                    controller: dateController,
-                    decoration: const InputDecoration(
-                      labelText: 'Date',
-                      hintText: 'YYYY-MM-DD',
-                      helperText: 'Auto-filled with today — editable',
-                    ),
-                    validator: (value) {
-                      final text = (value ?? '').trim();
-                      if (text.isEmpty) return 'Date is required';
-                      if (!RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(text)) {
-                        return 'Use YYYY-MM-DD';
-                      }
-                      return null;
-                    },
-                  ),
-                  const SizedBox(height: 12),
-                  TextFormField(
-                    controller: topicController,
-                    decoration: const InputDecoration(
-                      labelText: 'Topic',
-                      hintText: 'Meeting topic',
-                    ),
-                    validator: (value) =>
-                        (value == null || value.trim().isEmpty) ? 'Topic is required' : null,
-                  ),
-                  const SizedBox(height: 12),
-                  TextFormField(
-                    controller: actionsController,
-                    maxLines: 4,
-                    decoration: const InputDecoration(
-                      labelText: 'Action items',
-                      hintText: 'List follow-ups for the group…',
-                      alignLabelWithHint: true,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext, false),
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                if (formKey.currentState?.validate() != true) return;
-                Navigator.pop(dialogContext, true);
-              },
-              child: const Text('Save'),
-            ),
-          ],
-        );
-      },
+      barrierDismissible: !_saving,
+      builder: (dialogContext) => const _AddMeetingNoteDialog(),
     );
 
-    final meetingDate = dateController.text.trim();
-    final topic = topicController.text.trim();
-    final actionItems = actionsController.text.trim();
-    dateController.dispose();
-    topicController.dispose();
-    actionsController.dispose();
-
-    if (saved != true) return;
+    if (draft == null || !mounted) return;
 
     final userId = context.read<AuthProvider>().userId;
     if (userId == null) return;
@@ -146,9 +69,9 @@ class _MeetingNotesScreenState extends State<MeetingNotesScreen> {
       await _api.createMeetingNote(
         userId: userId,
         groupId: widget.groupId,
-        meetingDate: meetingDate,
-        topic: topic,
-        actionItems: actionItems,
+        meetingDate: draft.meetingDate,
+        topic: draft.topic,
+        actionItems: draft.actionItems,
       );
       if (!mounted) return;
       showAdminSnackBar(context, 'Meeting note saved. Students can view it read-only.');
@@ -241,6 +164,129 @@ class _MeetingNotesScreenState extends State<MeetingNotesScreen> {
             ),
         ],
       ),
+    );
+  }
+}
+
+class _MeetingNoteDraft {
+  final String meetingDate;
+  final String topic;
+  final String actionItems;
+
+  const _MeetingNoteDraft({
+    required this.meetingDate,
+    required this.topic,
+    required this.actionItems,
+  });
+}
+
+/// Owns its Text controllers so they are never disposed while the dialog
+/// route is still animating out (avoids dependents.isEmpty assertion).
+class _AddMeetingNoteDialog extends StatefulWidget {
+  const _AddMeetingNoteDialog();
+
+  @override
+  State<_AddMeetingNoteDialog> createState() => _AddMeetingNoteDialogState();
+}
+
+class _AddMeetingNoteDialogState extends State<_AddMeetingNoteDialog> {
+  final _formKey = GlobalKey<FormState>();
+  late final TextEditingController _dateController;
+  late final TextEditingController _topicController;
+  late final TextEditingController _actionsController;
+
+  @override
+  void initState() {
+    super.initState();
+    _dateController = TextEditingController(
+      text: DateTime.now().toIso8601String().substring(0, 10),
+    );
+    _topicController = TextEditingController();
+    _actionsController = TextEditingController();
+  }
+
+  @override
+  void dispose() {
+    _dateController.dispose();
+    _topicController.dispose();
+    _actionsController.dispose();
+    super.dispose();
+  }
+
+  void _onSave() {
+    if (_formKey.currentState?.validate() != true) return;
+    Navigator.of(context).pop(
+      _MeetingNoteDraft(
+        meetingDate: _dateController.text.trim(),
+        topic: _topicController.text.trim(),
+        actionItems: _actionsController.text.trim(),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      backgroundColor: AdminColors.surface,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      title: const Text('Add Note'),
+      content: SizedBox(
+        width: 460,
+        child: Form(
+          key: _formKey,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextFormField(
+                controller: _dateController,
+                decoration: const InputDecoration(
+                  labelText: 'Date',
+                  hintText: 'YYYY-MM-DD',
+                  helperText: 'Auto-filled with today — editable',
+                ),
+                validator: (value) {
+                  final text = (value ?? '').trim();
+                  if (text.isEmpty) return 'Date is required';
+                  if (!RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(text)) {
+                    return 'Use YYYY-MM-DD';
+                  }
+                  return null;
+                },
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: _topicController,
+                decoration: const InputDecoration(
+                  labelText: 'Topic',
+                  hintText: 'Meeting topic',
+                ),
+                validator: (value) =>
+                    (value == null || value.trim().isEmpty) ? 'Topic is required' : null,
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: _actionsController,
+                maxLines: 4,
+                decoration: const InputDecoration(
+                  labelText: 'Action items',
+                  hintText: 'List follow-ups for the group…',
+                  alignLabelWithHint: true,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        ElevatedButton(
+          onPressed: _onSave,
+          child: const Text('Save'),
+        ),
+      ],
     );
   }
 }

@@ -29,6 +29,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
   SupervisorGroupDetailModel? _detail;
   String? _error;
   bool _loading = true;
+  bool _discarding = false;
 
   @override
   void initState() {
@@ -50,6 +51,86 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
       if (mounted) setState(() => _error = e.toString());
     } finally {
       if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _discardGroup() async {
+    final title = _detail?.group.title.isNotEmpty == true
+        ? _detail!.group.title
+        : (widget.groupTitle ?? 'this group');
+    final reasonController = TextEditingController();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          backgroundColor: AdminColors.surface,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Text('Discard group?'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Remove "$title" from My Groups and free one supervision slot.',
+                style: TextStyle(color: Colors.white.withOpacity(0.75), height: 1.4),
+              ),
+              const SizedBox(height: 14),
+              TextField(
+                controller: reasonController,
+                maxLines: 2,
+                decoration: InputDecoration(
+                  labelText: 'Reason (optional)',
+                  filled: true,
+                  fillColor: AdminColors.card,
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AdminColors.danger,
+                foregroundColor: Colors.white,
+              ),
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('Discard'),
+            ),
+          ],
+        );
+      },
+    );
+    final reason = reasonController.text.trim();
+    reasonController.dispose();
+    if (confirmed != true || !mounted) return;
+
+    final userId = context.read<AuthProvider>().userId;
+    if (userId == null) return;
+    setState(() => _discarding = true);
+    try {
+      final result = await _api.discardGroup(
+        userId: userId,
+        groupId: widget.groupId,
+        reason: reason.isEmpty ? null : reason,
+      );
+      if (!mounted) return;
+      final slots = result['slots_used'];
+      final max = result['max_groups'];
+      showAdminSnackBar(
+        context,
+        slots != null && max != null
+            ? 'Group discarded. Slots used: $slots / $max'
+            : 'Group discarded. Slot freed.',
+      );
+      Navigator.of(context).pop(true);
+    } catch (e) {
+      if (mounted) showAdminSnackBar(context, e.toString(), isError: true);
+    } finally {
+      if (mounted) setState(() => _discarding = false);
     }
   }
 
@@ -145,6 +226,18 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
                       ),
                     ],
                   ),
+                ),
+                TextButton.icon(
+                  onPressed: (_discarding || _loading) ? null : _discardGroup,
+                  icon: _discarding
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: AdminColors.danger),
+                        )
+                      : const Icon(Icons.delete_outline_rounded, size: 18),
+                  label: const Text('Discard'),
+                  style: TextButton.styleFrom(foregroundColor: AdminColors.danger),
                 ),
               ],
             ),

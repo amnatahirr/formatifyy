@@ -189,6 +189,27 @@ def _student_in_accepted_group(cursor, group_id: int, student_email: str):
         if member_email and member_email == email:
             return group
 
+    # Fallback: assignment request leader / members linked to this group
+    cursor.execute(
+        """
+        SELECT student_leader_email, member_names
+        FROM assignment_requests
+        WHERE fyp_group_id = ? AND LOWER(TRIM(status)) = 'accepted'
+        ORDER BY id DESC
+        LIMIT 1
+        """,
+        (group_id,),
+    )
+    req = cursor.fetchone()
+    if req:
+        leader = (req["student_leader_email"] or "").strip().lower()
+        if leader and leader == email:
+            return group
+        for member in _parse_member_names(req["member_names"]):
+            member_email = _email_from_member_label(member)
+            if member_email and member_email == email:
+                return group
+
     return None
 
 
@@ -461,15 +482,16 @@ def list_student_group_milestones(
     conn = get_db()
     cursor = conn.cursor()
     try:
+        group = _student_in_accepted_group(cursor, group_id, email)
+        if not group:
+            raise HTTPException(status_code=404, detail="Group not found for this student.")
         cursor.execute(
             """
             SELECT id, title, project_title, progress, status
             FROM fyp_groups
-            WHERE id = ?
-              AND status = 'accepted'
-              AND LOWER(TRIM(student_contact_email)) = LOWER(?)
+            WHERE id = ? AND status = 'accepted'
             """,
-            (group_id, email),
+            (group_id,),
         )
         group = cursor.fetchone()
         if not group:
@@ -545,15 +567,34 @@ def list_student_supervisors(user_id: Annotated[int | None, Query()] = None):
         conn.close()
 
 
+def _find_accepted_group_for_email(cursor, email: str):
+    """Find an accepted fyp_groups row where email is contact or member."""
+    email = (email or "").strip().lower()
+    if not email:
+        return None
+    cursor.execute(
+        """
+        SELECT id, title, project_title, supervisor_id, student_contact_email,
+               member_names, status, deadline_date, department_id
+        FROM fyp_groups
+        WHERE status = 'accepted'
+        ORDER BY id DESC
+        """
+    )
+    for group in cursor.fetchall():
+        if _student_in_accepted_group(cursor, int(group["id"]), email):
+            return group
+    return None
+
+
 @router.get("/assignment-requests/status")
 def get_assignment_request_status(
     email: Annotated[str | None, Query()] = None,
     user_id: Annotated[int | None, Query()] = None,
 ):
     """
-    Latest assignment_requests row for this student (by student_leader_email).
-    Same email-matching pattern as GET /meeting-notes: resolve/verify via the
-    logged-in student, then look up by email — never by user_id on FYP tables.
+    Latest assignment_requests row for this student (by student_leader_email),
+    with fallback to accepted group membership (contact or listed member email).
     """
     student = _require_student(user_id)
     account_email = (student.get("email") or "").strip().lower()
@@ -604,11 +645,68 @@ def get_assignment_request_status(
             (lookup_email,),
         )
         row = cursor.fetchone()
+
+        # Member students: resolve via accepted group membership when not the leader
         if not row:
-            return {"found": False, "status": None, "email": lookup_email}
+            group = _find_accepted_group_for_email(cursor, lookup_email)
+            if not group:
+                return {"found": False, "status": None, "email": lookup_email}
+            cursor.execute(
+                """
+                SELECT
+                    ar.id,
+                    ar.status,
+                    ar.rejection_reason,
+                    ar.fyp_group_id,
+                    ar.group_name,
+                    ar.project_title,
+                    ar.supervisor_id,
+                    ar.department_id,
+                    ar.created_at,
+                    ar.resolved_at,
+                    ar.student_leader_email,
+                    COALESCE(s.name, '') AS supervisor_name,
+                    COALESCE(s.email, '') AS supervisor_email,
+                    COALESCE(d.name, '') AS department_name,
+                    COALESCE(d.code, '') AS department_code,
+                    g.title AS group_title,
+                    g.project_title AS group_project_title,
+                    g.status AS group_status,
+                    g.deadline_date AS group_deadline_date
+                FROM fyp_groups g
+                LEFT JOIN assignment_requests ar ON ar.fyp_group_id = g.id
+                LEFT JOIN supervisors s ON s.id = g.supervisor_id
+                LEFT JOIN departments d ON d.id = COALESCE(ar.department_id, g.department_id, s.department_id)
+                WHERE g.id = ?
+                ORDER BY ar.id DESC
+                LIMIT 1
+                """,
+                (group["id"],),
+            )
+            row = cursor.fetchone()
+            if not row:
+                return {
+                    "found": True,
+                    "email": lookup_email,
+                    "status": "accepted",
+                    "fyp_group_id": group["id"],
+                    "group_name": group["title"] or "",
+                    "project_title": group["project_title"] or "",
+                    "supervisor_id": group["supervisor_id"],
+                    "group": {
+                        "id": group["id"],
+                        "title": group["title"] or "",
+                        "project_title": group["project_title"] or "",
+                        "status": "accepted",
+                        "deadline_date": group["deadline_date"],
+                    },
+                }
 
         data = _row_to_dict(row)
-        status = (data.get("status") or "").strip().lower()
+        status = (data.get("status") or "").strip().lower() or "accepted"
+        # If request row is missing status but group exists, treat as accepted
+        if not status and data.get("fyp_group_id"):
+            status = "accepted"
         result: dict[str, Any] = {
             "found": True,
             "email": lookup_email,
@@ -616,8 +714,8 @@ def get_assignment_request_status(
             "status": status,
             "rejection_reason": data.get("rejection_reason") or "",
             "fyp_group_id": data.get("fyp_group_id"),
-            "group_name": data.get("group_name") or "",
-            "project_title": data.get("project_title") or "",
+            "group_name": data.get("group_name") or data.get("group_title") or "",
+            "project_title": data.get("project_title") or data.get("group_project_title") or "",
             "supervisor_id": data.get("supervisor_id"),
             "department_id": data.get("department_id"),
             "created_at": data.get("created_at"),
@@ -1107,21 +1205,25 @@ def _plagiarism_payload_from_report(
 
 
 def _require_student_group(cursor, group_id: int, email: str):
+    """Accept contact leader or any listed group member (same as submit path)."""
+    group = _student_in_accepted_group(cursor, group_id, email)
+    if not group:
+        raise HTTPException(status_code=404, detail="Group not found for this student.")
+    # Load full row used by plagiarism / status helpers
     cursor.execute(
         """
         SELECT id, title, project_title, plagiarism_flagged, plagiarism_flag_reason,
-               plagiarism_flagged_at, student_contact_email, status
+               plagiarism_flagged_at, student_contact_email, status, supervisor_id,
+               member_names
         FROM fyp_groups
-        WHERE id = ?
-          AND status = 'accepted'
-          AND LOWER(TRIM(student_contact_email)) = LOWER(?)
+        WHERE id = ? AND status = 'accepted'
         """,
-        (group_id, email),
+        (group_id,),
     )
-    group = cursor.fetchone()
-    if not group:
+    full = cursor.fetchone()
+    if not full:
         raise HTTPException(status_code=404, detail="Group not found for this student.")
-    return group
+    return full
 
 
 @router.get("/final-submissions/{submission_id}/plagiarism")
@@ -1148,9 +1250,8 @@ def get_final_submission_plagiarism(
             JOIN fyp_groups fg ON fg.id = fs.group_id
             WHERE fs.id = ?
               AND fg.status = 'accepted'
-              AND LOWER(TRIM(fg.student_contact_email)) = LOWER(?)
             """,
-            (submission_id, email),
+            (submission_id,),
         )
         sub = cursor.fetchone()
         if not sub:
@@ -1437,14 +1538,16 @@ def _serialize_student_review_paragraphs(cursor, document_id: int) -> list[dict[
         has_resolved = False
         for comment in cursor.fetchall():
             resolved = bool(comment["is_resolved"])
-            if resolved:
-                has_resolved = True
-            else:
-                has_unresolved = True
             keys = comment.keys()
             parent_id = (
                 comment["parent_comment_id"] if "parent_comment_id" in keys else None
             )
+            # Highlight only from supervisor top-level comments (not student replies)
+            if parent_id is None:
+                if resolved:
+                    has_resolved = True
+                else:
+                    has_unresolved = True
             comments.append(
                 {
                     "id": comment["id"],
@@ -1476,6 +1579,8 @@ def _serialize_student_review_paragraphs(cursor, document_id: int) -> list[dict[
 
 
 def _require_student_group_document(cursor, group_id: int, document_id: int, email: str):
+    """Any accepted-group member may open the review document for feedback."""
+    _require_student_group(cursor, group_id, email)
     cursor.execute(
         """
         SELECT gd.id, gd.title, gd.filename, gd.status, gd.submitted_at,
@@ -1485,9 +1590,8 @@ def _require_student_group_document(cursor, group_id: int, document_id: int, ema
         WHERE gd.id = ?
           AND gd.group_id = ?
           AND fg.status = 'accepted'
-          AND LOWER(TRIM(fg.student_contact_email)) = LOWER(?)
         """,
-        (document_id, group_id, email),
+        (document_id, group_id),
     )
     doc = cursor.fetchone()
     if not doc:
@@ -1496,6 +1600,7 @@ def _require_student_group_document(cursor, group_id: int, document_id: int, ema
 
 
 def _require_student_comment(cursor, comment_id: int, email: str):
+    """Any accepted-group member may resolve/reply to comments on their document."""
     cursor.execute(
         """
         SELECT dc.id, dc.paragraph_id, dc.document_id, dc.supervisor_id,
@@ -1506,13 +1611,13 @@ def _require_student_comment(cursor, comment_id: int, email: str):
         JOIN fyp_groups fg ON fg.id = gd.group_id
         WHERE dc.id = ?
           AND fg.status = 'accepted'
-          AND LOWER(TRIM(fg.student_contact_email)) = LOWER(?)
         """,
-        (comment_id, email),
+        (comment_id,),
     )
     row = cursor.fetchone()
     if not row:
         raise HTTPException(status_code=404, detail="Comment not found.")
+    _require_student_group(cursor, int(row["group_id"]), email)
     return row
 
 
@@ -1535,6 +1640,13 @@ def get_student_document_comments(
     cursor = conn.cursor()
     try:
         doc = _require_student_group_document(cursor, group_id, document_id, email)
+        # Backfill paragraphs for older submissions (same helper supervisor review uses)
+        from supervisor_routes import _ensure_document_paragraphs
+
+        _ensure_document_paragraphs(
+            cursor, document_id, document_title=doc["title"] or ""
+        )
+        conn.commit()
         paragraphs = _serialize_student_review_paragraphs(cursor, document_id)
         return {
             "group_id": group_id,
@@ -1632,12 +1744,18 @@ def reply_to_student_comment(
     cursor = conn.cursor()
     try:
         parent = _require_student_comment(cursor, comment_id, email)
+        if parent["parent_comment_id"] is not None:
+            raise HTTPException(
+                status_code=400,
+                detail="Replies can only be added to supervisor comments.",
+            )
+        # Replies reuse supervisor_id for FK; mark resolved so they don't look like open feedback.
         cursor.execute(
             """
             INSERT INTO document_comments
                 (paragraph_id, document_id, supervisor_id, comment_text,
                  is_resolved, parent_comment_id)
-            VALUES (?, ?, ?, ?, 0, ?)
+            VALUES (?, ?, ?, ?, 1, ?)
             """,
             (
                 parent["paragraph_id"],

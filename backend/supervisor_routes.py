@@ -513,6 +513,121 @@ def get_group_detail(
         conn.close()
 
 
+def _sync_supervisor_current_groups(cursor, supervisor_id: int) -> int:
+    """Keep supervisors.current_groups aligned with accepted fyp_groups count."""
+    cursor.execute(
+        """
+        SELECT COUNT(*) FROM fyp_groups
+        WHERE supervisor_id = ? AND status = 'accepted'
+        """,
+        (supervisor_id,),
+    )
+    count = int(cursor.fetchone()[0] or 0)
+    cursor.execute(
+        "UPDATE supervisors SET current_groups = ? WHERE id = ?",
+        (count, supervisor_id),
+    )
+    return count
+
+
+@router.post("/groups/{group_id}/discard")
+def discard_group(
+    group_id: int,
+    user_id: Annotated[int | None, Query()] = None,
+    payload: dict[str, Any] = Body(default_factory=dict),
+):
+    """
+    Discard an accepted group so it leaves My Groups and frees a supervision slot.
+    Soft-deletes via status='discarded' (history kept; no longer listed as accepted).
+    """
+    supervisor = _require_supervisor(user_id)
+    supervisor_id = supervisor["id"]
+    reason = (payload.get("reason") or payload.get("note") or "").strip()
+
+    conn = get_db()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            """
+            SELECT id, title, project_title, status, student_contact_email, member_names
+            FROM fyp_groups
+            WHERE id = ? AND supervisor_id = ?
+            """,
+            (group_id, supervisor_id),
+        )
+        group = cursor.fetchone()
+        if not group:
+            raise HTTPException(status_code=404, detail="Group not found.")
+        if (group["status"] or "").strip().lower() != "accepted":
+            raise HTTPException(
+                status_code=409,
+                detail="Only accepted groups can be discarded.",
+            )
+
+        # Collect notify emails before unlinking assignment_requests
+        student_emails = _get_group_notify_emails(cursor, group_id, supervisor_id)
+        if not student_emails:
+            contact = (group["student_contact_email"] or "").strip().lower()
+            if contact:
+                student_emails = [contact]
+            for member in _parse_member_names(group["member_names"]):
+                email = _email_from_member_label(member)
+                if email and email not in student_emails:
+                    student_emails.append(email)
+
+        cursor.execute(
+            "UPDATE fyp_groups SET status = 'discarded' WHERE id = ?",
+            (group_id,),
+        )
+        # Linked assignment request no longer maps to an active group
+        cursor.execute(
+            """
+            UPDATE assignment_requests
+            SET fyp_group_id = NULL
+            WHERE fyp_group_id = ? AND supervisor_id = ?
+            """,
+            (group_id, supervisor_id),
+        )
+
+        slots_used = _sync_supervisor_current_groups(cursor, supervisor_id)
+
+        supervisor_name = supervisor.get("name") or "Your supervisor"
+        group_title = group["title"] or "your group"
+        note_suffix = f" Reason: {reason}" if reason else ""
+        for student_email in student_emails:
+            _create_notification(
+                cursor,
+                recipient_email=student_email,
+                title="Group discarded by supervisor",
+                message=(
+                    f"{supervisor_name} discarded group '{group_title}'. "
+                    f"This frees their supervision slot.{note_suffix}"
+                ),
+                notification_type="group_discarded",
+                related_type="fyp_group",
+                related_id=group_id,
+            )
+
+        conn.commit()
+        return {
+            "success": True,
+            "message": f"Group '{group_title}' discarded. Slot freed.",
+            "group_id": group_id,
+            "slots_used": slots_used,
+            "max_groups": int(supervisor.get("max_groups") or 6),
+            "notified_emails": student_emails,
+        }
+    except HTTPException:
+        conn.rollback()
+        raise
+    except Exception:
+        conn.rollback()
+        logger.exception("Failed to discard group %s", group_id)
+        raise HTTPException(status_code=500, detail="Could not discard group.")
+    finally:
+        conn.close()
+
+
 @router.get("/assignment-requests")
 def list_assignment_requests(
     user_id: Annotated[int | None, Query()] = None,
@@ -628,10 +743,7 @@ def accept_assignment_request(
             """,
             (group_id, resolved_at, request_id),
         )
-        cursor.execute(
-            "UPDATE supervisors SET current_groups = current_groups + 1 WHERE id = ?",
-            (supervisor_id,),
-        )
+        _sync_supervisor_current_groups(cursor, supervisor_id)
 
         supervisor_name = supervisor.get("name") or "Your supervisor"
         topic = request_row["project_title"] or request_row["group_name"]
@@ -912,16 +1024,18 @@ def _serialize_review_paragraphs(cursor, document_id: int) -> list[dict[str, Any
         has_resolved = False
         for comment in cursor.fetchall():
             resolved = bool(comment["is_resolved"])
-            if resolved:
-                has_resolved = True
-            else:
-                has_unresolved = True
             keys = comment.keys()
             parent_id = (
                 comment["parent_comment_id"]
                 if "parent_comment_id" in keys
                 else None
             )
+            # Only top-level supervisor comments drive yellow/gray highlight
+            if parent_id is None:
+                if resolved:
+                    has_resolved = True
+                else:
+                    has_unresolved = True
             comments.append(
                 {
                     "id": comment["id"],
@@ -1053,9 +1167,22 @@ def add_document_comment(
                 related_id=comment_id,
             )
 
-        # Mark document as needing revision when a new unresolved comment is added
+        # Mark document + linked final submission as needing revision so Status Tracker updates
         cursor.execute(
             "UPDATE group_documents SET status = 'revision' WHERE id = ?",
+            (document_id,),
+        )
+        cursor.execute(
+            """
+            UPDATE final_submissions
+            SET status = 'revision',
+                decision_note = COALESCE(
+                    NULLIF(TRIM(decision_note), ''),
+                    'Supervisor left paragraph comments — open document feedback to resolve.'
+                )
+            WHERE group_document_id = ?
+              AND status IN ('pending', 'pending_review', 'revision')
+            """,
             (document_id,),
         )
 
