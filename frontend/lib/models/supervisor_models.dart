@@ -269,7 +269,10 @@ class DocumentCommentModel {
 class DocumentParagraphModel {
   final int id;
   final int sortOrder;
+  final int displayIndex;
   final String text;
+  final String blockType;
+  final String blockLabel;
   final String highlight;
   final bool hasUnresolvedComments;
   final List<DocumentCommentModel> comments;
@@ -277,22 +280,41 @@ class DocumentParagraphModel {
   const DocumentParagraphModel({
     required this.id,
     required this.sortOrder,
+    required this.displayIndex,
     required this.text,
+    required this.blockType,
+    required this.blockLabel,
     required this.highlight,
     required this.hasUnresolvedComments,
     required this.comments,
   });
 
-  factory DocumentParagraphModel.fromJson(Map<String, dynamic> json) => DocumentParagraphModel(
-        id: _asInt(json['id']),
-        sortOrder: _asInt(json['sort_order']),
-        text: (json['text'] ?? '').toString(),
-        highlight: (json['highlight'] ?? 'none').toString(),
-        hasUnresolvedComments: json['has_unresolved_comments'] == true,
-        comments: List<Map<String, dynamic>>.from(json['comments'] ?? const [])
-            .map(DocumentCommentModel.fromJson)
-            .toList(),
-      );
+  factory DocumentParagraphModel.fromJson(Map<String, dynamic> json) {
+    final sortOrder = _asInt(json['sort_order']);
+    final blockType = (json['block_type'] ?? 'paragraph').toString().toLowerCase();
+    final blockLabel = (json['block_label'] ?? '').toString().trim();
+    return DocumentParagraphModel(
+      id: _asInt(json['id']),
+      sortOrder: sortOrder,
+      displayIndex: _asInt(json['display_index'] ?? sortOrder),
+      text: (json['text'] ?? '').toString(),
+      blockType: blockType.isEmpty ? 'paragraph' : blockType,
+      blockLabel: blockLabel.isNotEmpty
+          ? blockLabel
+          : switch (blockType) {
+              'heading' => 'Heading',
+              'subheading' => 'Subheading',
+              'bullet' => 'Bullet',
+              'line' => 'Line',
+              _ => 'Paragraph',
+            },
+      highlight: (json['highlight'] ?? 'none').toString(),
+      hasUnresolvedComments: json['has_unresolved_comments'] == true,
+      comments: List<Map<String, dynamic>>.from(json['comments'] ?? const [])
+          .map(DocumentCommentModel.fromJson)
+          .toList(),
+    );
+  }
 }
 
 class DocumentReviewModel {

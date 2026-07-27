@@ -70,26 +70,11 @@ def _email_from_member_label(label: str) -> str | None:
 
 
 def _extract_docx_paragraphs(file_path: str, limit: int = 250) -> list[str]:
-    """Pull visible paragraph text from a DOCX for in-app review."""
-    import os
+    """Pull body paragraph texts for review (front-matter skipped). Legacy helper."""
+    from review_blocks import extract_review_blocks
 
-    if not file_path or not os.path.exists(file_path):
-        return []
-    ext = os.path.splitext(file_path)[1].lower()
-    if ext != ".docx":
-        return []
     try:
-        from docx import Document as DocxDocument
-
-        doc = DocxDocument(file_path)
-        paragraphs: list[str] = []
-        for p in doc.paragraphs:
-            text = (p.text or "").strip()
-            if text:
-                paragraphs.append(text)
-            if len(paragraphs) >= limit:
-                break
-        return paragraphs
+        return [b["text"] for b in extract_review_blocks(file_path, limit=limit)]
     except Exception as exc:
         logger.warning("Failed to extract paragraphs from %s: %s", file_path, exc)
         return []
@@ -106,11 +91,12 @@ def _create_group_document_for_submission(
     contact_email: str,
 ) -> int:
     """
-    Create a group_documents row + real paragraphs so supervisor can preview/comment
+    Create a group_documents row + classified body blocks so supervisor can preview/comment
     and students can resolve issues in DocumentFeedbackScreen.
     """
     import os
-    import shutil
+
+    from review_blocks import BLOCK_PARAGRAPH, extract_review_blocks
 
     file_path = None
     if source_document_id is not None:
@@ -148,19 +134,30 @@ def _create_group_document_for_submission(
     )
     group_document_id = cursor.lastrowid
 
-    paragraphs = _extract_docx_paragraphs(file_path or "")
-    if not paragraphs:
-        paragraphs = [
-            f"{title}: Document submitted for supervisor review.",
-            "Open the downloaded file for full formatting; comment on sections below.",
+    blocks = extract_review_blocks(file_path or "")
+    if not blocks:
+        blocks = [
+            {
+                "text": f"{title}: Document submitted for supervisor review.",
+                "block_type": BLOCK_PARAGRAPH,
+            },
+            {
+                "text": "Open the downloaded file for full formatting; comment on sections below.",
+                "block_type": BLOCK_LINE,
+            },
         ]
-    for order, text in enumerate(paragraphs, start=1):
+    for order, block in enumerate(blocks, start=1):
         cursor.execute(
             """
-            INSERT INTO document_paragraphs (document_id, sort_order, text)
-            VALUES (?, ?, ?)
+            INSERT INTO document_paragraphs (document_id, sort_order, text, block_type)
+            VALUES (?, ?, ?, ?)
             """,
-            (group_document_id, order, text),
+            (
+                group_document_id,
+                order,
+                block["text"],
+                block.get("block_type") or BLOCK_PARAGRAPH,
+            ),
         )
     return int(group_document_id)
 
@@ -1512,9 +1509,11 @@ def _serialize_notification(row, cursor=None) -> dict[str, Any]:
 
 def _serialize_student_review_paragraphs(cursor, document_id: int) -> list[dict[str, Any]]:
     """Match supervisor `_serialize_review_paragraphs` shape (incl. parent_comment_id)."""
+    from review_blocks import BLOCK_FRONTMATTER, display_label_for_block_type
+
     cursor.execute(
         """
-        SELECT id, sort_order, text
+        SELECT id, sort_order, text, block_type
         FROM document_paragraphs
         WHERE document_id = ?
         ORDER BY sort_order ASC, id ASC
@@ -1522,7 +1521,17 @@ def _serialize_student_review_paragraphs(cursor, document_id: int) -> list[dict[
         (document_id,),
     )
     paragraphs = []
+    display_index = 0
     for row in cursor.fetchall():
+        keys = set(row.keys()) if hasattr(row, "keys") else set()
+        block_type = (
+            (row["block_type"] if "block_type" in keys else None) or "paragraph"
+        ).strip().lower()
+        if block_type == BLOCK_FRONTMATTER:
+            continue
+        if not (row["text"] or "").strip():
+            continue
+        display_index += 1
         cursor.execute(
             """
             SELECT id, comment_text, is_resolved, created_at, resolved_at,
@@ -1538,9 +1547,9 @@ def _serialize_student_review_paragraphs(cursor, document_id: int) -> list[dict[
         has_resolved = False
         for comment in cursor.fetchall():
             resolved = bool(comment["is_resolved"])
-            keys = comment.keys()
+            ckeys = comment.keys()
             parent_id = (
-                comment["parent_comment_id"] if "parent_comment_id" in keys else None
+                comment["parent_comment_id"] if "parent_comment_id" in ckeys else None
             )
             # Highlight only from supervisor top-level comments (not student replies)
             if parent_id is None:
@@ -1569,7 +1578,10 @@ def _serialize_student_review_paragraphs(cursor, document_id: int) -> list[dict[
             {
                 "id": row["id"],
                 "sort_order": row["sort_order"],
+                "display_index": display_index,
                 "text": row["text"],
+                "block_type": block_type,
+                "block_label": display_label_for_block_type(block_type),
                 "highlight": highlight,
                 "has_unresolved_comments": has_unresolved,
                 "comments": comments,

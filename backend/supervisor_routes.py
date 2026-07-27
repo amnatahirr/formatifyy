@@ -943,18 +943,11 @@ def _require_group_document(cursor, *, group_id: int, document_id: int, supervis
     return row
 
 
-def _ensure_document_paragraphs(
-    cursor,
-    document_id: int,
-    document_title: str = "",
-    file_path: str | None = None,
-) -> None:
-    cursor.execute("SELECT COUNT(*) FROM document_paragraphs WHERE document_id = ?", (document_id,))
-    if cursor.fetchone()[0] > 0:
-        return
+def _resolve_group_document_path(cursor, document_id: int, file_path: str | None = None) -> str | None:
+    import os
 
-    paragraphs: list[str] = []
     path = file_path
+    source_id = None
     if not path:
         cursor.execute(
             "SELECT file_url, source_document_id FROM group_documents WHERE id = ?",
@@ -963,44 +956,148 @@ def _ensure_document_paragraphs(
         row = cursor.fetchone()
         if row:
             path = row["file_url"]
-            if (not path or not str(path).strip()) and row["source_document_id"]:
+            source_id = row["source_document_id"]
+            if (not path or not str(path).strip()) and source_id:
                 cursor.execute(
                     "SELECT file_path FROM documents WHERE id = ?",
-                    (row["source_document_id"],),
+                    (source_id,),
                 )
                 src = cursor.fetchone()
                 if src:
                     path = src["file_path"]
-
-    if path:
-        import os
-        from student_routes import _extract_docx_paragraphs
-
-        if os.path.exists(str(path)):
-            paragraphs = _extract_docx_paragraphs(str(path))
-
-    if not paragraphs:
-        paragraphs = [
-            f"{document_title}: Document submitted for supervisor review."
-            if document_title
-            else "Document submitted for supervisor review.",
-            "Download the original file for full layout; use comments on sections below.",
-        ]
-
-    for order, text in enumerate(paragraphs, start=1):
+    else:
         cursor.execute(
-            """
-            INSERT INTO document_paragraphs (document_id, sort_order, text)
-            VALUES (?, ?, ?)
-            """,
-            (document_id, order, text),
+            "SELECT source_document_id FROM group_documents WHERE id = ?",
+            (document_id,),
+        )
+        row = cursor.fetchone()
+        if row:
+            source_id = row["source_document_id"]
+
+    if source_id is not None:
+        working = os.path.join("uploads", "working", f"doc_{source_id}_working.docx")
+        if os.path.exists(working):
+            path = working
+
+    if path and os.path.exists(str(path)):
+        return str(path)
+    return None
+
+
+def _ensure_document_paragraphs(
+    cursor,
+    document_id: int,
+    document_title: str = "",
+    file_path: str | None = None,
+) -> None:
+    """
+    Ensure classified body blocks exist for Document Review.
+    - Empty → extract (skip front-matter, label heading/paragraph/line/bullet)
+    - Legacy rows without useful block_type → re-extract if no comments,
+      else reclassify in place and hide front-matter rows.
+    """
+    from review_blocks import (
+        BLOCK_FRONTMATTER,
+        BLOCK_PARAGRAPH,
+        classify_block_text,
+        extract_review_blocks,
+        frontmatter_text_set,
+    )
+
+    cursor.execute(
+        "SELECT id, text, block_type FROM document_paragraphs WHERE document_id = ?",
+        (document_id,),
+    )
+    existing = cursor.fetchall()
+    path = _resolve_group_document_path(cursor, document_id, file_path)
+
+    def _insert_blocks(blocks: list[dict[str, Any]]) -> None:
+        for order, block in enumerate(blocks, start=1):
+            cursor.execute(
+                """
+                INSERT INTO document_paragraphs (document_id, sort_order, text, block_type)
+                VALUES (?, ?, ?, ?)
+                """,
+                (
+                    document_id,
+                    order,
+                    block["text"],
+                    block.get("block_type") or BLOCK_PARAGRAPH,
+                ),
+            )
+
+    placeholder_blocks = [
+        {
+            "text": (
+                f"{document_title}: Document submitted for supervisor review."
+                if document_title
+                else "Document submitted for supervisor review."
+            ),
+            "block_type": BLOCK_PARAGRAPH,
+        },
+        {
+            "text": "Download the original file for full layout; use comments on sections below.",
+            "block_type": "line",
+        },
+    ]
+
+    if not existing:
+        blocks = extract_review_blocks(path or "") if path else []
+        _insert_blocks(blocks or placeholder_blocks)
+        return
+
+    types = [
+        ((row["block_type"] if "block_type" in row.keys() else None) or "").strip().lower()
+        for row in existing
+    ]
+    frontmatter_count = sum(1 for t in types if t == BLOCK_FRONTMATTER)
+    # All-default paragraphs, OR everything wrongly marked frontmatter → rebuild/repair
+    needs_upgrade = all(t in ("", "paragraph") for t in types) or (
+        len(types) > 0 and frontmatter_count >= len(types)
+    )
+    if not needs_upgrade:
+        return
+
+    cursor.execute(
+        "SELECT COUNT(*) FROM document_comments WHERE document_id = ?",
+        (document_id,),
+    )
+    comment_count = int(cursor.fetchone()[0] or 0)
+
+    if comment_count == 0 and path:
+        cursor.execute(
+            "DELETE FROM document_paragraphs WHERE document_id = ?",
+            (document_id,),
+        )
+        blocks = extract_review_blocks(path)
+        _insert_blocks(blocks or placeholder_blocks)
+        return
+
+    # Preserve comment anchors: reclassify text in place; mark only true front-matter
+    fm_texts = frontmatter_text_set(path) if path else set()
+    # Safety: never hide the whole document as front-matter
+    if fm_texts and len(fm_texts) >= max(1, int(len(existing) * 0.8)):
+        fm_texts = set()
+    for row in existing:
+        text = (row["text"] or "").strip()
+        if not text:
+            continue
+        if text in fm_texts:
+            new_type = BLOCK_FRONTMATTER
+        else:
+            new_type = classify_block_text(text) or BLOCK_PARAGRAPH
+        cursor.execute(
+            "UPDATE document_paragraphs SET block_type = ? WHERE id = ?",
+            (new_type, row["id"]),
         )
 
 
 def _serialize_review_paragraphs(cursor, document_id: int) -> list[dict[str, Any]]:
+    from review_blocks import BLOCK_FRONTMATTER, display_label_for_block_type
+
     cursor.execute(
         """
-        SELECT id, sort_order, text
+        SELECT id, sort_order, text, block_type
         FROM document_paragraphs
         WHERE document_id = ?
         ORDER BY sort_order ASC, id ASC
@@ -1008,7 +1105,19 @@ def _serialize_review_paragraphs(cursor, document_id: int) -> list[dict[str, Any
         (document_id,),
     )
     paragraphs = []
+    display_index = 0
     for row in cursor.fetchall():
+        keys = set(row.keys()) if hasattr(row, "keys") else set()
+        block_type = (
+            (row["block_type"] if "block_type" in keys else None) or "paragraph"
+        ).strip().lower()
+        if block_type == BLOCK_FRONTMATTER:
+            continue
+        # Skip empty lines if any slipped through
+        if not (row["text"] or "").strip():
+            continue
+
+        display_index += 1
         cursor.execute(
             """
             SELECT id, comment_text, is_resolved, created_at, resolved_at,
@@ -1024,10 +1133,10 @@ def _serialize_review_paragraphs(cursor, document_id: int) -> list[dict[str, Any
         has_resolved = False
         for comment in cursor.fetchall():
             resolved = bool(comment["is_resolved"])
-            keys = comment.keys()
+            ckeys = comment.keys()
             parent_id = (
                 comment["parent_comment_id"]
-                if "parent_comment_id" in keys
+                if "parent_comment_id" in ckeys
                 else None
             )
             # Only top-level supervisor comments drive yellow/gray highlight
@@ -1058,7 +1167,10 @@ def _serialize_review_paragraphs(cursor, document_id: int) -> list[dict[str, Any
             {
                 "id": row["id"],
                 "sort_order": row["sort_order"],
+                "display_index": display_index,
                 "text": row["text"],
+                "block_type": block_type,
+                "block_label": display_label_for_block_type(block_type),
                 "highlight": highlight,
                 "has_unresolved_comments": has_unresolved,
                 "comments": comments,

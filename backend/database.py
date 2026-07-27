@@ -461,10 +461,18 @@ def init_db():
             document_id INTEGER NOT NULL,
             sort_order INTEGER NOT NULL DEFAULT 0,
             text TEXT NOT NULL,
+            block_type TEXT DEFAULT 'paragraph',
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (document_id) REFERENCES group_documents(id)
         )
     """)
+
+    cursor.execute("PRAGMA table_info(document_paragraphs)")
+    document_paragraph_columns = {row[1] for row in cursor.fetchall()}
+    if "block_type" not in document_paragraph_columns:
+        cursor.execute(
+            "ALTER TABLE document_paragraphs ADD COLUMN block_type TEXT DEFAULT 'paragraph'"
+        )
 
     # 17. Supervisor comments linked to a paragraph
     cursor.execute("""

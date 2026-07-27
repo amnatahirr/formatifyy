@@ -485,14 +485,23 @@ class _ParagraphCard extends StatelessWidget {
             children: [
               Row(
                 children: [
-                  Text(
-                    'Paragraph ${paragraph.sortOrder}',
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
                       color: paragraph.highlight == 'none'
-                          ? Colors.white.withOpacity(0.45)
-                          : const Color(0xFF4B5563),
+                          ? Colors.white.withOpacity(0.08)
+                          : const Color(0xFF4B5563).withOpacity(0.18),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text(
+                      paragraph.blockLabel,
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        color: paragraph.highlight == 'none'
+                            ? Colors.white.withOpacity(0.55)
+                            : const Color(0xFF4B5563),
+                      ),
                     ),
                   ),
                   const Spacer(),
