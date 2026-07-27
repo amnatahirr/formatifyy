@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../../theme/app_theme.dart';
 
 /// Shared project card used by the Dashboard recent list and Collaboration hub.
 class ProjectCard extends StatelessWidget {
@@ -22,6 +24,7 @@ class ProjectCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.watch<ThemeProvider>().palette;
     final name = project['name'] as String? ?? 'Project';
     final creator = project['owner_name'] as String? ?? 'Unknown';
     final created = _formatDate(project['created_at']);
@@ -36,9 +39,10 @@ class ProjectCard extends StatelessWidget {
           width: width,
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: const Color(0xFF161B22),
+            color: p.surface,
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Colors.white.withOpacity(0.1)),
+            border: Border.all(color: p.border),
+            boxShadow: p.cardShadow,
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -61,8 +65,8 @@ class ProjectCard extends StatelessWidget {
                   Expanded(
                     child: Text(
                       name,
-                      style: const TextStyle(
-                        color: Colors.white,
+                      style: TextStyle(
+                        color: p.textPrimary,
                         fontWeight: FontWeight.w700,
                         fontSize: 14,
                       ),
@@ -72,16 +76,17 @@ class ProjectCard extends StatelessWidget {
                   Icon(
                     Icons.chevron_right,
                     size: 16,
-                    color: Colors.white.withOpacity(0.4),
+                    color: p.textMuted,
                   ),
                 ],
               ),
               const SizedBox(height: 12),
-              _metaRow(Icons.person_outline, 'Created by $creator'),
+              _metaRow(p, Icons.person_outline, 'Created by $creator'),
               const SizedBox(height: 6),
-              _metaRow(Icons.calendar_today_outlined, created),
+              _metaRow(p, Icons.calendar_today_outlined, created),
               const SizedBox(height: 6),
               _metaRow(
+                p,
                 Icons.description_outlined,
                 hasDoc ? filename : 'No document yet',
                 muted: !hasDoc,
@@ -93,18 +98,16 @@ class ProjectCard extends StatelessWidget {
     );
   }
 
-  Widget _metaRow(IconData icon, String text, {bool muted = false}) {
+  Widget _metaRow(AppPalette p, IconData icon, String text, {bool muted = false}) {
     return Row(
       children: [
-        Icon(icon, size: 12, color: Colors.white.withOpacity(0.35)),
+        Icon(icon, size: 12, color: p.textMuted),
         const SizedBox(width: 6),
         Expanded(
           child: Text(
             text,
             style: TextStyle(
-              color: muted
-                  ? Colors.white.withOpacity(0.35)
-                  : Colors.white.withOpacity(0.55),
+              color: muted ? p.textMuted : p.textSecondary,
               fontSize: 11,
               fontStyle: muted ? FontStyle.italic : FontStyle.normal,
             ),

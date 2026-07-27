@@ -2046,6 +2046,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:provider/provider.dart';
+import '../theme/app_theme.dart';
 import '../providers/auth_provider.dart';
 import '../config/api_config.dart';
 import '../widgets/app_sidebar.dart';
@@ -2061,14 +2062,16 @@ import ' image_formatter_screen.dart';
 import '../widgets/reference_formatter_widget.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Color palette
+// Color palette — follows ThemeProvider (light / dark)
 // ─────────────────────────────────────────────────────────────────────────────
-const _bg = Color(0xFF0D1117);
-const _surface = Color(0xFF161B22);
-const _surface2 = Color(0xFF1C2333);
-const _border = Color(0xFF30363D);
-const _textPri = Colors.white;
-const _textSec = Color(0xFF8B949E);
+AppPalette _ap = AppPalette.dark;
+
+Color get _bg => _ap.scaffold;
+Color get _surface => _ap.surface;
+Color get _surface2 => _ap.surfaceElevated;
+Color get _border => _ap.border;
+Color get _textPri => _ap.textPrimary;
+Color get _textSec => _ap.textSecondary;
 const _green = Color(0xFF10B981);
 const _yellow = Color(0xFFF59E0B);
 const _red = Color(0xFFEF4444);
@@ -3824,6 +3827,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
 
   @override
   Widget build(BuildContext context) {
+    _ap = context.watch<ThemeProvider>().palette;
     return Scaffold(
       backgroundColor: _bg,
       body: Row(
@@ -3861,21 +3865,21 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
   Widget _buildTopBar() {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         color: _bg,
         border: Border(bottom: BorderSide(color: _border)),
       ),
       child: Row(
         children: [
           IconButton(
-            icon: const Icon(Icons.arrow_back, color: _textPri),
+            icon: Icon(Icons.arrow_back, color: _textPri),
             onPressed: () => Navigator.pop(context),
           ),
           const SizedBox(width: 10),
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
+              Text(
                 'Analysis Report',
                 style: TextStyle(
                   color: _textPri,
@@ -3885,14 +3889,14 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
               ),
               Text(
                 widget.documentName,
-                style: const TextStyle(color: _textSec, fontSize: 12),
+                style: TextStyle(color: _textSec, fontSize: 12),
               ),
             ],
           ),
           const Spacer(),
           Text(
             'Template: ${widget.templateName}',
-            style: const TextStyle(color: _textSec, fontSize: 12),
+            style: TextStyle(color: _textSec, fontSize: 12),
           ),
           const SizedBox(width: 20),
           ElevatedButton.icon(
@@ -3901,7 +3905,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
             label: const Text('Export'),
             style: ElevatedButton.styleFrom(
               backgroundColor: _green,
-              foregroundColor: _textPri,
+              foregroundColor: Colors.white,
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
             ),
           ),
@@ -3910,7 +3914,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
     );
   }
 
-  Widget _buildLoading() => const Center(
+  Widget _buildLoading() => Center(
     child: Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -4216,7 +4220,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
                           Expanded(
                             child: Text(
                               text,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 color: _textPri,
                                 fontSize: 13,
                                 fontWeight: FontWeight.w600,
@@ -4256,7 +4260,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
               const SizedBox(height: 10),
               Text(
                 fixDescription,
-                style: const TextStyle(color: _textSec, fontSize: 11, height: 1.4),
+                style: TextStyle(color: _textSec, fontSize: 11, height: 1.4),
               ),
             ],
             if (isPendingExtra || isDiscarded) ...[
@@ -4432,7 +4436,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
                   children: [
                     _StatusBadge(status),
                     const SizedBox(width: 12),
-                    const Text(
+                    Text(
                       'Structure Score',
                       style: TextStyle(
                         color: _textPri,
@@ -4565,7 +4569,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
           children: [
             const Icon(Icons.format_size, color: _blue, size: 18),
             const SizedBox(width: 8),
-            const Text(
+            Text(
               'Heading Style Compliance',
               style: TextStyle(
                 color: _textPri,
@@ -4593,7 +4597,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
           ],
         ),
         const SizedBox(height: 4),
-        const Text(
+        Text(
           'Checks if each required heading exists and has the correct font, size, and bold settings per the template.',
           style: TextStyle(color: _textSec, fontSize: 11, height: 1.4),
         ),
@@ -4635,7 +4639,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
                   ],
                 ),
                 const SizedBox(height: 6),
-                const Text(
+                Text(
                   'Apply template heading styles first so the compliance check can accurately report PASS/FAIL for each section.',
                   style: TextStyle(color: _textSec, fontSize: 11, height: 1.4),
                 ),
@@ -4767,7 +4771,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
                         children: [
                           Text(
                             name,
-                            style: const TextStyle(
+                            style: TextStyle(
                               color: _textPri,
                               fontSize: 13,
                               fontWeight: FontWeight.w600,
@@ -4793,7 +4797,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
                       else if (matchedTxt != null)
                         Text(
                           'Found: "$matchedTxt"',
-                          style: const TextStyle(color: _textSec, fontSize: 11),
+                          style: TextStyle(color: _textSec, fontSize: 11),
                           overflow: TextOverflow.ellipsis,
                         ),
                     ],
@@ -4843,7 +4847,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
                             if (expected['font_name'] != null)
                               Text(
                                 'Font: ${expected['font_name']}',
-                                style: const TextStyle(
+                                style: TextStyle(
                                   color: _textSec,
                                   fontSize: 10,
                                 ),
@@ -4851,7 +4855,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
                             if (expected['font_size'] != null)
                               Text(
                                 'Size: ${expected['font_size']}pt',
-                                style: const TextStyle(
+                                style: TextStyle(
                                   color: _textSec,
                                   fontSize: 10,
                                 ),
@@ -4859,7 +4863,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
                             if (expected['bold'] != null)
                               Text(
                                 'Bold: ${expected['bold']}',
-                                style: const TextStyle(
+                                style: TextStyle(
                                   color: _textSec,
                                   fontSize: 10,
                                 ),
@@ -4867,7 +4871,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
                           ],
                         ),
                       ),
-                      const Icon(
+                      Icon(
                         Icons.arrow_forward,
                         color: _textSec,
                         size: 12,
@@ -4890,7 +4894,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
                             if (actual['font_name'] != null)
                               Text(
                                 'Font: ${actual['font_name']}',
-                                style: const TextStyle(
+                                style: TextStyle(
                                   color: _textSec,
                                   fontSize: 10,
                                 ),
@@ -4898,7 +4902,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
                             if (actual['font_size'] != null)
                               Text(
                                 'Size: ${actual['font_size']}pt',
-                                style: const TextStyle(
+                                style: TextStyle(
                                   color: _textSec,
                                   fontSize: 10,
                                 ),
@@ -4906,7 +4910,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
                             if (actual['bold'] != null)
                               Text(
                                 'Bold: ${actual['bold']}',
-                                style: const TextStyle(
+                                style: TextStyle(
                                   color: _textSec,
                                   fontSize: 10,
                                 ),
@@ -5016,7 +5020,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
           children: [
             const Icon(Icons.article_outlined, color: _purple, size: 18),
             const SizedBox(width: 8),
-            const Text(
+            Text(
               'Paragraph Style Compliance',
               style: TextStyle(
                 color: _textPri,
@@ -5066,7 +5070,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
           ],
         ),
         const SizedBox(height: 4),
-        const Text(
+        Text(
           'Scans all body paragraphs for font, size, alignment, and line-spacing compliance.',
           style: TextStyle(color: _textSec, fontSize: 11, height: 1.4),
         ),
@@ -5147,7 +5151,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
               padding: const EdgeInsets.only(top: 6),
               child: Text(
                 '… and ${_paragraphStyleIssues.length - 5} more paragraphs',
-                style: const TextStyle(color: _textSec, fontSize: 11),
+                style: TextStyle(color: _textSec, fontSize: 11),
               ),
             ),
         ],
@@ -5176,7 +5180,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
               Expanded(
                 child: Text(
                   preview,
-                  style: const TextStyle(color: _textSec, fontSize: 11),
+                  style: TextStyle(color: _textSec, fontSize: 11),
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
@@ -5276,7 +5280,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
                       children: [
                         Text(
                           name,
-                          style: const TextStyle(
+                          style: TextStyle(
                             color: _textPri,
                             fontSize: 14,
                             fontWeight: FontWeight.w500,
@@ -5290,18 +5294,18 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
                     ),
                   ),
                   if (matched != null && matched != name) ...[
-                    const Icon(Icons.arrow_forward, size: 12, color: _textSec),
+                    Icon(Icons.arrow_forward, size: 12, color: _textSec),
                     const SizedBox(width: 6),
                     Text(
                       matched,
-                      style: const TextStyle(color: _textSec, fontSize: 12),
+                      style: TextStyle(color: _textSec, fontSize: 12),
                     ),
                     const SizedBox(width: 8),
                   ],
                   if (docPos != null)
                     Text(
                       '@$docPos',
-                      style: const TextStyle(color: _textSec, fontSize: 11),
+                      style: TextStyle(color: _textSec, fontSize: 11),
                     ),
                   const SizedBox(width: 12),
                   if (layer != null) _Tag(layer, layerC),
@@ -5335,18 +5339,18 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.fromLTRB(56, 0, 16, 16),
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         color: _bg,
         borderRadius: BorderRadius.vertical(bottom: Radius.circular(10)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Divider(color: _border, height: 1),
+          Divider(color: _border, height: 1),
           const SizedBox(height: 12),
           Text(
             _fixExplanation(name, status, matched, layer),
-            style: const TextStyle(color: _textSec, fontSize: 12, height: 1.5),
+            style: TextStyle(color: _textSec, fontSize: 12, height: 1.5),
           ),
           const SizedBox(height: 12),
           Wrap(
@@ -5453,7 +5457,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
+          Text(
             'Layer 2 — Heading Match Method',
             style: TextStyle(
               color: _textSec,
@@ -5525,7 +5529,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
                 const SizedBox(height: 2),
                 Text(
                   body,
-                  style: const TextStyle(color: _textSec, fontSize: 12),
+                  style: TextStyle(color: _textSec, fontSize: 12),
                 ),
               ],
             ),
@@ -5681,7 +5685,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
               const SizedBox(width: 6),
               Text(
                 'Section: "$heading"',
-                style: const TextStyle(
+                style: TextStyle(
                   color: _textPri,
                   fontSize: 13,
                   fontWeight: FontWeight.w600,
@@ -5692,12 +5696,12 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
           const SizedBox(height: 6),
           Text(
             message,
-            style: const TextStyle(color: _textSec, fontSize: 12, height: 1.4),
+            style: TextStyle(color: _textSec, fontSize: 12, height: 1.4),
           ),
           const SizedBox(height: 10),
           Row(
             children: [
-              const Text(
+              Text(
                 'Mismatch confidence: ',
                 style: TextStyle(color: _textSec, fontSize: 10),
               ),
@@ -5727,7 +5731,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
           ),
           if (ownSimilarity != null || bestMatchHeading != null) ...[
             const SizedBox(height: 10),
-            const Divider(color: _border, height: 1),
+            Divider(color: _border, height: 1),
             const SizedBox(height: 10),
             if (ownSimilarity != null)
               _DiffRow(
@@ -5754,7 +5758,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
               const SizedBox(height: 8),
               Text(
                 'Tip: Consider moving this content to "$bestMatchHeading".',
-                style: const TextStyle(
+                style: TextStyle(
                   color: _textSec,
                   fontSize: 10,
                   fontStyle: FontStyle.italic,
@@ -5802,13 +5806,13 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
               _Tag(category.toUpperCase(), _blue),
               if ((issue['page'] as num?) != null && (issue['page'] as num) > 0) ...[
                 const Spacer(),
-                Text('Page ${issue['page']}', style: const TextStyle(color: _textSec, fontSize: 11)),
+                Text('Page ${issue['page']}', style: TextStyle(color: _textSec, fontSize: 11)),
               ],
             ],
           ),
           if (description.isNotEmpty) ...[
             const SizedBox(height: 10),
-            Text(description, style: const TextStyle(color: _textSec, fontSize: 12, height: 1.4)),
+            Text(description, style: TextStyle(color: _textSec, fontSize: 12, height: 1.4)),
           ],
           if (original.isNotEmpty)
             Padding(
@@ -5884,7 +5888,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
                 const SizedBox(height: 4),
                 Text(
                   body,
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: _textSec,
                     fontSize: 11,
                     height: 1.5,
@@ -6076,7 +6080,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
                         Expanded(
                           child: Text(
                             issue['code'] as String? ?? '',
-                            style: const TextStyle(
+                            style: TextStyle(
                               color: _textSec,
                               fontSize: 10,
                               fontFamily: 'monospace',
@@ -6089,7 +6093,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
                     const SizedBox(height: 6),
                     Text(
                       issue['message'] as String? ?? '',
-                      style: const TextStyle(
+                      style: TextStyle(
                         color: _textSec,
                         fontSize: 12,
                         height: 1.4,
@@ -6295,7 +6299,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
                 child: const Icon(Icons.auto_fix_high, color: _blue, size: 20),
               ),
               const SizedBox(width: 12),
-              const Expanded(
+              Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -6389,7 +6393,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
                         Expanded(
                           child: Text(
                             issue['category'] as String? ?? '',
-                            style: const TextStyle(
+                            style: TextStyle(
                               color: _textSec,
                               fontSize: 11,
                               fontFamily: 'monospace',
@@ -6400,7 +6404,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
                         if (((issue['line'] as num?)?.toInt() ?? 0) > 0)
                           Text(
                             'Line ${issue['line']}',
-                            style: const TextStyle(
+                            style: TextStyle(
                               color: _textSec,
                               fontSize: 10,
                             ),
@@ -6413,7 +6417,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
                           issue['reason'] as String? ??
                           issue['message'] as String? ??
                           '',
-                      style: const TextStyle(color: _textSec, fontSize: 12),
+                      style: TextStyle(color: _textSec, fontSize: 12),
                     ),
                   ],
                 ),
@@ -6423,7 +6427,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
           if ((issue['current'] as String? ?? '').isNotEmpty ||
               (issue['suggestion'] as String? ?? '').isNotEmpty) ...[
             const SizedBox(height: 10),
-            const Divider(color: _border, height: 1),
+            Divider(color: _border, height: 1),
             const SizedBox(height: 10),
             if ((issue['current'] as String? ?? '').isNotEmpty)
               _DiffRow(label: 'Current', text: issue['current'], color: _red),
@@ -6523,7 +6527,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
                 const SizedBox(width: 8),
                 Text(
                   '$pct% confidence',
-                  style: const TextStyle(color: _textSec, fontSize: 11),
+                  style: TextStyle(color: _textSec, fontSize: 11),
                 ),
               ],
             ),
@@ -6532,9 +6536,9 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
             padding: const EdgeInsets.fromLTRB(14, 10, 14, 0),
             child: Row(
               children: [
-                const Icon(Icons.label_outline, color: _textSec, size: 13),
+                Icon(Icons.label_outline, color: _textSec, size: 13),
                 const SizedBox(width: 6),
-                const Text(
+                Text(
                   'Category: ',
                   style: TextStyle(color: _textSec, fontSize: 11),
                 ),
@@ -6565,12 +6569,12 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
               children: [
                 Row(
                   children: [
-                    const Icon(Icons.attach_file, color: _textSec, size: 12),
+                    Icon(Icons.attach_file, color: _textSec, size: 12),
                     const SizedBox(width: 4),
                     Expanded(
                       child: Text(
                         filename,
-                        style: const TextStyle(
+                        style: TextStyle(
                           color: _textSec,
                           fontSize: 11,
                           fontFamily: 'monospace',
@@ -6583,7 +6587,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
                 const SizedBox(height: 10),
                 Text(
                   reason,
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: _textSec,
                     fontSize: 12,
                     height: 1.4,
@@ -6592,7 +6596,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
                 const SizedBox(height: 10),
                 Row(
                   children: [
-                    const Text(
+                    Text(
                       'Detection confidence: ',
                       style: TextStyle(color: _textSec, fontSize: 11),
                     ),
@@ -6632,7 +6636,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
                     label: const Text('Replace Image'),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: _blue,
-                      foregroundColor: _textPri,
+                      foregroundColor: Colors.white,
                     ),
                     onPressed: () {
                       final auth = context.read<AuthProvider>();
@@ -6692,7 +6696,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
 
   Widget _buildTablesTab() {
     if (_tablesLoading) {
-      return const Center(
+      return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -6781,7 +6785,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
                           ),
                           style: OutlinedButton.styleFrom(
                             foregroundColor: _blue,
-                            side: const BorderSide(color: _border),
+                            side: BorderSide(color: _border),
                             padding: const EdgeInsets.symmetric(
                               horizontal: 12,
                               vertical: 8,
@@ -6915,7 +6919,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
                     ),
                     child: Text(
                       table.label,
-                      style: const TextStyle(
+                      style: TextStyle(
                         color: _textSec,
                         fontSize: 11,
                         fontWeight: FontWeight.w600,
@@ -6929,7 +6933,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
                       children: [
                         Text(
                           '${table.rowCount} rows × ${table.colCount} columns',
-                          style: const TextStyle(
+                          style: TextStyle(
                             color: _textPri,
                             fontSize: 13,
                             fontWeight: FontWeight.w500,
@@ -7000,7 +7004,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
           ),
           if (isExpanded)
             Container(
-              decoration: const BoxDecoration(
+              decoration: BoxDecoration(
                 color: _bg,
                 borderRadius: BorderRadius.vertical(
                   bottom: Radius.circular(10),
@@ -7009,9 +7013,9 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Divider(color: _border, height: 1),
+                  Divider(color: _border, height: 1),
                   if (table.previewRows.isNotEmpty) ...[
-                    const Padding(
+                    Padding(
                       padding: EdgeInsets.fromLTRB(14, 12, 14, 6),
                       child: Text(
                         'PREVIEW',
@@ -7075,7 +7079,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
                     ),
                   ],
                   if (table.issues.isNotEmpty) ...[
-                    const Padding(
+                    Padding(
                       padding: EdgeInsets.fromLTRB(14, 0, 14, 6),
                       child: Text(
                         'ISSUES',
@@ -7126,7 +7130,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
                                   const SizedBox(height: 2),
                                   Text(
                                     issue.message,
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                       color: _textSec,
                                       fontSize: 11,
                                       height: 1.4,
@@ -7179,7 +7183,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
   Widget _buildTablesSidebar() {
     return Container(
       width: 280,
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         color: _surface,
         border: Border(left: BorderSide(color: _border)),
       ),
@@ -7189,7 +7193,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // ── Header ────────────────────────────────────────────────────────
-            const Text(
+            Text(
               'TEMPLATE STYLE',
               style: TextStyle(
                 color: _textSec,
@@ -7232,14 +7236,14 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
                       children: [
                         Text(
                           widget.templateName,
-                          style: const TextStyle(
+                          style: TextStyle(
                             color: _textPri,
                             fontSize: 12,
                             fontWeight: FontWeight.w700,
                           ),
                           overflow: TextOverflow.ellipsis,
                         ),
-                        const Text(
+                        Text(
                           'Configured by admin',
                           style: TextStyle(color: _textSec, fontSize: 10),
                         ),
@@ -7273,7 +7277,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
             const SizedBox(height: 16),
 
             // ── What will be applied ──────────────────────────────────────────
-            const Text(
+            Text(
               'WHAT GETS APPLIED',
               style: TextStyle(
                 color: _textSec,
@@ -7330,7 +7334,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
                 borderRadius: BorderRadius.circular(8),
                 border: Border.all(color: _purple.withOpacity(0.22)),
               ),
-              child: const Row(
+              child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Icon(Icons.info_outline, size: 13, color: _purple),
@@ -7370,7 +7374,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
               children: [
                 Text(
                   label,
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: _textPri,
                     fontSize: 11,
                     fontWeight: FontWeight.w500,
@@ -7378,7 +7382,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
                 ),
                 Text(
                   sub,
-                  style: const TextStyle(color: _textSec, fontSize: 10),
+                  style: TextStyle(color: _textSec, fontSize: 10),
                   overflow: TextOverflow.ellipsis,
                 ),
               ],
@@ -7399,7 +7403,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
     final count = _selectedTableIndices.length;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         color: _surface,
         border: Border(top: BorderSide(color: _border)),
       ),
@@ -7421,7 +7425,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
               // ── Changed subtitle ──────────────────────────────────────────────
               Text(
                 'Style: from template · ${widget.templateName}',
-                style: const TextStyle(color: _textSec, fontSize: 11),
+                style: TextStyle(color: _textSec, fontSize: 11),
                 overflow: TextOverflow.ellipsis,
               ),
             ],
@@ -7480,7 +7484,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
 
   Widget _buildDocumentListsTab() {
     if (_tocLoading && !_tocLoaded) {
-      return const Center(
+      return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -7550,7 +7554,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
                       child: const Icon(Icons.toc, color: _blue, size: 20),
                     ),
                     const SizedBox(width: 12),
-                    const Expanded(
+                    Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -7653,7 +7657,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
                   const SizedBox(height: 24),
                   Text(
                     'Detected Headings',
-                    style: const TextStyle(
+                    style: TextStyle(
                       color: _textPri,
                       fontSize: 13,
                       fontWeight: FontWeight.w600,
@@ -7681,7 +7685,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
                           Expanded(
                             child: Text(
                               text,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 color: _textPri,
                                 fontSize: 12,
                                 fontWeight: FontWeight.w500,
@@ -7697,7 +7701,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
                       padding: const EdgeInsets.only(top: 6),
                       child: Text(
                         '+ ${headings.length - 12} more headings',
-                        style: const TextStyle(color: _textSec, fontSize: 11),
+                        style: TextStyle(color: _textSec, fontSize: 11),
                       ),
                     ),
                 ],
@@ -7759,7 +7763,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
                           Expanded(
                             child: Text(
                               title,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 color: _textPri,
                                 fontSize: 14,
                                 fontWeight: FontWeight.w600,
@@ -7773,7 +7777,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
                       const SizedBox(height: 4),
                       Text(
                         subtitle,
-                        style: const TextStyle(
+                        style: TextStyle(
                           color: _textSec,
                           fontSize: 11,
                           height: 1.4,
@@ -7830,7 +7834,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         color: _surface,
         border: Border(top: BorderSide(color: _border)),
       ),
@@ -7849,7 +7853,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
                   fontWeight: FontWeight.w600,
                 ),
               ),
-              const Text(
+              Text(
                 'Fields update page numbers in Microsoft Word',
                 style: TextStyle(color: _textSec, fontSize: 11),
               ),
@@ -7967,7 +7971,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
                 width: 32,
                 child: Text(
                   '${i + 1}',
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: _textSec,
                     fontSize: 10,
                     fontFamily: 'monospace',
@@ -8022,7 +8026,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
                 ),
               ),
               const SizedBox(width: 12),
-              const Column(
+              Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
@@ -8090,7 +8094,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
     }).length;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         color: _surface,
         border: Border(top: BorderSide(color: _border)),
       ),
@@ -8101,9 +8105,9 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
             children: [
               Text(
                 '$activeIssues issues  ·  $majorCount major',
-                style: const TextStyle(color: _textPri, fontSize: 13),
+                style: TextStyle(color: _textPri, fontSize: 13),
               ),
-              const Text(
+              Text(
                 'Review highlights, apply fixes, then download',
                 style: TextStyle(color: _textSec, fontSize: 11),
               ),
@@ -8112,7 +8116,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
           const Spacer(),
           TextButton(
             onPressed: () => _showSnack('All issues ignored', _textSec),
-            child: const Text('Ignore All', style: TextStyle(color: _textSec)),
+            child: Text('Ignore All', style: TextStyle(color: _textSec)),
           ),
           const SizedBox(width: 12),
           _isFixApplied
@@ -8163,7 +8167,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
                 ),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: _purple,
-                  foregroundColor: _textPri,
+                  foregroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(
                     horizontal: 20,
                     vertical: 12,
@@ -8181,20 +8185,21 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
     IconData icon,
     String title,
     String subtitle, {
-    Color color = _textSec,
+    Color? color,
     String? actionLabel,
     VoidCallback? onAction,
   }) {
+    final c = color ?? _textSec;
     return Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, color: color.withOpacity(0.4), size: 56),
+          Icon(icon, color: c.withOpacity(0.4), size: 56),
           const SizedBox(height: 16),
           Text(
             title,
             style: TextStyle(
-              color: color,
+              color: c,
               fontSize: 16,
               fontWeight: FontWeight.w600,
             ),
@@ -8204,7 +8209,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
             padding: const EdgeInsets.symmetric(horizontal: 48),
             child: Text(
               subtitle,
-              style: const TextStyle(color: _textSec, fontSize: 12),
+              style: TextStyle(color: _textSec, fontSize: 12),
               textAlign: TextAlign.center,
             ),
           ),
@@ -8419,6 +8424,7 @@ class _BulletsTabContentState extends State<_BulletsTabContent> {
 
   @override
   Widget build(BuildContext context) {
+    _ap = context.watch<ThemeProvider>().palette;
     return FutureBuilder<Map<String, dynamic>>(
       future: _bulletsFuture,
       builder: (context, snapshot) {
@@ -8436,7 +8442,7 @@ class _BulletsTabContentState extends State<_BulletsTabContent> {
               children: [
                 const Icon(Icons.error_outline, size: 48, color: _red),
                 const SizedBox(height: 12),
-                const Text(
+                Text(
                   'Error analyzing bullets',
                   style: TextStyle(color: _textPri, fontSize: 14),
                 ),
@@ -8498,7 +8504,7 @@ class _BulletsTabContentState extends State<_BulletsTabContent> {
                             'working copy from the server and re-upload.'
                         : 'No list groups were detected in this document. '
                             'The document may not contain any list-like content.',
-                    style: const TextStyle(
+                    style: TextStyle(
                       color: _textSec,
                       fontSize: 12,
                       height: 1.5,
@@ -8528,7 +8534,7 @@ class _BulletsTabContentState extends State<_BulletsTabContent> {
                       size: 18,
                     ),
                     const SizedBox(width: 8),
-                    const Text(
+                    Text(
                       'Detected Bullet Groups',
                       style: TextStyle(
                         color: _textPri,
@@ -8661,7 +8667,7 @@ class _BulletsTabContentState extends State<_BulletsTabContent> {
                                           ),
                                           Text(
                                             '${entry.key + 1}. ',
-                                            style: const TextStyle(
+                                            style: TextStyle(
                                               color: _textSec,
                                               fontSize: 12,
                                             ),
@@ -8671,7 +8677,7 @@ class _BulletsTabContentState extends State<_BulletsTabContent> {
                                               itemText.length > 90
                                                   ? '${itemText.substring(0, 90)}...'
                                                   : itemText,
-                                              style: const TextStyle(
+                                              style: TextStyle(
                                                 color: _textPri,
                                                 fontSize: 12,
                                               ),
@@ -8873,7 +8879,7 @@ class _SummaryCard extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 4),
-        Text(label, style: const TextStyle(color: _textSec, fontSize: 11)),
+        Text(label, style: TextStyle(color: _textSec, fontSize: 11)),
       ],
     ),
   );
@@ -8895,7 +8901,7 @@ class _SummaryPill extends StatelessWidget {
           fontWeight: FontWeight.w800,
         ),
       ),
-      Text(label, style: const TextStyle(color: _textSec, fontSize: 10)),
+      Text(label, style: TextStyle(color: _textSec, fontSize: 10)),
     ],
   );
 }
@@ -8982,7 +8988,7 @@ class _LegendItem extends StatelessWidget {
     children: [
       _Tag(label, color),
       const SizedBox(width: 6),
-      Text(description, style: const TextStyle(color: _textSec, fontSize: 11)),
+      Text(description, style: TextStyle(color: _textSec, fontSize: 11)),
     ],
   );
 }

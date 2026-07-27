@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
+import '../theme/app_theme.dart';
 import '../utils/responsive.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -417,6 +418,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
   void _login(BuildContext context) async {
     final auth = context.read<AuthProvider>();
+    final theme = context.read<ThemeProvider>();
     final success = await auth.login(
       _emailController.text.trim(),
       _passwordController.text,
@@ -424,6 +426,9 @@ class _LoginScreenState extends State<LoginScreen> {
     );
 
     if (success && mounted) {
+      // Always Dark Mode after sign-in.
+      await theme.bindToUser(auth.userId);
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Login successful!')),
       );
@@ -432,6 +437,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
   void _signup(BuildContext context) async {
     final auth = context.read<AuthProvider>();
+    final theme = context.read<ThemeProvider>();
     final success = await auth.signup(
       _firstNameController.text.trim(),
       _emailController.text.trim(),
@@ -440,6 +446,9 @@ class _LoginScreenState extends State<LoginScreen> {
     );
 
     if (success && mounted) {
+      // Always Dark Mode after sign-up.
+      await theme.bindToUser(auth.userId);
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Signup successful!')),
       );
@@ -448,9 +457,12 @@ class _LoginScreenState extends State<LoginScreen> {
 
   void _signInWithGoogle(BuildContext context) async {
     final auth = context.read<AuthProvider>();
+    final theme = context.read<ThemeProvider>();
     final success = await auth.googleSignIn();
 
     if (success && mounted) {
+      await theme.bindToUser(auth.userId);
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Google Sign-In successful!')),
       );
@@ -459,9 +471,12 @@ class _LoginScreenState extends State<LoginScreen> {
 
   void _signInWithGitHub(BuildContext context) async {
     final auth = context.read<AuthProvider>();
+    final theme = context.read<ThemeProvider>();
     final success = await auth.githubSignIn();
 
     if (success && mounted) {
+      await theme.bindToUser(auth.userId);
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('GitHub Sign-In successful!')),
       );

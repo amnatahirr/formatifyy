@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../../providers/auth_provider.dart';
 import '../../providers/fyp_provider.dart';
+import '../../theme/app_theme.dart';
 import '../../utils/responsive.dart';
 
 /// Read-only FYP milestones — checklist on desktop, progress bars when compact.
@@ -21,11 +22,9 @@ class FypMilestonesScreen extends StatefulWidget {
 }
 
 class _FypMilestonesScreenState extends State<FypMilestonesScreen> {
+  AppPalette get _p => context.watch<ThemeProvider>().palette;
   String? _error;
   bool _loading = true;
-
-  static const _card = Color(0xFF161B22);
-  static const _border = Color(0x22FFFFFF);
   static const _accent = Color(0xFF3B82F6);
   static const _done = Color(0xFF10B981);
   static const _warn = Color(0xFFF59E0B);
@@ -110,7 +109,7 @@ class _FypMilestonesScreenState extends State<FypMilestonesScreen> {
     final compact = isCompact(context);
 
     if (_loading || fyp.isMilestonesLoading) {
-      return const Center(child: CircularProgressIndicator(color: _accent));
+      return Center(child: CircularProgressIndicator(color: _accent));
     }
 
     if (groupId == null) {
@@ -126,7 +125,7 @@ class _FypMilestonesScreenState extends State<FypMilestonesScreen> {
             children: [
               Text(
                 _error!,
-                style: TextStyle(color: Colors.white.withOpacity(0.75)),
+                style: TextStyle(color: _p.textSecondary),
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 16),
@@ -148,32 +147,32 @@ class _FypMilestonesScreenState extends State<FypMilestonesScreen> {
 
     return RefreshIndicator(
       color: _accent,
-      backgroundColor: _card,
+      backgroundColor: _p.surface,
       onRefresh: _load,
       child: ListView(
         padding: const EdgeInsets.all(32),
         children: [
           Text(
             'Track Proposal → Literature Review → Final Doc for your FYP group.',
-            style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 14),
+            style: TextStyle(color: _p.textSecondary, fontSize: 14),
           ),
           const SizedBox(height: 8),
           Text(
             '$doneCount of ${milestones.length} completed',
-            style: TextStyle(color: Colors.white.withOpacity(0.45), fontSize: 12),
+            style: TextStyle(color: _p.textMuted, fontSize: 12),
           ),
           const SizedBox(height: 22),
           if (milestones.isEmpty)
             Container(
               padding: const EdgeInsets.all(24),
               decoration: BoxDecoration(
-                color: _card,
+                color: _p.surface,
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: _border),
+                border: Border.all(color: _p.border),
               ),
               child: Text(
                 'No milestones yet for this group.',
-                style: TextStyle(color: Colors.white.withOpacity(0.65)),
+                style: TextStyle(color: _p.textSecondary),
               ),
             )
           else
@@ -195,7 +194,7 @@ class _FypMilestonesScreenState extends State<FypMilestonesScreen> {
 
     return RefreshIndicator(
       color: _accent,
-      backgroundColor: _card,
+      backgroundColor: _p.surface,
       onRefresh: _load,
       child: ListView(
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
@@ -203,9 +202,9 @@ class _FypMilestonesScreenState extends State<FypMilestonesScreen> {
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: _card,
+              color: _p.surface,
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: _border),
+              border: Border.all(color: _p.border),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -215,8 +214,8 @@ class _FypMilestonesScreenState extends State<FypMilestonesScreen> {
                     Expanded(
                       child: Text(
                         '$doneCount of ${milestones.length} completed',
-                        style: const TextStyle(
-                          color: Colors.white,
+                        style: TextStyle(
+                          color: _p.textPrimary,
                           fontWeight: FontWeight.w700,
                           fontSize: 14,
                         ),
@@ -238,7 +237,7 @@ class _FypMilestonesScreenState extends State<FypMilestonesScreen> {
                   child: LinearProgressIndicator(
                     value: overall,
                     minHeight: 8,
-                    backgroundColor: Colors.white12,
+                    backgroundColor: _p.border,
                     color: _accent,
                   ),
                 ),
@@ -247,7 +246,7 @@ class _FypMilestonesScreenState extends State<FypMilestonesScreen> {
                   Text(
                     'Deadline not set',
                     style: TextStyle(
-                      color: Colors.white.withOpacity(0.45),
+                      color: _p.textMuted,
                       fontSize: 12,
                     ),
                   )
@@ -260,7 +259,7 @@ class _FypMilestonesScreenState extends State<FypMilestonesScreen> {
                               (daysLabel.contains('overdue') ||
                                   daysLabel == 'Due today'))
                           ? _warn
-                          : Colors.white.withOpacity(0.55),
+                          : _p.textSecondary,
                       fontSize: 12,
                       fontWeight: FontWeight.w500,
                     ),
@@ -273,13 +272,13 @@ class _FypMilestonesScreenState extends State<FypMilestonesScreen> {
             Container(
               padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(
-                color: _card,
+                color: _p.surface,
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: _border),
+                border: Border.all(color: _p.border),
               ),
               child: Text(
                 'No milestones yet for this group.',
-                style: TextStyle(color: Colors.white.withOpacity(0.65)),
+                style: TextStyle(color: _p.textSecondary),
               ),
             )
           else
@@ -300,10 +299,10 @@ class _FypMilestonesScreenState extends State<FypMilestonesScreen> {
       child: Container(
         padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
         decoration: BoxDecoration(
-          color: _card,
+          color: _p.surface,
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
-            color: done ? _done.withOpacity(0.35) : _border,
+            color: done ? _done.withOpacity(0.35) : _p.border,
           ),
         ),
         child: Column(
@@ -315,18 +314,18 @@ class _FypMilestonesScreenState extends State<FypMilestonesScreen> {
                   child: Text(
                     name,
                     style: TextStyle(
-                      color: Colors.white,
+                      color: _p.textPrimary,
                       fontWeight: FontWeight.w600,
                       fontSize: 14,
                       decoration: done ? TextDecoration.lineThrough : null,
-                      decorationColor: Colors.white38,
+                      decorationColor: _p.textMuted,
                     ),
                   ),
                 ),
                 Text(
                   done ? 'Done' : 'Pending',
                   style: TextStyle(
-                    color: done ? _done : Colors.white.withOpacity(0.45),
+                    color: done ? _done : _p.textMuted,
                     fontSize: 12,
                     fontWeight: FontWeight.w600,
                   ),
@@ -339,7 +338,7 @@ class _FypMilestonesScreenState extends State<FypMilestonesScreen> {
               child: LinearProgressIndicator(
                 value: progress,
                 minHeight: 7,
-                backgroundColor: Colors.white12,
+                backgroundColor: _p.border,
                 color: done ? _done : _accent.withOpacity(0.45),
               ),
             ),
@@ -348,7 +347,7 @@ class _FypMilestonesScreenState extends State<FypMilestonesScreen> {
               Text(
                 'Completed ${_formatDate(completedAt)}',
                 style: TextStyle(
-                  color: Colors.white.withOpacity(0.4),
+                  color: _p.textMuted,
                   fontSize: 11,
                 ),
               ),
@@ -368,18 +367,18 @@ class _FypMilestonesScreenState extends State<FypMilestonesScreen> {
           constraints: const BoxConstraints(maxWidth: 480),
           padding: const EdgeInsets.all(24),
           decoration: BoxDecoration(
-            color: _card,
+            color: _p.surface,
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: _border),
+            border: Border.all(color: _p.border),
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
+              Text(
                 'No active supervisor',
                 style: TextStyle(
-                  color: Colors.white,
+                  color: _p.textPrimary,
                   fontSize: 16,
                   fontWeight: FontWeight.w700,
                 ),
@@ -389,7 +388,7 @@ class _FypMilestonesScreenState extends State<FypMilestonesScreen> {
                 'Milestones appear after your supervisor accepts your assignment request. '
                 'Check My Supervisor for status, or submit a request if you haven\'t yet.',
                 style: TextStyle(
-                  color: Colors.white.withOpacity(0.65),
+                  color: _p.textSecondary,
                   height: 1.45,
                 ),
               ),
@@ -431,17 +430,17 @@ class _FypMilestonesScreenState extends State<FypMilestonesScreen> {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         decoration: BoxDecoration(
-          color: _card,
+          color: _p.surface,
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
-            color: done ? _done.withOpacity(0.35) : _border,
+            color: done ? _done.withOpacity(0.35) : _p.border,
           ),
         ),
         child: Row(
           children: [
             Icon(
               done ? Icons.check_circle : Icons.radio_button_unchecked,
-              color: done ? _done : Colors.white.withOpacity(0.35),
+              color: done ? _done : _p.textMuted,
               size: 26,
             ),
             const SizedBox(width: 14),
@@ -452,10 +451,10 @@ class _FypMilestonesScreenState extends State<FypMilestonesScreen> {
                   Text(
                     name,
                     style: TextStyle(
-                      color: Colors.white,
+                      color: _p.textPrimary,
                       fontWeight: FontWeight.w600,
                       decoration: done ? TextDecoration.lineThrough : null,
-                      decorationColor: Colors.white38,
+                      decorationColor: _p.textMuted,
                     ),
                   ),
                   if (done && completedAt.isNotEmpty) ...[
@@ -463,7 +462,7 @@ class _FypMilestonesScreenState extends State<FypMilestonesScreen> {
                     Text(
                       'Completed ${completedAt.length >= 10 ? completedAt.substring(0, 10) : completedAt}',
                       style: TextStyle(
-                        color: Colors.white.withOpacity(0.45),
+                        color: _p.textMuted,
                         fontSize: 12,
                       ),
                     ),
@@ -474,7 +473,7 @@ class _FypMilestonesScreenState extends State<FypMilestonesScreen> {
             Text(
               '#${m['sort_order'] ?? ''}',
               style: TextStyle(
-                color: Colors.white.withOpacity(0.35),
+                color: _p.textMuted,
                 fontSize: 12,
               ),
             ),

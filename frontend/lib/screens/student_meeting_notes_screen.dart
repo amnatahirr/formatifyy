@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../theme/app_theme.dart';
 
 import '../config/api_config.dart';
 import '../models/supervisor_models.dart';
@@ -16,13 +17,11 @@ class StudentMeetingNotesScreen extends StatefulWidget {
 }
 
 class _StudentMeetingNotesScreenState extends State<StudentMeetingNotesScreen> {
+  AppPalette get _p => context.watch<ThemeProvider>().palette;
   final StudentApiService _api = StudentApiService();
   List<MeetingNoteModel> _notes = const [];
   String? _error;
   bool _loading = true;
-
-  static const _card = Color(0xFF161B22);
-  static const _border = Color(0x22FFFFFF);
   static const _accent = Color(0xFF3B82F6);
 
   @override
@@ -71,7 +70,7 @@ class _StudentMeetingNotesScreenState extends State<StudentMeetingNotesScreen> {
   @override
   Widget build(BuildContext context) {
     if (_loading) {
-      return const Center(child: CircularProgressIndicator(color: _accent));
+      return Center(child: CircularProgressIndicator(color: _accent));
     }
     if (_error != null) {
       return Center(
@@ -82,7 +81,7 @@ class _StudentMeetingNotesScreenState extends State<StudentMeetingNotesScreen> {
             children: [
               Text(
                 _error!,
-                style: TextStyle(color: Colors.white.withOpacity(0.75)),
+                style: TextStyle(color: _p.textSecondary),
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 16),
@@ -95,7 +94,7 @@ class _StudentMeetingNotesScreenState extends State<StudentMeetingNotesScreen> {
 
     return RefreshIndicator(
       color: _accent,
-      backgroundColor: _card,
+      backgroundColor: _p.surface,
       onRefresh: _load,
       child: ListView(
         physics: const AlwaysScrollableScrollPhysics(),
@@ -103,21 +102,21 @@ class _StudentMeetingNotesScreenState extends State<StudentMeetingNotesScreen> {
         children: [
           Text(
             'Meeting notes from your supervisor — read only.',
-            style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 14),
+            style: TextStyle(color: _p.textSecondary, fontSize: 14),
           ),
           const SizedBox(height: 22),
           if (_notes.isEmpty)
             Container(
               padding: const EdgeInsets.all(24),
               decoration: BoxDecoration(
-                color: _card,
+                color: _p.surface,
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: _border),
+                border: Border.all(color: _p.border),
               ),
               child: Text(
                 'No meeting notes yet for your FYP group. When your supervisor adds notes, they will appear here.',
                 style: TextStyle(
-                  color: Colors.white.withOpacity(0.65),
+                  color: _p.textSecondary,
                   height: 1.45,
                 ),
               ),
@@ -141,9 +140,9 @@ class _StudentMeetingNotesScreenState extends State<StudentMeetingNotesScreen> {
       child: Container(
         padding: const EdgeInsets.all(18),
         decoration: BoxDecoration(
-          color: _card,
+          color: _p.surface,
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: _border),
+          border: Border.all(color: _p.border),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -169,8 +168,8 @@ class _StudentMeetingNotesScreenState extends State<StudentMeetingNotesScreen> {
                     children: [
                       Text(
                         note.topic,
-                        style: const TextStyle(
-                          color: Colors.white,
+                        style: TextStyle(
+                          color: _p.textPrimary,
                           fontWeight: FontWeight.w700,
                           fontSize: 15,
                         ),
@@ -180,7 +179,7 @@ class _StudentMeetingNotesScreenState extends State<StudentMeetingNotesScreen> {
                         Text(
                           meta,
                           style: TextStyle(
-                            color: Colors.white.withOpacity(0.5),
+                            color: _p.textSecondary,
                             fontSize: 12,
                           ),
                         ),
@@ -195,7 +194,7 @@ class _StudentMeetingNotesScreenState extends State<StudentMeetingNotesScreen> {
               Text(
                 'Action items',
                 style: TextStyle(
-                  color: Colors.white.withOpacity(0.7),
+                  color: _p.textSecondary,
                   fontWeight: FontWeight.w600,
                   fontSize: 12,
                 ),
@@ -204,7 +203,7 @@ class _StudentMeetingNotesScreenState extends State<StudentMeetingNotesScreen> {
               Text(
                 note.actionItems,
                 style: TextStyle(
-                  color: Colors.white.withOpacity(0.78),
+                  color: _p.textSecondary,
                   height: 1.45,
                   fontSize: 13,
                 ),

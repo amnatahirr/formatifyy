@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
+import '../theme/app_theme.dart';
 import '../utils/logout_confirm.dart';
 
 class AppSidebar extends StatelessWidget {
@@ -15,15 +16,16 @@ class AppSidebar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.watch<ThemeProvider>().palette;
+
     return Container(
       width: 200,
       decoration: BoxDecoration(
-        color: const Color(0xFF161B22),
-        border: Border(right: BorderSide(color: Colors.white.withOpacity(0.1))),
+        color: p.sidebarBg,
+        border: Border(right: BorderSide(color: p.border)),
       ),
       child: Column(
         children: [
-          // Logo and branding
           Padding(
             padding: const EdgeInsets.all(20),
             child: Row(
@@ -31,7 +33,7 @@ class AppSidebar extends StatelessWidget {
                 Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: const Color(0xFF3B82F6),
+                    color: p.accent,
                     borderRadius: BorderRadius.circular(6),
                   ),
                   child: const Icon(
@@ -41,7 +43,7 @@ class AppSidebar extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: 12),
-                const Column(
+                Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
@@ -49,14 +51,14 @@ class AppSidebar extends StatelessWidget {
                       style: TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.w700,
-                        color: Colors.white,
+                        color: p.textPrimary,
                       ),
                     ),
                     Text(
                       'Academic Edition',
                       style: TextStyle(
                         fontSize: 10,
-                        color: Colors.white,
+                        color: p.textSecondary,
                         fontWeight: FontWeight.w400,
                       ),
                     ),
@@ -65,28 +67,28 @@ class AppSidebar extends StatelessWidget {
               ],
             ),
           ),
-          // Navigation items
           Expanded(
             child: ListView(
               padding: const EdgeInsets.symmetric(vertical: 8),
               children: [
-                _buildSidebarItem(0, Icons.dashboard, 'Dashboard'),
-                _buildSidebarItem(1, Icons.add_circle_outline, 'New Report'),
-                _buildSidebarItem(2, Icons.folder, 'My Reports'),
-                _buildSidebarItem(3, Icons.people_outline, 'Collaboration'),
-                _buildSidebarItem(5, Icons.layers, 'Templates'),
-                _buildSidebarItem(6, Icons.settings, 'Settings'),
+                _buildSidebarItem(context, p, 0, Icons.dashboard, 'Dashboard'),
+                _buildSidebarItem(
+                    context, p, 1, Icons.add_circle_outline, 'New Report'),
+                _buildSidebarItem(context, p, 2, Icons.folder, 'My Reports'),
+                _buildSidebarItem(
+                    context, p, 3, Icons.people_outline, 'Collaboration'),
+                _buildSidebarItem(context, p, 5, Icons.layers, 'Templates'),
+                _buildSidebarItem(context, p, 6, Icons.settings, 'Settings'),
               ],
             ),
           ),
-          // User info section
           Padding(
             padding: const EdgeInsets.all(16),
             child: Container(
               decoration: BoxDecoration(
-                color: const Color(0xFF0D1117),
+                color: p.surfaceAlt,
                 borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.white.withOpacity(0.1)),
+                border: Border.all(color: p.border),
               ),
               child: Padding(
                 padding: const EdgeInsets.all(12),
@@ -99,7 +101,7 @@ class AppSidebar extends StatelessWidget {
                           width: 32,
                           height: 32,
                           decoration: BoxDecoration(
-                            color: const Color(0xFF3B82F6),
+                            color: p.accent,
                             borderRadius: BorderRadius.circular(6),
                           ),
                           child: Center(
@@ -117,10 +119,10 @@ class AppSidebar extends StatelessWidget {
                         const SizedBox(height: 12),
                         Text(
                           auth.currentUser ?? 'User',
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 12,
                             fontWeight: FontWeight.w600,
-                            color: Colors.white,
+                            color: p.textPrimary,
                           ),
                         ),
                         const SizedBox(height: 4),
@@ -128,30 +130,38 @@ class AppSidebar extends StatelessWidget {
                           auth.email ?? 'user@example.com',
                           style: TextStyle(
                             fontSize: 10,
-                            color: Colors.white.withOpacity(0.6),
+                            color: p.textSecondary,
                           ),
                         ),
                         const SizedBox(height: 12),
-                        TextButton(
-                          onPressed: () {
-                            confirmAndLogout(
-                              context,
-                              afterLogout: () {
-                                Navigator.of(context).pushNamedAndRemoveUntil(
-                                  '/login',
-                                  (route) => false,
-                                );
-                              },
-                            );
-                          },
-                          style: TextButton.styleFrom(
-                            foregroundColor: const Color(0xFFEF4444),
-                            padding: EdgeInsets.zero,
-                            minimumSize: const Size(0, 30),
-                          ),
-                          child: const Text(
-                            'Logout',
-                            style: TextStyle(fontSize: 11),
+                        SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton.icon(
+                            onPressed: () {
+                              confirmAndLogout(
+                                context,
+                                afterLogout: () {
+                                  Navigator.of(context).pushNamedAndRemoveUntil(
+                                    '/login',
+                                    (route) => false,
+                                  );
+                                },
+                              );
+                            },
+                            icon: const Icon(Icons.logout, size: 14, color: Colors.white),
+                            label: const Text(
+                              'Logout',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: Colors.white,
+                              ),
+                            ),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: p.accent,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(vertical: 8),
+                              minimumSize: const Size(0, 32),
+                            ),
                           ),
                         ),
                       ],
@@ -166,53 +176,50 @@ class AppSidebar extends StatelessWidget {
     );
   }
 
-  Widget _buildSidebarItem(int index, IconData icon, String label) {
-    return Consumer<AuthProvider>(
-      builder: (context, auth, _) {
-        final isSelected = selectedIndex == index;
-        return GestureDetector(
-          onTap: () => onItemSelected(index),
-          child: Container(
-            margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: BoxDecoration(
-              color: isSelected
-                  ? const Color(0xFF3B82F6).withOpacity(0.2)
-                  : Colors.transparent,
-              borderRadius: BorderRadius.circular(6),
-              border: isSelected
-                  ? Border.all(color: const Color(0xFF3B82F6), width: 1.5)
-                  : null,
-            ),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              child: Row(
-                children: [
-                  Icon(
-                    icon,
-                    color: isSelected ? const Color(0xFF3B82F6) : Colors.white,
-                    size: 20,
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      label,
-                      style: TextStyle(
-                        color: isSelected
-                            ? const Color(0xFF3B82F6)
-                            : Colors.white.withOpacity(0.7),
-                        fontSize: 13,
-                        fontWeight: isSelected
-                            ? FontWeight.w600
-                            : FontWeight.w400,
-                      ),
-                    ),
-                  ),
-                ],
+  Widget _buildSidebarItem(
+    BuildContext context,
+    AppPalette p,
+    int index,
+    IconData icon,
+    String label,
+  ) {
+    final isSelected = selectedIndex == index;
+    return GestureDetector(
+      onTap: () => onItemSelected(index),
+      child: Container(
+        margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          color: isSelected ? p.accentSoft : Colors.transparent,
+          borderRadius: BorderRadius.circular(6),
+          border: isSelected
+              ? Border.all(color: p.accent, width: 1.5)
+              : null,
+        ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          child: Row(
+            children: [
+              Icon(
+                icon,
+                color: isSelected ? p.accent : p.iconMuted,
+                size: 20,
               ),
-            ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  label,
+                  style: TextStyle(
+                    color: isSelected ? p.accent : p.textSecondary,
+                    fontSize: 13,
+                    fontWeight:
+                        isSelected ? FontWeight.w600 : FontWeight.w400,
+                  ),
+                ),
+              ),
+            ],
           ),
-        );
-      },
+        ),
+      ),
     );
   }
 }

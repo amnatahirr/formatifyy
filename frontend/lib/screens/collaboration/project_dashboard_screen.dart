@@ -9,6 +9,7 @@ import 'project_detail_screen.dart';
 import 'widgets/create_project_dialog.dart';
 import 'widgets/hub_version_summary.dart';
 import 'widgets/join_project_dialog.dart';
+import '../../theme/app_theme.dart';
 
 /// Collaboration hub — Create / Join actions + full project list.
 class ProjectDashboardScreen extends StatefulWidget {
@@ -83,25 +84,27 @@ class _ProjectDashboardScreenState extends State<ProjectDashboardScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final body = _buildBody(context);
+    final p = context.watch<ThemeProvider>().palette;
+    final body = _buildBody(context, p);
     if (widget.embedded) {
-      return ColoredBox(color: const Color(0xFF0F1419), child: body);
+      return ColoredBox(color: p.scaffold, child: body);
     }
 
     final auth = context.watch<AuthProvider>();
     return Scaffold(
-      backgroundColor: const Color(0xFF0F1419),
+      backgroundColor: p.scaffold,
       appBar: AppBar(
         title: Text(
           'Collaboration — ${auth.currentUser ?? DevUserConfig.memberKey}',
         ),
-        backgroundColor: const Color(0xFF141B27),
+        backgroundColor: p.surface,
+        foregroundColor: p.textPrimary,
       ),
       body: body,
     );
   }
 
-  Widget _buildBody(BuildContext context) {
+  Widget _buildBody(BuildContext context, AppPalette p) {
     final vc = context.watch<CollaborationProvider>();
 
     return RefreshIndicator(
@@ -113,10 +116,11 @@ class _ProjectDashboardScreenState extends State<ProjectDashboardScreen> {
             children: [
               ElevatedButton.icon(
                 onPressed: _showCreateDialog,
-                icon: const Icon(Icons.add, size: 18),
-                label: const Text('Create Project'),
+                icon: const Icon(Icons.add, size: 18, color: Colors.white),
+                label: const Text('Create Project', style: TextStyle(color: Colors.white)),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF6366F1),
+                  foregroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                 ),
               ),
@@ -136,8 +140,8 @@ class _ProjectDashboardScreenState extends State<ProjectDashboardScreen> {
           const SizedBox(height: 28),
           Text(
             'Your Projects (${vc.projects.length})',
-            style: const TextStyle(
-              color: Colors.white,
+            style: TextStyle(
+              color: p.textPrimary,
               fontSize: 18,
               fontWeight: FontWeight.w700,
             ),
@@ -153,13 +157,14 @@ class _ProjectDashboardScreenState extends State<ProjectDashboardScreen> {
               width: double.infinity,
               padding: const EdgeInsets.all(24),
               decoration: BoxDecoration(
-                color: const Color(0xFF1A1F2E),
+                color: p.surface,
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: const Color(0xFF2D3748)),
+                border: Border.all(color: p.border),
+                boxShadow: p.cardShadow,
               ),
-              child: const Text(
+              child: Text(
                 'No projects yet — create or join one to get started.',
-                style: TextStyle(color: Color(0xFF94A3B8), fontSize: 13),
+                style: TextStyle(color: p.textSecondary, fontSize: 13),
               ),
             )
           else
@@ -168,9 +173,9 @@ class _ProjectDashboardScreenState extends State<ProjectDashboardScreen> {
               runSpacing: 12,
               children: vc.projects
                   .map(
-                    (p) => ProjectCard(
-                      project: p,
-                      onTap: () => _openProjectById(p['id'] as int),
+                    (proj) => ProjectCard(
+                      project: proj,
+                      onTap: () => _openProjectById(proj['id'] as int),
                     ),
                   )
                   .toList(),

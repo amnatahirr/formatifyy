@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/document_provider.dart';
 import '../../providers/fyp_provider.dart';
+import '../../theme/app_theme.dart';
 import 'document_feedback_screen.dart';
 
 /// Status Tracker — reads final_submissions (not remarks).
@@ -24,11 +25,9 @@ class StatusTrackerScreen extends StatefulWidget {
 }
 
 class _StatusTrackerScreenState extends State<StatusTrackerScreen> {
+  AppPalette get _p => context.watch<ThemeProvider>().palette;
   String? _error;
   bool _loading = true;
-
-  static const _card = Color(0xFF161B22);
-  static const _border = Color(0x22FFFFFF);
   static const _accent = Color(0xFF3B82F6);
   static const _done = Color(0xFF10B981);
   static const _warn = Color(0xFFF59E0B);
@@ -146,7 +145,7 @@ class _StatusTrackerScreenState extends State<StatusTrackerScreen> {
     final groupId = fyp.fypGroupId;
 
     if (_loading || fyp.isSubmissionsLoading) {
-      return const Center(child: CircularProgressIndicator(color: _accent));
+      return Center(child: CircularProgressIndicator(color: _accent));
     }
 
     if (groupId == null) {
@@ -182,7 +181,7 @@ class _StatusTrackerScreenState extends State<StatusTrackerScreen> {
             children: [
               Text(
                 _error!,
-                style: TextStyle(color: Colors.white.withOpacity(0.75)),
+                style: TextStyle(color: _p.textSecondary),
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 16),
@@ -198,14 +197,14 @@ class _StatusTrackerScreenState extends State<StatusTrackerScreen> {
 
     return RefreshIndicator(
       color: _accent,
-      backgroundColor: _card,
+      backgroundColor: _p.surface,
       onRefresh: _load,
       child: ListView(
         padding: const EdgeInsets.all(32),
         children: [
           Text(
             'Tracks your final submissions to the supervisor (approve / revision / reject).',
-            style: TextStyle(color: Colors.white.withOpacity(0.55), fontSize: 13),
+            style: TextStyle(color: _p.textSecondary, fontSize: 13),
           ),
           const SizedBox(height: 20),
           if (latest == null)
@@ -222,7 +221,7 @@ class _StatusTrackerScreenState extends State<StatusTrackerScreen> {
               Text(
                 'History',
                 style: TextStyle(
-                  color: Colors.white.withOpacity(0.9),
+                  color: _p.textSecondary,
                   fontWeight: FontWeight.w700,
                   fontSize: 15,
                 ),
@@ -247,7 +246,7 @@ class _StatusTrackerScreenState extends State<StatusTrackerScreen> {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: _card,
+        color: _p.surface,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: color.withOpacity(0.4)),
       ),
@@ -256,8 +255,8 @@ class _StatusTrackerScreenState extends State<StatusTrackerScreen> {
         children: [
           Text(
             (s['title'] ?? 'Submission').toString(),
-            style: const TextStyle(
-              color: Colors.white,
+            style: TextStyle(
+              color: _p.textPrimary,
               fontSize: 16,
               fontWeight: FontWeight.w700,
             ),
@@ -265,7 +264,7 @@ class _StatusTrackerScreenState extends State<StatusTrackerScreen> {
           const SizedBox(height: 4),
           Text(
             (s['filename'] ?? '').toString(),
-            style: TextStyle(color: Colors.white.withOpacity(0.45), fontSize: 12),
+            style: TextStyle(color: _p.textMuted, fontSize: 12),
           ),
           const SizedBox(height: 20),
           _progressBar(activeIndex: stageIndex, status: status, stageLabel: stage),
@@ -290,7 +289,7 @@ class _StatusTrackerScreenState extends State<StatusTrackerScreen> {
             Text(
               'Supervisor note',
               style: TextStyle(
-                color: Colors.white.withOpacity(0.5),
+                color: _p.textSecondary,
                 fontSize: 12,
               ),
             ),
@@ -298,7 +297,7 @@ class _StatusTrackerScreenState extends State<StatusTrackerScreen> {
             Text(
               note,
               style: TextStyle(
-                color: Colors.white.withOpacity(0.85),
+                color: _p.textSecondary,
                 height: 1.45,
                 fontSize: 14,
               ),
@@ -310,7 +309,7 @@ class _StatusTrackerScreenState extends State<StatusTrackerScreen> {
             Text(
               'Resolved ${s['resolved_at']}',
               style: TextStyle(
-                color: Colors.white.withOpacity(0.4),
+                color: _p.textMuted,
                 fontSize: 11,
               ),
             ),
@@ -346,8 +345,8 @@ class _StatusTrackerScreenState extends State<StatusTrackerScreen> {
                       : 'Open document & comments',
                 ),
                 style: OutlinedButton.styleFrom(
-                  foregroundColor: Colors.white,
-                  side: BorderSide(color: Colors.white.withOpacity(0.28)),
+                  foregroundColor: _p.textPrimary,
+                  side: BorderSide(color: _p.borderStrong),
                 ),
               ),
             ),
@@ -376,7 +375,7 @@ class _StatusTrackerScreenState extends State<StatusTrackerScreen> {
               return Expanded(
                 child: Container(
                   height: 3,
-                  color: filled ? color.withOpacity(0.7) : Colors.white12,
+                  color: filled ? color.withOpacity(0.7) : _p.border,
                 ),
               );
             }
@@ -389,12 +388,12 @@ class _StatusTrackerScreenState extends State<StatusTrackerScreen> {
               alignment: Alignment.center,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: active ? color.withOpacity(isCurrent ? 1 : 0.85) : Colors.white12,
+                color: active ? color.withOpacity(isCurrent ? 1 : 0.85) : _p.border,
               ),
               child: Text(
                 '$stageNum',
                 style: TextStyle(
-                  color: active ? Colors.white : Colors.white38,
+                  color: active ? Colors.white : _p.textMuted,
                   fontSize: 12,
                   fontWeight: FontWeight.w700,
                 ),
@@ -410,7 +409,7 @@ class _StatusTrackerScreenState extends State<StatusTrackerScreen> {
                 (label) => Text(
                   label == 'Decision' ? stageLabel : label,
                   style: TextStyle(
-                    color: Colors.white.withOpacity(0.5),
+                    color: _p.textSecondary,
                     fontSize: 11,
                   ),
                 ),
@@ -429,9 +428,9 @@ class _StatusTrackerScreenState extends State<StatusTrackerScreen> {
       child: Container(
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
-          color: _card,
+          color: _p.surface,
           borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: _border),
+          border: Border.all(color: _p.border),
         ),
         child: Row(
           children: [
@@ -447,8 +446,8 @@ class _StatusTrackerScreenState extends State<StatusTrackerScreen> {
                 children: [
                   Text(
                     (s['title'] ?? 'Submission').toString(),
-                    style: const TextStyle(
-                      color: Colors.white,
+                    style: TextStyle(
+                      color: _p.textPrimary,
                       fontWeight: FontWeight.w600,
                       fontSize: 13,
                     ),
@@ -465,7 +464,7 @@ class _StatusTrackerScreenState extends State<StatusTrackerScreen> {
                   ? s['submitted_at'].toString().substring(0, 10)
                   : (s['submitted_at'] ?? '').toString(),
               style: TextStyle(
-                color: Colors.white.withOpacity(0.35),
+                color: _p.textMuted,
                 fontSize: 11,
               ),
             ),
@@ -484,17 +483,17 @@ class _StatusTrackerScreenState extends State<StatusTrackerScreen> {
       width: double.infinity,
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
-        color: _card,
+        color: _p.surface,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: _border),
+        border: Border.all(color: _p.border),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
             title,
-            style: const TextStyle(
-              color: Colors.white,
+            style: TextStyle(
+              color: _p.textPrimary,
               fontSize: 16,
               fontWeight: FontWeight.w700,
             ),
@@ -503,7 +502,7 @@ class _StatusTrackerScreenState extends State<StatusTrackerScreen> {
           Text(
             body,
             style: TextStyle(
-              color: Colors.white.withOpacity(0.65),
+              color: _p.textSecondary,
               height: 1.45,
             ),
           ),

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../providers/collaboration_provider.dart';
+import '../../../theme/app_theme.dart';
 
 /// Compact cross-project version activity for the Collaboration hub.
 class HubVersionSummary extends StatelessWidget {
@@ -11,23 +12,24 @@ class HubVersionSummary extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final vc = context.watch<CollaborationProvider>();
+    final p = context.watch<ThemeProvider>().palette;
     final items = vc.hubActivity;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
+        Text(
           'Recent version activity',
           style: TextStyle(
-            color: Colors.white,
+            color: p.textPrimary,
             fontSize: 18,
             fontWeight: FontWeight.w700,
           ),
         ),
         const SizedBox(height: 4),
-        const Text(
+        Text(
           'Latest changes across your projects',
-          style: TextStyle(color: Color(0xFF94A3B8), fontSize: 12),
+          style: TextStyle(color: p.textSecondary, fontSize: 12),
         ),
         const SizedBox(height: 12),
         if (items.isEmpty)
@@ -35,13 +37,14 @@ class HubVersionSummary extends StatelessWidget {
             width: double.infinity,
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: const Color(0xFF1A1F2E),
+              color: p.surface,
               borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: const Color(0xFF2D3748)),
+              border: Border.all(color: p.border),
+              boxShadow: p.cardShadow,
             ),
-            child: const Text(
+            child: Text(
               'No version history yet. Edits in shared projects will show up here.',
-              style: TextStyle(color: Color(0xFF94A3B8), fontSize: 13),
+              style: TextStyle(color: p.textSecondary, fontSize: 13),
             ),
           )
         else
@@ -67,6 +70,7 @@ class _ActivityRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.watch<ThemeProvider>().palette;
     final type = entry['commit_type'] as String? ?? 'save';
     final projectName = entry['project_name'] as String? ?? 'Project';
     final section = entry['section_name'] as String? ?? entry['section_id'] ?? 'section';
@@ -76,22 +80,26 @@ class _ActivityRow extends StatelessWidget {
     final projectId = entry['project_id'] as int?;
 
     return Card(
-      color: const Color(0xFF1A1F2E),
+      color: p.surface,
       margin: const EdgeInsets.only(bottom: 8),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(10),
+        side: BorderSide(color: p.border),
+      ),
       child: ListTile(
         dense: true,
         leading: _leadingIcon(type),
         title: Text(
           '$author · $section v$version',
-          style: const TextStyle(color: Colors.white, fontSize: 13),
+          style: TextStyle(color: p.textPrimary, fontSize: 13),
           overflow: TextOverflow.ellipsis,
         ),
         subtitle: Text(
           '$projectName · $when',
-          style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 11),
+          style: TextStyle(color: p.textSecondary, fontSize: 11),
           overflow: TextOverflow.ellipsis,
         ),
-        trailing: const Icon(Icons.chevron_right, color: Color(0xFF64748B), size: 18),
+        trailing: Icon(Icons.chevron_right, color: p.textMuted, size: 18),
         onTap: projectId == null
             ? null
             : () {

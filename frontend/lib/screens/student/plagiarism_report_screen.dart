@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../../providers/auth_provider.dart';
 import '../../providers/fyp_provider.dart';
+import '../../theme/app_theme.dart';
 
 /// Read-only plagiarism report from final_submissions.analysis_report (no recompute).
 class PlagiarismReportScreen extends StatefulWidget {
@@ -22,11 +23,9 @@ class PlagiarismReportScreen extends StatefulWidget {
 }
 
 class _PlagiarismReportScreenState extends State<PlagiarismReportScreen> {
+  AppPalette get _p => context.watch<ThemeProvider>().palette;
   String? _error;
   bool _loading = true;
-
-  static const _card = Color(0xFF161B22);
-  static const _border = Color(0x22FFFFFF);
   static const _accent = Color(0xFF3B82F6);
   static const _safe = Color(0xFF10B981);
   static const _some = Color(0xFFF59E0B);
@@ -97,7 +96,7 @@ class _PlagiarismReportScreenState extends State<PlagiarismReportScreen> {
     final groupId = fyp.fypGroupId;
 
     if (_loading || fyp.isPlagiarismLoading) {
-      return const Center(child: CircularProgressIndicator(color: _accent));
+      return Center(child: CircularProgressIndicator(color: _accent));
     }
 
     if (groupId == null) {
@@ -133,7 +132,7 @@ class _PlagiarismReportScreenState extends State<PlagiarismReportScreen> {
             children: [
               Text(
                 _error!,
-                style: TextStyle(color: Colors.white.withOpacity(0.75)),
+                style: TextStyle(color: _p.textSecondary),
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 16),
@@ -159,14 +158,14 @@ class _PlagiarismReportScreenState extends State<PlagiarismReportScreen> {
 
     return RefreshIndicator(
       color: _accent,
-      backgroundColor: _card,
+      backgroundColor: _p.surface,
       onRefresh: _load,
       child: ListView(
         padding: const EdgeInsets.all(32),
         children: [
           Text(
             'From your latest supervisor submission (AI Tools analysis snapshot — not recomputed).',
-            style: TextStyle(color: Colors.white.withOpacity(0.55), fontSize: 13),
+            style: TextStyle(color: _p.textSecondary, fontSize: 13),
           ),
           const SizedBox(height: 18),
           if (flagged) ...[
@@ -201,7 +200,7 @@ class _PlagiarismReportScreenState extends State<PlagiarismReportScreen> {
                               ? flagReason
                               : 'Your supervisor flagged this group for plagiarism risk. Review matched sources and revise.',
                           style: TextStyle(
-                            color: Colors.white.withOpacity(0.8),
+                            color: _p.textSecondary,
                             height: 1.4,
                             fontSize: 13,
                           ),
@@ -217,7 +216,7 @@ class _PlagiarismReportScreenState extends State<PlagiarismReportScreen> {
           Container(
             padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(
-              color: _card,
+              color: _p.surface,
               borderRadius: BorderRadius.circular(12),
               border: Border.all(color: riskColor.withOpacity(0.4)),
             ),
@@ -249,7 +248,7 @@ class _PlagiarismReportScreenState extends State<PlagiarismReportScreen> {
                       Text(
                         'Plagiarism score',
                         style: TextStyle(
-                          color: Colors.white.withOpacity(0.55),
+                          color: _p.textSecondary,
                           fontSize: 12,
                         ),
                       ),
@@ -272,7 +271,7 @@ class _PlagiarismReportScreenState extends State<PlagiarismReportScreen> {
                             ? '${matches.length} matched source${matches.length == 1 ? '' : 's'}'
                             : 'No final submission yet — submit from New Report to attach an analysis snapshot.',
                         style: TextStyle(
-                          color: Colors.white.withOpacity(0.5),
+                          color: _p.textSecondary,
                           fontSize: 12,
                         ),
                       ),
@@ -301,7 +300,7 @@ class _PlagiarismReportScreenState extends State<PlagiarismReportScreen> {
           Text(
             'Matched sources',
             style: TextStyle(
-              color: Colors.white.withOpacity(0.9),
+              color: _p.textSecondary,
               fontWeight: FontWeight.w700,
               fontSize: 15,
             ),
@@ -311,15 +310,15 @@ class _PlagiarismReportScreenState extends State<PlagiarismReportScreen> {
             Container(
               padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(
-                color: _card,
+                color: _p.surface,
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: _border),
+                border: Border.all(color: _p.border),
               ),
               child: Text(
                 hasSubmission
                     ? 'No plagiarism matches in the stored analysis report.'
                     : 'Sources will appear after you submit a report that includes AI analysis.',
-                style: TextStyle(color: Colors.white.withOpacity(0.55)),
+                style: TextStyle(color: _p.textSecondary),
               ),
             )
           else
@@ -340,9 +339,9 @@ class _PlagiarismReportScreenState extends State<PlagiarismReportScreen> {
       child: Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: _card,
+          color: _p.surface,
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: _border),
+          border: Border.all(color: _p.border),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -352,8 +351,8 @@ class _PlagiarismReportScreenState extends State<PlagiarismReportScreen> {
                 Expanded(
                   child: Text(
                     source,
-                    style: const TextStyle(
-                      color: Colors.white,
+                    style: TextStyle(
+                      color: _p.textPrimary,
                       fontWeight: FontWeight.w600,
                     ),
                   ),
@@ -372,7 +371,7 @@ class _PlagiarismReportScreenState extends State<PlagiarismReportScreen> {
               Text(
                 sentence,
                 style: TextStyle(
-                  color: Colors.white.withOpacity(0.7),
+                  color: _p.textSecondary,
                   height: 1.4,
                   fontSize: 13,
                 ),
@@ -383,7 +382,7 @@ class _PlagiarismReportScreenState extends State<PlagiarismReportScreen> {
               Text(
                 reason,
                 style: TextStyle(
-                  color: Colors.white.withOpacity(0.45),
+                  color: _p.textMuted,
                   fontSize: 12,
                 ),
               ),
@@ -407,9 +406,9 @@ class _PlagiarismReportScreenState extends State<PlagiarismReportScreen> {
           constraints: const BoxConstraints(maxWidth: 480),
           padding: const EdgeInsets.all(24),
           decoration: BoxDecoration(
-            color: _card,
+            color: _p.surface,
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: _border),
+            border: Border.all(color: _p.border),
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -417,8 +416,8 @@ class _PlagiarismReportScreenState extends State<PlagiarismReportScreen> {
             children: [
               Text(
                 title,
-                style: const TextStyle(
-                  color: Colors.white,
+                style: TextStyle(
+                  color: _p.textPrimary,
                   fontSize: 16,
                   fontWeight: FontWeight.w700,
                 ),
@@ -427,7 +426,7 @@ class _PlagiarismReportScreenState extends State<PlagiarismReportScreen> {
               Text(
                 body,
                 style: TextStyle(
-                  color: Colors.white.withOpacity(0.65),
+                  color: _p.textSecondary,
                   height: 1.45,
                 ),
               ),

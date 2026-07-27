@@ -15,6 +15,7 @@ import '../providers/template_provider.dart';
 import '../providers/collaboration_provider.dart';
 import '../providers/fyp_provider.dart';
 import '../utils/logout_confirm.dart';
+import '../theme/app_theme.dart';
 import 'new_report_screen.dart';
 import 'analyze_screen.dart';
 import '../widgets/export_dialog.dart';
@@ -68,6 +69,7 @@ class StudentDashboard extends StatefulWidget {
 }
 
 class _StudentDashboardState extends State<StudentDashboard> {
+  AppPalette _p = AppPalette.dark;
   late int _selectedIndex;
   int? _activeProjectId;
   int _projectDetailTab = 0;
@@ -104,7 +106,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
               );
         }
         //Start auto-refresh polling every 30 seconds
-        _refreshTimer = Timer.periodic(const Duration(seconds: 10), (_) {
+        _refreshTimer = Timer.periodic(Duration(seconds: 10), (_) {
           final a = context.read<AuthProvider>();
           if (a.userId != null) {
             context.read<CollaborationProvider>().setActiveUserId(a.userId!);
@@ -124,9 +126,10 @@ class _StudentDashboardState extends State<StudentDashboard> {
   @override
   Widget build(BuildContext context) {
     final compact = isCompact(context);
+    _p = context.watch<ThemeProvider>().palette;
 
     return Scaffold(
-      backgroundColor: const Color(0xFF0D1117),
+      backgroundColor: _p.scaffold,
       body: compact
           ? Column(
               children: [
@@ -158,9 +161,9 @@ class _StudentDashboardState extends State<StudentDashboard> {
 
     return Container(
       decoration: BoxDecoration(
-        color: const Color(0xFF161B22),
+        color: _p.surface,
         border: Border(
-          top: BorderSide(color: Colors.white.withOpacity(0.1)),
+          top: BorderSide(color: _p.border),
         ),
       ),
       child: SafeArea(
@@ -188,8 +191,8 @@ class _StudentDashboardState extends State<StudentDashboard> {
     required bool selected,
   }) {
     final color = selected
-        ? const Color(0xFF3B82F6)
-        : Colors.white.withOpacity(0.55);
+        ? _p.accent
+        : _p.iconMuted;
 
     return InkWell(
       onTap: () {
@@ -202,7 +205,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Icon(item.icon, size: 22, color: color),
-          const SizedBox(height: 4),
+          SizedBox(height: 4),
           Text(
             item.label,
             maxLines: 1,
@@ -222,33 +225,33 @@ class _StudentDashboardState extends State<StudentDashboard> {
     return Container(
       width: 200,
       decoration: BoxDecoration(
-        color: const Color(0xFF161B22),
+        color: _p.sidebarBg,
         border: Border(
           right: BorderSide(
-            color: Colors.white.withOpacity(0.1),
+            color: _p.border,
           ),
         ),
       ),
       child: Column(
         children: [
           Padding(
-            padding: const EdgeInsets.all(20),
+            padding: EdgeInsets.all(20),
             child: Row(
               children: [
                 Container(
-                  padding: const EdgeInsets.all(8),
+                  padding: EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: const Color(0xFF3B82F6),
+                    color: _p.accent,
                     borderRadius: BorderRadius.circular(6),
                   ),
-                  child: const Icon(
+                  child: Icon(
                     Icons.description,
                     color: Colors.white,
                     size: 20,
                   ),
                 ),
-                const SizedBox(width: 12),
-                const Column(
+                SizedBox(width: 12),
+                Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
@@ -256,14 +259,14 @@ class _StudentDashboardState extends State<StudentDashboard> {
                       style: TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.w700,
-                        color: Colors.white,
+                        color: _p.textPrimary,
                       ),
                     ),
                     Text(
                       'Academic Edition',
                       style: TextStyle(
                         fontSize: 10,
-                        color: Colors.white,
+                        color: _p.textPrimary,
                         fontWeight: FontWeight.w400,
                       ),
                     ),
@@ -274,7 +277,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
           ),
           Expanded(
             child: ListView(
-              padding: const EdgeInsets.symmetric(vertical: 8),
+              padding: EdgeInsets.symmetric(vertical: 8),
               children: [
                 _buildSidebarItem(
                   0,
@@ -347,17 +350,17 @@ class _StudentDashboardState extends State<StudentDashboard> {
             ),
           ),
           Padding(
-            padding: const EdgeInsets.all(16),
+            padding: EdgeInsets.all(16),
             child: Container(
               decoration: BoxDecoration(
-                color: const Color(0xFF0D1117),
+                color: _p.surfaceAlt,
                 borderRadius: BorderRadius.circular(8),
                 border: Border.all(
-                  color: Colors.white.withOpacity(0.1),
+                  color: _p.border,
                 ),
               ),
               child: Padding(
-                padding: const EdgeInsets.all(12),
+                padding: EdgeInsets.all(12),
                 child: Consumer<AuthProvider>(
                   builder: (context, auth, _) {
                     return Column(
@@ -367,7 +370,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
                           width: 32,
                           height: 32,
                           decoration: BoxDecoration(
-                            color: const Color(0xFF3B82F6),
+                            color: _p.accent,
                             borderRadius: BorderRadius.circular(6),
                           ),
                           child: Center(
@@ -375,46 +378,48 @@ class _StudentDashboardState extends State<StudentDashboard> {
                               (auth.currentUser?.isNotEmpty ?? false)
                                   ? auth.currentUser![0].toUpperCase()
                                   : 'U',
-                              style: const TextStyle(
+                              style: TextStyle(
                                 color: Colors.white,
                                 fontWeight: FontWeight.w700,
                               ),
                             ),
                           ),
                         ),
-                        const SizedBox(height: 12),
+                        SizedBox(height: 12),
                         Text(
                           auth.currentUser ?? 'User',
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 12,
                             fontWeight: FontWeight.w600,
-                            color: Colors.white,
+                            color: _p.textPrimary,
                           ),
                         ),
                         Text(
                           'Student',
                           style: TextStyle(
                             fontSize: 11,
-                            color: Colors.white.withOpacity(0.6),
+                            color: _p.textSecondary,
                             fontWeight: FontWeight.w400,
                           ),
                         ),
-                        const SizedBox(height: 12),
+                        SizedBox(height: 12),
                         SizedBox(
                           width: double.infinity,
                           height: 32,
                           child: ElevatedButton.icon(
                             onPressed: () => _logout(context),
-                            icon: const Icon(Icons.logout, size: 14),
-                            label: const Text(
+                            icon: Icon(Icons.logout, size: 14, color: Colors.white),
+                            label: Text(
                               'Logout',
                               style: TextStyle(
                                 fontSize: 11,
                                 fontWeight: FontWeight.w600,
+                                color: Colors.white,
                               ),
                             ),
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFF3B82F6),
+                              backgroundColor: _p.accent,
+                              foregroundColor: Colors.white,
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(6),
                               ),
@@ -436,7 +441,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
   Widget _buildSidebarItem(int index, IconData icon, String label) {
     final isSelected = _selectedIndex == index;
     return Container(
-      color: isSelected ? const Color(0xFF3B82F6).withOpacity(0.15) : Colors.transparent,
+      color: isSelected ? _p.accentSoft : Colors.transparent,
       child: InkWell(
         onTap: () {
           setState(() {
@@ -445,25 +450,25 @@ class _StudentDashboardState extends State<StudentDashboard> {
           });
         },
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           child: Row(
             children: [
               Icon(
                 icon,
                 size: 20,
                 color: isSelected
-                    ? const Color(0xFF3B82F6)
-                    : Colors.white.withOpacity(0.6),
+                    ? _p.accent
+                    : _p.textSecondary,
               ),
-              const SizedBox(width: 12),
+              SizedBox(width: 12),
               Text(
                 label,
                 style: TextStyle(
                   fontSize: 13,
                   fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
                   color: isSelected
-                      ? const Color(0xFF3B82F6)
-                      : Colors.white.withOpacity(0.7),
+                      ? _p.accent
+                      : _p.textSecondary,
                 ),
               ),
             ],
@@ -520,12 +525,13 @@ class _StudentDashboardState extends State<StudentDashboard> {
 
     return Container(
       decoration: BoxDecoration(
-        color: const Color(0xFF161B22),
+        color: _p.topBarBg,
         border: Border(
           bottom: BorderSide(
-            color: Colors.white.withOpacity(0.1),
+            color: _p.border,
           ),
         ),
+        boxShadow: _p.cardShadow,
       ),
       padding: EdgeInsets.fromLTRB(
         compact ? 16 : 32,
@@ -548,7 +554,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
                   style: TextStyle(
                     fontSize: compact ? 20 : 28,
                     fontWeight: FontWeight.w700,
-                    color: Colors.white,
+                    color: _p.textPrimary,
                   ),
                 ),
                 if (!compact || _selectedIndex == 0)
@@ -558,7 +564,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       fontSize: 13,
-                      color: Colors.white.withOpacity(0.6),
+                      color: _p.textSecondary,
                       fontWeight: FontWeight.w400,
                     ),
                   ),
@@ -568,8 +574,8 @@ class _StudentDashboardState extends State<StudentDashboard> {
           if (!compact)
             Row(
               children: [
-                const NotificationsPanelButton(),
-                const SizedBox(width: 12),
+                NotificationsPanelButton(),
+                SizedBox(width: 12),
                 GestureDetector(
                   onTap: () {
                     setState(() {
@@ -578,12 +584,12 @@ class _StudentDashboardState extends State<StudentDashboard> {
                     });
                   },
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF3B82F6),
+                      color: _p.accent,
                       borderRadius: BorderRadius.circular(6),
                     ),
-                    child: const Row(
+                    child: Row(
                       children: [
                         Icon(Icons.add, size: 18, color: Colors.white),
                         SizedBox(width: 6),
@@ -605,7 +611,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
             IconButton(
               tooltip: 'Sign out',
               onPressed: () => _logout(context),
-              icon: Icon(Icons.logout_rounded, color: Colors.white.withOpacity(0.75)),
+              icon: Icon(Icons.logout_rounded, color: _p.textSecondary),
             ),
         ],
       ),
@@ -771,19 +777,19 @@ class _StudentDashboardState extends State<StudentDashboard> {
             children: [
               if (compact) ...[
                 const MobileStatusSummaryCard(),
-                const SizedBox(height: 16),
+                SizedBox(height: 16),
                 _buildSendFromPhoneCard(),
-                const SizedBox(height: 20),
+                SizedBox(height: 20),
               ],
               _buildStatsRow(compact: compact, totalReports: totalReports, draftCount: draftCount, completedCount: completedCount),
-              const SizedBox(height: 28),
+              SizedBox(height: 28),
               if (compact) ...[
                 _buildRecentReportsSection(docProvider.documents),
-                const SizedBox(height: 24),
+                SizedBox(height: 24),
                 _buildAIToolsSection(compact: true),
-                const SizedBox(height: 24),
+                SizedBox(height: 24),
                 _buildSharedProjectsSection(),
-                const SizedBox(height: 24),
+                SizedBox(height: 24),
                 _buildQuickActionsSection(compact: true),
               ] else ...[
                 Row(
@@ -793,15 +799,15 @@ class _StudentDashboardState extends State<StudentDashboard> {
                       flex: 2,
                       child: _buildRecentReportsSection(docProvider.documents),
                     ),
-                    const SizedBox(width: 16),
+                    SizedBox(width: 16),
                     Expanded(
                       child: _buildAIToolsSection(compact: false),
                     ),
                   ],
                 ),
-                const SizedBox(height: 32),
+                SizedBox(height: 32),
                 _buildSharedProjectsSection(),
-                const SizedBox(height: 32),
+                SizedBox(height: 32),
                 _buildQuickActionsSection(compact: false),
               ],
             ],
@@ -827,44 +833,44 @@ class _StudentDashboardState extends State<StudentDashboard> {
         borderRadius: BorderRadius.circular(12),
         child: Container(
           width: double.infinity,
-          padding: const EdgeInsets.all(16),
+          padding: EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: const Color(0xFF161B22),
+            color: _p.surface,
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Colors.white.withOpacity(0.1)),
+            border: Border.all(color: _p.border),
           ),
           child: Row(
             children: [
               Container(
-                padding: const EdgeInsets.all(10),
+                padding: EdgeInsets.all(10),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF6366F1).withOpacity(0.15),
+                  color: Color(0xFF6366F1).withOpacity(0.15),
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: const Icon(
+                child: Icon(
                   Icons.qr_code_scanner_rounded,
                   color: Color(0xFF6366F1),
                   size: 22,
                 ),
               ),
-              const SizedBox(width: 14),
+              SizedBox(width: 14),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
+                    Text(
                       'Send Document from Phone',
                       style: TextStyle(
-                        color: Colors.white,
+                        color: _p.textPrimary,
                         fontSize: 14,
                         fontWeight: FontWeight.w700,
                       ),
                     ),
-                    const SizedBox(height: 4),
+                    SizedBox(height: 4),
                     Text(
                       'Scan QR, camera, or gallery upload',
                       style: TextStyle(
-                        color: Colors.white.withOpacity(0.5),
+                        color: _p.textSecondary,
                         fontSize: 12,
                       ),
                     ),
@@ -873,7 +879,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
               ),
               Icon(
                 Icons.chevron_right,
-                color: Colors.white.withOpacity(0.35),
+                color: _p.textMuted,
               ),
             ],
           ),
@@ -894,7 +900,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
         value: totalReports.toString(),
         change: '+12%',
         icon: Icons.description,
-        changeColor: const Color(0xFF10B981),
+        changeColor: Color(0xFF10B981),
         compact: compact,
       ),
       _buildStatCard(
@@ -902,7 +908,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
         value: draftCount.toString(),
         change: 'In Progress',
         icon: Icons.history,
-        changeColor: const Color(0xFFD97706),
+        changeColor: Color(0xFFD97706),
         compact: compact,
       ),
       _buildStatCard(
@@ -910,7 +916,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
         value: completedCount.toString(),
         change: '+8%',
         icon: Icons.check_circle,
-        changeColor: const Color(0xFF10B981),
+        changeColor: Color(0xFF10B981),
         compact: compact,
       ),
       _buildStatCard(
@@ -918,7 +924,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
         value: (totalReports * 5).toString(),
         change: 'AI',
         icon: Icons.auto_awesome,
-        changeColor: const Color(0xFF8B5CF6),
+        changeColor: Color(0xFF8B5CF6),
         compact: compact,
       ),
     ];
@@ -948,7 +954,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
     return Row(
       children: [
         for (var i = 0; i < cards.length; i++) ...[
-          if (i > 0) const SizedBox(width: 16),
+          if (i > 0) SizedBox(width: 16),
           Expanded(child: cards[i]),
         ],
       ],
@@ -965,10 +971,10 @@ class _StudentDashboardState extends State<StudentDashboard> {
   }) {
     return Container(
       decoration: BoxDecoration(
-        color: const Color(0xFF161B22),
+        color: _p.surface,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
-          color: Colors.white.withOpacity(0.1),
+          color: _p.border,
         ),
       ),
       padding: EdgeInsets.all(compact ? 12 : 20),
@@ -989,7 +995,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
                   size: compact ? 16 : 20,
                 ),
               ),
-              const SizedBox(width: 8),
+              SizedBox(width: 8),
               Expanded(
                 child: Text(
                   change,
@@ -1013,7 +1019,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
             style: TextStyle(
               fontSize: compact ? 22 : 32,
               fontWeight: FontWeight.w700,
-              color: Colors.white,
+              color: _p.textPrimary,
             ),
           ),
           SizedBox(height: compact ? 2 : 4),
@@ -1024,7 +1030,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
             style: TextStyle(
               fontSize: compact ? 11 : 13,
               fontWeight: FontWeight.w400,
-              color: Colors.white.withOpacity(0.6),
+              color: _p.textSecondary,
             ),
           ),
         ],
@@ -1037,25 +1043,25 @@ class _StudentDashboardState extends State<StudentDashboard> {
 
     return Container(
       decoration: BoxDecoration(
-        color: const Color(0xFF161B22),
+        color: _p.surface,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
-          color: Colors.white.withOpacity(0.1),
+          color: _p.border,
         ),
       ),
-      padding: const EdgeInsets.all(20),
+      padding: EdgeInsets.all(20),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text(
+              Text(
                 'Recent Reports',
                 style: TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.w600,
-                  color: Colors.white,
+                  color: _p.textPrimary,
                 ),
               ),
               GestureDetector(
@@ -1070,22 +1076,22 @@ class _StudentDashboardState extends State<StudentDashboard> {
                   style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w600,
-                    color: const Color(0xFF3B82F6),
+                    color: _p.accent,
                   ),
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 16),
+          SizedBox(height: 16),
           if (recentDocs.isEmpty)
             Center(
               child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 24),
+                padding: EdgeInsets.symmetric(vertical: 24),
                 child: Text(
                   'No reports yet',
                   style: TextStyle(
                     fontSize: 13,
-                    color: Colors.white.withOpacity(0.5),
+                    color: _p.textSecondary,
                   ),
                 ),
               ),
@@ -1096,7 +1102,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
               final isLast = entry.key == recentDocs.length - 1;
               final status = doc['status'] ?? 'uploaded';
               final statusLabel = status == 'formatted' ? 'Complete' : status == 'processing' ? 'Processing' : 'Draft';
-              final statusColor = status == 'formatted' ? const Color(0xFF10B981) : status == 'processing' ? const Color(0xFFD97706) : const Color(0xFF3B82F6);
+              final statusColor = status == 'formatted' ? Color(0xFF10B981) : status == 'processing' ? Color(0xFFD97706) : _p.accent;
               
               return Column(
                 children: [
@@ -1108,7 +1114,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
                     Icons.description,
                     statusColor,
                   ),
-                  if (!isLast) const SizedBox(height: 12),
+                  if (!isLast) SizedBox(height: 12),
                 ],
               );
             }).toList(),
@@ -1128,24 +1134,24 @@ class _StudentDashboardState extends State<StudentDashboard> {
     return Row(
       children: [
         Container(
-          padding: const EdgeInsets.all(10),
+          padding: EdgeInsets.all(10),
           decoration: BoxDecoration(
             color: iconColor.withOpacity(0.15),
             borderRadius: BorderRadius.circular(8),
           ),
           child: Icon(icon, color: iconColor, size: 18),
         ),
-        const SizedBox(width: 12),
+        SizedBox(width: 12),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
                 title,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w600,
-                  color: Colors.white,
+                  color: _p.textPrimary,
                 ),
               ),
               Text(
@@ -1153,14 +1159,14 @@ class _StudentDashboardState extends State<StudentDashboard> {
                 style: TextStyle(
                   fontSize: 11,
                   fontWeight: FontWeight.w400,
-                  color: Colors.white.withOpacity(0.5),
+                  color: _p.textSecondary,
                 ),
               ),
             ],
           ),
         ),
         Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
           decoration: BoxDecoration(
             color: statusColor.withOpacity(0.15),
             borderRadius: BorderRadius.circular(6),
@@ -1174,11 +1180,11 @@ class _StudentDashboardState extends State<StudentDashboard> {
             ),
           ),
         ),
-        const SizedBox(width: 8),
+        SizedBox(width: 8),
         Icon(
           Icons.more_vert,
           size: 16,
-          color: Colors.white.withOpacity(0.4),
+          color: _p.textMuted,
         ),
       ],
     );
@@ -1190,40 +1196,40 @@ class _StudentDashboardState extends State<StudentDashboard> {
         'Auto Format',
         'Format to academic standards',
         Icons.auto_awesome,
-        const Color(0xFF3B82F6),
+        _p.accent,
       ),
       (
         'Citation Helper',
         'APA, MLA, Chicago citations',
         Icons.format_quote,
-        const Color(0xFF8B5CF6),
+        Color(0xFF8B5CF6),
       ),
       (
         'Grammar Check',
         'Academic writing suggestions',
         Icons.check_circle_outline,
-        const Color(0xFF10B981),
+        Color(0xFF10B981),
       ),
     ];
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
+        Text(
           'AI Formatting Tools',
           style: TextStyle(
             fontSize: 16,
             fontWeight: FontWeight.w600,
-            color: Colors.white,
+            color: _p.textPrimary,
           ),
         ),
-        const SizedBox(height: 14),
+        SizedBox(height: 14),
         if (compact)
           Container(
             decoration: BoxDecoration(
-              color: const Color(0xFF161B22),
+              color: _p.surface,
               borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: Colors.white.withOpacity(0.1)),
+              border: Border.all(color: _p.border),
             ),
             child: Column(
               children: [
@@ -1231,7 +1237,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
                   if (i > 0)
                     Divider(
                       height: 1,
-                      color: Colors.white.withOpacity(0.06),
+                      color: _p.border,
                     ),
                   _buildAIToolTile(
                     tools[i].$1,
@@ -1246,7 +1252,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
         else
           ...[
             for (var i = 0; i < tools.length; i++) ...[
-              if (i > 0) const SizedBox(height: 12),
+              if (i > 0) SizedBox(height: 12),
               _buildAIToolCard(
                 tools[i].$1,
                 tools[i].$2,
@@ -1272,7 +1278,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
       }),
       borderRadius: BorderRadius.circular(14),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        padding: EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         child: Row(
           children: [
             Container(
@@ -1284,27 +1290,27 @@ class _StudentDashboardState extends State<StudentDashboard> {
               ),
               child: Icon(icon, color: color, size: 20),
             ),
-            const SizedBox(width: 12),
+            SizedBox(width: 12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
                     title,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
-                      color: Colors.white,
+                      color: _p.textPrimary,
                     ),
                   ),
-                  const SizedBox(height: 2),
+                  SizedBox(height: 2),
                   Text(
                     description,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       fontSize: 12,
-                      color: Colors.white.withOpacity(0.5),
+                      color: _p.textSecondary,
                     ),
                   ),
                 ],
@@ -1312,7 +1318,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
             ),
             Icon(
               Icons.chevron_right_rounded,
-              color: Colors.white.withOpacity(0.3),
+              color: _p.textMuted,
               size: 20,
             ),
           ],
@@ -1329,50 +1335,50 @@ class _StudentDashboardState extends State<StudentDashboard> {
   ) {
     return Container(
       decoration: BoxDecoration(
-        color: const Color(0xFF161B22),
+        color: _p.surface,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
-          color: Colors.white.withOpacity(0.1),
+          color: _p.border,
         ),
       ),
-      padding: const EdgeInsets.all(16),
+      padding: EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
               Container(
-                padding: const EdgeInsets.all(8),
+                padding: EdgeInsets.all(8),
                 decoration: BoxDecoration(
                   color: color.withOpacity(0.15),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Icon(icon, color: color, size: 18),
               ),
-              const SizedBox(width: 12),
+              SizedBox(width: 12),
               Expanded(
                 child: Text(
                   title,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
-                    color: Colors.white,
+                    color: _p.textPrimary,
                   ),
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 8),
+          SizedBox(height: 8),
           Text(
             description,
             style: TextStyle(
               fontSize: 12,
               fontWeight: FontWeight.w400,
-              color: Colors.white.withOpacity(0.6),
+              color: _p.textSecondary,
               height: 1.4,
             ),
           ),
-          const SizedBox(height: 12),
+          SizedBox(height: 12),
           SizedBox(
             width: double.infinity,
             height: 32,
@@ -1389,7 +1395,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
                 style: TextStyle(
                   fontSize: 11,
                   fontWeight: FontWeight.w600,
-                  color: Colors.white,
+                  color: _p.textPrimary,
                 ),
               ),
             ),
@@ -1431,45 +1437,45 @@ class _StudentDashboardState extends State<StudentDashboard> {
           children: [
             Row(
               children: [
-                const Text(
+                Text(
                   'Recent collaborations',
                   style: TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w600,
-                    color: Colors.white,
+                    color: _p.textPrimary,
                   ),
                 ),
-                const SizedBox(width: 8),
+                SizedBox(width: 8),
                 if (projects.isNotEmpty)
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    padding: EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF10B981).withOpacity(0.15),
+                      color: Color(0xFF10B981).withOpacity(0.15),
                       borderRadius: BorderRadius.circular(10),
                     ),
                     child: Text(
                       '${projects.length}',
-                      style: const TextStyle(
+                      style: TextStyle(
                         color: Color(0xFF10B981),
                         fontSize: 11,
                         fontWeight: FontWeight.w600,
                       ),
                     ),
                   ),
-                const Spacer(),
+                Spacer(),
                 TextButton(
                   onPressed: _openCollaborationHub,
                   style: TextButton.styleFrom(
-                    foregroundColor: const Color(0xFF6366F1),
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    foregroundColor: Color(0xFF6366F1),
+                    padding: EdgeInsets.symmetric(horizontal: 8),
                   ),
-                  child: const Text('View all'),
+                  child: Text('View all'),
                 ),
               ],
             ),
-            const SizedBox(height: 16),
+            SizedBox(height: 16),
             if (vc.loading && projects.isEmpty)
-              const Center(
+              Center(
                 child: Padding(
                   padding: EdgeInsets.all(24),
                   child: CircularProgressIndicator(strokeWidth: 2),
@@ -1478,33 +1484,33 @@ class _StudentDashboardState extends State<StudentDashboard> {
             else if (projects.isEmpty)
               Container(
                 width: double.infinity,
-                padding: const EdgeInsets.all(24),
+                padding: EdgeInsets.all(24),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF161B22),
+                  color: _p.surface,
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.white.withOpacity(0.1)),
+                  border: Border.all(color: _p.border),
                 ),
                 child: Column(
                   children: [
-                    Icon(Icons.people_outline, size: 32, color: Colors.white.withOpacity(0.3)),
-                    const SizedBox(height: 8),
+                    Icon(Icons.people_outline, size: 32, color: _p.textMuted),
+                    SizedBox(height: 8),
                     Text(
                       'No collaborations yet',
-                      style: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 13),
+                      style: TextStyle(color: _p.textSecondary, fontSize: 13),
                     ),
-                    const SizedBox(height: 4),
+                    SizedBox(height: 4),
                     Text(
                       'Create or join a project from Collaboration',
-                      style: TextStyle(color: Colors.white.withOpacity(0.35), fontSize: 12),
+                      style: TextStyle(color: _p.textMuted, fontSize: 12),
                     ),
-                    const SizedBox(height: 12),
+                    SizedBox(height: 12),
                     OutlinedButton(
                       onPressed: _openCollaborationHub,
                       style: OutlinedButton.styleFrom(
-                        foregroundColor: const Color(0xFF10B981),
-                        side: const BorderSide(color: Color(0xFF10B981)),
+                        foregroundColor: Color(0xFF10B981),
+                        side: BorderSide(color: Color(0xFF10B981)),
                       ),
-                      child: const Text('Open Collaboration'),
+                      child: Text('Open Collaboration'),
                     ),
                   ],
                 ),
@@ -1534,7 +1540,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
         'New Report',
         'Start or use a template',
         Icons.description_outlined,
-        const Color(0xFF3B82F6),
+        _p.accent,
         () => setState(() {
               _selectedIndex = 1;
               _activeProjectId = null;
@@ -1544,7 +1550,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
         'Import',
         'Upload a document',
         Icons.upload_file_outlined,
-        const Color(0xFF8B5CF6),
+        Color(0xFF8B5CF6),
         () => setState(() {
               _selectedIndex = 1;
               _activeProjectId = null;
@@ -1554,7 +1560,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
         'Templates',
         'Browse formats',
         Icons.layers_outlined,
-        const Color(0xFF06B6D4),
+        Color(0xFF06B6D4),
         () => setState(() {
               _selectedIndex = 5;
               _activeProjectId = null;
@@ -1564,7 +1570,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
         'Collaborate',
         'Work with team',
         Icons.people_outline,
-        const Color(0xFF10B981),
+        Color(0xFF10B981),
         _openCollaborationHub,
       ),
     ];
@@ -1572,15 +1578,15 @@ class _StudentDashboardState extends State<StudentDashboard> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
+        Text(
           'Quick Actions',
           style: TextStyle(
             fontSize: 16,
             fontWeight: FontWeight.w600,
-            color: Colors.white,
+            color: _p.textPrimary,
           ),
         ),
-        const SizedBox(height: 14),
+        SizedBox(height: 14),
         if (compact)
           LayoutBuilder(
             builder: (context, constraints) {
@@ -1611,7 +1617,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
           Row(
             children: [
               for (var i = 0; i < actions.length; i++) ...[
-                if (i > 0) const SizedBox(width: 16),
+                if (i > 0) SizedBox(width: 16),
                 Expanded(
                   child: _buildQuickActionCard(
                     actions[i].$1,
@@ -1642,10 +1648,10 @@ class _StudentDashboardState extends State<StudentDashboard> {
         cursor: SystemMouseCursors.click,
         child: Container(
           decoration: BoxDecoration(
-            color: const Color(0xFF161B22),
+            color: _p.surface,
             borderRadius: BorderRadius.circular(14),
             border: Border.all(
-              color: Colors.white.withOpacity(0.1),
+              color: _p.border,
             ),
           ),
           padding: EdgeInsets.all(compact ? 14 : 16),
@@ -1668,10 +1674,10 @@ class _StudentDashboardState extends State<StudentDashboard> {
                 style: TextStyle(
                   fontSize: compact ? 13 : 13,
                   fontWeight: FontWeight.w600,
-                  color: Colors.white,
+                  color: _p.textPrimary,
                 ),
               ),
-              const SizedBox(height: 4),
+              SizedBox(height: 4),
               Text(
                 description,
                 maxLines: 2,
@@ -1679,7 +1685,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
                 style: TextStyle(
                   fontSize: compact ? 11 : 11,
                   fontWeight: FontWeight.w400,
-                  color: Colors.white.withOpacity(0.5),
+                  color: _p.textSecondary,
                   height: 1.35,
                 ),
               ),
@@ -1702,7 +1708,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
     final templateId = doc['template_id'] as int?;
     if (docId == null || templateId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
+        SnackBar(
           content: Text('Cannot analyze — document info is missing'),
           backgroundColor: Color(0xFFEF4444),
         ),
@@ -1763,8 +1769,8 @@ class _StudentDashboardState extends State<StudentDashboard> {
 
         return RefreshIndicator(
           onRefresh: () => docProvider.fetchDocuments(auth.userId!),
-          color: const Color(0xFF3B82F6),
-          backgroundColor: const Color(0xFF161B22),
+          color: _p.accent,
+          backgroundColor: _p.surface,
           child: SingleChildScrollView(
           physics: const AlwaysScrollableScrollPhysics(),
           padding: EdgeInsets.fromLTRB(
@@ -1780,11 +1786,11 @@ class _StudentDashboardState extends State<StudentDashboard> {
               if (compact) ...[
                 Container(
                   decoration: BoxDecoration(
-                    color: const Color(0xFF161B22),
+                    color: _p.surface,
                     borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: Colors.white.withOpacity(0.1)),
+                    border: Border.all(color: _p.border),
                   ),
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  padding: EdgeInsets.symmetric(horizontal: 12),
                   child: TextField(
                     onChanged: (value) {
                       setState(() {
@@ -1792,23 +1798,23 @@ class _StudentDashboardState extends State<StudentDashboard> {
                         _currentPage = 1;
                       });
                     },
-                    style: const TextStyle(color: Colors.white),
+                    style: TextStyle(color: _p.textPrimary),
                     decoration: InputDecoration(
                       hintText: 'Search reports...',
                       hintStyle: TextStyle(
-                        color: Colors.white.withOpacity(0.4),
+                        color: _p.textMuted,
                         fontSize: 13,
                       ),
                       border: InputBorder.none,
                       prefixIcon: Icon(
                         Icons.search,
-                        color: Colors.white.withOpacity(0.5),
+                        color: _p.textSecondary,
                         size: 20,
                       ),
                     ),
                   ),
                 ),
-                const SizedBox(height: 10),
+                SizedBox(height: 10),
                 _buildReportsMenuButton(
                   icon: Icons.swap_vert,
                   label: _sortBy == 'name' ? 'Name A-Z' : 'Most Recent',
@@ -1830,13 +1836,13 @@ class _StudentDashboardState extends State<StudentDashboard> {
                     flex: 2,
                     child: Container(
                       decoration: BoxDecoration(
-                        color: const Color(0xFF161B22),
+                        color: _p.surface,
                         borderRadius: BorderRadius.circular(8),
                         border: Border.all(
-                          color: Colors.white.withOpacity(0.1),
+                          color: _p.border,
                         ),
                       ),
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      padding: EdgeInsets.symmetric(horizontal: 16),
                       child: TextField(
                         onChanged: (value) {
                           setState(() {
@@ -1844,33 +1850,33 @@ class _StudentDashboardState extends State<StudentDashboard> {
                             _currentPage = 1;
                           });
                         },
-                        style: const TextStyle(color: Colors.white),
+                        style: TextStyle(color: _p.textPrimary),
                         decoration: InputDecoration(
                           hintText: 'Search reports...',
                           hintStyle: TextStyle(
-                            color: Colors.white.withOpacity(0.4),
+                            color: _p.textMuted,
                             fontSize: 13,
                           ),
                           border: InputBorder.none,
                           prefixIcon: Icon(
                             Icons.search,
-                            color: Colors.white.withOpacity(0.5),
+                            color: _p.textSecondary,
                             size: 20,
                           ),
                         ),
                       ),
                     ),
                   ),
-                  const SizedBox(width: 12),
+                  SizedBox(width: 12),
                   Container(
                     decoration: BoxDecoration(
-                      color: const Color(0xFF161B22),
+                      color: _p.surface,
                       borderRadius: BorderRadius.circular(8),
                       border: Border.all(
-                        color: Colors.white.withOpacity(0.1),
+                        color: _p.border,
                       ),
                     ),
-                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    padding: EdgeInsets.symmetric(horizontal: 12),
                     child: PopupMenuButton<String>(
                       onSelected: (value) {
                         setState(() {
@@ -1884,12 +1890,12 @@ class _StudentDashboardState extends State<StudentDashboard> {
                       ],
                       child: Row(
                         children: [
-                          Icon(Icons.swap_vert, color: Colors.white.withOpacity(0.6), size: 18),
-                          const SizedBox(width: 8),
+                          Icon(Icons.swap_vert, color: _p.textSecondary, size: 18),
+                          SizedBox(width: 8),
                           Text(
                             _sortBy == 'name' ? 'Name A-Z' : 'Most Recent',
                             style: TextStyle(
-                              color: Colors.white.withOpacity(0.7),
+                              color: _p.textSecondary,
                               fontSize: 13,
                             ),
                           ),
@@ -1902,24 +1908,24 @@ class _StudentDashboardState extends State<StudentDashboard> {
               SizedBox(height: compact ? 20 : 28),
               // Grid / list of Reports
               if (docProvider.isLoading)
-                const Center(child: CircularProgressIndicator())
+                Center(child: CircularProgressIndicator())
               else if (paginatedDocs.isEmpty)
                 Center(
                   child: Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 48),
+                    padding: EdgeInsets.symmetric(vertical: 48),
                     child: Column(
                       children: [
                         Icon(
                           Icons.folder_open,
                           size: 48,
-                          color: Colors.white.withOpacity(0.3),
+                          color: _p.textMuted,
                         ),
-                        const SizedBox(height: 16),
+                        SizedBox(height: 16),
                         Text(
                           'No reports found',
                           style: TextStyle(
                             fontSize: 14,
-                            color: Colors.white.withOpacity(0.5),
+                            color: _p.textSecondary,
                           ),
                         ),
                       ],
@@ -1931,7 +1937,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
                   children: [
                     for (final doc in paginatedDocs)
                       Padding(
-                        padding: const EdgeInsets.only(bottom: 10),
+                        padding: EdgeInsets.only(bottom: 10),
                         child: _buildMobileReportCard(doc),
                       ),
                   ],
@@ -1956,10 +1962,10 @@ class _StudentDashboardState extends State<StudentDashboard> {
 
                     return Container(
                       decoration: BoxDecoration(
-                        color: const Color(0xFF161B22),
+                        color: _p.surface,
                         borderRadius: BorderRadius.circular(12),
                         border: Border.all(
-                          color: Colors.white.withOpacity(0.1),
+                          color: _p.border,
                         ),
                       ),
                       child: Column(
@@ -1969,7 +1975,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
                             height: 140,
                             decoration: BoxDecoration(
                               color: iconColor.withOpacity(0.15),
-                              borderRadius: const BorderRadius.only(
+                              borderRadius: BorderRadius.only(
                                 topLeft: Radius.circular(12),
                                 topRight: Radius.circular(12),
                               ),
@@ -1987,7 +1993,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
                                   top: 12,
                                   right: 12,
                                   child: Container(
-                                    padding: const EdgeInsets.symmetric(
+                                    padding: EdgeInsets.symmetric(
                                       horizontal: 10,
                                       vertical: 6,
                                     ),
@@ -1997,10 +2003,10 @@ class _StudentDashboardState extends State<StudentDashboard> {
                                     ),
                                     child: Text(
                                       statusLabel,
-                                      style: const TextStyle(
+                                      style: TextStyle(
                                         fontSize: 10,
                                         fontWeight: FontWeight.w600,
-                                        color: Colors.white,
+                                        color: _p.textPrimary,
                                       ),
                                     ),
                                   ),
@@ -2011,45 +2017,45 @@ class _StudentDashboardState extends State<StudentDashboard> {
                           // Bottom Section with Details
                           Expanded(
                             child: Padding(
-                              padding: const EdgeInsets.all(16),
+                              padding: EdgeInsets.all(16),
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text(
                                     doc['filename'] ?? 'Untitled',
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                       fontSize: 14,
                                       fontWeight: FontWeight.w600,
-                                      color: Colors.white,
+                                      color: _p.textPrimary,
                                     ),
                                     maxLines: 2,
                                     overflow: TextOverflow.ellipsis,
                                   ),
-                                  const SizedBox(height: 6),
+                                  SizedBox(height: 6),
                                   Text(
                                     doc['template_name'] ?? 'No template',
                                     style: TextStyle(
                                       fontSize: 11,
-                                      color: Colors.white.withOpacity(0.6),
+                                      color: _p.textSecondary,
                                     ),
                                   ),
-                                  const SizedBox(height: 8),
+                                  SizedBox(height: 8),
                                   Text(
                                     'Modified ${_getTimeAgo(doc['created_at'] ?? DateTime.now())}',
                                     style: TextStyle(
                                       fontSize: 10,
-                                      color: Colors.white.withOpacity(0.5),
+                                      color: _p.textSecondary,
                                     ),
                                   ),
-                                  const Spacer(),
+                                  Spacer(),
                                   // Action Buttons
                                   Row(
                                     children: [
                                       Expanded(
                                         child: ElevatedButton.icon(
                                           onPressed: () => _sendReportToSupervisor(doc),
-                                          icon: const Icon(Icons.send_rounded, size: 14),
-                                          label: const Text(
+                                          icon: Icon(Icons.send_rounded, size: 14),
+                                          label: Text(
                                             'Send to Supervisor',
                                             style: TextStyle(
                                               fontSize: 11,
@@ -2057,21 +2063,21 @@ class _StudentDashboardState extends State<StudentDashboard> {
                                             ),
                                           ),
                                           style: ElevatedButton.styleFrom(
-                                            backgroundColor: const Color(0xFF10B981),
+                                            backgroundColor: Color(0xFF10B981),
                                             foregroundColor: Colors.white,
-                                            padding: const EdgeInsets.symmetric(vertical: 8),
+                                            padding: EdgeInsets.symmetric(vertical: 8),
                                             shape: RoundedRectangleBorder(
                                               borderRadius: BorderRadius.circular(6),
                                             ),
                                           ),
                                         ),
                                       ),
-                                      const SizedBox(width: 6),
+                                      SizedBox(width: 6),
                                       Expanded(
                                         child: OutlinedButton.icon(
                                           onPressed: () => _handleDownload(doc),
-                                          icon: const Icon(Icons.download, size: 14),
-                                          label: const Text(
+                                          icon: Icon(Icons.download, size: 14),
+                                          label: Text(
                                             'Download',
                                             style: TextStyle(
                                               fontSize: 11,
@@ -2079,16 +2085,16 @@ class _StudentDashboardState extends State<StudentDashboard> {
                                             ),
                                           ),
                                           style: OutlinedButton.styleFrom(
-                                            foregroundColor: const Color(0xFF3B82F6),
-                                            side: const BorderSide(color: Color(0xFF3B82F6)),
-                                            padding: const EdgeInsets.symmetric(vertical: 8),
+                                            foregroundColor: _p.accent,
+                                            side: BorderSide(color: _p.accent),
+                                            padding: EdgeInsets.symmetric(vertical: 8),
                                             shape: RoundedRectangleBorder(
                                               borderRadius: BorderRadius.circular(6),
                                             ),
                                           ),
                                         ),
                                       ),
-                                      const SizedBox(width: 4),
+                                      SizedBox(width: 4),
                                       PopupMenuButton<String>(
                                         onSelected: (value) {
                                           if (value == 'analyze') {
@@ -2146,7 +2152,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
                                         child: Icon(
                                           Icons.more_vert,
                                           size: 16,
-                                          color: Colors.white.withOpacity(0.6),
+                                          color: _p.textSecondary,
                                         ),
                                       ),
                                     ],
@@ -2160,7 +2166,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
                     );
                   },
                 ),
-              const SizedBox(height: 40),
+              SizedBox(height: 40),
               // Pagination
               if (filteredDocs.isNotEmpty)
                 Center(
@@ -2168,8 +2174,8 @@ class _StudentDashboardState extends State<StudentDashboard> {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       IconButton(
-                        icon: const Icon(Icons.chevron_left),
-                        color: Colors.white.withOpacity(0.6),
+                        icon: Icon(Icons.chevron_left),
+                        color: _p.textSecondary,
                         onPressed: _currentPage > 1
                             ? () => setState(() => _currentPage--)
                             : null,
@@ -2178,24 +2184,24 @@ class _StudentDashboardState extends State<StudentDashboard> {
                         GestureDetector(
                           onTap: () => setState(() => _currentPage = i),
                           child: Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 4),
+                            padding: EdgeInsets.symmetric(horizontal: 4),
                             child: Container(
                               width: 32,
                               height: 32,
                               decoration: BoxDecoration(
                                 color: i == _currentPage
-                                    ? const Color(0xFF3B82F6)
-                                    : const Color(0xFF161B22),
+                                    ? _p.accent
+                                    : _p.surface,
                                 borderRadius: BorderRadius.circular(6),
                                 border: Border.all(
-                                  color: Colors.white.withOpacity(0.1),
+                                  color: _p.border,
                                 ),
                               ),
                               child: Center(
                                 child: Text(
                                   '$i',
                                   style: TextStyle(
-                                    color: i == _currentPage ? Colors.white : Colors.white.withOpacity(0.6),
+                                    color: i == _currentPage ? Colors.white : _p.textSecondary,
                                     fontWeight: FontWeight.w600,
                                     fontSize: 13,
                                   ),
@@ -2208,7 +2214,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
                         Text(
                           '...',
                           style: TextStyle(
-                            color: Colors.white.withOpacity(0.6),
+                            color: _p.textSecondary,
                             fontSize: 13,
                           ),
                         ),
@@ -2216,24 +2222,24 @@ class _StudentDashboardState extends State<StudentDashboard> {
                         GestureDetector(
                           onTap: () => setState(() => _currentPage = totalPages),
                           child: Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 4),
+                            padding: EdgeInsets.symmetric(horizontal: 4),
                             child: Container(
                               width: 32,
                               height: 32,
                               decoration: BoxDecoration(
                                 color: totalPages == _currentPage
-                                    ? const Color(0xFF3B82F6)
-                                    : const Color(0xFF161B22),
+                                    ? _p.accent
+                                    : _p.surface,
                                 borderRadius: BorderRadius.circular(6),
                                 border: Border.all(
-                                  color: Colors.white.withOpacity(0.1),
+                                  color: _p.border,
                                 ),
                               ),
                               child: Center(
                                 child: Text(
                                   '$totalPages',
                                   style: TextStyle(
-                                    color: totalPages == _currentPage ? Colors.white : Colors.white.withOpacity(0.6),
+                                    color: totalPages == _currentPage ? Colors.white : _p.textSecondary,
                                     fontWeight: FontWeight.w600,
                                     fontSize: 13,
                                   ),
@@ -2243,8 +2249,8 @@ class _StudentDashboardState extends State<StudentDashboard> {
                           ),
                         ),
                       IconButton(
-                        icon: const Icon(Icons.chevron_right),
-                        color: Colors.white.withOpacity(0.6),
+                        icon: Icon(Icons.chevron_right),
+                        color: _p.textSecondary,
                         onPressed: _currentPage < totalPages
                             ? () => setState(() => _currentPage++)
                             : null,
@@ -2269,7 +2275,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
     final email = (auth.userEmail ?? auth.email ?? '').trim();
     if (userId == null || email.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
+        SnackBar(
           content: Text('Please sign in again to send'),
           backgroundColor: Color(0xFFEF4444),
         ),
@@ -2284,7 +2290,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
     }
     if (groupId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
+        SnackBar(
           content: Text(
             'No accepted supervisor yet. Choose a supervisor and wait for acceptance first.',
           ),
@@ -2297,7 +2303,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
     final docId = doc['id'];
     if (docId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
+        SnackBar(
           content: Text('Invalid document'),
           backgroundColor: Color(0xFFEF4444),
         ),
@@ -2308,27 +2314,27 @@ class _StudentDashboardState extends State<StudentDashboard> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF161B22),
-        title: const Text(
+        backgroundColor: _p.surface,
+        title: Text(
           'Send to Supervisor?',
-          style: TextStyle(color: Colors.white),
+          style: TextStyle(color: _p.textPrimary),
         ),
         content: Text(
           'Send "${doc['filename'] ?? 'this report'}" for supervisor review?',
-          style: TextStyle(color: Colors.white.withOpacity(0.75)),
+          style: TextStyle(color: _p.textSecondary),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
+            child: Text('Cancel'),
           ),
           ElevatedButton(
             onPressed: () => Navigator.pop(ctx, true),
             style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF10B981),
+              backgroundColor: Color(0xFF10B981),
               foregroundColor: Colors.white,
             ),
-            child: const Text('Send'),
+            child: Text('Send'),
           ),
         ],
       ),
@@ -2338,7 +2344,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (_) => const Center(
+      builder: (_) => Center(
         child: CircularProgressIndicator(color: Color(0xFF10B981)),
       ),
     );
@@ -2360,7 +2366,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
 
     if (result != null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
+        SnackBar(
           content: Text('Sent to supervisor for review'),
           backgroundColor: Color(0xFF10B981),
         ),
@@ -2369,7 +2375,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(docs.errorMessage ?? 'Failed to send'),
-          backgroundColor: const Color(0xFFEF4444),
+          backgroundColor: Color(0xFFEF4444),
         ),
       );
     }
@@ -2383,23 +2389,23 @@ class _StudentDashboardState extends State<StudentDashboard> {
   }) {
     return Container(
       decoration: BoxDecoration(
-        color: const Color(0xFF161B22),
+        color: _p.surface,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: Colors.white.withOpacity(0.1)),
+        border: Border.all(color: _p.border),
       ),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+      padding: EdgeInsets.symmetric(horizontal: 12, vertical: 2),
       child: PopupMenuButton<String>(
         onSelected: onSelected,
         itemBuilder: (_) => items,
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(icon, color: Colors.white.withOpacity(0.6), size: 18),
-            const SizedBox(width: 8),
+            Icon(icon, color: _p.textSecondary, size: 18),
+            SizedBox(width: 8),
             Text(
               label,
               style: TextStyle(
-                color: Colors.white.withOpacity(0.7),
+                color: _p.textSecondary,
                 fontSize: 13,
               ),
             ),
@@ -2417,11 +2423,11 @@ class _StudentDashboardState extends State<StudentDashboard> {
 
     return Container(
       decoration: BoxDecoration(
-        color: const Color(0xFF161B22),
+        color: _p.surface,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.white.withOpacity(0.1)),
+        border: Border.all(color: _p.border),
       ),
-      padding: const EdgeInsets.all(14),
+      padding: EdgeInsets.all(14),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
@@ -2437,7 +2443,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
                 ),
                 child: Icon(Icons.description_outlined, color: iconColor, size: 22),
               ),
-              const SizedBox(width: 12),
+              SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -2446,28 +2452,28 @@ class _StudentDashboardState extends State<StudentDashboard> {
                       doc['filename'] ?? 'Untitled',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.w600,
-                        color: Colors.white,
+                        color: _p.textPrimary,
                       ),
                     ),
-                    const SizedBox(height: 3),
+                    SizedBox(height: 3),
                     Text(
                       doc['template_name'] ?? 'No template',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         fontSize: 12,
-                        color: Colors.white.withOpacity(0.5),
+                        color: _p.textSecondary,
                       ),
                     ),
                   ],
                 ),
               ),
-              const SizedBox(width: 8),
+              SizedBox(width: 8),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
                   color: statusColor.withOpacity(0.15),
                   borderRadius: BorderRadius.circular(6),
@@ -2483,27 +2489,27 @@ class _StudentDashboardState extends State<StudentDashboard> {
               ),
             ],
           ),
-          const SizedBox(height: 10),
+          SizedBox(height: 10),
           Text(
             'Modified ${_getTimeAgo(doc['created_at'] ?? DateTime.now())}',
             style: TextStyle(
               fontSize: 11,
-              color: Colors.white.withOpacity(0.45),
+              color: _p.textMuted,
             ),
           ),
-          const SizedBox(height: 12),
+          SizedBox(height: 12),
           SizedBox(
             width: double.infinity,
             height: 42,
             child: ElevatedButton.icon(
               onPressed: () => _sendReportToSupervisor(doc),
-              icon: const Icon(Icons.send_rounded, size: 16),
-              label: const Text(
+              icon: Icon(Icons.send_rounded, size: 16),
+              label: Text(
                 'Send to Supervisor',
                 style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
               ),
               style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF10B981),
+                backgroundColor: Color(0xFF10B981),
                 foregroundColor: Colors.white,
                 elevation: 0,
                 shape: RoundedRectangleBorder(
@@ -2512,20 +2518,20 @@ class _StudentDashboardState extends State<StudentDashboard> {
               ),
             ),
           ),
-          const SizedBox(height: 8),
+          SizedBox(height: 8),
           SizedBox(
             width: double.infinity,
             height: 40,
             child: OutlinedButton.icon(
               onPressed: () => _handleDownload(doc),
-              icon: const Icon(Icons.download_rounded, size: 18),
-              label: const Text(
+              icon: Icon(Icons.download_rounded, size: 18),
+              label: Text(
                 'Download',
                 style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
               ),
               style: OutlinedButton.styleFrom(
-                foregroundColor: const Color(0xFF3B82F6),
-                side: const BorderSide(color: Color(0xFF3B82F6)),
+                foregroundColor: _p.accent,
+                side: BorderSide(color: _p.accent),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(10),
                 ),
@@ -2541,16 +2547,16 @@ class _StudentDashboardState extends State<StudentDashboard> {
     switch (status.toLowerCase()) {
       case 'completed':
       case 'formatted':
-        return const Color(0xFF10B981);
+        return Color(0xFF10B981);
       case 'processing':
-        return const Color(0xFFEAB308);
+        return Color(0xFFEAB308);
       case 'uploaded':
       case 'pending':
-        return const Color(0xFF6366F1);
+        return Color(0xFF6366F1);
       case 'draft':
-        return const Color(0xFFEF4444);
+        return Color(0xFFEF4444);
       default:
-        return const Color(0xFF10B981);
+        return Color(0xFF10B981);
     }
   }
 
@@ -2574,13 +2580,13 @@ class _StudentDashboardState extends State<StudentDashboard> {
   Color _getIconColor(String status) {
     switch (status) {
       case 'completed':
-        return const Color(0xFF10B981);
+        return Color(0xFF10B981);
       case 'processing':
-        return const Color(0xFF10D981);
+        return Color(0xFF10D981);
       case 'draft':
-        return const Color(0xFF8B5CF6);
+        return Color(0xFF8B5CF6);
       default:
-        return const Color(0xFF3B82F6);
+        return _p.accent;
     }
   }
 
@@ -2610,44 +2616,44 @@ class _StudentDashboardState extends State<StudentDashboard> {
           }
 
           return Dialog(
-            backgroundColor: const Color(0xFF0D1117),
-            insetPadding: const EdgeInsets.all(32),
+            backgroundColor: _p.surfaceAlt,
+            insetPadding: EdgeInsets.all(32),
             child: Container(
               decoration: BoxDecoration(
-                color: const Color(0xFF0D1117),
+                color: _p.surfaceAlt,
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(
-                  color: Colors.white.withOpacity(0.1),
+                  color: _p.border,
                 ),
               ),
               child: Column(
                 children: [
                   // Header
                   Container(
-                    padding: const EdgeInsets.all(20),
+                    padding: EdgeInsets.all(20),
                     decoration: BoxDecoration(
                       border: Border(
                         bottom: BorderSide(
-                          color: Colors.white.withOpacity(0.1),
+                          color: _p.border,
                         ),
                       ),
                     ),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        const Text(
+                        Text(
                           'Edit Document',
                           style: TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.w600,
-                            color: Colors.white,
+                            color: _p.textPrimary,
                           ),
                         ),
                         GestureDetector(
                           onTap: () => Navigator.pop(context),
                           child: Icon(
                             Icons.close,
-                            color: Colors.white.withOpacity(0.6),
+                            color: _p.textSecondary,
                           ),
                         ),
                       ],
@@ -2666,7 +2672,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
                         child: Text(
                           editError!,
                           style: TextStyle(
-                            color: Colors.white.withOpacity(0.6),
+                            color: _p.textSecondary,
                           ),
                         ),
                       ),
@@ -2674,53 +2680,53 @@ class _StudentDashboardState extends State<StudentDashboard> {
                   else
                     Expanded(
                       child: SingleChildScrollView(
-                        padding: const EdgeInsets.all(32),
+                        padding: EdgeInsets.all(32),
                         child: TextField(
                           controller: editController,
                           maxLines: null,
-                          style: const TextStyle(
-                            color: Colors.white,
+                          style: TextStyle(
+                            color: _p.textPrimary,
                             fontSize: 14,
                             height: 1.6,
                           ),
                           decoration: InputDecoration(
                             hintText: 'Edit your document here...',
                             hintStyle: TextStyle(
-                              color: Colors.white.withOpacity(0.3),
+                              color: _p.textMuted,
                               fontSize: 14,
                             ),
                             border: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(8),
                               borderSide: BorderSide(
-                                color: Colors.white.withOpacity(0.1),
+                                color: _p.border,
                               ),
                             ),
                             enabledBorder: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(8),
                               borderSide: BorderSide(
-                                color: Colors.white.withOpacity(0.1),
+                                color: _p.border,
                               ),
                             ),
                             focusedBorder: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(8),
-                              borderSide: const BorderSide(
-                                color: Color(0xFF3B82F6),
+                              borderSide: BorderSide(
+                                color: _p.accent,
                               ),
                             ),
                             filled: true,
-                            fillColor: const Color(0xFF161B22),
-                            contentPadding: const EdgeInsets.all(16),
+                            fillColor: _p.surface,
+                            contentPadding: EdgeInsets.all(16),
                           ),
                         ),
                       ),
                     ),
                   // Footer buttons
                   Container(
-                    padding: const EdgeInsets.all(20),
+                    padding: EdgeInsets.all(20),
                     decoration: BoxDecoration(
                       border: Border(
                         top: BorderSide(
-                          color: Colors.white.withOpacity(0.1),
+                          color: _p.border,
                         ),
                       ),
                     ),
@@ -2729,14 +2735,14 @@ class _StudentDashboardState extends State<StudentDashboard> {
                       children: [
                         TextButton(
                           onPressed: () => Navigator.pop(context),
-                          child: const Text(
+                          child: Text(
                             'Cancel',
                             style: TextStyle(
-                              color: Colors.white,
+                              color: _p.textPrimary,
                             ),
                           ),
                         ),
-                        const SizedBox(width: 12),
+                        SizedBox(width: 12),
                         ElevatedButton(
                           onPressed: isLoading || editError != null
                               ? null
@@ -2755,16 +2761,16 @@ class _StudentDashboardState extends State<StudentDashboard> {
                                             : 'Failed to save document',
                                       ),
                                       backgroundColor: success
-                                          ? const Color(0xFF10B981)
-                                          : const Color(0xFFEF4444),
+                                          ? Color(0xFF10B981)
+                                          : Color(0xFFEF4444),
                                     ),
                                   );
                                   if (success) Navigator.pop(context);
                                 },
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF3B82F6),
+                            backgroundColor: _p.accent,
                           ),
-                          child: const Text(
+                          child: Text(
                             'Save Changes',
                             style: TextStyle(
                               fontSize: 13,
@@ -2792,25 +2798,25 @@ class _StudentDashboardState extends State<StudentDashboard> {
     showDialog(
       context: context,
       builder: (context) => Dialog(
-        backgroundColor: const Color(0xFF0D1117),
-        insetPadding: const EdgeInsets.all(32),
+        backgroundColor: _p.surfaceAlt,
+        insetPadding: EdgeInsets.all(32),
         child: Container(
           decoration: BoxDecoration(
-            color: const Color(0xFF0D1117),
+            color: _p.surfaceAlt,
             borderRadius: BorderRadius.circular(12),
             border: Border.all(
-              color: Colors.white.withOpacity(0.1),
+              color: _p.border,
             ),
           ),
           child: Column(
             children: [
               // Header
               Container(
-                padding: const EdgeInsets.all(20),
+                padding: EdgeInsets.all(20),
                 decoration: BoxDecoration(
                   border: Border(
                     bottom: BorderSide(
-                      color: Colors.white.withOpacity(0.1),
+                      color: _p.border,
                     ),
                   ),
                 ),
@@ -2822,20 +2828,20 @@ class _StudentDashboardState extends State<StudentDashboard> {
                       children: [
                         Text(
                           isTemplate ? 'Template Preview' : 'Document Preview',
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.w600,
-                            color: Colors.white,
+                            color: _p.textPrimary,
                           ),
                         ),
                         if (isTemplate)
                           Padding(
-                            padding: const EdgeInsets.only(top: 4),
+                            padding: EdgeInsets.only(top: 4),
                             child: Text(
                               doc['name'] ?? 'Template',
                               style: TextStyle(
                                 fontSize: 12,
-                                color: Colors.white.withOpacity(0.6),
+                                color: _p.textSecondary,
                               ),
                             ),
                           ),
@@ -2845,7 +2851,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
                       onTap: () => Navigator.pop(context),
                       child: Icon(
                         Icons.close,
-                        color: Colors.white.withOpacity(0.6),
+                        color: _p.textSecondary,
                       ),
                     ),
                   ],
@@ -2859,7 +2865,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
                         future: docProvider.getPreview(doc['id'], auth.userId!),
                         builder: (context, snapshot) {
                           if (snapshot.connectionState == ConnectionState.waiting) {
-                            return const Center(
+                            return Center(
                               child: CircularProgressIndicator(),
                             );
                           }
@@ -2869,7 +2875,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
                               child: Text(
                                 'Failed to load preview',
                                 style: TextStyle(
-                                  color: Colors.white.withOpacity(0.6),
+                                  color: _p.textSecondary,
                                 ),
                               ),
                             );
@@ -2883,19 +2889,21 @@ class _StudentDashboardState extends State<StudentDashboard> {
                           final pageSize = formattingRules['page_size'] ?? 'A4';
 
                           return SingleChildScrollView(
-                            padding: const EdgeInsets.all(32),
+                            padding: EdgeInsets.all(32),
                             child: Container(
                               decoration: BoxDecoration(
+                                // Document page is always white so template text stays readable
                                 color: Colors.white,
                                 borderRadius: BorderRadius.circular(8),
+                                border: Border.all(color: _p.border),
                                 boxShadow: [
                                   BoxShadow(
-                                    color: Colors.black.withOpacity(0.2),
+                                    color: Colors.black.withOpacity(0.12),
                                     blurRadius: 8,
                                   ),
                                 ],
                               ),
-                              padding: const EdgeInsets.all(40),
+                              padding: EdgeInsets.all(40),
                               width: pageSize == 'A4' ? 600 : 612,
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -2934,11 +2942,11 @@ class _StudentDashboardState extends State<StudentDashboard> {
               ),
               // Footer buttons
               Container(
-                padding: const EdgeInsets.all(20),
+                padding: EdgeInsets.all(20),
                 decoration: BoxDecoration(
                   border: Border(
                     top: BorderSide(
-                      color: Colors.white.withOpacity(0.1),
+                      color: _p.border,
                     ),
                   ),
                 ),
@@ -2947,10 +2955,10 @@ class _StudentDashboardState extends State<StudentDashboard> {
                   children: [
                     TextButton(
                       onPressed: () => Navigator.pop(context),
-                      child: const Text(
+                      child: Text(
                         'Close',
                         style: TextStyle(
-                          color: Colors.white,
+                          color: _p.textPrimary,
                         ),
                       ),
                     ),
@@ -2981,19 +2989,21 @@ class _StudentDashboardState extends State<StudentDashboard> {
     ];
 
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(32),
+      padding: EdgeInsets.all(32),
       child: Container(
         decoration: BoxDecoration(
+          // Document page is always white so template text stays readable
           color: Colors.white,
           borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: _p.border),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.2),
+              color: Colors.black.withOpacity(0.12),
               blurRadius: 8,
             ),
           ],
         ),
-        padding: const EdgeInsets.all(40),
+        padding: EdgeInsets.all(40),
         width: pageSize == 'A4' ? 600 : 612,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -3011,19 +3021,19 @@ class _StudentDashboardState extends State<StudentDashboard> {
 
   Widget _buildTemplatesPage() {
     final templateColors = [
-      const Color(0xFF3B82F6), // Blue
-      const Color(0xFFA855F7), // Purple
-      const Color(0xFF10B981), // Green
-      const Color(0xFFEF4444), // Red
-      const Color(0xFFFF6B35), // Orange
-      const Color(0xFFEC4899), // Pink
-      const Color(0xFF06B6D4), // Cyan
+      _p.accent, // Blue
+      Color(0xFFA855F7), // Purple
+      Color(0xFF10B981), // Green
+      Color(0xFFEF4444), // Red
+      Color(0xFFFF6B35), // Orange
+      Color(0xFFEC4899), // Pink
+      Color(0xFF06B6D4), // Cyan
     ];
 
     return Consumer<TemplateProvider>(
       builder: (context, templateProvider, _) {
         return SingleChildScrollView(
-          padding: const EdgeInsets.all(32),
+          padding: EdgeInsets.all(32),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -3034,15 +3044,15 @@ class _StudentDashboardState extends State<StudentDashboard> {
                   ElevatedButton.icon(
                     onPressed: () {
                       ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Request Template feature coming soon')),
+                        SnackBar(content: Text('Request Template feature coming soon')),
                       );
                     },
-                    icon: const Icon(Icons.add, size: 18),
-                    label: const Text('Request Template'),
+                    icon: Icon(Icons.add, size: 18),
+                    label: Text('Request Template'),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF3B82F6),
+                      backgroundColor: _p.accent,
                       foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                      padding: EdgeInsets.symmetric(horizontal: 24, vertical: 12),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(8),
                       ),
@@ -3050,7 +3060,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
                   ),
                 ],
               ),
-              const SizedBox(height: 32),
+              SizedBox(height: 32),
 
               // Search and filters row
               Row(
@@ -3061,37 +3071,37 @@ class _StudentDashboardState extends State<StudentDashboard> {
                       onChanged: (value) {
                         setState(() => _searchQuery = value);
                       },
-                      style: const TextStyle(color: Colors.white),
+                      style: TextStyle(color: _p.textPrimary),
                       decoration: InputDecoration(
                         hintText: 'Search universities or template names...',
-                        hintStyle: TextStyle(color: Colors.white.withOpacity(0.4)),
-                        prefixIcon: Icon(Icons.search, color: Colors.white.withOpacity(0.4)),
+                        hintStyle: TextStyle(color: _p.textMuted),
+                        prefixIcon: Icon(Icons.search, color: _p.textMuted),
                         filled: true,
-                        fillColor: const Color(0xFF1A1F26),
+                        fillColor: _p.surface,
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(8),
-                          borderSide: BorderSide(color: Colors.white.withOpacity(0.1)),
+                          borderSide: BorderSide(color: _p.border),
                         ),
                         enabledBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(8),
-                          borderSide: BorderSide(color: Colors.white.withOpacity(0.1)),
+                          borderSide: BorderSide(color: _p.border),
                         ),
                       ),
                     ),
                   ),
-                  const SizedBox(width: 16),
+                  SizedBox(width: 16),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    padding: EdgeInsets.symmetric(horizontal: 16),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF161B22),
-                      border: Border.all(color: Colors.white.withOpacity(0.1)),
+                      color: _p.surface,
+                      border: Border.all(color: _p.border),
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: DropdownButton<String>(
                       value: _selectedFilter,
-                      underline: const SizedBox(),
-                      dropdownColor: const Color(0xFF161B22),
-                      style: const TextStyle(color: Colors.white),
+                      underline: SizedBox(),
+                      dropdownColor: _p.surface,
+                      style: TextStyle(color: _p.textPrimary),
                       onChanged: (value) {
                         if (value != null) {
                           setState(() => _selectedFilter = value);
@@ -3106,19 +3116,19 @@ class _StudentDashboardState extends State<StudentDashboard> {
                       ],
                     ),
                   ),
-                  const SizedBox(width: 16),
+                  SizedBox(width: 16),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    padding: EdgeInsets.symmetric(horizontal: 16),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF161B22),
-                      border: Border.all(color: Colors.white.withOpacity(0.1)),
+                      color: _p.surface,
+                      border: Border.all(color: _p.border),
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: DropdownButton<String>(
                       value: _sortBy,
-                      underline: const SizedBox(),
-                      dropdownColor: const Color(0xFF161B22),
-                      style: const TextStyle(color: Colors.white),
+                      underline: SizedBox(),
+                      dropdownColor: _p.surface,
+                      style: TextStyle(color: _p.textPrimary),
                       onChanged: (value) {
                         if (value != null) {
                           setState(() => _sortBy = value);
@@ -3133,47 +3143,47 @@ class _StudentDashboardState extends State<StudentDashboard> {
                   ),
                 ],
               ),
-              const SizedBox(height: 32),
+              SizedBox(height: 32),
 
               // Currently using template section
               if (_selectedTemplate != null)
                 Container(
                   decoration: BoxDecoration(
-                    color: const Color(0xFF1A2847),
-                    border: Border.all(color: const Color(0xFF3B82F6).withOpacity(0.3)),
+                    color: Color(0xFF1A2847),
+                    border: Border.all(color: _p.accent.withOpacity(0.3)),
                     borderRadius: BorderRadius.circular(12),
                   ),
-                  padding: const EdgeInsets.all(20),
+                  padding: EdgeInsets.all(20),
                   child: Row(
                     children: [
                       Container(
                         width: 60,
                         height: 60,
                         decoration: BoxDecoration(
-                          color: const Color(0xFF3B82F6),
+                          color: _p.accent,
                           borderRadius: BorderRadius.circular(8),
                         ),
-                        child: const Icon(Icons.description, color: Colors.white),
+                        child: Icon(Icons.description, color: Colors.white),
                       ),
-                      const SizedBox(width: 20),
+                      SizedBox(width: 20),
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
                               'Currently Using: ${_selectedTemplate!['name'] ?? 'Selected Template'}',
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 15,
                                 fontWeight: FontWeight.w600,
-                                color: Colors.white,
+                                color: _p.textPrimary,
                               ),
                             ),
-                            const SizedBox(height: 4),
+                            SizedBox(height: 4),
                             Text(
                               'This template is applied to your current document. You can switch templates anytime.',
                               style: TextStyle(
                                 fontSize: 13,
-                                color: Colors.white.withOpacity(0.6),
+                                color: _p.textSecondary,
                               ),
                             ),
                           ],
@@ -3182,14 +3192,14 @@ class _StudentDashboardState extends State<StudentDashboard> {
                       ElevatedButton(
                         onPressed: () => _showPreview(_selectedTemplate!),
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF3B82F6),
+                          backgroundColor: _p.accent,
                           foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                          padding: EdgeInsets.symmetric(horizontal: 20, vertical: 10),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(6),
                           ),
                         ),
-                        child: const Text('View Details'),
+                        child: Text('View Details'),
                       ),
                     ],
                   ),
@@ -3197,23 +3207,24 @@ class _StudentDashboardState extends State<StudentDashboard> {
               else
                 Container(
                   decoration: BoxDecoration(
-                    color: const Color(0xFF1A2847),
-                    border: Border.all(color: Colors.white.withOpacity(0.2)),
+                    color: _p.surface,
+                    border: Border.all(color: _p.borderStrong),
                     borderRadius: BorderRadius.circular(12),
+                    boxShadow: _p.cardShadow,
                   ),
-                  padding: const EdgeInsets.all(20),
+                  padding: EdgeInsets.all(20),
                   child: Row(
                     children: [
                       Container(
                         width: 60,
                         height: 60,
                         decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.1),
+                          color: _p.accentSoft,
                           borderRadius: BorderRadius.circular(8),
                         ),
-                        child: Icon(Icons.description, color: Colors.white.withOpacity(0.5)),
+                        child: Icon(Icons.description, color: _p.accent),
                       ),
-                      const SizedBox(width: 20),
+                      SizedBox(width: 20),
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -3223,15 +3234,15 @@ class _StudentDashboardState extends State<StudentDashboard> {
                               style: TextStyle(
                                 fontSize: 15,
                                 fontWeight: FontWeight.w600,
-                                color: Colors.white.withOpacity(0.7),
+                                color: _p.textPrimary,
                               ),
                             ),
-                            const SizedBox(height: 4),
+                            SizedBox(height: 4),
                             Text(
                               'Select a template below to get started with your document formatting.',
                               style: TextStyle(
                                 fontSize: 13,
-                                color: Colors.white.withOpacity(0.5),
+                                color: _p.textSecondary,
                               ),
                             ),
                           ],
@@ -3240,43 +3251,43 @@ class _StudentDashboardState extends State<StudentDashboard> {
                     ],
                   ),
                 ),
-              const SizedBox(height: 48),
+              SizedBox(height: 48),
 
               // Templates from database only
-              const Text(
+              Text(
                 'Available Templates',
                 style: TextStyle(
                   fontSize: 20,
                   fontWeight: FontWeight.w700,
-                  color: Colors.white,
+                  color: _p.textPrimary,
                 ),
               ),
-              const SizedBox(height: 8),
+              SizedBox(height: 8),
               Text(
                 'Loaded from your university database',
                 style: TextStyle(
                   fontSize: 13,
-                  color: Colors.white.withOpacity(0.5),
+                  color: _p.textSecondary,
                 ),
               ),
-              const SizedBox(height: 20),
+              SizedBox(height: 20),
               if (templateProvider.isLoading)
-                const Center(child: CircularProgressIndicator())
+                Center(child: CircularProgressIndicator())
               else if (templateProvider.errorMessage != null)
                 Center(
                   child: Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 48),
+                    padding: EdgeInsets.symmetric(vertical: 48),
                     child: Column(
                       children: [
                         Text(
                           templateProvider.errorMessage!,
                           style: TextStyle(
                             fontSize: 14,
-                            color: Colors.white.withOpacity(0.6),
+                            color: _p.textSecondary,
                           ),
                           textAlign: TextAlign.center,
                         ),
-                        const SizedBox(height: 12),
+                        SizedBox(height: 12),
                         TextButton(
                           onPressed: () {
                             final userId = context.read<AuthProvider>().userId;
@@ -3284,7 +3295,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
                               templateProvider.fetchUserTemplates(userId);
                             }
                           },
-                          child: const Text('Retry'),
+                          child: Text('Retry'),
                         ),
                       ],
                     ),
@@ -3293,12 +3304,12 @@ class _StudentDashboardState extends State<StudentDashboard> {
               else if (templateProvider.templates.isEmpty)
                 Center(
                   child: Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 48),
+                    padding: EdgeInsets.symmetric(vertical: 48),
                     child: Text(
                       'No templates yet. Ask your admin to add templates in Template Manager.',
                       style: TextStyle(
                         fontSize: 14,
-                        color: Colors.white.withOpacity(0.5),
+                        color: _p.textSecondary,
                       ),
                       textAlign: TextAlign.center,
                     ),
@@ -3321,59 +3332,68 @@ class _StudentDashboardState extends State<StudentDashboard> {
                     return _buildTemplateCardNew(template, color);
                   },
                 ),
-              const SizedBox(height: 48),
+              SizedBox(height: 48),
 
               // Request custom template section
               Center(
                 child: Container(
                   decoration: BoxDecoration(
-                    color: const Color(0xFF1A1F26),
+                    color: _p.surface,
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.white.withOpacity(0.1)),
+                    border: Border.all(color: _p.border, width: 1.5),
                   ),
-                  padding: const EdgeInsets.all(40),
+                  padding: EdgeInsets.all(40),
                   child: Column(
                     children: [
-                      const Icon(Icons.help_outline, color: Color(0xFF3B82F6), size: 48),
-                      const SizedBox(height: 16),
-                      const Text(
+                      Container(
+                        width: 56,
+                        height: 56,
+                        decoration: BoxDecoration(
+                          color: _p.accent.withValues(alpha: 0.12),
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(Icons.help_outline, color: _p.accent, size: 28),
+                      ),
+                      SizedBox(height: 16),
+                      Text(
                         'Can\'t find your university template?',
                         style: TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.w600,
-                          color: Colors.white,
+                          color: _p.textPrimary,
                         ),
                       ),
-                      const SizedBox(height: 8),
+                      SizedBox(height: 8),
                       Text(
                         'Request a custom template and we\'ll add it within 48 hours',
+                        textAlign: TextAlign.center,
                         style: TextStyle(
                           fontSize: 14,
-                          color: Colors.white.withOpacity(0.6),
+                          color: _p.textSecondary,
                         ),
                       ),
-                      const SizedBox(height: 24),
+                      SizedBox(height: 24),
                       ElevatedButton(
                         onPressed: () {
                           ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Custom template request submitted')),
+                            SnackBar(content: Text('Custom template request submitted')),
                           );
                         },
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF3B82F6),
+                          backgroundColor: _p.accent,
                           foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 14),
+                          padding: EdgeInsets.symmetric(horizontal: 32, vertical: 14),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(8),
                           ),
                         ),
-                        child: const Text('Request Custom Template'),
+                        child: Text('Request Custom Template'),
                       ),
                     ],
                   ),
                 ),
               ),
-              const SizedBox(height: 32),
+              SizedBox(height: 32),
             ],
           ),
         );
@@ -3382,65 +3402,65 @@ class _StudentDashboardState extends State<StudentDashboard> {
   }
 
   Widget _buildSettingsPage() {
-    return Consumer<AuthProvider>(
-      builder: (context, auth, _) {
+    return Consumer2<AuthProvider, ThemeProvider>(
+      builder: (context, auth, theme, _) {
         return SingleChildScrollView(
-          padding: const EdgeInsets.all(32),
+          padding: EdgeInsets.all(32),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               
               Container(
                 decoration: BoxDecoration(
-                  color: const Color(0xFF161B22),
+                  color: _p.surface,
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(
-                    color: Colors.white.withOpacity(0.1),
+                    color: _p.border,
                   ),
                 ),
-                padding: const EdgeInsets.all(20),
+                padding: EdgeInsets.all(20),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
+                    Text(
                       'Account Information',
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w600,
-                        color: Colors.white,
+                        color: _p.textPrimary,
                       ),
                     ),
-                    const SizedBox(height: 16),
+                    SizedBox(height: 16),
                     _buildSettingsItem('Username', auth.currentUser ?? 'N/A'),
-                    const SizedBox(height: 12),
+                    SizedBox(height: 12),
                     _buildSettingsItem('Email', auth.email ?? 'N/A'),
-                    const SizedBox(height: 12),
+                    SizedBox(height: 12),
                     _buildSettingsItem('Account Type', 'Student'),
                   ],
                 ),
               ),
-              const SizedBox(height: 24),
+              SizedBox(height: 24),
               Container(
                 decoration: BoxDecoration(
-                  color: const Color(0xFF161B22),
+                  color: _p.surface,
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(
-                    color: Colors.white.withOpacity(0.1),
+                    color: _p.border,
                   ),
                 ),
-                padding: const EdgeInsets.all(20),
+                padding: EdgeInsets.all(20),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
+                    Text(
                       'Preferences',
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w600,
-                        color: Colors.white,
+                        color: _p.textPrimary,
                       ),
                     ),
-                    const SizedBox(height: 16),
+                    SizedBox(height: 16),
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
@@ -3448,48 +3468,61 @@ class _StudentDashboardState extends State<StudentDashboard> {
                           'Email Notifications',
                           style: TextStyle(
                             fontSize: 13,
-                            color: Colors.white,
+                            color: _p.textPrimary,
                           ),
                         ),
                         Switch(
                           value: true,
                           onChanged: (value) {},
-                          activeColor: const Color(0xFF3B82F6),
+                          activeColor: _p.accent,
                         ),
                       ],
                     ),
-                    const SizedBox(height: 12),
+                    SizedBox(height: 12),
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Text(
-                          'Dark Mode',
-                          style: TextStyle(
-                            fontSize: 13,
-                            color: Colors.white,
-                          ),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Dark Mode',
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: _p.textPrimary,
+                              ),
+                            ),
+                            SizedBox(height: 2),
+                            Text(
+                              theme.isDarkMode ? 'On' : 'Off — Light Mode',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: _p.textSecondary,
+                              ),
+                            ),
+                          ],
                         ),
                         Switch(
-                          value: true,
-                          onChanged: (value) {},
-                          activeColor: const Color(0xFF3B82F6),
+                          value: theme.isDarkMode,
+                          onChanged: (value) => theme.setDarkMode(value),
+                          activeColor: _p.accent,
                         ),
                       ],
                     ),
                   ],
                 ),
               ),
-              const SizedBox(height: 24),
+              SizedBox(height: 24),
               SizedBox(
                 width: double.infinity,
                 child: OutlinedButton.icon(
                   onPressed: () => _logout(context),
-                  icon: const Icon(Icons.logout_rounded),
-                  label: const Text('Sign Out'),
+                  icon: Icon(Icons.logout_rounded),
+                  label: Text('Sign Out'),
                   style: OutlinedButton.styleFrom(
-                    foregroundColor: Colors.white,
-                    side: BorderSide(color: Colors.white.withOpacity(0.2)),
-                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    foregroundColor: _p.textPrimary,
+                    side: BorderSide(color: _p.borderStrong),
+                    padding: EdgeInsets.symmetric(vertical: 14),
                   ),
                 ),
               ),
@@ -3534,9 +3567,9 @@ class _StudentDashboardState extends State<StudentDashboard> {
 
     return Container(
       decoration: BoxDecoration(
-        color: const Color(0xFF161B22),
+        color: _p.surface,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.white.withOpacity(0.1)),
+        border: Border.all(color: _p.border),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -3546,31 +3579,31 @@ class _StudentDashboardState extends State<StudentDashboard> {
             height: 120,
             decoration: BoxDecoration(
               color: cardColor,
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+              borderRadius: BorderRadius.vertical(top: Radius.circular(12)),
               gradient: LinearGradient(
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
                 colors: [cardColor, cardColor.withOpacity(0.8)],
               ),
             ),
-            padding: const EdgeInsets.all(20),
+            padding: EdgeInsets.all(20),
             child: Align(
               alignment: Alignment.centerLeft,
               child: Text(
                 displayName,
                 maxLines: 3,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.w600,
-                  color: Colors.white,
+                  color: _p.textPrimary,
                 ),
               ),
             ),
           ),
           Expanded(
             child: Padding(
-              padding: const EdgeInsets.all(16),
+              padding: EdgeInsets.all(16),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -3578,35 +3611,35 @@ class _StudentDashboardState extends State<StudentDashboard> {
                     displayName,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
-                      color: Colors.white,
+                      color: _p.textPrimary,
                     ),
                   ),
-                  const SizedBox(height: 6),
+                  SizedBox(height: 6),
                   Text(
                     description.isEmpty
                         ? 'No description provided'
                         : description,
                     style: TextStyle(
                       fontSize: 12,
-                      color: Colors.white.withOpacity(0.6),
+                      color: _p.textSecondary,
                     ),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                   ),
-                  const SizedBox(height: 12),
+                  SizedBox(height: 12),
                   ...details.take(3).map(
                     (detail) => Padding(
-                      padding: const EdgeInsets.only(bottom: 6),
+                      padding: EdgeInsets.only(bottom: 6),
                       child: Row(
                         children: [
                           Text(
                             '• ',
                             style: TextStyle(
                               fontSize: 11,
-                              color: Colors.white.withOpacity(0.5),
+                              color: _p.textSecondary,
                             ),
                           ),
                           Expanded(
@@ -3614,7 +3647,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
                               detail,
                               style: TextStyle(
                                 fontSize: 11,
-                                color: Colors.white.withOpacity(0.5),
+                                color: _p.textSecondary,
                               ),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
@@ -3624,29 +3657,29 @@ class _StudentDashboardState extends State<StudentDashboard> {
                       ),
                     ),
                   ),
-                  const Spacer(),
+                  Spacer(),
                   Row(
                     children: [
                       Expanded(
                         child: OutlinedButton(
                           onPressed: () => _showPreview(template),
                           style: OutlinedButton.styleFrom(
-                            side: BorderSide(color: Colors.white.withOpacity(0.2)),
+                            side: BorderSide(color: _p.borderStrong),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(6),
                             ),
                           ),
-                          child: const Text(
+                          child: Text(
                             'Preview',
                             style: TextStyle(
                               fontSize: 11,
                               fontWeight: FontWeight.w600,
-                              color: Colors.white,
+                              color: _p.textPrimary,
                             ),
                           ),
                         ),
                       ),
-                      const SizedBox(width: 8),
+                      SizedBox(width: 8),
                       Expanded(
                         child: ElevatedButton(
                           onPressed: () {
@@ -3657,17 +3690,17 @@ class _StudentDashboardState extends State<StudentDashboard> {
                             });
                           },
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.white.withOpacity(0.1),
+                            backgroundColor: _p.border,
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(6),
                             ),
                           ),
-                          child: const Text(
+                          child: Text(
                             'Select',
                             style: TextStyle(
                               fontSize: 11,
                               fontWeight: FontWeight.w600,
-                              color: Colors.white,
+                              color: _p.textPrimary,
                             ),
                           ),
                         ),
@@ -3692,36 +3725,36 @@ class _StudentDashboardState extends State<StudentDashboard> {
 
   Widget _buildUploadDialog(Map<String, dynamic> template) {
     return Dialog(
-      backgroundColor: const Color(0xFF161B22),
+      backgroundColor: _p.surface,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: Container(
         width: 400,
-        padding: const EdgeInsets.all(24),
+        padding: EdgeInsets.all(24),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
               'Upload Document',
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 20,
                 fontWeight: FontWeight.w700,
-                color: Colors.white,
+                color: _p.textPrimary,
               ),
             ),
-            const SizedBox(height: 8),
+            SizedBox(height: 8),
             Text(
               'Using template: ${template['name']}',
               style: TextStyle(
                 fontSize: 12,
-                color: Colors.white.withOpacity(0.6),
+                color: _p.textSecondary,
               ),
             ),
-            const SizedBox(height: 24),
+            SizedBox(height: 24),
             // Tab-like buttons for choosing upload method
             Container(
               decoration: BoxDecoration(
-                color: const Color(0xFF0D1117),
+                color: _p.surfaceAlt,
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Row(
@@ -3730,12 +3763,12 @@ class _StudentDashboardState extends State<StudentDashboard> {
                     child: GestureDetector(
                       onTap: () => _pickFile(template),
                       child: Container(
-                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        padding: EdgeInsets.symmetric(vertical: 12),
                         decoration: BoxDecoration(
-                          color: const Color(0xFF3B82F6),
+                          color: _p.accent,
                           borderRadius: BorderRadius.circular(6),
                         ),
-                        child: const Center(
+                        child: Center(
                           child: Text(
                             'Upload File',
                             style: TextStyle(
@@ -3748,7 +3781,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
                       ),
                     ),
                   ),
-                  const SizedBox(width: 8),
+                  SizedBox(width: 8),
                   Expanded(
                     child: GestureDetector(
                       onTap: () {
@@ -3756,11 +3789,11 @@ class _StudentDashboardState extends State<StudentDashboard> {
                         _showPasteContentDialog(template);
                       },
                       child: Container(
-                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        padding: EdgeInsets.symmetric(vertical: 12),
                         decoration: BoxDecoration(
                           color: Colors.transparent,
                           border: Border.all(
-                            color: Colors.white.withOpacity(0.2),
+                            color: _p.borderStrong,
                           ),
                           borderRadius: BorderRadius.circular(6),
                         ),
@@ -3768,7 +3801,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
                           child: Text(
                             'Paste Text',
                             style: TextStyle(
-                              color: Colors.white,
+                              color: _p.textPrimary,
                               fontWeight: FontWeight.w600,
                               fontSize: 12,
                             ),
@@ -3780,15 +3813,15 @@ class _StudentDashboardState extends State<StudentDashboard> {
                 ],
               ),
             ),
-            const SizedBox(height: 20),
+            SizedBox(height: 20),
             Text(
               'Supported formats: PDF, DOCX, DOC, TXT',
               style: TextStyle(
                 fontSize: 11,
-                color: Colors.white.withOpacity(0.5),
+                color: _p.textSecondary,
               ),
             ),
-            const SizedBox(height: 20),
+            SizedBox(height: 20),
             Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
@@ -3797,7 +3830,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
                   child: Text(
                     'Cancel',
                     style: TextStyle(
-                      color: Colors.white.withOpacity(0.6),
+                      color: _p.textSecondary,
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
                     ),
@@ -3831,17 +3864,17 @@ class _StudentDashboardState extends State<StudentDashboard> {
           context: context,
           barrierDismissible: false,
           builder: (context) => Dialog(
-            backgroundColor: const Color(0xFF161B22),
+            backgroundColor: _p.surface,
             child: Padding(
-              padding: const EdgeInsets.all(24),
+              padding: EdgeInsets.all(24),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   const CircularProgressIndicator(),
-                  const SizedBox(height: 16),
-                  const Text(
+                  SizedBox(height: 16),
+                  Text(
                     'Uploading document...',
-                    style: TextStyle(color: Colors.white),
+                    style: TextStyle(color: _p.textPrimary),
                   ),
                 ],
               ),
@@ -3860,7 +3893,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
 
           if (success) {
             ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
+              SnackBar(
                 content: Text('Document uploaded successfully!'),
                 backgroundColor: Color(0xFF10B981),
               ),
@@ -3873,7 +3906,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
                 content: Text('Upload failed: ${docProvider.errorMessage}'),
-                backgroundColor: const Color(0xFFEF4444),
+                backgroundColor: Color(0xFFEF4444),
               ),
             );
           }
@@ -3883,7 +3916,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Error: $e'),
-          backgroundColor: const Color(0xFFEF4444),
+          backgroundColor: Color(0xFFEF4444),
         ),
       );
     }
@@ -3895,65 +3928,65 @@ class _StudentDashboardState extends State<StudentDashboard> {
     showDialog(
       context: context,
       builder: (context) => Dialog(
-        backgroundColor: const Color(0xFF161B22),
+        backgroundColor: _p.surface,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         child: Container(
           width: 500,
-          padding: const EdgeInsets.all(24),
+          padding: EdgeInsets.all(24),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
                 'Paste Your Content',
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 20,
                   fontWeight: FontWeight.w700,
-                  color: Colors.white,
+                  color: _p.textPrimary,
                 ),
               ),
-              const SizedBox(height: 8),
+              SizedBox(height: 8),
               Text(
                 'Paste your document text below',
                 style: TextStyle(
                   fontSize: 12,
-                  color: Colors.white.withOpacity(0.6),
+                  color: _p.textSecondary,
                 ),
               ),
-              const SizedBox(height: 16),
+              SizedBox(height: 16),
               TextField(
                 controller: textController,
                 maxLines: 8,
-                style: const TextStyle(color: Colors.white),
+                style: TextStyle(color: _p.textPrimary),
                 decoration: InputDecoration(
                   hintText: 'Paste your document content here...',
                   hintStyle: TextStyle(
-                    color: Colors.white.withOpacity(0.4),
+                    color: _p.textMuted,
                   ),
                   filled: true,
-                  fillColor: const Color(0xFF0D1117),
-                  contentPadding: const EdgeInsets.all(12),
+                  fillColor: _p.surface,
+                  contentPadding: EdgeInsets.all(12),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(6),
                     borderSide: BorderSide(
-                      color: Colors.white.withOpacity(0.2),
+                      color: _p.borderStrong,
                     ),
                   ),
                   enabledBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(6),
                     borderSide: BorderSide(
-                      color: Colors.white.withOpacity(0.2),
+                      color: _p.borderStrong,
                     ),
                   ),
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(6),
-                    borderSide: const BorderSide(
-                      color: Color(0xFF3B82F6),
+                    borderSide: BorderSide(
+                      color: _p.accent,
                     ),
                   ),
                 ),
               ),
-              const SizedBox(height: 20),
+              SizedBox(height: 20),
               Row(
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
@@ -3962,22 +3995,22 @@ class _StudentDashboardState extends State<StudentDashboard> {
                     child: Text(
                       'Cancel',
                       style: TextStyle(
-                        color: Colors.white.withOpacity(0.6),
+                        color: _p.textSecondary,
                         fontSize: 12,
                         fontWeight: FontWeight.w600,
                       ),
                     ),
                   ),
-                  const SizedBox(width: 12),
+                  SizedBox(width: 12),
                   ElevatedButton(
                     onPressed: () => _uploadPastedContent(template, textController.text),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF3B82F6),
+                      backgroundColor: _p.accent,
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(6),
                       ),
                     ),
-                    child: const Text(
+                    child: Text(
                       'Upload',
                       style: TextStyle(
                         fontSize: 12,
@@ -3998,7 +4031,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
   void _uploadPastedContent(Map<String, dynamic> template, String content) async {
     if (content.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
+        SnackBar(
           content: Text('Please paste some content'),
           backgroundColor: Color(0xFFEF4444),
         ),
@@ -4017,17 +4050,17 @@ class _StudentDashboardState extends State<StudentDashboard> {
       context: context,
       barrierDismissible: false,
       builder: (context) => Dialog(
-        backgroundColor: const Color(0xFF161B22),
+        backgroundColor: _p.surface,
         child: Padding(
-          padding: const EdgeInsets.all(24),
+          padding: EdgeInsets.all(24),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               const CircularProgressIndicator(),
-              const SizedBox(height: 16),
-              const Text(
+              SizedBox(height: 16),
+              Text(
                 'Processing content...',
-                style: TextStyle(color: Colors.white),
+                style: TextStyle(color: _p.textPrimary),
               ),
             ],
           ),
@@ -4046,7 +4079,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
 
       if (success) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
+          SnackBar(
             content: Text('Content uploaded successfully!'),
             backgroundColor: Color(0xFF10B981),
           ),
@@ -4059,7 +4092,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Upload failed: ${docProvider.errorMessage}'),
-            backgroundColor: const Color(0xFFEF4444),
+            backgroundColor: Color(0xFFEF4444),
           ),
         );
       }
@@ -4075,16 +4108,16 @@ class _StudentDashboardState extends State<StudentDashboard> {
           style: TextStyle(
             fontSize: 12,
             fontWeight: FontWeight.w500,
-            color: Colors.white.withOpacity(0.6),
+            color: _p.textSecondary,
           ),
         ),
-        const SizedBox(height: 4),
+        SizedBox(height: 4),
         Text(
           value,
-          style: const TextStyle(
+          style: TextStyle(
             fontSize: 13,
             fontWeight: FontWeight.w500,
-            color: Colors.white,
+            color: _p.textPrimary,
           ),
         ),
       ],
@@ -4142,7 +4175,7 @@ void _handleDownload(Map<String, dynamic> doc) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text('Downloading document as $format...'),
-              backgroundColor: const Color(0xFF3B82F6),
+              backgroundColor: _p.accent,
             ),
           );
 
@@ -4190,12 +4223,12 @@ void _handleDownload(Map<String, dynamic> doc) {
       useRootNavigator: true,
       builder: (_) => Dialog(
         child: Container(
-          padding: const EdgeInsets.all(20),
+          padding: EdgeInsets.all(20),
           child: Image.memory(
             base64Decode(qrBase64),
             width: 250,
             height: 250,
-            errorBuilder: (_, __, ___) => const Text('Failed to load QR'),
+            errorBuilder: (_, __, ___) => Text('Failed to load QR'),
           ),
         ),
       ),
@@ -4217,14 +4250,14 @@ void _handleDownload(Map<String, dynamic> doc) {
   void _showMobileDownloadSheet(Map<String, dynamic> doc) {
     showModalBottomSheet<void>(
       context: context,
-      backgroundColor: const Color(0xFF161B22),
-      shape: const RoundedRectangleBorder(
+      backgroundColor: _p.surface,
+      shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
       ),
       builder: (sheetContext) {
         return SafeArea(
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+            padding: EdgeInsets.fromLTRB(20, 12, 20, 20),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -4234,32 +4267,32 @@ void _handleDownload(Map<String, dynamic> doc) {
                     width: 40,
                     height: 4,
                     decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.2),
+                      color: _p.borderStrong,
                       borderRadius: BorderRadius.circular(999),
                     ),
                   ),
                 ),
-                const SizedBox(height: 16),
-                const Text(
+                SizedBox(height: 16),
+                Text(
                   'Download as',
                   style: TextStyle(
-                    color: Colors.white,
+                    color: _p.textPrimary,
                     fontSize: 18,
                     fontWeight: FontWeight.w700,
                   ),
                 ),
-                const SizedBox(height: 6),
+                SizedBox(height: 6),
                 Text(
                   'File will be saved to your phone',
                   style: TextStyle(
-                    color: Colors.white.withOpacity(0.5),
+                    color: _p.textSecondary,
                     fontSize: 13,
                   ),
                 ),
-                const SizedBox(height: 16),
+                SizedBox(height: 16),
                 _mobileDownloadOption(
                   icon: Icons.picture_as_pdf_rounded,
-                  color: const Color(0xFFDC2626),
+                  color: Color(0xFFDC2626),
                   title: 'PDF',
                   subtitle: 'Best for viewing and sharing',
                   onTap: () {
@@ -4267,10 +4300,10 @@ void _handleDownload(Map<String, dynamic> doc) {
                     _downloadToPhone(doc, 'pdf');
                   },
                 ),
-                const SizedBox(height: 10),
+                SizedBox(height: 10),
                 _mobileDownloadOption(
                   icon: Icons.description_rounded,
-                  color: const Color(0xFF2563EB),
+                  color: Color(0xFF2563EB),
                   title: 'Word',
                   subtitle: 'Editable .docx document',
                   onTap: () {
@@ -4294,16 +4327,16 @@ void _handleDownload(Map<String, dynamic> doc) {
     required VoidCallback onTap,
   }) {
     return Material(
-      color: const Color(0xFF0D1117),
+      color: _p.surfaceAlt,
       borderRadius: BorderRadius.circular(12),
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(12),
         child: Container(
-          padding: const EdgeInsets.all(14),
+          padding: EdgeInsets.all(14),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Colors.white.withOpacity(0.1)),
+            border: Border.all(color: _p.border),
           ),
           child: Row(
             children: [
@@ -4316,24 +4349,24 @@ void _handleDownload(Map<String, dynamic> doc) {
                 ),
                 child: Icon(icon, color: color, size: 22),
               ),
-              const SizedBox(width: 12),
+              SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
                       title,
-                      style: const TextStyle(
-                        color: Colors.white,
+                      style: TextStyle(
+                        color: _p.textPrimary,
                         fontSize: 15,
                         fontWeight: FontWeight.w700,
                       ),
                     ),
-                    const SizedBox(height: 2),
+                    SizedBox(height: 2),
                     Text(
                       subtitle,
                       style: TextStyle(
-                        color: Colors.white.withOpacity(0.5),
+                        color: _p.textSecondary,
                         fontSize: 12,
                       ),
                     ),
@@ -4342,7 +4375,7 @@ void _handleDownload(Map<String, dynamic> doc) {
               ),
               Icon(
                 Icons.download_rounded,
-                color: Colors.white.withOpacity(0.35),
+                color: _p.textMuted,
                 size: 20,
               ),
             ],
@@ -4357,7 +4390,7 @@ void _handleDownload(Map<String, dynamic> doc) {
     final userId = context.read<AuthProvider>().userId;
     if (userId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
+        SnackBar(
           content: Text('Please sign in again to download'),
           backgroundColor: Colors.red,
         ),
@@ -4369,8 +4402,8 @@ void _handleDownload(Map<String, dynamic> doc) {
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (_) => const Center(
-        child: CircularProgressIndicator(color: Color(0xFF3B82F6)),
+      builder: (_) => Center(
+        child: CircularProgressIndicator(color: _p.accent),
       ),
     );
 
@@ -4400,7 +4433,7 @@ void _handleDownload(Map<String, dynamic> doc) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('$label saved to $where'),
-          backgroundColor: const Color(0xFF10B981),
+          backgroundColor: Color(0xFF10B981),
           action: SnackBarAction(
             label: 'Open',
             textColor: Colors.white,
@@ -4445,7 +4478,7 @@ void _handleDownload(Map<String, dynamic> doc) {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
                 content: Text('Preparing $format for share...'),
-                backgroundColor: const Color(0xFF3B82F6),
+                backgroundColor: _p.accent,
               ),
             );
 
@@ -4498,31 +4531,31 @@ void _handleDownload(Map<String, dynamic> doc) {
     showDialog(
       context: context,
       builder: (context) => Dialog(
-        backgroundColor: const Color(0xFF161B22),
+        backgroundColor: _p.surface,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         child: Container(
-          padding: const EdgeInsets.all(24),
+          padding: EdgeInsets.all(24),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
+              Text(
                 'Delete Report',
                 style: TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.w700,
-                  color: Colors.white,
+                  color: _p.textPrimary,
                 ),
               ),
-              const SizedBox(height: 12),
+              SizedBox(height: 12),
               Text(
                 'Are you sure you want to delete "${doc['filename']}"? This action cannot be undone.',
                 style: TextStyle(
                   fontSize: 13,
-                  color: Colors.white.withOpacity(0.6),
+                  color: _p.textSecondary,
                 ),
               ),
-              const SizedBox(height: 24),
+              SizedBox(height: 24),
               Row(
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
@@ -4531,21 +4564,21 @@ void _handleDownload(Map<String, dynamic> doc) {
                     child: Text(
                       'Cancel',
                       style: TextStyle(
-                        color: Colors.white.withOpacity(0.6),
+                        color: _p.textSecondary,
                         fontWeight: FontWeight.w600,
                       ),
                     ),
                   ),
-                  const SizedBox(width: 12),
+                  SizedBox(width: 12),
                   ElevatedButton(
                     onPressed: () {
                       Navigator.pop(context);
                       _performDelete(doc);
                     },
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFFEF4444),
+                      backgroundColor: Color(0xFFEF4444),
                     ),
-                    child: const Text(
+                    child: Text(
                       'Delete',
                       style: TextStyle(
                         color: Colors.white,
@@ -4572,17 +4605,17 @@ void _handleDownload(Map<String, dynamic> doc) {
         context: context,
         barrierDismissible: false,
         builder: (context) => Dialog(
-          backgroundColor: const Color(0xFF161B22),
+          backgroundColor: _p.surface,
           child: Padding(
-            padding: const EdgeInsets.all(24),
+            padding: EdgeInsets.all(24),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
                 const CircularProgressIndicator(),
-                const SizedBox(height: 16),
-                const Text(
+                SizedBox(height: 16),
+                Text(
                   'Deleting document...',
-                  style: TextStyle(color: Colors.white),
+                  style: TextStyle(color: _p.textPrimary),
                 ),
               ],
             ),
@@ -4600,7 +4633,7 @@ void _handleDownload(Map<String, dynamic> doc) {
 
         if (success) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
+            SnackBar(
               content: Text('Document deleted successfully'),
               backgroundColor: Color(0xFF10B981),
               duration: Duration(seconds: 2),
@@ -4612,7 +4645,7 @@ void _handleDownload(Map<String, dynamic> doc) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text('Delete failed: ${docProvider.errorMessage}'),
-              backgroundColor: const Color(0xFFEF4444),
+              backgroundColor: Color(0xFFEF4444),
             ),
           );
         }
@@ -4623,7 +4656,7 @@ void _handleDownload(Map<String, dynamic> doc) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Error: $e'),
-            backgroundColor: const Color(0xFFEF4444),
+            backgroundColor: Color(0xFFEF4444),
           ),
         );
       }
@@ -4658,7 +4691,7 @@ void _handleDownload(Map<String, dynamic> doc) {
             formattingRules['heading1_font'] ?? 'Times New Roman',
           ),
         );
-        padding = const EdgeInsets.only(top: 12, bottom: 8);
+        padding = EdgeInsets.only(top: 12, bottom: 8);
         break;
       
       case 'heading2':
@@ -4680,7 +4713,7 @@ void _handleDownload(Map<String, dynamic> doc) {
             formattingRules['heading2_font'] ?? 'Times New Roman',
           ),
         );
-        padding = const EdgeInsets.only(top: 10, bottom: 6);
+        padding = EdgeInsets.only(top: 10, bottom: 6);
         break;
       
       case 'heading3':
@@ -4702,7 +4735,7 @@ void _handleDownload(Map<String, dynamic> doc) {
             formattingRules['heading3_font'] ?? 'Times New Roman',
           ),
         );
-        padding = const EdgeInsets.only(top: 8, bottom: 4);
+        padding = EdgeInsets.only(top: 8, bottom: 4);
         break;
       
       case 'bullet':
@@ -4719,11 +4752,11 @@ void _handleDownload(Map<String, dynamic> doc) {
           ),
         );
         return Padding(
-          padding: const EdgeInsets.only(left: 24),
+          padding: EdgeInsets.only(left: 24),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text('• ', style: TextStyle(fontSize: 12)),
+              Text('• ', style: TextStyle(fontSize: 12)),
               Expanded(
                 child: Text(text, style: style),
               ),
@@ -4745,11 +4778,11 @@ void _handleDownload(Map<String, dynamic> doc) {
           ),
         );
         return Padding(
-          padding: const EdgeInsets.only(left: 24),
+          padding: EdgeInsets.only(left: 24),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const SizedBox(width: 20),
+              SizedBox(width: 20),
               Expanded(
                 child: Text(text, style: style),
               ),
@@ -4770,7 +4803,7 @@ void _handleDownload(Map<String, dynamic> doc) {
             (formattingRules['line_spacing'] ?? 1.5).toString(),
           ),
         );
-        padding = const EdgeInsets.only(bottom: 6);
+        padding = EdgeInsets.only(bottom: 6);
     }
     
     return Padding(
@@ -4810,40 +4843,41 @@ class TemplatesPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.watch<ThemeProvider>().palette;
     return Padding(
-      padding: const EdgeInsets.all(32.0),
+      padding: EdgeInsets.all(32.0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
+              Text(
                 'Templates',
                 style: TextStyle(
                   fontSize: 28,
                   fontWeight: FontWeight.w700,
-                  color: Colors.white,
+                  color: p.textPrimary,
                   letterSpacing: 0.5,
                 ),
               ),
-              const SizedBox(height: 8),
+              SizedBox(height: 8),
               Text(
                 'Select a template to apply formatting to your documents',
                 style: TextStyle(
                   fontSize: 14,
-                  color: Colors.white.withOpacity(0.6),
+                  color: p.textSecondary,
                   fontWeight: FontWeight.w400,
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 24),
+          SizedBox(height: 24),
           Expanded(
             child: Consumer<TemplateProvider>(
               builder: (context, templateProvider, _) {
                 if (templateProvider.isLoading) {
-                  return const Center(
+                  return Center(
                     child: CircularProgressIndicator(
                       color: Color(0xFF6366F1),
                     ),
@@ -4855,11 +4889,11 @@ class TemplatesPanel extends StatelessWidget {
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Icon(Icons.error_outline, size: 48, color: Colors.white.withOpacity(0.3)),
-                        const SizedBox(height: 16),
+                        Icon(Icons.error_outline, size: 48, color: p.textMuted),
+                        SizedBox(height: 16),
                         Text(
                           'Error: ${templateProvider.errorMessage}',
-                          style: TextStyle(color: Colors.white.withOpacity(0.6)),
+                          style: TextStyle(color: p.textSecondary),
                         ),
                       ],
                     ),
@@ -4871,12 +4905,12 @@ class TemplatesPanel extends StatelessWidget {
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Icon(Icons.layers_clear, size: 48, color: Colors.white.withOpacity(0.3)),
-                        const SizedBox(height: 16),
+                        Icon(Icons.layers_clear, size: 48, color: p.textMuted),
+                        SizedBox(height: 16),
                         Text(
                           'No templates available yet',
                           style: TextStyle(
-                            color: Colors.white.withOpacity(0.6),
+                            color: p.textSecondary,
                             fontSize: 15,
                             fontWeight: FontWeight.w500,
                           ),
@@ -4893,21 +4927,21 @@ class TemplatesPanel extends StatelessWidget {
                     final isSelected = templateProvider.selectedTemplate?['id'] == template['id'];
                     
                     return Container(
-                      margin: const EdgeInsets.only(bottom: 16),
+                      margin: EdgeInsets.only(bottom: 16),
                       decoration: BoxDecoration(
                         color: isSelected
-                            ? const Color(0xFF6366F1).withOpacity(0.15)
-                            : const Color(0xFF1A1F2E),
+                            ? Color(0xFF6366F1).withOpacity(0.15)
+                            : Color(0xFF1A1F2E),
                         borderRadius: BorderRadius.circular(12),
                         border: Border.all(
                           color: isSelected
-                              ? const Color(0xFF6366F1).withOpacity(0.4)
-                              : Colors.white.withOpacity(0.1),
+                              ? Color(0xFF6366F1).withOpacity(0.4)
+                              : p.border,
                           width: 1.5,
                         ),
                       ),
                       child: Padding(
-                        padding: const EdgeInsets.all(20),
+                        padding: EdgeInsets.all(20),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
@@ -4920,25 +4954,25 @@ class TemplatesPanel extends StatelessWidget {
                                       Row(
                                         children: [
                                           Container(
-                                            padding: const EdgeInsets.all(8),
+                                            padding: EdgeInsets.all(8),
                                             decoration: BoxDecoration(
-                                              color: const Color(0xFF6366F1).withOpacity(0.2),
+                                              color: Color(0xFF6366F1).withOpacity(0.2),
                                               borderRadius: BorderRadius.circular(6),
                                             ),
-                                            child: const Icon(
+                                            child: Icon(
                                               Icons.layers,
                                               color: Color(0xFF6366F1),
                                               size: 16,
                                             ),
                                           ),
-                                          const SizedBox(width: 12),
+                                          SizedBox(width: 12),
                                           Expanded(
                                             child: Text(
                                               template['name'] ?? 'Unnamed Template',
-                                              style: const TextStyle(
+                                              style: TextStyle(
                                                 fontSize: 17,
                                                 fontWeight: FontWeight.w600,
-                                                color: Colors.white,
+                                                color: p.textPrimary,
                                               ),
                                             ),
                                           ),
@@ -4946,22 +4980,22 @@ class TemplatesPanel extends StatelessWidget {
                                       ),
                                       if (isSelected)
                                         Padding(
-                                          padding: const EdgeInsets.only(top: 8, left: 20),
+                                          padding: EdgeInsets.only(top: 8, left: 20),
                                           child: Container(
-                                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                            padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                                             decoration: BoxDecoration(
-                                              color: const Color(0xFF10B981).withOpacity(0.15),
+                                              color: Color(0xFF10B981).withOpacity(0.15),
                                               borderRadius: BorderRadius.circular(6),
                                             ),
                                             child: Row(
                                               mainAxisSize: MainAxisSize.min,
                                               children: [
-                                                const Icon(
+                                                Icon(
                                                   Icons.check_circle,
                                                   size: 14,
                                                   color: Color(0xFF10B981),
                                                 ),
-                                                const SizedBox(width: 4),
+                                                SizedBox(width: 4),
                                                 Text(
                                                   'Selected',
                                                   style: TextStyle(
@@ -4987,24 +5021,24 @@ class TemplatesPanel extends StatelessWidget {
                                             ScaffoldMessenger.of(context).showSnackBar(
                                               SnackBar(
                                                 content: Text('Template "${template['name']}" selected!'),
-                                                backgroundColor: const Color(0xFF10B981),
-                                                duration: const Duration(seconds: 2),
+                                                backgroundColor: Color(0xFF10B981),
+                                                duration: Duration(seconds: 2),
                                                 behavior: SnackBarBehavior.floating,
-                                                margin: const EdgeInsets.all(16),
+                                                margin: EdgeInsets.all(16),
                                               ),
                                             );
                                           },
                                     style: ElevatedButton.styleFrom(
                                       backgroundColor: isSelected
-                                          ? const Color(0xFF10B981).withOpacity(0.2)
-                                          : const Color(0xFF6366F1),
-                                      foregroundColor: isSelected ? const Color(0xFF10B981) : Colors.white,
+                                          ? Color(0xFF10B981).withOpacity(0.2)
+                                          : Color(0xFF6366F1),
+                                      foregroundColor: isSelected ? Color(0xFF10B981) : Colors.white,
                                     ),
                                     child: Row(
                                       mainAxisSize: MainAxisSize.min,
                                       children: [
                                         Icon(isSelected ? Icons.check : Icons.add, size: 18),
-                                        const SizedBox(width: 6),
+                                        SizedBox(width: 6),
                                         Text(isSelected ? 'Selected' : 'Select'),
                                       ],
                                     ),
@@ -5032,87 +5066,91 @@ class SettingsPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.watch<ThemeProvider>().palette;
     return Padding(
-      padding: const EdgeInsets.all(32.0),
+      padding: EdgeInsets.all(32.0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
+              Text(
                 'Settings',
                 style: TextStyle(
                   fontSize: 28,
                   fontWeight: FontWeight.w700,
-                  color: Colors.white,
+                  color: p.textPrimary,
                   letterSpacing: 0.5,
                 ),
               ),
-              const SizedBox(height: 8),
+              SizedBox(height: 8),
               Text(
                 'Manage your account settings and preferences',
                 style: TextStyle(
                   fontSize: 14,
-                  color: Colors.white.withOpacity(0.6),
+                  color: p.textSecondary,
                   fontWeight: FontWeight.w400,
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 32),
+          SizedBox(height: 32),
           Consumer<AuthProvider>(
             builder: (context, auth, _) {
               return Container(
                 decoration: BoxDecoration(
-                  color: const Color(0xFF1A1F2E),
+                  color: Color(0xFF1A1F2E),
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.white.withOpacity(0.1)),
+                  border: Border.all(color: p.border),
                 ),
                 child: Padding(
-                  padding: const EdgeInsets.all(24.0),
+                  padding: EdgeInsets.all(24.0),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Row(
                         children: [
                           Container(
-                            padding: const EdgeInsets.all(10),
+                            padding: EdgeInsets.all(10),
                             decoration: BoxDecoration(
-                              color: const Color(0xFF6366F1).withOpacity(0.2),
+                              color: Color(0xFF6366F1).withOpacity(0.2),
                               borderRadius: BorderRadius.circular(8),
                             ),
-                            child: const Icon(
+                            child: Icon(
                               Icons.account_circle,
                               color: Color(0xFF6366F1),
                               size: 24,
                             ),
                           ),
-                          const SizedBox(width: 12),
-                          const Text(
+                          SizedBox(width: 12),
+                          Text(
                             'Account Settings',
                             style: TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.w600,
-                              color: Colors.white,
+                              color: p.textPrimary,
                             ),
                           ),
                         ],
                       ),
-                      const SizedBox(height: 24),
+                      SizedBox(height: 24),
                       _buildSettingField(
+                        context,
                         'Email Address',
                         auth.userEmail ?? 'user@university.edu',
                         Icons.email,
                       ),
-                      const SizedBox(height: 16),
+                      SizedBox(height: 16),
                       _buildSettingField(
+                        context,
                         'Username',
                         auth.currentUser ?? 'User',
                         Icons.person,
                       ),
-                      const SizedBox(height: 16),
+                      SizedBox(height: 16),
                       _buildSettingField(
+                        context,
                         'Role',
                         auth.userRole != null
                             ? auth.userRole![0].toUpperCase() + auth.userRole!.substring(1)
@@ -5130,18 +5168,24 @@ class SettingsPanel extends StatelessWidget {
     );
   }
 
-  Widget _buildSettingField(String label, String value, IconData icon) {
+  Widget _buildSettingField(
+    BuildContext context,
+    String label,
+    String value,
+    IconData icon,
+  ) {
+    final p = context.watch<ThemeProvider>().palette;
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: const Color(0xFF0F1419).withOpacity(0.5),
+        color: p.surfaceAlt,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.white.withOpacity(0.08)),
+        border: Border.all(color: p.border),
       ),
       child: Row(
         children: [
-          Icon(icon, color: const Color(0xFF6366F1), size: 20),
-          const SizedBox(width: 12),
+          Icon(icon, color: Color(0xFF6366F1), size: 20),
+          SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -5150,18 +5194,18 @@ class SettingsPanel extends StatelessWidget {
                   label,
                   style: TextStyle(
                     fontSize: 12,
-                    color: Colors.white.withOpacity(0.6),
+                    color: p.textSecondary,
                     fontWeight: FontWeight.w500,
                     letterSpacing: 0.5,
                   ),
                 ),
-                const SizedBox(height: 4),
+                SizedBox(height: 4),
                 Text(
                   value,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
-                    color: Colors.white,
+                    color: p.textPrimary,
                   ),
                 ),
               ],

@@ -1,14 +1,18 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../theme/app_theme.dart';
 import '../models/json_parse.dart';
 import '../services/image_replacement_service.dart';
 import 'image_replacement_dialog.dart';
 
-const _bg = Color(0xFF0D1117);
-const _surface = Color(0xFF161B22);
-const _surface2 = Color(0xFF1C2333);
-const _border = Color(0xFF30363D);
-const _textPri = Colors.white;
-const _textSec = Color(0xFF8B949E);
+AppPalette _ap = AppPalette.dark;
+
+Color get _bg => _ap.scaffold;
+Color get _surface => _ap.surface;
+Color get _surface2 => _ap.surfaceElevated;
+Color get _border => _ap.border;
+Color get _textPri => _ap.textPrimary;
+Color get _textSec => _ap.textSecondary;
 const _green = Color(0xFF10B981);
 const _yellow = Color(0xFFFACC15);
 const _red = Color(0xFFEF4444);
@@ -147,11 +151,11 @@ class _DocumentPreviewPanelState extends State<DocumentPreviewPanel> {
             const SizedBox(height: 12),
             Text(
               issue['description'] as String? ?? issue['reason'] as String? ?? '',
-              style: const TextStyle(color: _textPri, fontSize: 14),
+              style: TextStyle(color: _textPri, fontSize: 14),
             ),
             if ((issue['suggestion'] as String? ?? '').isNotEmpty) ...[
               const SizedBox(height: 12),
-              const Text('Suggestion', style: TextStyle(color: _textSec, fontSize: 11)),
+              Text('Suggestion', style: TextStyle(color: _textSec, fontSize: 11)),
               const SizedBox(height: 4),
               Container(
                 width: double.infinity,
@@ -372,7 +376,7 @@ class _DocumentPreviewPanelState extends State<DocumentPreviewPanel> {
                   Image.network(
                     imageUrl,
                     fit: BoxFit.contain,
-                    errorBuilder: (_, __, ___) => const Center(
+                    errorBuilder: (_, __, ___) => Center(
                       child: Icon(Icons.broken_image, color: _textSec),
                     ),
                   ),
@@ -402,8 +406,9 @@ class _DocumentPreviewPanelState extends State<DocumentPreviewPanel> {
 
   @override
   Widget build(BuildContext context) {
+    _ap = context.watch<ThemeProvider>().palette;
     if (widget.blocks.isEmpty) {
-      return const Center(
+      return Center(
         child: Text('No document content available for preview.', style: TextStyle(color: _textSec)),
       );
     }
@@ -414,7 +419,7 @@ class _DocumentPreviewPanelState extends State<DocumentPreviewPanel> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _buildColumn(title: 'Original', corrected: false, headerColor: _textSec),
-          const VerticalDivider(width: 1, color: _border),
+          VerticalDivider(width: 1, color: _border),
           _buildColumn(title: 'Corrected', corrected: true, headerColor: _green),
         ],
       ),

@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../../providers/auth_provider.dart';
 import '../../providers/fyp_provider.dart';
+import '../../theme/app_theme.dart';
 import '../../utils/responsive.dart';
 
 /// Student form to request an FYP supervisor (creates assignment_requests row).
@@ -32,6 +33,7 @@ class _MemberFields {
 }
 
 class _SupervisorSelectionScreenState extends State<SupervisorSelectionScreen> {
+  AppPalette get _p => context.watch<ThemeProvider>().palette;
   final _formKey = GlobalKey<FormState>();
   final _groupName = TextEditingController();
   final _projectTitle = TextEditingController();
@@ -43,9 +45,6 @@ class _SupervisorSelectionScreenState extends State<SupervisorSelectionScreen> {
   int? _supervisorId;
   int? _cosupervisorId;
   bool _prefilled = false;
-
-  static const _card = Color(0xFF161B22);
-  static const _border = Color(0x22FFFFFF);
   static const _accent = Color(0xFF3B82F6);
   static const _surface = Color(0xFF0D1117);
 
@@ -102,11 +101,11 @@ class _SupervisorSelectionScreenState extends State<SupervisorSelectionScreen> {
       filled: true,
       fillColor: _surface,
       contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-      labelStyle: TextStyle(color: Colors.white.withOpacity(0.65), fontSize: 13),
-      hintStyle: TextStyle(color: Colors.white.withOpacity(0.35), fontSize: 13),
+      labelStyle: TextStyle(color: _p.textSecondary, fontSize: 13),
+      hintStyle: TextStyle(color: _p.textMuted, fontSize: 13),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: _border),
+        borderSide: BorderSide(color: _p.border),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
@@ -234,8 +233,8 @@ class _SupervisorSelectionScreenState extends State<SupervisorSelectionScreen> {
       children: [
         Text(
           title,
-          style: const TextStyle(
-            color: Colors.white,
+          style: TextStyle(
+            color: _p.textPrimary,
             fontSize: 15,
             fontWeight: FontWeight.w700,
           ),
@@ -245,7 +244,7 @@ class _SupervisorSelectionScreenState extends State<SupervisorSelectionScreen> {
           Text(
             subtitle,
             style: TextStyle(
-              color: Colors.white.withOpacity(0.45),
+              color: _p.textMuted,
               fontSize: 12,
               height: 1.35,
             ),
@@ -270,7 +269,7 @@ class _SupervisorSelectionScreenState extends State<SupervisorSelectionScreen> {
 
     return RefreshIndicator(
       color: _accent,
-      backgroundColor: _card,
+      backgroundColor: _p.surface,
       onRefresh: _bootstrap,
       child: ListView(
         padding: EdgeInsets.fromLTRB(
@@ -283,7 +282,7 @@ class _SupervisorSelectionScreenState extends State<SupervisorSelectionScreen> {
           Text(
             'Request an FYP supervisor for your group. Your request stays pending until they accept.',
             style: TextStyle(
-              color: Colors.white.withOpacity(0.6),
+              color: _p.textSecondary,
               fontSize: 13,
               height: 1.4,
             ),
@@ -292,9 +291,9 @@ class _SupervisorSelectionScreenState extends State<SupervisorSelectionScreen> {
           Container(
             padding: EdgeInsets.all(compact ? 16 : 22),
             decoration: BoxDecoration(
-              color: _card,
+              color: _p.surface,
               borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: _border),
+              border: Border.all(color: _p.border),
             ),
             child: Form(
               key: _formKey,
@@ -308,13 +307,13 @@ class _SupervisorSelectionScreenState extends State<SupervisorSelectionScreen> {
                   const SizedBox(height: 14),
                   TextFormField(
                     controller: _groupName,
-                    style: const TextStyle(color: Colors.white),
+                    style: TextStyle(color: _p.textPrimary),
                     decoration: _dec(
                       'Group name',
                       prefixIcon: Icon(
                         Icons.groups_outlined,
                         size: 18,
-                        color: Colors.white.withOpacity(0.45),
+                        color: _p.textMuted,
                       ),
                     ),
                     validator: (v) =>
@@ -323,13 +322,13 @@ class _SupervisorSelectionScreenState extends State<SupervisorSelectionScreen> {
                   const SizedBox(height: 12),
                   TextFormField(
                     controller: _projectTitle,
-                    style: const TextStyle(color: Colors.white),
+                    style: TextStyle(color: _p.textPrimary),
                     decoration: _dec(
                       'Project title / topic',
                       prefixIcon: Icon(
                         Icons.topic_outlined,
                         size: 18,
-                        color: Colors.white.withOpacity(0.45),
+                        color: _p.textMuted,
                       ),
                     ),
                     validator: (v) =>
@@ -343,7 +342,7 @@ class _SupervisorSelectionScreenState extends State<SupervisorSelectionScreen> {
                   const SizedBox(height: 14),
                   TextFormField(
                     controller: _leaderName,
-                    style: const TextStyle(color: Colors.white),
+                    style: TextStyle(color: _p.textPrimary),
                     decoration: _dec('Leader name'),
                     validator: (v) =>
                         (v == null || v.trim().isEmpty) ? 'Required' : null,
@@ -352,7 +351,7 @@ class _SupervisorSelectionScreenState extends State<SupervisorSelectionScreen> {
                   TextFormField(
                     controller: _leaderEmail,
                     readOnly: true,
-                    style: TextStyle(color: Colors.white.withOpacity(0.85)),
+                    style: TextStyle(color: _p.textSecondary),
                     decoration: _dec(
                       'Leader email',
                       hint: 'From your account',
@@ -385,12 +384,12 @@ class _SupervisorSelectionScreenState extends State<SupervisorSelectionScreen> {
                       decoration: BoxDecoration(
                         color: _surface,
                         borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: _border),
+                        border: Border.all(color: _p.border),
                       ),
                       child: Text(
                         'Optional — add other members with their university emails. Leader is included automatically.',
                         style: TextStyle(
-                          color: Colors.white.withOpacity(0.5),
+                          color: _p.textSecondary,
                           fontSize: 12,
                           height: 1.4,
                         ),
@@ -405,7 +404,7 @@ class _SupervisorSelectionScreenState extends State<SupervisorSelectionScreen> {
                           decoration: BoxDecoration(
                             color: _surface,
                             borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: _border),
+                            border: Border.all(color: _p.border),
                           ),
                           child: Column(
                             children: [
@@ -414,7 +413,7 @@ class _SupervisorSelectionScreenState extends State<SupervisorSelectionScreen> {
                                   Text(
                                     'Member ${i + 1}',
                                     style: TextStyle(
-                                      color: Colors.white.withOpacity(0.7),
+                                      color: _p.textSecondary,
                                       fontSize: 12,
                                       fontWeight: FontWeight.w600,
                                     ),
@@ -433,7 +432,7 @@ class _SupervisorSelectionScreenState extends State<SupervisorSelectionScreen> {
                               ),
                               TextFormField(
                                 controller: _members[i].name,
-                                style: const TextStyle(color: Colors.white),
+                                style: TextStyle(color: _p.textPrimary),
                                 decoration: _dec('Full name'),
                                 validator: (v) {
                                   final name = (v ?? '').trim();
@@ -449,7 +448,7 @@ class _SupervisorSelectionScreenState extends State<SupervisorSelectionScreen> {
                               TextFormField(
                                 controller: _members[i].email,
                                 keyboardType: TextInputType.emailAddress,
-                                style: const TextStyle(color: Colors.white),
+                                style: TextStyle(color: _p.textPrimary),
                                 decoration: _dec(
                                   'University email',
                                   hint: 'name@university.edu',
@@ -478,8 +477,8 @@ class _SupervisorSelectionScreenState extends State<SupervisorSelectionScreen> {
                   DropdownButtonFormField<int>(
                     value: _departmentId,
                     isExpanded: true,
-                    dropdownColor: _card,
-                    style: const TextStyle(color: Colors.white, fontSize: 14),
+                    dropdownColor: _p.surface,
+                    style: TextStyle(color: _p.textPrimary, fontSize: 14),
                     decoration: _dec('Department'),
                     items: [
                       const DropdownMenuItem<int>(
@@ -519,8 +518,8 @@ class _SupervisorSelectionScreenState extends State<SupervisorSelectionScreen> {
                   DropdownButtonFormField<int>(
                     value: _supervisorId,
                     isExpanded: true,
-                    dropdownColor: _card,
-                    style: const TextStyle(color: Colors.white, fontSize: 14),
+                    dropdownColor: _p.surface,
+                    style: TextStyle(color: _p.textPrimary, fontSize: 14),
                     decoration: _dec('Supervisor'),
                     items: filteredSupervisors.map((s) {
                       final id = s['id'] as int;
@@ -552,8 +551,8 @@ class _SupervisorSelectionScreenState extends State<SupervisorSelectionScreen> {
                   DropdownButtonFormField<int>(
                     value: _cosupervisorId,
                     isExpanded: true,
-                    dropdownColor: _card,
-                    style: const TextStyle(color: Colors.white, fontSize: 14),
+                    dropdownColor: _p.surface,
+                    style: TextStyle(color: _p.textPrimary, fontSize: 14),
                     decoration: _dec(
                       'Co-supervisor (optional)',
                       hint: 'None',
@@ -583,7 +582,7 @@ class _SupervisorSelectionScreenState extends State<SupervisorSelectionScreen> {
                     Text(
                       'No active supervisors for this department.',
                       style: TextStyle(
-                        color: Colors.white.withOpacity(0.5),
+                        color: _p.textSecondary,
                         fontSize: 12,
                       ),
                     ),
@@ -622,10 +621,10 @@ class _SupervisorSelectionScreenState extends State<SupervisorSelectionScreen> {
             ),
           ),
           const SizedBox(height: 24),
-          const Text(
+          Text(
             'Your requests',
             style: TextStyle(
-              color: Colors.white,
+              color: _p.textPrimary,
               fontSize: 16,
               fontWeight: FontWeight.w700,
             ),
@@ -635,13 +634,13 @@ class _SupervisorSelectionScreenState extends State<SupervisorSelectionScreen> {
             Container(
               padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(
-                color: _card,
+                color: _p.surface,
                 borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: _border),
+                border: Border.all(color: _p.border),
               ),
               child: Text(
                 'No assignment requests yet.',
-                style: TextStyle(color: Colors.white.withOpacity(0.6)),
+                style: TextStyle(color: _p.textSecondary),
               ),
             )
           else
@@ -654,9 +653,9 @@ class _SupervisorSelectionScreenState extends State<SupervisorSelectionScreen> {
                 child: Container(
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    color: _card,
+                    color: _p.surface,
                     borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: _border),
+                    border: Border.all(color: _p.border),
                   ),
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -667,8 +666,8 @@ class _SupervisorSelectionScreenState extends State<SupervisorSelectionScreen> {
                           children: [
                             Text(
                               (r['group_name'] ?? 'Group').toString(),
-                              style: const TextStyle(
-                                color: Colors.white,
+                              style: TextStyle(
+                                color: _p.textPrimary,
                                 fontWeight: FontWeight.w600,
                               ),
                             ),
@@ -676,7 +675,7 @@ class _SupervisorSelectionScreenState extends State<SupervisorSelectionScreen> {
                             Text(
                               '${r['project_title'] ?? ''}',
                               style: TextStyle(
-                                color: Colors.white.withOpacity(0.55),
+                                color: _p.textSecondary,
                                 fontSize: 12,
                               ),
                             ),
@@ -684,7 +683,7 @@ class _SupervisorSelectionScreenState extends State<SupervisorSelectionScreen> {
                             Text(
                               'Supervisor: ${r['supervisor_name'] ?? '—'}',
                               style: TextStyle(
-                                color: Colors.white.withOpacity(0.55),
+                                color: _p.textSecondary,
                                 fontSize: 12,
                               ),
                             ),
@@ -692,7 +691,7 @@ class _SupervisorSelectionScreenState extends State<SupervisorSelectionScreen> {
                               Text(
                                 'Co-supervisor: $co',
                                 style: TextStyle(
-                                  color: Colors.white.withOpacity(0.55),
+                                  color: _p.textSecondary,
                                   fontSize: 12,
                                 ),
                               ),

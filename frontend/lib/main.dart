@@ -17,6 +17,7 @@ import 'providers/upload_provider.dart';
 import 'providers/image_formatter_provider.dart';
 import 'providers/collaboration_provider.dart';
 import 'providers/fyp_provider.dart';
+import 'theme/app_theme.dart';
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
@@ -125,96 +126,45 @@ class _MyAppState extends State<MyApp> {
         ChangeNotifierProvider(create: (_) => ImageFormatterProvider()),
         ChangeNotifierProvider(create: (_) => CollaborationProvider()),
         ChangeNotifierProvider(create: (_) => FypProvider()),
+        ChangeNotifierProvider(create: (_) => ThemeProvider()),
       ],
-      child: MaterialApp(
-        navigatorKey: navigatorKey,
-        debugShowCheckedModeBanner: false,
-        title: 'FORMATIFY',
-        theme: ThemeData(
-          useMaterial3: true,
-          brightness: Brightness.dark,
-          scaffoldBackgroundColor: const Color(0xFF0F1419),
-          primaryColor: const Color(0xFF6366F1),
-          secondaryHeaderColor: const Color(0xFF8B5CF6),
-          cardColor: const Color(0xFF1A1F2E),
-          appBarTheme: const AppBarTheme(
-            backgroundColor: Color(0xFF141B27),
-            elevation: 0,
-            surfaceTintColor: Colors.transparent,
-          ),
-          navigationRailTheme: NavigationRailThemeData(
-            backgroundColor: const Color(0xFF141B27),
-            selectedIconTheme: const IconThemeData(color: Color(0xFF6366F1), size: 24),
-            unselectedIconTheme: const IconThemeData(color: Color(0xFF64748B), size: 24),
-            selectedLabelTextStyle: const TextStyle(color: Color(0xFF6366F1), fontWeight: FontWeight.w600),
-          ),
-          inputDecorationTheme: InputDecorationTheme(
-            filled: true,
-            fillColor: const Color(0xFF1A1F2E),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
-              borderSide: const BorderSide(color: Color(0xFF2D3748)),
-            ),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
-              borderSide: const BorderSide(color: Color(0xFF2D3748)),
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
-              borderSide: const BorderSide(color: Color(0xFF6366F1), width: 2),
-            ),
-            labelStyle: const TextStyle(color: Color(0xFF94A3B8)),
-          ),
-          elevatedButtonTheme: ElevatedButtonThemeData(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF6366F1),
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-              textStyle: const TextStyle(fontWeight: FontWeight.w600),
-            ),
-          ),
-          outlinedButtonTheme: OutlinedButtonThemeData(
-            style: OutlinedButton.styleFrom(
-              foregroundColor: const Color(0xFF6366F1),
-              side: const BorderSide(color: Color(0xFF6366F1)),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-            ),
-          ),
-        ),
-        routes: {
-          '/login': (_) => const LoginScreen(),
-          '/student-dashboard': (_) => const StudentDashboard(),
-          '/admin-dashboard': (_) => const AdminDashboard(),
-          '/supervisor-dashboard': (_) => const SupervisorDashboard(),
-          '/new-report': (_) => const StudentDashboard(initialIndex: 1),
-          '/collaboration': (_) => const StudentDashboard(initialIndex: 3),
-          '/collaboration/project': (context) {
-            final args = ModalRoute.of(context)?.settings.arguments;
-            final projectId = args is int
-                ? args
-                : (args is Map ? args['projectId'] as int? : null);
-            if (projectId == null) {
-              return const StudentDashboard(initialIndex: 3);
-            }
-            final initialTab = args is Map ? (args['tab'] as int? ?? 0) : 0;
-            return StudentDashboard(
-              initialIndex: 3,
-              initialProjectId: projectId,
-              initialProjectTab: initialTab,
-            );
-          },
+      child: Consumer<ThemeProvider>(
+        builder: (context, themeProvider, _) {
+          return MaterialApp(
+            navigatorKey: navigatorKey,
+            debugShowCheckedModeBanner: false,
+            title: 'FORMATIFY',
+            theme: AppPalette.light.themeData,
+            darkTheme: AppPalette.dark.themeData,
+            themeMode: themeProvider.themeMode,
+            // Same auth gate on mobile and desktop — Quick Access is reached from
+            // the authenticated student dashboard, not as the app landing screen.
+            home: const AuthCheck(),
+            routes: {
+              '/login': (_) => const LoginScreen(),
+              '/student-dashboard': (_) => const StudentDashboard(),
+              '/admin-dashboard': (_) => const AdminDashboard(),
+              '/supervisor-dashboard': (_) => const SupervisorDashboard(),
+              '/new-report': (_) => const StudentDashboard(initialIndex: 1),
+              '/collaboration': (_) => const StudentDashboard(initialIndex: 3),
+              '/collaboration/project': (context) {
+                final args = ModalRoute.of(context)?.settings.arguments;
+                final projectId = args is int
+                    ? args
+                    : (args is Map ? args['projectId'] as int? : null);
+                if (projectId == null) {
+                  return const StudentDashboard(initialIndex: 3);
+                }
+                final initialTab = args is Map ? (args['tab'] as int? ?? 0) : 0;
+                return StudentDashboard(
+                  initialIndex: 3,
+                  initialProjectId: projectId,
+                  initialProjectTab: initialTab,
+                );
+              },
+            },
+          );
         },
-        darkTheme: ThemeData(
-          useMaterial3: true,
-          brightness: Brightness.dark,
-          scaffoldBackgroundColor: const Color(0xFF0F1419),
-          primaryColor: const Color(0xFF6366F1),
-        ),
-        themeMode: ThemeMode.dark,
-        // Same auth gate on mobile and desktop — Quick Access is reached from
-        // the authenticated student dashboard, not as the app landing screen.
-        home: const AuthCheck(),
       ),
     );
   }
@@ -238,10 +188,17 @@ class _AuthCheckState extends State<AuthCheck> {
 
   Future<void> _restore() async {
     final auth = context.read<AuthProvider>();
+    final theme = context.read<ThemeProvider>();
     // Always clear leftover bootstrap/dev sessions and never auto-login on
     // launch/hot-restart. User must sign in explicitly each cold start unless
     // we later re-enable opt-in "Remember me" restore.
     await auth.ensureCleanLaunch();
+    if (auth.isLoggedIn) {
+      // Dev bootstrap (--dart-define=USER_ID=…) still lands authenticated.
+      await theme.bindToUser(auth.userId);
+    } else {
+      await theme.resetToDefaultDark();
+    }
     if (mounted) setState(() => _ready = true);
   }
 
@@ -256,9 +213,16 @@ class _AuthCheckState extends State<AuthCheck> {
       );
     }
 
-    return Consumer<AuthProvider>(
-      builder: (context, authProvider, _) {
+    return Consumer2<AuthProvider, ThemeProvider>(
+      builder: (context, authProvider, theme, _) {
         if (authProvider.isLoggedIn) {
+          final userId = authProvider.userId;
+          if (userId != null && theme.boundUserId != userId) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (!context.mounted) return;
+              context.read<ThemeProvider>().bindToUser(userId);
+            });
+          }
           // Explicit --dart-define=USER_ID=… collab bootstrap stays on student shell.
           if (authProvider.isDevBootstrap) {
             return const StudentDashboard();
@@ -270,6 +234,12 @@ class _AuthCheckState extends State<AuthCheck> {
             return const SupervisorDashboard();
           }
           return const StudentDashboard();
+        }
+        if (theme.boundUserId != null) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!context.mounted) return;
+            context.read<ThemeProvider>().resetToDefaultDark();
+          });
         }
         return const LoginScreen();
       },

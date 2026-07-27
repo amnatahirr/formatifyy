@@ -261,7 +261,7 @@
 //         backgroundColor: const Color(0xFF161B22),
 //         title: const Text(
 //           'Connect Google Drive',
-//           style: TextStyle(color: Colors.white),
+//           style: TextStyle(color: _p.textPrimary),
 //         ),
 //         content: Column(
 //           mainAxisSize: MainAxisSize.min,
@@ -275,7 +275,7 @@
 //             ),
 //             const SizedBox(height: 16),
 //             TextField(
-//               style: const TextStyle(color: Colors.white),
+//               style: TextStyle(color: _p.textPrimary),
 //               decoration: InputDecoration(
 //                 hintText: 'example@gmail.com',
 //                 hintStyle: TextStyle(color: Colors.white.withOpacity(0.4)),
@@ -385,7 +385,7 @@
 //                 const Text(
 //                   'Select File from Google Drive',
 //                   style: TextStyle(
-//                     color: Colors.white,
+//                     color: _p.textPrimary,
 //                     fontSize: 18,
 //                     fontWeight: FontWeight.bold,
 //                   ),
@@ -412,7 +412,7 @@
 //                               ),
 //                               title: Text(
 //                                 file['name'] ?? 'Unknown',
-//                                 style: const TextStyle(color: Colors.white),
+//                                 style: TextStyle(color: _p.textPrimary),
 //                                 overflow: TextOverflow.ellipsis,
 //                               ),
 //                               subtitle: Text(
@@ -539,7 +539,7 @@
 //               style: TextStyle(
 //                 fontSize: 28,
 //                 fontWeight: FontWeight.w700,
-//                 color: Colors.white,
+//                 color: _p.textPrimary,
 //               ),
 //             ),
 //             const SizedBox(height: 8),
@@ -634,7 +634,7 @@
 //                       style: TextStyle(
 //                         fontSize: 16,
 //                         fontWeight: FontWeight.w600,
-//                         color: Colors.white,
+//                         color: _p.textPrimary,
 //                       ),
 //                     ),
 //                   ],
@@ -711,7 +711,7 @@
 //                 style: const TextStyle(
 //                   fontSize: 14,
 //                   fontWeight: FontWeight.w600,
-//                   color: Colors.white,
+//                   color: _p.textPrimary,
 //                 ),
 //               ),
 //             ],
@@ -799,7 +799,7 @@
 //                       style: TextStyle(
 //                         fontSize: 16,
 //                         fontWeight: FontWeight.w600,
-//                         color: Colors.white,
+//                         color: _p.textPrimary,
 //                       ),
 //                     ),
 //                   ],
@@ -836,7 +836,7 @@
 //                             style: TextStyle(
 //                               fontSize: 14,
 //                               fontWeight: FontWeight.w500,
-//                               color: Colors.white,
+//                               color: _p.textPrimary,
 //                             ),
 //                           ),
 //                           const SizedBox(height: 6),
@@ -886,7 +886,7 @@
 //                                 style: const TextStyle(
 //                                   fontSize: 14,
 //                                   fontWeight: FontWeight.w600,
-//                                   color: Colors.white,
+//                                   color: _p.textPrimary,
 //                                 ),
 //                                 overflow: TextOverflow.ellipsis,
 //                               ),
@@ -988,7 +988,7 @@
 //                       style: TextStyle(
 //                         fontSize: 16,
 //                         fontWeight: FontWeight.w600,
-//                         color: Colors.white,
+//                         color: _p.textPrimary,
 //                       ),
 //                     ),
 //                   ],
@@ -997,7 +997,7 @@
 //                 // Title Field
 //                 TextField(
 //                   controller: _titleController,
-//                   style: const TextStyle(color: Colors.white),
+//                   style: TextStyle(color: _p.textPrimary),
 //                   decoration: InputDecoration(
 //                     labelText: 'Document Title',
 //                     labelStyle: TextStyle(color: Colors.white.withOpacity(0.6)),
@@ -1025,7 +1025,7 @@
 //                 // Content Field
 //                 TextField(
 //                   controller: _contentController,
-//                   style: const TextStyle(color: Colors.white),
+//                   style: TextStyle(color: _p.textPrimary),
 //                   maxLines: 10,
 //                   decoration: InputDecoration(
 //                     labelText: 'Paste your content here...',
@@ -1139,7 +1139,7 @@
 //                       style: TextStyle(
 //                         fontSize: 16,
 //                         fontWeight: FontWeight.w600,
-//                         color: Colors.white,
+//                         color: _p.textPrimary,
 //                       ),
 //                     ),
 //                   ],
@@ -1294,7 +1294,7 @@
 //                 style: TextStyle(
 //                   fontSize: 16,
 //                   fontWeight: FontWeight.w600,
-//                   color: Colors.white,
+//                   color: _p.textPrimary,
 //                 ),
 //               ),
 //             ],
@@ -1383,7 +1383,7 @@
 //                                   style: const TextStyle(
 //                                     fontSize: 14,
 //                                     fontWeight: FontWeight.w500,
-//                                     color: Colors.white,
+//                                     color: _p.textPrimary,
 //                                   ),
 //                                 ),
 //                                 if (template['description'] != null)
@@ -1431,6 +1431,7 @@ import '../providers/template_provider.dart';
 import '../config/api_config.dart';
 import 'analyze_screen.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../theme/app_theme.dart';
 
 class NewReportScreen extends StatefulWidget {
   final Map<String, dynamic>? selectedTemplate;
@@ -1448,6 +1449,7 @@ class NewReportScreen extends StatefulWidget {
 }
 
 class _NewReportScreenState extends State<NewReportScreen> {
+  AppPalette get _p => context.watch<ThemeProvider>().palette;
   bool _isGoogleDriveConnected = false;
   final TextEditingController _titleController = TextEditingController();
   final TextEditingController _contentController = TextEditingController();
@@ -1713,10 +1715,10 @@ class _NewReportScreenState extends State<NewReportScreen> {
     await showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        backgroundColor: const Color(0xFF161B22),
-        title: const Text(
+        backgroundColor: _p.surface,
+        title: Text(
           'Connect Google Drive',
-          style: TextStyle(color: Colors.white),
+          style: TextStyle(color: _p.textPrimary),
         ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
@@ -1725,17 +1727,17 @@ class _NewReportScreenState extends State<NewReportScreen> {
               'Enter your Google email to authorize access:',
               style: TextStyle(
                 fontSize: 13,
-                color: Colors.white.withOpacity(0.8),
+                color: _p.textSecondary,
               ),
             ),
             const SizedBox(height: 16),
             TextField(
-              style: const TextStyle(color: Colors.white),
+              style: TextStyle(color: _p.textPrimary),
               decoration: InputDecoration(
                 hintText: 'example@gmail.com',
-                hintStyle: TextStyle(color: Colors.white.withOpacity(0.4)),
+                hintStyle: TextStyle(color: _p.textMuted),
                 filled: true,
-                fillColor: const Color(0xFF0D1117),
+                fillColor: _p.surfaceAlt,
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(6),
                 ),
@@ -1747,9 +1749,9 @@ class _NewReportScreenState extends State<NewReportScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text(
+            child: Text(
               'Cancel',
-              style: TextStyle(color: Colors.white70),
+              style: TextStyle(color: _p.textSecondary),
             ),
           ),
           ElevatedButton(
@@ -1818,7 +1820,7 @@ class _NewReportScreenState extends State<NewReportScreen> {
       showDialog(
         context: context,
         builder: (context) => Dialog(
-          backgroundColor: const Color(0xFF161B22),
+          backgroundColor: _p.surface,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
           ),
@@ -1829,10 +1831,10 @@ class _NewReportScreenState extends State<NewReportScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
+                Text(
                   'Select File from Google Drive',
                   style: TextStyle(
-                    color: Colors.white,
+                    color: _p.textPrimary,
                     fontSize: 18,
                     fontWeight: FontWeight.bold,
                   ),
@@ -1842,10 +1844,10 @@ class _NewReportScreenState extends State<NewReportScreen> {
                   child: _isFetchingDriveFiles
                       ? const Center(child: CircularProgressIndicator())
                       : _driveFiles.isEmpty
-                      ? const Center(
+                      ? Center(
                           child: Text(
                             'No files found',
-                            style: TextStyle(color: Colors.white70),
+                            style: TextStyle(color: _p.textSecondary),
                           ),
                         )
                       : ListView.builder(
@@ -1855,17 +1857,17 @@ class _NewReportScreenState extends State<NewReportScreen> {
                             return ListTile(
                               leading: Icon(
                                 _getFileIcon(file['mimeType'] ?? ''),
-                                color: Colors.white70,
+                                color: _p.textSecondary,
                               ),
                               title: Text(
                                 file['name'] ?? 'Unknown',
-                                style: const TextStyle(color: Colors.white),
+                                style: TextStyle(color: _p.textPrimary),
                                 overflow: TextOverflow.ellipsis,
                               ),
                               subtitle: Text(
                                 file['mimeType'] ?? '',
                                 style: TextStyle(
-                                  color: Colors.white.withOpacity(0.5),
+                                  color: _p.textSecondary,
                                   fontSize: 11,
                                 ),
                               ),
@@ -2050,13 +2052,13 @@ void _showSuccess(String message) {
 
     if (widget.embedded) {
       return ColoredBox(
-        color: const Color(0xFF0D1117),
+        color: _p.scaffold,
         child: body,
       );
     }
 
     return Scaffold(
-      backgroundColor: const Color(0xFF0D1117),
+      backgroundColor: _p.scaffold,
       body: body,
     );
   }
@@ -2094,7 +2096,7 @@ void _showSuccess(String message) {
               'Upload or paste your revised report, then Submit for Supervisor Review.',
             ].join(' '),
             style: TextStyle(
-              color: Colors.white.withOpacity(0.75),
+              color: _p.textSecondary,
               fontSize: 12,
               height: 1.4,
             ),
@@ -2115,17 +2117,17 @@ void _showSuccess(String message) {
       width: double.infinity,
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: const Color(0xFF161B22),
+        color: _p.surface,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: const Color(0xFF3B82F6).withOpacity(0.35)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
+          Text(
             'Ready for supervisor review',
             style: TextStyle(
-              color: Colors.white,
+              color: _p.textPrimary,
               fontSize: 15,
               fontWeight: FontWeight.w700,
             ),
@@ -2133,7 +2135,7 @@ void _showSuccess(String message) {
           const SizedBox(height: 6),
           Text(
             filename,
-            style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 13),
+            style: TextStyle(color: _p.textSecondary, fontSize: 13),
           ),
           const SizedBox(height: 4),
           Text(
@@ -2141,7 +2143,7 @@ void _showSuccess(String message) {
                 ? 'AI analysis snapshot will be attached.'
                 : 'No AI analysis cached yet — submit will still work; run Analyze first for grammar/plagiarism scores.',
             style: TextStyle(
-              color: Colors.white.withOpacity(0.45),
+              color: _p.textMuted,
               fontSize: 12,
             ),
           ),
@@ -2152,7 +2154,7 @@ void _showSuccess(String message) {
               onPressed:
                   docs.isSubmittingFinal ? null : _submitForSupervisorReview,
               icon: docs.isSubmittingFinal
-                  ? const SizedBox(
+                  ? SizedBox(
                       width: 18,
                       height: 18,
                       child: CircularProgressIndicator(
@@ -2230,9 +2232,9 @@ void _showSuccess(String message) {
           child: Container(
             padding: const EdgeInsets.all(24),
             decoration: BoxDecoration(
-              color: const Color(0xFF161B22),
+              color: _p.surface,
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.white.withOpacity(0.1)),
+              border: Border.all(color: _p.border),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -2251,12 +2253,12 @@ void _showSuccess(String message) {
                       ),
                     ),
                     const SizedBox(width: 12),
-                    const Text(
+                    Text(
                       'Upload from Phone',
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w600,
-                        color: Colors.white,
+                        color: _p.textPrimary,
                       ),
                     ),
                   ],
@@ -2264,7 +2266,7 @@ void _showSuccess(String message) {
                 const SizedBox(height: 24),
                 Text(
                   'Scan QR code using your phone to upload a document.',
-                  style: TextStyle(color: Colors.white.withOpacity(0.6)),
+                  style: TextStyle(color: _p.textSecondary),
                 ),
                 const SizedBox(height: 24),
                 SizedBox(
@@ -2315,10 +2317,10 @@ void _showSuccess(String message) {
           decoration: BoxDecoration(
             color: isSelected
                 ? color.withOpacity(0.2)
-                : const Color(0xFF161B22),
+                : _p.surface,
             borderRadius: BorderRadius.circular(12),
             border: Border.all(
-              color: isSelected ? color : Colors.white.withOpacity(0.1),
+              color: isSelected ? color : _p.border,
               width: isSelected ? 2 : 1,
             ),
           ),
@@ -2330,10 +2332,10 @@ void _showSuccess(String message) {
               const SizedBox(height: 12),
               Text(
                 label,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.w600,
-                  color: Colors.white,
+                  color: _p.textPrimary,
                 ),
               ),
             ],
@@ -2394,9 +2396,9 @@ Future<void> _handleUploadFromPhone(int userId) async {
         Expanded(
           child: Container(
             decoration: BoxDecoration(
-              color: const Color(0xFF161B22),
+              color: _p.surface,
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.white.withOpacity(0.1)),
+              border: Border.all(color: _p.border),
             ),
             padding: const EdgeInsets.all(24),
             child: Column(
@@ -2417,12 +2419,12 @@ Future<void> _handleUploadFromPhone(int userId) async {
                       ),
                     ),
                     const SizedBox(width: 12),
-                    const Text(
+                    Text(
                       'Upload File',
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w600,
-                        color: Colors.white,
+                        color: _p.textPrimary,
                       ),
                     ),
                   ],
@@ -2433,10 +2435,10 @@ Future<void> _handleUploadFromPhone(int userId) async {
                     onTap: _selectFile,
                     child: Container(
                       decoration: BoxDecoration(
-                        color: const Color(0xFF0D1117),
+                        color: _p.surfaceAlt,
                         borderRadius: BorderRadius.circular(8),
                         border: Border.all(
-                          color: Colors.white.withOpacity(0.2),
+                          color: _p.borderStrong,
                           strokeAlign: BorderSide.strokeAlignOutside,
                         ),
                       ),
@@ -2450,7 +2452,7 @@ Future<void> _handleUploadFromPhone(int userId) async {
                           Icon(
                             Icons.cloud_upload,
                             size: 48,
-                            color: Colors.white.withOpacity(0.4),
+                            color: _p.textMuted,
                           ),
                           const SizedBox(height: 16),
                           Text(
@@ -2458,7 +2460,7 @@ Future<void> _handleUploadFromPhone(int userId) async {
                             style: TextStyle(
                               fontSize: 14,
                               fontWeight: FontWeight.w500,
-                              color: Colors.white,
+                              color: _p.textPrimary,
                             ),
                           ),
                           const SizedBox(height: 6),
@@ -2466,7 +2468,7 @@ Future<void> _handleUploadFromPhone(int userId) async {
                             'Supported: DOC, DOCX, PDF, TXT',
                             style: TextStyle(
                               fontSize: 12,
-                              color: Colors.white.withOpacity(0.4),
+                              color: _p.textMuted,
                             ),
                           ),
                         ],
@@ -2476,7 +2478,7 @@ Future<void> _handleUploadFromPhone(int userId) async {
                 else
                   Container(
                     decoration: BoxDecoration(
-                      color: const Color(0xFF0D1117),
+                      color: _p.surfaceAlt,
                       borderRadius: BorderRadius.circular(8),
                       border: Border.all(
                         color: const Color(0xFF10B981).withOpacity(0.5),
@@ -2499,16 +2501,16 @@ Future<void> _handleUploadFromPhone(int userId) async {
                                 'File selected',
                                 style: TextStyle(
                                   fontSize: 12,
-                                  color: Colors.white.withOpacity(0.6),
+                                  color: _p.textSecondary,
                                 ),
                               ),
                               const SizedBox(height: 4),
                               Text(
                                 _selectedFile!.path.split('/').last,
-                                style: const TextStyle(
+                                style: TextStyle(
                                   fontSize: 14,
                                   fontWeight: FontWeight.w600,
-                                  color: Colors.white,
+                                  color: _p.textPrimary,
                                 ),
                                 overflow: TextOverflow.ellipsis,
                               ),
@@ -2519,7 +2521,7 @@ Future<void> _handleUploadFromPhone(int userId) async {
                           onTap: () => setState(() => _selectedFile = null),
                           child: Icon(
                             Icons.close,
-                            color: Colors.white.withOpacity(0.4),
+                            color: _p.textMuted,
                           ),
                         ),
                       ],
@@ -2578,9 +2580,9 @@ Future<void> _handleUploadFromPhone(int userId) async {
           flex: 2,
           child: Container(
             decoration: BoxDecoration(
-              color: const Color(0xFF161B22),
+              color: _p.surface,
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.white.withOpacity(0.1)),
+              border: Border.all(color: _p.border),
             ),
             padding: const EdgeInsets.all(24),
             child: Column(
@@ -2601,12 +2603,12 @@ Future<void> _handleUploadFromPhone(int userId) async {
                       ),
                     ),
                     const SizedBox(width: 12),
-                    const Text(
+                    Text(
                       'Paste Content',
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w600,
-                        color: Colors.white,
+                        color: _p.textPrimary,
                       ),
                     ),
                   ],
@@ -2615,22 +2617,22 @@ Future<void> _handleUploadFromPhone(int userId) async {
                 // Title Field
                 TextField(
                   controller: _titleController,
-                  style: const TextStyle(color: Colors.white),
+                  style: TextStyle(color: _p.textPrimary),
                   decoration: InputDecoration(
                     labelText: 'Document Title',
-                    labelStyle: TextStyle(color: Colors.white.withOpacity(0.6)),
+                    labelStyle: TextStyle(color: _p.textSecondary),
                     filled: true,
-                    fillColor: const Color(0xFF0D1117),
+                    fillColor: _p.surfaceAlt,
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(8),
                       borderSide: BorderSide(
-                        color: Colors.white.withOpacity(0.1),
+                        color: _p.border,
                       ),
                     ),
                     enabledBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(8),
                       borderSide: BorderSide(
-                        color: Colors.white.withOpacity(0.1),
+                        color: _p.border,
                       ),
                     ),
                     focusedBorder: OutlineInputBorder(
@@ -2643,24 +2645,24 @@ Future<void> _handleUploadFromPhone(int userId) async {
                 // Content Field
                 TextField(
                   controller: _contentController,
-                  style: const TextStyle(color: Colors.white),
+                  style: TextStyle(color: _p.textPrimary),
                   maxLines: 10,
                   decoration: InputDecoration(
                     labelText: 'Paste your content here...',
                     alignLabelWithHint: true,
-                    labelStyle: TextStyle(color: Colors.white.withOpacity(0.6)),
+                    labelStyle: TextStyle(color: _p.textSecondary),
                     filled: true,
-                    fillColor: const Color(0xFF0D1117),
+                    fillColor: _p.surfaceAlt,
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(8),
                       borderSide: BorderSide(
-                        color: Colors.white.withOpacity(0.1),
+                        color: _p.border,
                       ),
                     ),
                     enabledBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(8),
                       borderSide: BorderSide(
-                        color: Colors.white.withOpacity(0.1),
+                        color: _p.border,
                       ),
                     ),
                     focusedBorder: OutlineInputBorder(
@@ -2739,9 +2741,9 @@ Future<void> _handleUploadFromPhone(int userId) async {
         Expanded(
           child: Container(
             decoration: BoxDecoration(
-              color: const Color(0xFF161B22),
+              color: _p.surface,
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.white.withOpacity(0.1)),
+              border: Border.all(color: _p.border),
             ),
             padding: const EdgeInsets.all(24),
             child: Column(
@@ -2762,12 +2764,12 @@ Future<void> _handleUploadFromPhone(int userId) async {
                       ),
                     ),
                     const SizedBox(width: 12),
-                    const Text(
+                    Text(
                       'Google Drive',
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w600,
-                        color: Colors.white,
+                        color: _p.textPrimary,
                       ),
                     ),
                   ],
@@ -2775,12 +2777,12 @@ Future<void> _handleUploadFromPhone(int userId) async {
                 const SizedBox(height: 24),
                 Container(
                   decoration: BoxDecoration(
-                    color: const Color(0xFF0D1117),
+                    color: _p.surfaceAlt,
                     borderRadius: BorderRadius.circular(8),
                     border: Border.all(
                       color: _isGoogleDriveConnected
                           ? const Color(0xFF10B981).withOpacity(0.5)
-                          : Colors.white.withOpacity(0.1),
+                          : _p.border,
                     ),
                   ),
                   padding: const EdgeInsets.all(16),
@@ -2793,7 +2795,7 @@ Future<void> _handleUploadFromPhone(int userId) async {
                         size: 48,
                         color: _isGoogleDriveConnected
                             ? const Color(0xFF10B981)
-                            : Colors.white.withOpacity(0.4),
+                            : _p.textMuted,
                       ),
                       const SizedBox(height: 12),
                       Text(
@@ -2805,7 +2807,7 @@ Future<void> _handleUploadFromPhone(int userId) async {
                           fontWeight: FontWeight.w500,
                           color: _isGoogleDriveConnected
                               ? const Color(0xFF10B981)
-                              : Colors.white.withOpacity(0.6),
+                              : _p.textSecondary,
                         ),
                       ),
                     ],
@@ -2890,9 +2892,9 @@ Future<void> _handleUploadFromPhone(int userId) async {
   Widget _buildTemplateSelector() {
     return Container(
       decoration: BoxDecoration(
-        color: const Color(0xFF161B22),
+        color: _p.surface,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.white.withOpacity(0.1)),
+        border: Border.all(color: _p.border),
       ),
       padding: const EdgeInsets.all(24),
       child: Column(
@@ -2913,12 +2915,12 @@ Future<void> _handleUploadFromPhone(int userId) async {
                 ),
               ),
               const SizedBox(width: 12),
-              const Text(
+              Text(
                 'Select Template',
                 style: TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.w600,
-                  color: Colors.white,
+                  color: _p.textPrimary,
                 ),
               ),
             ],
@@ -2941,7 +2943,7 @@ Future<void> _handleUploadFromPhone(int userId) async {
                 return Container(
                   padding: const EdgeInsets.all(24),
                   decoration: BoxDecoration(
-                    color: const Color(0xFF0D1117),
+                    color: _p.surfaceAlt,
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Column(
@@ -2949,12 +2951,12 @@ Future<void> _handleUploadFromPhone(int userId) async {
                       Icon(
                         Icons.folder_off,
                         size: 32,
-                        color: Colors.white.withOpacity(0.4),
+                        color: _p.textMuted,
                       ),
                       const SizedBox(height: 12),
                       Text(
                         'No templates available',
-                        style: TextStyle(color: Colors.white.withOpacity(0.6)),
+                        style: TextStyle(color: _p.textSecondary),
                       ),
                     ],
                   ),
@@ -2978,12 +2980,12 @@ Future<void> _handleUploadFromPhone(int userId) async {
                       decoration: BoxDecoration(
                         color: isSelected
                             ? const Color(0xFFF59E0B).withOpacity(0.2)
-                            : const Color(0xFF0D1117),
+                            : _p.surfaceAlt,
                         borderRadius: BorderRadius.circular(8),
                         border: Border.all(
                           color: isSelected
                               ? const Color(0xFFF59E0B)
-                              : Colors.white.withOpacity(0.1),
+                              : _p.border,
                         ),
                       ),
                       padding: const EdgeInsets.all(12),
@@ -2995,7 +2997,7 @@ Future<void> _handleUploadFromPhone(int userId) async {
                                 : Icons.radio_button_off,
                             color: isSelected
                                 ? const Color(0xFFF59E0B)
-                                : Colors.white.withOpacity(0.4),
+                                : _p.textMuted,
                             size: 20,
                           ),
                           const SizedBox(width: 12),
@@ -3005,10 +3007,10 @@ Future<void> _handleUploadFromPhone(int userId) async {
                               children: [
                                 Text(
                                   template['name'] ?? 'Unnamed Template',
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                     fontSize: 14,
                                     fontWeight: FontWeight.w500,
-                                    color: Colors.white,
+                                    color: _p.textPrimary,
                                   ),
                                 ),
                                 if (template['description'] != null)
@@ -3016,7 +3018,7 @@ Future<void> _handleUploadFromPhone(int userId) async {
                                     template['description'],
                                     style: TextStyle(
                                       fontSize: 12,
-                                      color: Colors.white.withOpacity(0.5),
+                                      color: _p.textSecondary,
                                     ),
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,

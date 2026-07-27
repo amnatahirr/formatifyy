@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import '../providers/qr_service.dart';
+import '../theme/app_theme.dart';
 import '../widgets/qr_dialog.dart';
 class ExportDialog extends StatefulWidget {
   final Function(String format, {bool applyBullets, bool autoDetect}) onExport;
@@ -54,8 +56,9 @@ class _ExportDialogState extends State<ExportDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.watch<ThemeProvider>().palette;
     return Dialog(
-      backgroundColor: const Color(0xFF161B22),
+      backgroundColor: p.surface,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
       ),
@@ -63,10 +66,10 @@ class _ExportDialogState extends State<ExportDialog> {
         width: 500,
         padding: const EdgeInsets.all(32),
         decoration: BoxDecoration(
-          color: const Color(0xFF161B22),
+          color: p.surface,
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
-            color: Colors.white.withOpacity(0.1),
+            color: p.border,
           ),
         ),
         child: Column(
@@ -80,12 +83,12 @@ class _ExportDialogState extends State<ExportDialog> {
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
+                    Text(
                       'Export Document',
                       style: TextStyle(
                         fontSize: 20,
                         fontWeight: FontWeight.w700,
-                        color: Colors.white,
+                        color: p.textPrimary,
                       ),
                     ),
                     const SizedBox(height: 4),
@@ -93,7 +96,7 @@ class _ExportDialogState extends State<ExportDialog> {
                       'Choose your preferred export format',
                       style: TextStyle(
                         fontSize: 13,
-                        color: Colors.white.withOpacity(0.6),
+                        color: p.textSecondary,
                       ),
                     ),
                   ],
@@ -102,7 +105,7 @@ class _ExportDialogState extends State<ExportDialog> {
                   onTap: () => Navigator.of(context).pop(),
                   child: Icon(
                     Icons.close,
-                    color: Colors.white.withOpacity(0.5),
+                    color: p.textMuted,
                   ),
                 ),
               ],
@@ -128,7 +131,7 @@ class _ExportDialogState extends State<ExportDialog> {
                     decoration: BoxDecoration(
                       color: isSelected
                           ? format['color'].withOpacity(0.15)
-                          : const Color(0xFF0D1117),
+                          : p.surfaceAlt,
                       borderRadius: BorderRadius.circular(8),
                       border: Border.all(
                         color: isSelected
@@ -161,10 +164,10 @@ class _ExportDialogState extends State<ExportDialog> {
                                 children: [
                                   Text(
                                     format['label'],
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                       fontSize: 14,
                                       fontWeight: FontWeight.w600,
-                                      color: Colors.white,
+                                      color: p.textPrimary,
                                     ),
                                   ),
                                   const SizedBox(width: 8),
@@ -172,7 +175,7 @@ class _ExportDialogState extends State<ExportDialog> {
                                     format['extension'],
                                     style: TextStyle(
                                       fontSize: 12,
-                                      color: Colors.white.withOpacity(0.5),
+                                      color: p.textMuted,
                                     ),
                                   ),
                                 ],
@@ -182,7 +185,7 @@ class _ExportDialogState extends State<ExportDialog> {
                                 format['description'],
                                 style: TextStyle(
                                   fontSize: 12,
-                                  color: Colors.white.withOpacity(0.6),
+                                  color: p.textSecondary,
                                 ),
                               ),
                             ],
@@ -206,21 +209,21 @@ class _ExportDialogState extends State<ExportDialog> {
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
+                  Text(
                     'Bullet Formatting',
                     style: TextStyle(
                       fontSize: 13,
                       fontWeight: FontWeight.w600,
-                      color: Colors.white,
+                      color: p.textPrimary,
                     ),
                   ),
                   const SizedBox(height: 12),
                   Container(
                     decoration: BoxDecoration(
-                      color: const Color(0xFF0D1117),
+                      color: p.surfaceAlt,
                       borderRadius: BorderRadius.circular(8),
                       border: Border.all(
-                        color: Colors.white.withOpacity(0.1),
+                        color: p.border,
                       ),
                     ),
                     padding: const EdgeInsets.all(12),
@@ -228,18 +231,18 @@ class _ExportDialogState extends State<ExportDialog> {
                       children: [
                         SwitchListTile(
                           dense: true,
-                          title: const Text(
+                          title: Text(
                             'Apply Bullet Formatting',
                             style: TextStyle(
                               fontSize: 13,
-                              color: Colors.white,
+                              color: p.textPrimary,
                             ),
                           ),
                           subtitle: Text(
                             'Format lists with bullets from template',
                             style: TextStyle(
                               fontSize: 11,
-                              color: Colors.white.withOpacity(0.6),
+                              color: p.textSecondary,
                             ),
                           ),
                           value: _applyBulletFormatting,
@@ -253,23 +256,23 @@ class _ExportDialogState extends State<ExportDialog> {
                         if (_applyBulletFormatting) ...[
                           const SizedBox(height: 8),
                           Divider(
-                            color: Colors.white.withOpacity(0.1),
+                            color: p.border,
                           ),
                           const SizedBox(height: 8),
                           SwitchListTile(
                             dense: true,
-                            title: const Text(
+                            title: Text(
                               'Auto-Detect List Content',
                               style: TextStyle(
                                 fontSize: 13,
-                                color: Colors.white,
+                                color: p.textPrimary,
                               ),
                             ),
                             subtitle: Text(
                               'Automatically detect and format list items',
                               style: TextStyle(
                                 fontSize: 11,
-                                color: Colors.white.withOpacity(0.6),
+                                color: p.textSecondary,
                               ),
                             ),
                             value: _autoDetectBullets,
@@ -292,12 +295,12 @@ class _ExportDialogState extends State<ExportDialog> {
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
+                  Text(
                     'Download to Phone',
                     style: TextStyle(
                       fontSize: 13,
                       fontWeight: FontWeight.w600,
-                      color: Colors.white,
+                      color: p.textPrimary,
                     ),
                   ),
                   const SizedBox(height: 12),
@@ -329,6 +332,7 @@ class _ExportDialogState extends State<ExportDialog> {
         label: const Text('Generate QR Code'),
         style: ElevatedButton.styleFrom(
           backgroundColor: const Color(0xFF10B981),
+          foregroundColor: Colors.white,
         ),
       ),
     ),
@@ -370,18 +374,18 @@ class _ExportDialogState extends State<ExportDialog> {
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.transparent,
                       side: BorderSide(
-                        color: Colors.white.withOpacity(0.2),
+                        color: p.borderStrong,
                       ),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(6),
                       ),
                     ),
-                    child: const Text(
+                    child: Text(
                       'Cancel',
                       style: TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.w600,
-                        color: Colors.white,
+                        color: p.textPrimary,
                       ),
                     ),
                   ),
@@ -416,6 +420,7 @@ class _ExportDialogState extends State<ExportDialog> {
                     ),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: const Color(0xFF3B82F6),
+                      foregroundColor: Colors.white,
                       disabledBackgroundColor:
                           const Color(0xFF3B82F6).withOpacity(0.5),
                       shape: RoundedRectangleBorder(

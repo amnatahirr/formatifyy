@@ -1,14 +1,18 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../theme/app_theme.dart';
 import '../models/json_parse.dart';
 import '../services/image_replacement_service.dart';
 import 'image_replacement_dialog.dart';
 
-const _bg = Color(0xFF0D1117);
-const _surface = Color(0xFF161B22);
-const _surface2 = Color(0xFF1C2333);
-const _border = Color(0xFF30363D);
-const _textPri = Colors.white;
-const _textSec = Color(0xFF8B949E);
+AppPalette _ap = AppPalette.dark;
+
+Color get _bg => _ap.scaffold;
+Color get _surface => _ap.surface;
+Color get _surface2 => _ap.surfaceElevated;
+Color get _border => _ap.border;
+Color get _textPri => _ap.textPrimary;
+Color get _textSec => _ap.textSecondary;
 const _green = Color(0xFF10B981);
 const _yellow = Color(0xFFFACC15);
 const _red = Color(0xFFEF4444);
@@ -77,6 +81,7 @@ class _ImageIssueCardEnhancedState extends State<ImageIssueCardEnhanced> {
 
   @override
   Widget build(BuildContext context) {
+    _ap = context.watch<ThemeProvider>().palette;
     final rawPath = widget.issue['image_path'] as String? ?? '';
     final filename = widget.issue['current'] as String? ?? '';
     final reason = widget.issue['description'] as String? ??
@@ -131,7 +136,7 @@ class _ImageIssueCardEnhancedState extends State<ImageIssueCardEnhanced> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
+                  Text(
                     'The new image has been validated and is now part of your document.',
                     style: TextStyle(
                       color: _textSec,
@@ -141,7 +146,7 @@ class _ImageIssueCardEnhancedState extends State<ImageIssueCardEnhanced> {
                   const SizedBox(height: 8),
                   Text(
                     filename,
-                    style: const TextStyle(
+                    style: TextStyle(
                       color: _textSec,
                       fontSize: 10,
                       fontFamily: 'monospace',
@@ -188,7 +193,7 @@ class _ImageIssueCardEnhancedState extends State<ImageIssueCardEnhanced> {
                 const SizedBox(width: 8),
                 Text(
                   '$pct% confidence',
-                  style: const TextStyle(color: _textSec, fontSize: 11),
+                  style: TextStyle(color: _textSec, fontSize: 11),
                 ),
               ],
             ),
@@ -222,16 +227,16 @@ class _ImageIssueCardEnhancedState extends State<ImageIssueCardEnhanced> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(Icons.broken_image, color: _textSec, size: 28),
+                  Icon(Icons.broken_image, color: _textSec, size: 28),
                   const SizedBox(height: 6),
-                  const Text(
+                  Text(
                     'Failed to load image',
                     style: TextStyle(color: _textSec, fontSize: 11),
                   ),
                   const SizedBox(height: 4),
                   SelectableText(
                     imageUrl,
-                    style: const TextStyle(
+                    style: TextStyle(
                       color: _textSec,
                       fontSize: 9,
                       fontFamily: 'monospace',
@@ -250,12 +255,12 @@ class _ImageIssueCardEnhancedState extends State<ImageIssueCardEnhanced> {
               children: [
                 Row(
                   children: [
-                    const Icon(Icons.attach_file, color: _textSec, size: 12),
+                    Icon(Icons.attach_file, color: _textSec, size: 12),
                     const SizedBox(width: 4),
                     Expanded(
                       child: Text(
                         filename,
-                        style: const TextStyle(
+                        style: TextStyle(
                           color: _textSec,
                           fontSize: 11,
                           fontFamily: 'monospace',
@@ -270,7 +275,7 @@ class _ImageIssueCardEnhancedState extends State<ImageIssueCardEnhanced> {
                 if (reason.isNotEmpty) ...[
                   Text(
                     reason,
-                    style: const TextStyle(color: _textSec, fontSize: 11, height: 1.4),
+                    style: TextStyle(color: _textSec, fontSize: 11, height: 1.4),
                     maxLines: 4,
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -280,7 +285,7 @@ class _ImageIssueCardEnhancedState extends State<ImageIssueCardEnhanced> {
                 // Confidence bar
                 Row(
                   children: [
-                    const Text(
+                    Text(
                       'Irrelevance confidence: ',
                       style: TextStyle(color: _textSec, fontSize: 11),
                     ),
@@ -347,7 +352,7 @@ class _ImageIssueCardEnhancedState extends State<ImageIssueCardEnhanced> {
                     label: const Text('Replace Image'),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: _blue,
-                      foregroundColor: _textPri,
+                      foregroundColor: Colors.white,
                       padding: const EdgeInsets.symmetric(vertical: 10),
                     ),
                     onPressed: _showReplacementDialog,

@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../services/student_api_service.dart';
 import '../screens/student/document_feedback_screen.dart';
+import '../theme/app_theme.dart';
 
 /// Full-page notifications inbox (mobile student bottom-nav tab).
 ///
@@ -413,12 +414,13 @@ class _NotificationsPanelButtonState extends State<NotificationsPanelButton> {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.watch<ThemeProvider>().palette;
     return Container(
       key: _buttonKey,
       decoration: BoxDecoration(
-        color: const Color(0xFF0D1117),
+        color: p.surfaceAlt,
         borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: Colors.white.withOpacity(0.1)),
+        border: Border.all(color: p.border),
       ),
       child: Stack(
         clipBehavior: Clip.none,
@@ -426,7 +428,7 @@ class _NotificationsPanelButtonState extends State<NotificationsPanelButton> {
           IconButton(
             icon: const Icon(Icons.notifications_outlined),
             onPressed: _togglePanel,
-            color: Colors.white.withOpacity(0.6),
+            color: p.iconMuted,
             tooltip: 'Notifications',
           ),
           if (_unreadCount > 0)
@@ -480,20 +482,23 @@ class _NotificationsDropdown extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.watch<ThemeProvider>().palette;
     return Container(
       width: 340,
       constraints: const BoxConstraints(maxHeight: 420),
       decoration: BoxDecoration(
-        color: _card,
+        color: p.surface,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: _border),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.45),
-            blurRadius: 18,
-            offset: const Offset(0, 8),
-          ),
-        ],
+        border: Border.all(color: p.border),
+        boxShadow: p.isDark
+            ? [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.45),
+                  blurRadius: 18,
+                  offset: const Offset(0, 8),
+                ),
+              ]
+            : p.cardShadow,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -502,11 +507,11 @@ class _NotificationsDropdown extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(16, 14, 8, 10),
             child: Row(
               children: [
-                const Expanded(
+                Expanded(
                   child: Text(
                     'Notifications',
                     style: TextStyle(
-                      color: Colors.white,
+                      color: p.textPrimary,
                       fontWeight: FontWeight.w700,
                       fontSize: 14,
                     ),
@@ -514,29 +519,29 @@ class _NotificationsDropdown extends StatelessWidget {
                 ),
                 IconButton(
                   icon: loading
-                      ? const SizedBox(
+                      ? SizedBox(
                           width: 16,
                           height: 16,
                           child: CircularProgressIndicator(
                             strokeWidth: 2,
-                            color: Colors.white54,
+                            color: p.accent,
                           ),
                         )
                       : const Icon(Icons.refresh, size: 18),
-                  color: Colors.white54,
+                  color: p.iconMuted,
                   tooltip: 'Refresh',
                   onPressed: loading ? null : onRefresh,
                 ),
               ],
             ),
           ),
-          const Divider(height: 1, color: _border),
+          Divider(height: 1, color: p.border),
           Expanded(
             child: loading && notifications.isEmpty
-                ? const Center(
+                ? Center(
                     child: Padding(
-                      padding: EdgeInsets.all(24),
-                      child: CircularProgressIndicator(color: _accent, strokeWidth: 2),
+                      padding: const EdgeInsets.all(24),
+                      child: CircularProgressIndicator(color: p.accent, strokeWidth: 2),
                     ),
                   )
                 : error != null && notifications.isEmpty
@@ -547,7 +552,7 @@ class _NotificationsDropdown extends StatelessWidget {
                             error!,
                             textAlign: TextAlign.center,
                             style: TextStyle(
-                              color: Colors.white.withOpacity(0.65),
+                              color: p.textSecondary,
                               fontSize: 12,
                             ),
                           ),
@@ -560,7 +565,7 @@ class _NotificationsDropdown extends StatelessWidget {
                               child: Text(
                                 'No notifications yet.',
                                 style: TextStyle(
-                                  color: Colors.white.withOpacity(0.5),
+                                  color: p.textMuted,
                                   fontSize: 13,
                                 ),
                               ),
@@ -570,7 +575,7 @@ class _NotificationsDropdown extends StatelessWidget {
                             padding: const EdgeInsets.symmetric(vertical: 8),
                             itemCount: notifications.length,
                             separatorBuilder: (_, __) =>
-                                const Divider(height: 1, color: _border),
+                                Divider(height: 1, color: p.border),
                             itemBuilder: (context, index) {
                               final n = notifications[index];
                               return _NotificationTile(
@@ -603,6 +608,7 @@ class _NotificationTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.watch<ThemeProvider>().palette;
     final unread = notification['is_read'] != true;
     final title = (notification['title'] ?? '').toString();
     final message = (notification['message'] ?? '').toString();
@@ -611,7 +617,7 @@ class _NotificationTile extends StatelessWidget {
     return InkWell(
       onTap: onTap,
       child: Container(
-        color: unread ? const Color(0xFF3B82F6).withOpacity(0.08) : null,
+        color: unread ? p.accentSoft : null,
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -621,8 +627,8 @@ class _NotificationTile extends StatelessWidget {
                 margin: const EdgeInsets.only(top: 5, right: 8),
                 width: 7,
                 height: 7,
-                decoration: const BoxDecoration(
-                  color: Color(0xFF3B82F6),
+                decoration: BoxDecoration(
+                  color: p.accent,
                   shape: BoxShape.circle,
                 ),
               )
@@ -635,7 +641,7 @@ class _NotificationTile extends StatelessWidget {
                   Text(
                     title,
                     style: TextStyle(
-                      color: Colors.white,
+                      color: p.textPrimary,
                       fontWeight: unread ? FontWeight.w700 : FontWeight.w500,
                       fontSize: 13,
                     ),
@@ -647,7 +653,7 @@ class _NotificationTile extends StatelessWidget {
                       maxLines: 3,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                        color: Colors.white.withOpacity(0.65),
+                        color: p.textSecondary,
                         fontSize: 12,
                         height: 1.35,
                       ),
@@ -660,7 +666,7 @@ class _NotificationTile extends StatelessWidget {
                           ? createdAt.substring(0, 16)
                           : createdAt,
                       style: TextStyle(
-                        color: Colors.white.withOpacity(0.35),
+                        color: p.textMuted,
                         fontSize: 11,
                       ),
                     ),

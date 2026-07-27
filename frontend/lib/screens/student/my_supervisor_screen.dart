@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../../providers/auth_provider.dart';
 import '../../providers/fyp_provider.dart';
+import '../../theme/app_theme.dart';
 
 /// Shows the student's latest assignment_requests status (email-matched).
 class MySupervisorScreen extends StatefulWidget {
@@ -16,11 +17,9 @@ class MySupervisorScreen extends StatefulWidget {
 }
 
 class _MySupervisorScreenState extends State<MySupervisorScreen> {
+  AppPalette get _p => context.watch<ThemeProvider>().palette;
   String? _error;
   bool _loading = true;
-
-  static const _card = Color(0xFF161B22);
-  static const _border = Color(0x22FFFFFF);
   static const _accent = Color(0xFF3B82F6);
 
   @override
@@ -77,7 +76,7 @@ class _MySupervisorScreenState extends State<MySupervisorScreen> {
   @override
   Widget build(BuildContext context) {
     if (_loading) {
-      return const Center(child: CircularProgressIndicator(color: _accent));
+      return Center(child: CircularProgressIndicator(color: _accent));
     }
     if (_error != null) {
       return Center(
@@ -88,7 +87,7 @@ class _MySupervisorScreenState extends State<MySupervisorScreen> {
             children: [
               Text(
                 _error!,
-                style: TextStyle(color: Colors.white.withOpacity(0.75)),
+                style: TextStyle(color: _p.textSecondary),
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 16),
@@ -105,14 +104,14 @@ class _MySupervisorScreenState extends State<MySupervisorScreen> {
 
     return RefreshIndicator(
       color: _accent,
-      backgroundColor: _card,
+      backgroundColor: _p.surface,
       onRefresh: _load,
       child: ListView(
         padding: const EdgeInsets.all(32),
         children: [
           Text(
             'Your FYP supervisor assignment status.',
-            style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 14),
+            style: TextStyle(color: _p.textSecondary, fontSize: 14),
           ),
           const SizedBox(height: 22),
           if (!found || status.isEmpty)
@@ -134,16 +133,16 @@ class _MySupervisorScreenState extends State<MySupervisorScreen> {
     return Container(
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
-        color: _card,
+        color: _p.surface,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: _border),
+        border: Border.all(color: _p.border),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
             'No supervisor request yet.',
-            style: TextStyle(color: Colors.white.withOpacity(0.85), height: 1.45),
+            style: TextStyle(color: _p.textSecondary, height: 1.45),
           ),
           const SizedBox(height: 14),
           ElevatedButton.icon(
@@ -169,7 +168,7 @@ class _MySupervisorScreenState extends State<MySupervisorScreen> {
       child: Text(
         'Group: ${data['group_name'] ?? '—'}\n'
         'Project: ${data['project_title'] ?? '—'}',
-        style: TextStyle(color: Colors.white.withOpacity(0.7), height: 1.5),
+        style: TextStyle(color: _p.textSecondary, height: 1.5),
       ),
     );
   }
@@ -185,7 +184,7 @@ class _MySupervisorScreenState extends State<MySupervisorScreen> {
         children: [
           Text(
             reason.isEmpty ? 'No rejection reason provided.' : reason,
-            style: TextStyle(color: Colors.white.withOpacity(0.75), height: 1.45),
+            style: TextStyle(color: _p.textSecondary, height: 1.45),
           ),
           const SizedBox(height: 16),
           ElevatedButton.icon(
@@ -256,9 +255,9 @@ class _MySupervisorScreenState extends State<MySupervisorScreen> {
     return Container(
       padding: const EdgeInsets.all(22),
       decoration: BoxDecoration(
-        color: _card,
+        color: _p.surface,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: _border),
+        border: Border.all(color: _p.border),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -280,8 +279,8 @@ class _MySupervisorScreenState extends State<MySupervisorScreen> {
                   children: [
                     Text(
                       title,
-                      style: const TextStyle(
-                        color: Colors.white,
+                      style: TextStyle(
+                        color: _p.textPrimary,
                         fontSize: 16,
                         fontWeight: FontWeight.w700,
                       ),
@@ -291,7 +290,7 @@ class _MySupervisorScreenState extends State<MySupervisorScreen> {
                       Text(
                         subtitle,
                         style: TextStyle(
-                          color: Colors.white.withOpacity(0.55),
+                          color: _p.textSecondary,
                           fontSize: 12,
                         ),
                       ),
@@ -318,13 +317,13 @@ class _MySupervisorScreenState extends State<MySupervisorScreen> {
             width: 100,
             child: Text(
               label,
-              style: TextStyle(color: Colors.white.withOpacity(0.45), fontSize: 12),
+              style: TextStyle(color: _p.textMuted, fontSize: 12),
             ),
           ),
           Expanded(
             child: Text(
               value,
-              style: const TextStyle(color: Colors.white, fontSize: 13),
+              style: TextStyle(color: _p.textPrimary, fontSize: 13),
             ),
           ),
         ],

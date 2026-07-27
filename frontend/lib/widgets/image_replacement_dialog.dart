@@ -1,15 +1,19 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../theme/app_theme.dart';
 import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import '../models/json_parse.dart';
 import '../services/image_replacement_service.dart';
 
-const _bg = Color(0xFF0D1117);
-const _surface = Color(0xFF161B22);
-const _surface2 = Color(0xFF1C2333);
-const _border = Color(0xFF30363D);
-const _textPri = Colors.white;
-const _textSec = Color(0xFF8B949E);
+AppPalette _ap = AppPalette.dark;
+
+Color get _bg => _ap.scaffold;
+Color get _surface => _ap.surface;
+Color get _surface2 => _ap.surfaceElevated;
+Color get _border => _ap.border;
+Color get _textPri => _ap.textPrimary;
+Color get _textSec => _ap.textSecondary;
 const _green = Color(0xFF10B981);
 const _yellow = Color(0xFFFACC15);
 const _red = Color(0xFFEF4444);
@@ -122,6 +126,7 @@ class _ImageReplacementDialogState extends State<ImageReplacementDialog> {
 
   @override
   Widget build(BuildContext context) {
+    _ap = context.watch<ThemeProvider>().palette;
     return Dialog(
       backgroundColor: _surface,
       child: Container(
@@ -149,7 +154,7 @@ class _ImageReplacementDialogState extends State<ImageReplacementDialog> {
                 children: [
                   const Icon(Icons.image_search, color: _yellow, size: 20),
                   const SizedBox(width: 8),
-                  const Expanded(
+                  Expanded(
                     child: Text(
                       'Replace Image',
                       style: TextStyle(
@@ -161,7 +166,7 @@ class _ImageReplacementDialogState extends State<ImageReplacementDialog> {
                   ),
                   if (!_isLoading)
                     IconButton(
-                      icon: const Icon(Icons.close, color: _textSec),
+                      icon: Icon(Icons.close, color: _textSec),
                       onPressed: () => Navigator.pop(context),
                       padding: EdgeInsets.zero,
                       constraints: const BoxConstraints(),
@@ -182,14 +187,14 @@ class _ImageReplacementDialogState extends State<ImageReplacementDialog> {
                       border: Border.all(color: _border, width: 1),
                       borderRadius: BorderRadius.circular(6),
                     ),
-                    child: const Text(
+                    child: Text(
                       'Select a new image. It will be embedded in your document and checked for relevance.',
                       style: TextStyle(color: _textSec, fontSize: 12),
                     ),
                   ),
                   const SizedBox(height: 16),
                   if (_showPreview && _selectedImage != null) ...[
-                    const Text(
+                    Text(
                       'New Image',
                       style: TextStyle(
                         color: _textPri,
@@ -210,7 +215,7 @@ class _ImageReplacementDialogState extends State<ImageReplacementDialog> {
                     const SizedBox(height: 8),
                     Text(
                       _selectedImagePath ?? 'Unknown file',
-                      style: const TextStyle(
+                      style: TextStyle(
                         color: _textSec,
                         fontSize: 10,
                         fontFamily: 'monospace',
@@ -245,7 +250,7 @@ class _ImageReplacementDialogState extends State<ImageReplacementDialog> {
                   if (!_isLoading)
                     TextButton(
                       onPressed: () => Navigator.pop(context),
-                      child: const Text('Cancel', style: TextStyle(color: _textSec)),
+                      child: Text('Cancel', style: TextStyle(color: _textSec)),
                     ),
                   const SizedBox(width: 8),
                   if (_selectedImage == null)
@@ -261,7 +266,7 @@ class _ImageReplacementDialogState extends State<ImageReplacementDialog> {
                   else
                     ElevatedButton.icon(
                       icon: _isLoading
-                          ? const SizedBox(
+                          ? SizedBox(
                               width: 16,
                               height: 16,
                               child: CircularProgressIndicator(
