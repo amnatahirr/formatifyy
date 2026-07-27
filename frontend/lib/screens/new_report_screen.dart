@@ -2988,8 +2988,12 @@ Future<void> _handleUploadFromPhone(int userId) async {
                               : _p.border,
                         ),
                       ),
-                      padding: const EdgeInsets.all(12),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 14,
+                      ),
                       child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.center,
                         children: [
                           Icon(
                             isSelected
@@ -3002,28 +3006,54 @@ Future<void> _handleUploadFromPhone(int userId) async {
                           ),
                           const SizedBox(width: 12),
                           Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  template['name'] ?? 'Unnamed Template',
-                                  style: TextStyle(
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.w500,
-                                    color: _p.textPrimary,
-                                  ),
-                                ),
-                                if (template['description'] != null)
-                                  Text(
-                                    template['description'],
+                            child: Builder(
+                              builder: (context) {
+                                final name = (template['name'] ??
+                                        'Unnamed Template')
+                                    .toString();
+                                final description =
+                                    (template['description'] ?? '')
+                                        .toString()
+                                        .trim();
+                                if (description.isEmpty) {
+                                  return Text(
+                                    name,
                                     style: TextStyle(
-                                      fontSize: 12,
-                                      color: _p.textSecondary,
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w500,
+                                      height: 1.25,
+                                      color: _p.textPrimary,
                                     ),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                              ],
+                                  );
+                                }
+                                return Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      name,
+                                      style: TextStyle(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w500,
+                                        height: 1.25,
+                                        color: _p.textPrimary,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      description,
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        height: 1.25,
+                                        color: _p.textSecondary,
+                                      ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ],
+                                );
+                              },
                             ),
                           ),
                         ],
