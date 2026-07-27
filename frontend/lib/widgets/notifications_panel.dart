@@ -196,6 +196,10 @@ class _StudentNotificationsPageState extends State<StudentNotificationsPage> {
 }
 
 /// AppBar notifications dropdown — lists rows from `notifications` by recipient_email.
+///
+/// Uses a screen-positioned [OverlayEntry] (not CompositedTransformFollower) so
+/// parent rebuilds (e.g. document list fetch) cannot trigger RenderFollowerLayer
+/// / debugNeedsLayout assertion loops.
 class NotificationsPanelButton extends StatefulWidget {
   const NotificationsPanelButton({super.key});
 
@@ -206,16 +210,15 @@ class NotificationsPanelButton extends StatefulWidget {
 
 class _NotificationsPanelButtonState extends State<NotificationsPanelButton> {
   final StudentApiService _api = StudentApiService();
-  final LayerLink _layerLink = LayerLink();
+  final GlobalKey _buttonKey = GlobalKey();
   OverlayEntry? _overlay;
   List<Map<String, dynamic>> _notifications = const [];
   int _unreadCount = 0;
   bool _loading = false;
   String? _error;
+  Offset _panelOffset = Offset.zero;
 
-  static const _card = Color(0xFF161B22);
-  static const _border = Color(0x22FFFFFF);
-  static const _accent = Color(0xFF3B82F6);
+  static const double _panelWidth = 340;
 
   @override
   void initState() {
@@ -225,7 +228,7 @@ class _NotificationsPanelButtonState extends State<NotificationsPanelButton> {
 
   @override
   void dispose() {
-    _removeOverlay();
+    _removeOverlay(updateState: false);
     super.dispose();
   }
 
@@ -237,38 +240,77 @@ class _NotificationsPanelButtonState extends State<NotificationsPanelButton> {
 
   int? get _userId => context.read<AuthProvider>().userId;
 
+  bool get _panelOpen => _overlay != null;
+
+  void _syncOverlay() {
+    if (_overlay == null) return;
+    // Rebuild only the overlay entry — never setState the button while open.
+    _overlay!.markNeedsBuild();
+  }
+
   Future<void> _refresh({bool silent = false}) async {
     final email = _email;
     final userId = _userId;
     if (email == null || userId == null) return;
 
     if (!silent) {
-      setState(() {
-        _loading = true;
-        _error = null;
-      });
+      _loading = true;
+      _error = null;
+      if (_panelOpen) {
+        _syncOverlay();
+      } else if (mounted) {
+        setState(() {});
+      }
     }
+
     try {
       final data = await _api.fetchNotifications(userId: userId, email: email);
       if (!mounted) return;
-      setState(() {
-        _notifications = List<Map<String, dynamic>>.from(
-          (data['notifications'] as List? ?? const []).map(
-            (e) => Map<String, dynamic>.from(e as Map),
-          ),
-        );
-        _unreadCount = (data['unread_count'] as num?)?.toInt() ??
-            _notifications.where((n) => n['is_read'] != true).length;
-        _error = null;
-      });
-      _overlay?.markNeedsBuild();
+      _notifications = List<Map<String, dynamic>>.from(
+        (data['notifications'] as List? ?? const []).map(
+          (e) => Map<String, dynamic>.from(e as Map),
+        ),
+      );
+      _unreadCount = (data['unread_count'] as num?)?.toInt() ??
+          _notifications.where((n) => n['is_read'] != true).length;
+      _error = null;
+      _loading = false;
+
+      if (_panelOpen) {
+        // Update dropdown only; badge refreshes when the panel closes.
+        _syncOverlay();
+      } else if (mounted) {
+        setState(() {});
+      }
     } catch (e) {
       if (!mounted) return;
-      setState(() => _error = e.toString());
-      _overlay?.markNeedsBuild();
-    } finally {
-      if (mounted && !silent) setState(() => _loading = false);
+      _error = e.toString();
+      _loading = false;
+      if (_panelOpen) {
+        _syncOverlay();
+      } else {
+        setState(() {});
+      }
     }
+  }
+
+  bool _computePanelOffset() {
+    final box = _buttonKey.currentContext?.findRenderObject() as RenderBox?;
+    if (box == null || !box.hasSize) return false;
+    final origin = box.localToGlobal(Offset.zero);
+    final size = box.size;
+    final screen = MediaQuery.sizeOf(context);
+    const gap = 6.0;
+    const maxHeight = 420.0;
+
+    var left = origin.dx + size.width - _panelWidth;
+    left = left.clamp(8.0, screen.width - _panelWidth - 8.0);
+    var top = origin.dy + size.height + gap;
+    if (top + maxHeight > screen.height - 8) {
+      top = (origin.dy - maxHeight - gap).clamp(8.0, screen.height - maxHeight - 8.0);
+    }
+    _panelOffset = Offset(left, top);
+    return true;
   }
 
   void _togglePanel() {
@@ -276,41 +318,49 @@ class _NotificationsPanelButtonState extends State<NotificationsPanelButton> {
       _removeOverlay();
       return;
     }
-    _refresh();
+    if (!_computePanelOffset()) return;
+
     _overlay = OverlayEntry(
-      builder: (context) => Stack(
-        children: [
-          Positioned.fill(
-            child: GestureDetector(
-              behavior: HitTestBehavior.translucent,
-              onTap: _removeOverlay,
-              child: const SizedBox.expand(),
-            ),
-          ),
-          CompositedTransformFollower(
-            link: _layerLink,
-            showWhenUnlinked: false,
-            offset: const Offset(-280, 44),
-            child: Material(
-              color: Colors.transparent,
-              child: _NotificationsDropdown(
-                notifications: _notifications,
-                loading: _loading,
-                error: _error,
-                onRefresh: () => _refresh(),
-                onMarkRead: _markRead,
+      builder: (overlayContext) {
+        return Stack(
+          children: [
+            Positioned.fill(
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: _removeOverlay,
+                child: const ColoredBox(color: Color(0x01000000)),
               ),
             ),
-          ),
-        ],
-      ),
+            Positioned(
+              left: _panelOffset.dx,
+              top: _panelOffset.dy,
+              child: Material(
+                color: Colors.transparent,
+                elevation: 0,
+                child: _NotificationsDropdown(
+                  notifications: _notifications,
+                  loading: _loading,
+                  error: _error,
+                  onRefresh: () => _refresh(),
+                  onMarkRead: _markRead,
+                  onOpenComment: _openDocumentComment,
+                ),
+              ),
+            ),
+          ],
+        );
+      },
     );
-    Overlay.of(context).insert(_overlay!);
+    Overlay.of(context, rootOverlay: true).insert(_overlay!);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _panelOpen) _refresh();
+    });
   }
 
-  void _removeOverlay() {
+  void _removeOverlay({bool updateState = true}) {
     _overlay?.remove();
     _overlay = null;
+    if (updateState && mounted) setState(() {});
   }
 
   Future<void> _markRead(int id) async {
@@ -325,53 +375,83 @@ class _NotificationsPanelButtonState extends State<NotificationsPanelButton> {
       );
       await _refresh(silent: true);
     } catch (e) {
-      if (mounted) setState(() => _error = e.toString());
+      if (!mounted) return;
+      _error = e.toString();
+      _syncOverlay();
     }
+  }
+
+  int? _asInt(dynamic value) {
+    if (value is int) return value;
+    if (value == null) return null;
+    return int.tryParse(value.toString());
+  }
+
+  Future<void> _openDocumentComment(Map<String, dynamic> n) async {
+    final type = (n['type'] ?? '').toString().toLowerCase();
+    final related = (n['related_type'] ?? '').toString().toLowerCase();
+    final isComment = type == 'document_comment' || related == 'document_comment';
+    if (!isComment) return;
+
+    final groupId = _asInt(n['group_id']);
+    final documentId = _asInt(n['document_id']);
+    final commentId = _asInt(n['comment_id'] ?? n['related_id']);
+    if (groupId == null || documentId == null) return;
+
+    _removeOverlay();
+    if (!mounted) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => DocumentFeedbackScreen(
+          groupId: groupId,
+          documentId: documentId,
+          focusCommentId: commentId,
+        ),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    return CompositedTransformTarget(
-      link: _layerLink,
-      child: Container(
-        decoration: BoxDecoration(
-          color: const Color(0xFF0D1117),
-          borderRadius: BorderRadius.circular(6),
-          border: Border.all(color: Colors.white.withOpacity(0.1)),
-        ),
-        child: Stack(
-          clipBehavior: Clip.none,
-          children: [
-            IconButton(
-              icon: const Icon(Icons.notifications_outlined),
-              onPressed: _togglePanel,
-              color: Colors.white.withOpacity(0.6),
-              tooltip: 'Notifications',
-            ),
-            if (_unreadCount > 0)
-              Positioned(
-                right: 8,
-                top: 8,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFEF4444),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  constraints: const BoxConstraints(minWidth: 16),
-                  child: Text(
-                    _unreadCount > 9 ? '9+' : '$_unreadCount',
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 10,
-                      fontWeight: FontWeight.w700,
-                    ),
+    return Container(
+      key: _buttonKey,
+      decoration: BoxDecoration(
+        color: const Color(0xFF0D1117),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: Colors.white.withOpacity(0.1)),
+      ),
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          IconButton(
+            icon: const Icon(Icons.notifications_outlined),
+            onPressed: _togglePanel,
+            color: Colors.white.withOpacity(0.6),
+            tooltip: 'Notifications',
+          ),
+          if (_unreadCount > 0)
+            Positioned(
+              right: 8,
+              top: 8,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEF4444),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                constraints: const BoxConstraints(minWidth: 16),
+                child: Text(
+                  _unreadCount > 9 ? '9+' : '$_unreadCount',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
                   ),
                 ),
               ),
-          ],
-        ),
+            ),
+        ],
       ),
     );
   }
@@ -383,6 +463,7 @@ class _NotificationsDropdown extends StatelessWidget {
   final String? error;
   final VoidCallback onRefresh;
   final Future<void> Function(int id) onMarkRead;
+  final Future<void> Function(Map<String, dynamic> n) onOpenComment;
 
   const _NotificationsDropdown({
     required this.notifications,
@@ -390,6 +471,7 @@ class _NotificationsDropdown extends StatelessWidget {
     required this.error,
     required this.onRefresh,
     required this.onMarkRead,
+    required this.onOpenComment,
   });
 
   static const _card = Color(0xFF161B22);
@@ -431,24 +513,33 @@ class _NotificationsDropdown extends StatelessWidget {
                   ),
                 ),
                 IconButton(
-                  icon: const Icon(Icons.refresh, size: 18),
+                  icon: loading
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white54,
+                          ),
+                        )
+                      : const Icon(Icons.refresh, size: 18),
                   color: Colors.white54,
                   tooltip: 'Refresh',
-                  onPressed: onRefresh,
+                  onPressed: loading ? null : onRefresh,
                 ),
               ],
             ),
           ),
           const Divider(height: 1, color: _border),
           Expanded(
-            child: loading
+            child: loading && notifications.isEmpty
                 ? const Center(
                     child: Padding(
                       padding: EdgeInsets.all(24),
                       child: CircularProgressIndicator(color: _accent, strokeWidth: 2),
                     ),
                   )
-                : error != null
+                : error != null && notifications.isEmpty
                     ? Center(
                         child: Padding(
                           padding: const EdgeInsets.all(20),
@@ -484,10 +575,12 @@ class _NotificationsDropdown extends StatelessWidget {
                               final n = notifications[index];
                               return _NotificationTile(
                                 notification: n,
-                                onTap: () {
-                                  if (n['is_read'] != true) {
-                                    onMarkRead(n['id'] as int);
+                                onTap: () async {
+                                  final id = n['id'];
+                                  if (n['is_read'] != true && id is int) {
+                                    await onMarkRead(id);
                                   }
+                                  await onOpenComment(n);
                                 },
                               );
                             },
