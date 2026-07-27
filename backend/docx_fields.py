@@ -41,6 +41,14 @@ _NUMBERING_RE = re.compile(r"^(\d+(?:\.\d+)*)\.?\s+(.+)$")
 _BODY_SENTENCE_RE = re.compile(r"[.!?]\s+\S")
 _MAX_TOC_HEADING_WORDS = 10
 _MAX_TOC_HEADING_CHARS = 90
+# Reject clause fragments wrongly promoted to headings
+_INCOMPLETE_HEADING_TAIL_RE = re.compile(
+    r"\b(?:are|is|was|were|be|been|being|to|of|the|a|an|and|or|for|with|by|from|"
+    r"in|on|at|as|that|which|who|their|its|our|my)$",
+    re.IGNORECASE,
+)
+# Accidental outline numbers pasted onto body prose ("6. Long paragraph…")
+_LEADING_OUTLINE_NUM_RE = re.compile(r"^\s*(\d{1,3})\.\s+(\S.*)$")
 
 # Image detection tags (modern DrawingML + legacy VML)
 BLIP_TAG = "{http://schemas.openxmlformats.org/drawingml/2006/main}blip"
@@ -112,7 +120,12 @@ def _append_field_runs(
         paragraph_el.append(run_el)
 
 
-def _append_seq_field_runs(paragraph_el: OxmlElement, seq_name: str) -> None:
+def _append_seq_field_runs(
+    paragraph_el: OxmlElement,
+    seq_name: str,
+    *,
+    display_number: int = 1,
+) -> None:
     """Append SEQ \\* ARABIC field runs for Table/Figure numbering."""
     instruction = f"SEQ {seq_name} \\* ARABIC"
     r_begin = OxmlElement("w:r")
@@ -133,7 +146,7 @@ def _append_seq_field_runs(paragraph_el: OxmlElement, seq_name: str) -> None:
 
     r_result = OxmlElement("w:r")
     t = OxmlElement("w:t")
-    t.text = "1"
+    t.text = str(max(1, int(display_number)))
     r_result.append(t)
 
     r_end = OxmlElement("w:r")
@@ -206,6 +219,221 @@ def ensure_update_fields_on_open(doc) -> None:
         update = OxmlElement("w:updateFields")
         settings_el.append(update)
     update.set(qn("w:val"), "true")
+
+
+def clear_numbering_from_heading_styles(doc) -> int:
+    """
+    Remove auto-numbering (w:numPr) from Heading / Title style definitions.
+
+    Student templates often link Heading 1–3 to a multilevel outline list, which
+    produces '5. Table of Contents' and continues 6./7./8. onto body paragraphs.
+    Formatify applies hierarchical numbers as plain text instead.
+    """
+    cleared = 0
+    try:
+        styles_root = doc.styles.element
+    except Exception:
+        return 0
+
+    for style in styles_root.findall(qn("w:style")):
+        style_id = (style.get(qn("w:styleId")) or "").lower()
+        name_el = style.find(qn("w:name"))
+        name = ((name_el.get(qn("w:val")) if name_el is not None else "") or "").lower()
+        if not (
+            style_id.startswith("heading")
+            or name.startswith("heading")
+            or style_id == "title"
+            or name == "title"
+        ):
+            continue
+        p_pr = style.find(qn("w:pPr"))
+        if p_pr is None:
+            continue
+        num_pr = p_pr.find(qn("w:numPr"))
+        if num_pr is not None:
+            p_pr.remove(num_pr)
+            cleared += 1
+    return cleared
+
+
+def _numpr_points_to_bullet(doc, num_pr: OxmlElement) -> bool:
+    """True when paragraph numPr resolves to a bullet (not decimal outline)."""
+    num_id_el = num_pr.find(qn("w:numId"))
+    if num_id_el is None:
+        return False
+    try:
+        num_id = num_id_el.get(qn("w:val"))
+    except Exception:
+        return False
+    try:
+        numbering = doc.part.numbering_part.numbering_definitions._numbering
+    except Exception:
+        return False
+
+    abstract_id = None
+    for num in numbering.findall(qn("w:num")):
+        if num.get(qn("w:numId")) == num_id:
+            abs_ref = num.find(qn("w:abstractNumId"))
+            if abs_ref is not None:
+                abstract_id = abs_ref.get(qn("w:val"))
+            break
+    if abstract_id is None:
+        return False
+
+    for abs_num in numbering.findall(qn("w:abstractNum")):
+        if abs_num.get(qn("w:abstractNumId")) != abstract_id:
+            continue
+        for lvl in abs_num.findall(qn("w:lvl")):
+            fmt = lvl.find(qn("w:numFmt"))
+            if fmt is not None and (fmt.get(qn("w:val")) or "").lower() == "bullet":
+                return True
+    return False
+
+
+def strip_accidental_body_outline_numbering(doc) -> Dict[str, int]:
+    """
+    Remove Word outline/decimal list numbering from body prose paragraphs.
+
+    Keeps genuine bullet lists. Also strips leading '6. ' / '7. ' text prefixes
+    from long Normal paragraphs (outline numbers that leaked into body text).
+    """
+    from reformatter import _set_paragraph_text_preserve_style
+
+    stats = {"numpr_removed": 0, "text_prefixes_stripped": 0, "false_headings_demoted": 0}
+    body_start = find_formatify_body_start_element(doc)
+
+    for para in list(doc.paragraphs):
+        if _paragraph_in_generated_list(para):
+            continue
+
+        text = (para.text or "").strip()
+        if not text:
+            continue
+
+        is_meta = _is_meta_list_heading(text)
+        # Meta list titles can sit before body-start; always clean them
+        if is_meta:
+            p_pr = para._element.find(qn("w:pPr"))
+            num_pr = p_pr.find(qn("w:numPr")) if p_pr is not None else None
+            if num_pr is not None and p_pr is not None:
+                p_pr.remove(num_pr)
+                stats["numpr_removed"] += 1
+            cleaned = _strip_numbering_prefix(text)
+            if cleaned and cleaned != text:
+                _set_paragraph_text_preserve_style(para, cleaned)
+                stats["text_prefixes_stripped"] += 1
+            continue
+
+        if _paragraph_is_before_body_start(doc, para, body_start):
+            continue
+
+        style_name = ((para.style.name or "") if para.style else "").lower()
+        level = _heading_level_from_paragraph(para)
+        is_heading = "heading" in style_name or level is not None
+
+        # Demote false headings that are really incomplete sentences / body prose
+        if is_heading and not _is_valid_toc_source_heading(text):
+            _demote_paragraph_from_heading(para)
+            stats["false_headings_demoted"] += 1
+            style_name = ((para.style.name or "") if para.style else "").lower()
+            level = _heading_level_from_paragraph(para)
+            is_heading = "heading" in style_name or level is not None
+
+        p_pr = para._element.find(qn("w:pPr"))
+        num_pr = p_pr.find(qn("w:numPr")) if p_pr is not None else None
+
+        if is_heading:
+            if num_pr is not None and p_pr is not None:
+                p_pr.remove(num_pr)
+                stats["numpr_removed"] += 1
+            continue
+
+        # Strip non-bullet list numbering from body paragraphs
+        if num_pr is not None and p_pr is not None:
+            if not _numpr_points_to_bullet(doc, num_pr):
+                p_pr.remove(num_pr)
+                stats["numpr_removed"] += 1
+                # Also drop List Paragraph style when it was only for outline nums
+                if "list" in style_name:
+                    try:
+                        para.style = doc.styles["Normal"]
+                    except Exception:
+                        pass
+
+        # Strip leading outline digits from long prose ("6. The processing module…")
+        m = _LEADING_OUTLINE_NUM_RE.match(text)
+        if not m:
+            continue
+        remainder = m.group(2).strip()
+        word_count = len(remainder.split())
+        # Short items may be intentional numbered lists typed as plain text
+        if word_count < 8:
+            continue
+        _set_paragraph_text_preserve_style(para, remainder)
+        stats["text_prefixes_stripped"] += 1
+
+    return stats
+
+
+def estimate_body_page_numbers(doc) -> Dict[OxmlElement, int]:
+    """
+    Approximate Arabic page numbers for body paragraphs (1-based from body start).
+
+    Used as PAGEREF field results so TOC/LOF show useful pages without Word
+    having updated fields yet. Word can still refresh them on open.
+    """
+    CHARS_PER_PAGE = 2100
+    IMAGE_CHARS = 900
+    TABLE_CHARS = 500
+
+    body_start = find_formatify_body_start_element(doc)
+    pages: Dict[OxmlElement, int] = {}
+    page = 1
+    chars_on_page = 0
+    past_body = body_start is None
+
+    for child in list(doc.element.body):
+        if not past_body:
+            if child is body_start or (
+                child.tag == qn("w:p")
+                and any(
+                    bm.get(qn("w:name")) == FORMATIFY_BODY_START_BOOKMARK
+                    for bm in child.iter(qn("w:bookmarkStart"))
+                )
+            ):
+                past_body = True
+                page = 1
+                chars_on_page = 0
+            else:
+                continue
+
+        if child.tag == qn("w:tbl"):
+            chars_on_page += TABLE_CHARS
+            if chars_on_page >= CHARS_PER_PAGE:
+                page += 1
+                chars_on_page = 0
+            continue
+
+        if child.tag != qn("w:p"):
+            continue
+
+        if _paragraph_has_page_break(child):
+            # Break ends the current page; following content starts next
+            pages[child] = page
+            page += 1
+            chars_on_page = 0
+            continue
+
+        pages[child] = page
+        text_len = len(_paragraph_plain_text(child))
+        chars_on_page += max(50, text_len)
+        if list(child.iter(BLIP_TAG)) or list(child.iter(W_DRAWING_TAG)):
+            chars_on_page += IMAGE_CHARS
+        if chars_on_page >= CHARS_PER_PAGE:
+            page += 1
+            chars_on_page = 0
+
+    return pages
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -309,7 +537,12 @@ def attach_figure_caption_below_image(
 
     Handles layouts where body text (or a stray '.') sits between the picture
     and an existing 'Figure N: …' caption — moves that caption up.
+
+    Cover / Project Details images are never captioned (returns img_para unchanged).
     """
+    if is_paragraph_in_cover_or_info(doc, img_para):
+        return img_para
+
     strip_junk_text_from_image_paragraph(img_para)
     try:
         img_para.paragraph_format.keep_with_next = True
@@ -441,6 +674,10 @@ def _is_valid_toc_source_heading(text: str) -> bool:
     if _BODY_SENTENCE_RE.search(body):
         return False
 
+    # Incomplete clauses ("The specific objectives of the project are")
+    if _INCOMPLETE_HEADING_TAIL_RE.search(body.rstrip()):
+        return False
+
     if "/" in body and len(body.split()) > 6:
         return False
 
@@ -480,8 +717,22 @@ def _demote_paragraph_from_heading(para) -> None:
 def _style_meta_list_heading(para, doc, formatting_rules: Optional[Dict[str, Any]] = None) -> None:
     """Visually style front-matter list headings without Word outline levels."""
     from docx.shared import Pt
+    from reformatter import _set_paragraph_text_preserve_style
 
     _demote_paragraph_from_heading(para)
+
+    # Never keep "5. Table of Contents" — strip outline / hierarchical prefixes
+    raw = (para.text or "").strip()
+    cleaned = _strip_numbering_prefix(raw)
+    if cleaned and cleaned != raw:
+        _set_paragraph_text_preserve_style(para, cleaned)
+
+    # Remove Word auto-numbering (style-linked or paragraph-level)
+    p_pr = para._element.get_or_add_pPr()
+    num_pr = p_pr.find(qn("w:numPr"))
+    if num_pr is not None:
+        p_pr.remove(num_pr)
+
     try:
         para.style = doc.styles["Title"]
     except Exception:
@@ -515,9 +766,6 @@ def sanitize_document_headings_for_lists(
     body_start = find_formatify_body_start_element(doc)
 
     for para in doc.paragraphs:
-        # Leave admin cover / info pages untouched
-        if _paragraph_is_before_body_start(doc, para, body_start):
-            continue
         text = para.text.strip()
         if not text:
             continue
@@ -528,9 +776,16 @@ def sanitize_document_headings_for_lists(
             pattern.match(raw) or pattern.match(normalized)
             for pattern in _META_TOC_HEADINGS
         )
+
+        # TOC/LOF/LOT titles often sit BEFORE the body bookmark (lists zone).
+        # Always restyle them — never leave "5. Table of Contents".
         if is_meta:
             _style_meta_list_heading(para, doc, formatting_rules)
             stats["meta_styled"] += 1
+            continue
+
+        # Leave admin cover / project-info pages untouched otherwise
+        if _paragraph_is_before_body_start(doc, para, body_start):
             continue
 
         level = _heading_level_from_paragraph(para)
@@ -544,9 +799,34 @@ def sanitize_document_headings_for_lists(
     return stats
 
 
+def strip_frontmatter_figure_captions(doc) -> int:
+    """
+    Remove any figure captions on Cover / Project Details pages.
+
+    Cover logos must never receive 'Figure N:' captions or appear in LOF.
+    """
+    body_start = find_formatify_body_start_element(doc)
+    removed = 0
+    for para in list(doc.paragraphs):
+        if not _paragraph_is_before_body_start(doc, para, body_start):
+            continue
+        if paragraph_has_image(para):
+            continue
+        if not (
+            paragraph_is_figure_caption(para)
+            or paragraph_has_seq_caption(para._element, "Figure")
+            or CAPTION_TEXT_RE.match((para.text or "").strip())
+        ):
+            continue
+        _remove_paragraph_element(para)
+        removed += 1
+    return removed
+
+
 def ensure_figure_captions_for_lists(doc) -> Dict[str, Any]:
-    """Ensure every detected figure has a SEQ-based caption directly under it."""
+    """Ensure every report-body figure has a SEQ caption (skip cover / info)."""
     added = 0
+    stripped = strip_frontmatter_figure_captions(doc)
     body_start = find_formatify_body_start_element(doc)
 
     # Element identity (not stale indices) so inserts don't attach captions to body text.
@@ -567,8 +847,11 @@ def ensure_figure_captions_for_lists(doc) -> Dict[str, Any]:
         if not had_immediate:
             added += 1
 
-    return {"captions_ensured": len(image_paras), "captions_added": added}
-
+    return {
+        "captions_ensured": len(image_paras),
+        "captions_added": added,
+        "frontmatter_captions_removed": stripped,
+    }
 
 def _heading_level_from_paragraph(para) -> Optional[int]:
     text = (para.text or "").strip()
@@ -753,11 +1036,18 @@ def _set_caption_paragraph_properties(p_el: OxmlElement, *, center: bool = True)
         jc.set(qn("w:val"), "center")
 
 
-def rebuild_caption_with_seq(para, label: str, description: str) -> None:
+def rebuild_caption_with_seq(
+    para,
+    label: str,
+    description: str,
+    *,
+    number: int | None = None,
+) -> None:
     """
     Rebuild a caption paragraph using a Word SEQ field.
     label: 'Table' or 'Figure'
     description: text after the number (e.g. 'User Dataset Description')
+    number: visible SEQ result (defaults to 1); pass sequential n for correct LOF/LOT text
     """
     label = label.strip().title()
     p_el = para._element
@@ -768,7 +1058,7 @@ def rebuild_caption_with_seq(para, label: str, description: str) -> None:
 
     _set_caption_paragraph_properties(p_el, center=True)
     p_el.append(_text_run(f"{label} "))
-    _append_seq_field_runs(p_el, label)
+    _append_seq_field_runs(p_el, label, display_number=number or 1)
     suffix = description.strip()
     p_el.append(_text_run(f": {suffix}" if suffix else ":"))
 
@@ -807,19 +1097,36 @@ def document_has_toc(doc) -> bool:
     return False
 
 
+def _has_static_list_entries_after_heading(doc, heading_re: re.Pattern) -> bool:
+    """True when a LOF/LOT heading is followed by pre-rendered entry paragraphs."""
+    heading = _find_section_heading_paragraph(doc, heading_re)
+    if heading is None:
+        return False
+    sibling = heading._element.getnext()
+    while sibling is not None and sibling.tag == qn("w:p"):
+        if _is_generated_list_entry_paragraph(sibling):
+            return True
+        text = _paragraph_plain_text(sibling)
+        if not text:
+            sibling = sibling.getnext()
+            continue
+        break
+    return False
+
+
 def document_has_lot(doc) -> bool:
     for para in doc.paragraphs:
         if _paragraph_has_field(para._element, LOT_FIELD_RE):
             return True
-    return False
+    # Formatify may emit static LOT entries (no TOC field wrapper)
+    return _has_static_list_entries_after_heading(doc, _LOT_HEADING_RE)
 
 
 def document_has_lof(doc) -> bool:
     for para in doc.paragraphs:
         if _paragraph_has_field(para._element, LOF_FIELD_RE):
             return True
-    return False
-
+    return _has_static_list_entries_after_heading(doc, _LOF_HEADING_RE)
 
 _NUMBERING_PREFIX_RE = re.compile(r"^[\d]+(?:\.[\d]+)*\.?\s+")
 _META_TOC_HEADINGS = (
@@ -974,6 +1281,37 @@ def is_paragraph_in_cover_or_info(doc, para) -> bool:
     )
 
 
+def _element_is_before_body_start(doc, element: OxmlElement) -> bool:
+    """True when a body child (paragraph or table) is on cover / project-info pages."""
+    body_start = find_formatify_body_start_element(doc)
+    if body_start is None or element is None:
+        return False
+    try:
+        return _body_index(doc, element) < _body_index(doc, body_start)
+    except ValueError:
+        return False
+
+
+def _caption_description_from_text(text: str, label: str) -> str:
+    """Extract 'description' from 'Figure 1: desc' / plain text."""
+    raw = (text or "").strip()
+    if not raw:
+        return ""
+    m = CAPTION_TEXT_RE.match(raw)
+    if m:
+        return (m.group(3) or "").strip()
+    # SEQ captions often look like 'Figure 1: desc' after plain-text join
+    lower = raw.lower()
+    prefix = label.lower()
+    if lower.startswith(prefix):
+        rest = raw[len(label):].lstrip()
+        rest = re.sub(r"^\d+\s*[:.\-–—]\s*", "", rest).strip()
+        return rest
+    if ":" in raw:
+        return raw.split(":", 1)[1].strip()
+    return raw
+
+
 def _ensure_bookmark_on_paragraph(para, bookmark_name: str, bookmark_id: int) -> None:
     """Add bookmark markers to a heading paragraph if not already present."""
     p_el = para._element
@@ -1001,7 +1339,12 @@ def _calculate_toc_tab_position(doc) -> int:
         return 9000
 
 
-def _append_pageref_field_runs(paragraph_el: OxmlElement, bookmark_name: str) -> None:
+def _append_pageref_field_runs(
+    paragraph_el: OxmlElement,
+    bookmark_name: str,
+    *,
+    page_number: int = 1,
+) -> None:
     r_begin = OxmlElement("w:r")
     fld_begin = OxmlElement("w:fldChar")
     fld_begin.set(qn("w:fldCharType"), "begin")
@@ -1020,7 +1363,7 @@ def _append_pageref_field_runs(paragraph_el: OxmlElement, bookmark_name: str) ->
 
     r_result = OxmlElement("w:r")
     t = OxmlElement("w:t")
-    t.text = "1"
+    t.text = str(max(1, int(page_number)))
     r_result.append(t)
 
     r_end = OxmlElement("w:r")
@@ -1037,9 +1380,19 @@ def _build_toc_entry_paragraph(
     text: str,
     bookmark_name: str,
     tab_pos: int,
+    *,
+    page_number: int = 1,
 ) -> OxmlElement:
     p = OxmlElement("w:p")
     p_pr = OxmlElement("w:pPr")
+
+    # Comfortable academic list spacing (avoid congested LOF/LOT lines)
+    spacing = OxmlElement("w:spacing")
+    spacing.set(qn("w:before"), "120")
+    spacing.set(qn("w:after"), "120")
+    spacing.set(qn("w:line"), "360")  # 1.5 line
+    spacing.set(qn("w:lineRule"), "auto")
+    p_pr.append(spacing)
 
     if level > 1:
         ind = OxmlElement("w:ind")
@@ -1063,6 +1416,11 @@ def _build_toc_entry_paragraph(
     hyperlink.set(qn("w:anchor"), bookmark_name)
     hyperlink.set(qn("w:history"), "1")
     r_link = OxmlElement("w:r")
+    r_pr = OxmlElement("w:rPr")
+    sz = OxmlElement("w:sz")
+    sz.set(qn("w:val"), "24")  # 12pt
+    r_pr.append(sz)
+    r_link.append(r_pr)
     t = OxmlElement("w:t")
     t.text = text
     r_link.append(t)
@@ -1073,14 +1431,28 @@ def _build_toc_entry_paragraph(
     r_tab.append(OxmlElement("w:tab"))
     p.append(r_tab)
 
-    _append_pageref_field_runs(p, bookmark_name)
+    _append_pageref_field_runs(p, bookmark_name, page_number=page_number)
     return p
 
 
+def _vanish_run_props() -> OxmlElement:
+    r_pr = OxmlElement("w:rPr")
+    r_pr.append(OxmlElement("w:vanish"))
+    r_pr.append(OxmlElement("w:webHidden"))
+    return r_pr
+
+
 def _build_toc_field_start_paragraph(instruction: str) -> OxmlElement:
+    """
+    TOC/LOF/LOT field begin paragraph.
+
+    Instruction text is vanished so viewers (and PDF exporters) do not show
+    raw codes like: TOC \\h \\z \\c \"Figure\".
+    """
     p = OxmlElement("w:p")
 
     r_begin = OxmlElement("w:r")
+    r_begin.append(_vanish_run_props())
     fld_begin = OxmlElement("w:fldChar")
     fld_begin.set(qn("w:fldCharType"), "begin")
     fld_begin.set(qn("w:dirty"), "true")
@@ -1088,6 +1460,7 @@ def _build_toc_field_start_paragraph(instruction: str) -> OxmlElement:
     p.append(r_begin)
 
     r_instr = OxmlElement("w:r")
+    r_instr.append(_vanish_run_props())
     instr_text = OxmlElement("w:instrText")
     instr_text.set(qn("xml:space"), "preserve")
     instr_text.text = f" {instruction.strip()} "
@@ -1095,6 +1468,7 @@ def _build_toc_field_start_paragraph(instruction: str) -> OxmlElement:
     p.append(r_instr)
 
     r_sep = OxmlElement("w:r")
+    r_sep.append(_vanish_run_props())
     fld_sep = OxmlElement("w:fldChar")
     fld_sep.set(qn("w:fldCharType"), "separate")
     r_sep.append(fld_sep)
@@ -1105,6 +1479,7 @@ def _build_toc_field_start_paragraph(instruction: str) -> OxmlElement:
 def _build_toc_field_end_paragraph() -> OxmlElement:
     p = OxmlElement("w:p")
     r_end = OxmlElement("w:r")
+    r_end.append(_vanish_run_props())
     fld_end = OxmlElement("w:fldChar")
     fld_end.set(qn("w:fldCharType"), "end")
     r_end.append(fld_end)
@@ -1140,6 +1515,7 @@ def _prepare_toc_entries(doc, levels: str = "1-3") -> List[Dict[str, Any]]:
     next_bookmark_id = _get_max_bookmark_id(doc) + 1
     entries: List[Dict[str, Any]] = []
     body_start = find_formatify_body_start_element(doc)
+    page_map = estimate_body_page_numbers(doc)
 
     for idx, para in enumerate(doc.paragraphs):
         # Never list cover / project-info page headings in the TOC
@@ -1164,6 +1540,7 @@ def _prepare_toc_entries(doc, levels: str = "1-3") -> List[Dict[str, Any]]:
             "text": display_text,
             "raw_text": raw_text,
             "bookmark": bookmark_name,
+            "page": page_map.get(para._element, 1),
         })
         next_bookmark_id += 1
 
@@ -1206,9 +1583,17 @@ def _remove_generated_list_entry_paragraphs(doc) -> int:
 
 
 def _remove_list_field_block(doc, field_pattern: re.Pattern) -> bool:
-    """Remove an existing list field block (single- or multi-paragraph)."""
+    """
+    Remove an existing list field block (single- or multi-paragraph).
+
+    CRITICAL: must never delete past the field end into the report body.
+    Older logic kept deleting until an outer end was found; if the end marker
+    was missing (e.g. stripped as an 'empty' paragraph), the entire document
+    after the TOC/LOF/LOT field was destroyed.
+    """
     body = doc.element.body
     removed_any = False
+    max_field_paras = 400
 
     while True:
         children = list(body)
@@ -1220,16 +1605,75 @@ def _remove_list_field_block(doc, field_pattern: re.Pattern) -> bool:
         if start_idx is None:
             break
 
-        for j in range(start_idx, len(children)):
+        to_remove: List[OxmlElement] = []
+        found_end = False
+        for j in range(start_idx, min(len(children), start_idx + max_field_paras + 1)):
             el = children[j]
             if el.tag != qn("w:p"):
-                continue
+                # Tables / sectPr / drawings — stop; do not delete across them
+                break
+
+            text = _paragraph_plain_text(el)
+            if (
+                j > start_idx
+                and text
+                and _is_meta_list_heading(text)
+                and not _is_generated_list_entry_paragraph(el)
+                and not _paragraph_has_field(el, field_pattern)
+            ):
+                # Next TOC/LOF/LOT heading — keep it
+                break
+
+            # Body content that is clearly not a list entry — stop before it
+            if (
+                j > start_idx
+                and text
+                and not _is_generated_list_entry_paragraph(el)
+                and not _paragraph_has_word_field_marks(el)
+                and not _paragraph_has_field(el, field_pattern)
+                and len(text) > 80
+            ):
+                break
+
+            to_remove.append(el)
+
+            # Single-paragraph field (begin+end together)
+            if (
+                j == start_idx
+                and _paragraph_has_field_begin(el)
+                and _paragraph_has_field_end(el)
+            ):
+                found_end = True
+                break
+            if _paragraph_is_outer_list_field_end(el, field_pattern):
+                found_end = True
+                break
+
+        if not found_end:
+            # Missing end marker: only remove field-related paragraphs, never body
+            safe: List[OxmlElement] = []
+            for el in to_remove:
+                if (
+                    _paragraph_has_field(el, field_pattern)
+                    or _paragraph_has_word_field_marks(el)
+                    or _is_generated_list_entry_paragraph(el)
+                ):
+                    safe.append(el)
+                elif not _paragraph_plain_text(el).strip():
+                    # blank line inside the field block
+                    safe.append(el)
+                else:
+                    break
+            to_remove = safe if safe else to_remove[:1]
+
+        if not to_remove:
+            break
+
+        for el in to_remove:
             parent = el.getparent()
             if parent is not None:
                 parent.remove(el)
                 removed_any = True
-            if _paragraph_is_outer_list_field_end(el, field_pattern):
-                break
 
     return removed_any
 
@@ -1247,16 +1691,49 @@ def _cleanup_all_list_artifacts(doc) -> Dict[str, int]:
     return removed
 
 
+def _remove_static_list_entries_after_heading(doc, heading_re: re.Pattern) -> bool:
+    """Remove pre-rendered LOF/LOT entry paragraphs under a list heading."""
+    heading = _find_section_heading_paragraph(doc, heading_re)
+    if heading is None:
+        return False
+    removed = False
+    sibling = heading._element.getnext()
+    while sibling is not None and sibling.tag == qn("w:p"):
+        nxt = sibling.getnext()
+        text = _paragraph_plain_text(sibling)
+        if _is_generated_list_entry_paragraph(sibling):
+            parent = sibling.getparent()
+            if parent is not None:
+                parent.remove(sibling)
+                removed = True
+            sibling = nxt
+            continue
+        if not text.strip():
+            # Drop blank lines sandwiched between heading and leftover entries
+            parent = sibling.getparent()
+            if parent is not None:
+                parent.remove(sibling)
+                removed = True
+            sibling = nxt
+            continue
+        break
+    return removed
+
+
 def _remove_toc_field_block(doc) -> bool:
     return _remove_list_field_block(doc, TOC_FIELD_RE)
 
 
 def _remove_lof_field_block(doc) -> bool:
-    return _remove_list_field_block(doc, LOF_FIELD_RE)
+    removed = _remove_list_field_block(doc, LOF_FIELD_RE)
+    removed = _remove_static_list_entries_after_heading(doc, _LOF_HEADING_RE) or removed
+    return removed
 
 
 def _remove_lot_field_block(doc) -> bool:
-    return _remove_list_field_block(doc, LOT_FIELD_RE)
+    removed = _remove_list_field_block(doc, LOT_FIELD_RE)
+    removed = _remove_static_list_entries_after_heading(doc, _LOT_HEADING_RE) or removed
+    return removed
 
 
 def _list_field_is_unpopulated(doc, field_pattern: re.Pattern, empty_markers: tuple[str, ...]) -> bool:
@@ -1278,6 +1755,8 @@ def _toc_field_is_unpopulated(doc) -> bool:
 
 
 def _lof_field_is_unpopulated(doc) -> bool:
+    if _has_static_list_entries_after_heading(doc, _LOF_HEADING_RE):
+        return False
     return _list_field_is_unpopulated(
         doc,
         LOF_FIELD_RE,
@@ -1286,6 +1765,8 @@ def _lof_field_is_unpopulated(doc) -> bool:
 
 
 def _lot_field_is_unpopulated(doc) -> bool:
+    if _has_static_list_entries_after_heading(doc, _LOT_HEADING_RE):
+        return False
     return _list_field_is_unpopulated(
         doc,
         LOT_FIELD_RE,
@@ -1294,13 +1775,19 @@ def _lot_field_is_unpopulated(doc) -> bool:
 
 
 def _prepare_lof_entries(doc) -> List[Dict[str, Any]]:
-    """Collect figure captions and ensure SEQ fields/bookmarks exist."""
+    """Collect figure captions from the REPORT BODY only (skip cover / info)."""
     next_bookmark_id = _get_max_bookmark_id(doc) + 1
     entries: List[Dict[str, Any]] = []
+    body_start = find_formatify_body_start_element(doc)
 
     ensure_figure_captions_for_lists(doc)
+    page_map = estimate_body_page_numbers(doc)
 
+    figure_number = 0
     for idx, para in enumerate(doc.paragraphs):
+        # Cover logo + any project-info images are never listed
+        if _paragraph_is_before_body_start(doc, para, body_start):
+            continue
         if not paragraph_has_image(para):
             continue
 
@@ -1308,6 +1795,8 @@ def _prepare_lof_entries(doc) -> List[Dict[str, Any]]:
         cap_text = ""
         if idx + 1 < len(doc.paragraphs):
             nxt = doc.paragraphs[idx + 1]
+            if _paragraph_is_before_body_start(doc, nxt, body_start):
+                continue
             nxt_text = nxt.text.strip()
             if (
                 not paragraph_has_image(nxt)
@@ -1322,18 +1811,25 @@ def _prepare_lof_entries(doc) -> List[Dict[str, Any]]:
         if cap_para is None:
             continue
 
-        if not paragraph_has_seq_caption(cap_para._element, "Figure"):
-            m = CAPTION_TEXT_RE.match(cap_text)
-            description = m.group(3) if m else cap_text
-            rebuild_caption_with_seq(cap_para, "Figure", description)
+        figure_number += 1
+        description = _caption_description_from_text(cap_text, "Figure")
+        if not description:
+            description = "Illustration related to the document content."
+
+        # Always renumber sequentially so LOF does not show Figure 1 for every item
+        rebuild_caption_with_seq(
+            cap_para, "Figure", description, number=figure_number
+        )
 
         bookmark_name = f"_Toc{next_bookmark_id:09d}"
         _ensure_bookmark_on_paragraph(cap_para, bookmark_name, next_bookmark_id)
+        display = f"Figure {figure_number}: {description}"
         entries.append({
             "paragraph_index": idx,
             "level": 1,
-            "text": cap_para.text.strip() or cap_text,
+            "text": display,
             "bookmark": bookmark_name,
+            "page": page_map.get(cap_para._element, page_map.get(para._element, 1)),
         })
         next_bookmark_id += 1
 
@@ -1341,37 +1837,48 @@ def _prepare_lof_entries(doc) -> List[Dict[str, Any]]:
 
 
 def _prepare_lot_entries(doc) -> List[Dict[str, Any]]:
-    """Collect table captions for LOT generation."""
+    """Collect table captions from the REPORT BODY only (skip cover / info tables)."""
     from table_processor import ensure_table_captions
 
     ensure_table_captions(doc)
     next_bookmark_id = _get_max_bookmark_id(doc) + 1
     entries: List[Dict[str, Any]] = []
+    page_map = estimate_body_page_numbers(doc)
 
+    table_number = 0
     for table in doc.tables:
+        if _element_is_before_body_start(doc, table._tbl):
+            continue
         idx = _body_index(doc, table._tbl)
         if idx <= 0:
             continue
         prev = _body_children(doc)[idx - 1]
         if prev.tag != qn("w:p"):
             continue
+        if _element_is_before_body_start(doc, prev):
+            continue
         cap_para = Paragraph(prev, doc.element.body)
         cap_text = cap_para.text.strip()
         if not cap_text and not paragraph_has_seq_caption(cap_para._element, "Table"):
             continue
 
-        if not paragraph_has_seq_caption(cap_para._element, "Table"):
-            m = CAPTION_TEXT_RE.match(cap_text)
-            description = m.group(3) if m else cap_text
-            rebuild_caption_with_seq(cap_para, "Table", description)
+        table_number += 1
+        description = _caption_description_from_text(cap_text, "Table")
+        if not description:
+            description = "Table"
+        rebuild_caption_with_seq(
+            cap_para, "Table", description, number=table_number
+        )
 
         bookmark_name = f"_Toc{next_bookmark_id:09d}"
         _ensure_bookmark_on_paragraph(cap_para, bookmark_name, next_bookmark_id)
+        display = f"Table {table_number}: {description}"
         entries.append({
             "paragraph_index": idx - 1,
             "level": 1,
-            "text": cap_para.text.strip() or cap_text,
+            "text": display,
             "bookmark": bookmark_name,
+            "page": page_map.get(cap_para._element, 1),
         })
         next_bookmark_id += 1
 
@@ -1383,9 +1890,19 @@ def _insert_populated_list_block(
     after_element: OxmlElement,
     instruction: str,
     entries: List[Dict[str, Any]],
+    *,
+    wrap_in_field: bool = True,
 ) -> None:
+    """
+    Insert list entries after a heading.
+
+    wrap_in_field=False (LOF/LOT): static entries only — avoids visible junk like
+    `TOC \\h \\z \\c "Figure"` in viewers that render instrText as body text.
+    """
     tab_pos = _calculate_toc_tab_position(doc)
-    elements: List[OxmlElement] = [_build_toc_field_start_paragraph(instruction)]
+    elements: List[OxmlElement] = []
+    if wrap_in_field:
+        elements.append(_build_toc_field_start_paragraph(instruction))
     for entry in entries:
         elements.append(
             _build_toc_entry_paragraph(
@@ -1393,11 +1910,12 @@ def _insert_populated_list_block(
                 entry["text"],
                 entry["bookmark"],
                 tab_pos,
+                page_number=int(entry.get("page") or 1),
             )
         )
-    elements.append(_build_toc_field_end_paragraph())
+    if wrap_in_field:
+        elements.append(_build_toc_field_end_paragraph())
     _insert_elements_after(after_element, elements)
-
 
 def _find_section_heading_paragraph(doc, pattern: re.Pattern) -> Optional[Paragraph]:
     for para in doc.paragraphs:
@@ -1497,7 +2015,13 @@ def insert_lot_field(
         heading_para.add_run("List of Tables")
         _style_meta_list_heading(heading_para, doc)
 
-    _insert_populated_list_block(doc, heading_para._element, instruction, lot_entries)
+    _insert_populated_list_block(
+        doc,
+        heading_para._element,
+        instruction,
+        lot_entries,
+        wrap_in_field=False,
+    )
     return heading_para
 
 
@@ -1521,9 +2045,14 @@ def insert_lof_field(
         heading_para.add_run("List of Figures")
         _style_meta_list_heading(heading_para, doc)
 
-    _insert_populated_list_block(doc, heading_para._element, instruction, lof_entries)
+    _insert_populated_list_block(
+        doc,
+        heading_para._element,
+        instruction,
+        lof_entries,
+        wrap_in_field=False,
+    )
     return heading_para
-
 
 def apply_toc_heading_styles(doc, formatting_rules: Optional[Dict[str, Any]] = None) -> int:
     """Style front-matter list headings without adding them to the TOC outline."""
@@ -1604,7 +2133,7 @@ def _extract_list_section_block(
     heading_re: re.Pattern,
     field_re: re.Pattern,
 ) -> Optional[List[OxmlElement]]:
-    """Return heading + populated field block elements for one front-matter list."""
+    """Return heading + populated field/static entry block for one front-matter list."""
     heading_para = _find_section_heading_paragraph(doc, heading_re)
     if heading_para is None:
         return None
@@ -1612,10 +2141,30 @@ def _extract_list_section_block(
     elements: List[OxmlElement] = [heading_para._element]
     sibling = heading_para._element.getnext()
     saw_field = False
+    max_paras = 400
 
-    while sibling is not None and sibling.tag == qn("w:p"):
+    while sibling is not None and sibling.tag == qn("w:p") and len(elements) <= max_paras:
         text = _paragraph_plain_text(sibling)
         if text and _is_other_meta_list_heading(text, heading_re):
+            break
+        # Static lists: stop before body content (not a generated entry)
+        if (
+            not saw_field
+            and text
+            and not _is_generated_list_entry_paragraph(sibling)
+            and not _paragraph_has_word_field_marks(sibling)
+            and not _paragraph_has_field(sibling, field_re)
+        ):
+            break
+        # Do not swallow the report body when field end is missing
+        if (
+            saw_field
+            and text
+            and not _is_generated_list_entry_paragraph(sibling)
+            and not _paragraph_has_word_field_marks(sibling)
+            and not _paragraph_has_field(sibling, field_re)
+            and len(text) > 80
+        ):
             break
 
         elements.append(sibling)
@@ -1623,9 +2172,43 @@ def _extract_list_section_block(
             saw_field = True
         if saw_field and _paragraph_is_outer_list_field_end(sibling, field_re):
             return elements
+        if (
+            saw_field
+            and _paragraph_has_field(sibling, field_re)
+            and _paragraph_has_field_begin(sibling)
+            and _paragraph_has_field_end(sibling)
+        ):
+            return elements
         sibling = sibling.getnext()
 
-    return elements if saw_field else None
+    if not saw_field:
+        # Static Formatify LOF/LOT (entries without TOC field wrapper)
+        static = [elements[0]]
+        for el in elements[1:]:
+            if _is_generated_list_entry_paragraph(el):
+                static.append(el)
+            elif not _paragraph_plain_text(el).strip():
+                if len(static) > 1:
+                    static.append(el)
+                else:
+                    break
+            else:
+                break
+        return static if any(_is_generated_list_entry_paragraph(e) for e in static) else None
+
+    # Missing end: keep only heading + field-related paragraphs
+    trimmed = [elements[0]]
+    for el in elements[1:]:
+        if (
+            _paragraph_has_field(el, field_re)
+            or _paragraph_has_word_field_marks(el)
+            or _is_generated_list_entry_paragraph(el)
+            or not _paragraph_plain_text(el).strip()
+        ):
+            trimmed.append(el)
+        else:
+            break
+    return trimmed if len(trimmed) > 1 else None
 
 
 def _detach_body_elements(elements: List[OxmlElement]) -> None:
@@ -1788,6 +2371,195 @@ def _collapse_consecutive_page_breaks(doc) -> int:
     return removed
 
 
+def _paragraph_has_word_field_marks(p_el: OxmlElement) -> bool:
+    """True when paragraph participates in a Word complex field."""
+    return bool(list(p_el.iter(qn("w:fldChar"))) or list(p_el.iter(qn("w:instrText"))))
+
+
+def _paragraph_is_visually_empty(p_el: OxmlElement) -> bool:
+    """True when a paragraph has no visible text/media/fields (safe to drop)."""
+    if _paragraph_plain_text(p_el).strip():
+        return False
+    # NEVER treat TOC/LOF/LOT field begin/end markers as empty — deleting them
+    # causes later list cleanup to wipe the rest of the document.
+    if _paragraph_has_word_field_marks(p_el):
+        return False
+    if list(p_el.iter(BLIP_TAG)) or list(p_el.iter(W_DRAWING_TAG)) or list(p_el.iter(W_PICT_TAG)):
+        return False
+    if list(p_el.iter(VML_IMAGEDATA_TAG)):
+        return False
+    return True
+
+
+def remove_blank_interstitial_pages(doc) -> Dict[str, int]:
+    """
+    Remove empty pages between content blocks in a DOCX.
+
+    Typical artifact after frontmatter merge: a page-break lands on its own
+    page after a full cover/info page, producing Cover → blank → Info → blank.
+
+    Cleanup:
+      1. Strip empty paragraphs around page-break-only paras
+      2. Absorb page-break-only paragraphs into the previous content paragraph
+         (avoids a break-only para starting on a new page then jumping again)
+      3. Collapse consecutive page-break-only paragraphs
+    """
+    stats = {
+        "empty_before_break": 0,
+        "empty_after_break": 0,
+        "empty_between_breaks": 0,
+        "absorbed_breaks": 0,
+        "collapsed_breaks": 0,
+    }
+
+    # Pass 1: remove empty paragraphs immediately before page-break-only paras
+    changed = True
+    while changed:
+        changed = False
+        children = list(_body_children(doc))
+        for i, child in enumerate(children):
+            if child.tag != qn("w:p") or not _is_page_break_only_paragraph(child):
+                continue
+            j = i - 1
+            while j >= 0 and children[j].tag == qn("w:p"):
+                prev = children[j]
+                if _is_page_break_only_paragraph(prev):
+                    break
+                if not _paragraph_is_visually_empty(prev):
+                    break
+                parent = prev.getparent()
+                if parent is not None:
+                    parent.remove(prev)
+                    stats["empty_before_break"] += 1
+                    changed = True
+                j -= 1
+            if changed:
+                break
+
+    # Pass 2: remove empty paragraphs immediately after page-break-only paras
+    changed = True
+    while changed:
+        changed = False
+        children = list(_body_children(doc))
+        for i, child in enumerate(children):
+            if child.tag != qn("w:p") or not _is_page_break_only_paragraph(child):
+                continue
+            nxt = child.getnext()
+            while nxt is not None and nxt.tag == qn("w:p"):
+                if _is_page_break_only_paragraph(nxt):
+                    break
+                if not _paragraph_is_visually_empty(nxt):
+                    break
+                following = nxt.getnext()
+                parent = nxt.getparent()
+                if parent is not None:
+                    parent.remove(nxt)
+                    stats["empty_after_break"] += 1
+                    changed = True
+                nxt = following
+            if changed:
+                break
+
+    # Pass 3: absorb page-break-only paragraphs into previous content paragraph.
+    # This is the critical fix for Cover→blank→Info: a lone break paragraph that
+    # starts on the next page then breaks again leaves an empty sheet.
+    for child in list(_body_children(doc)):
+        if child.tag != qn("w:p") or not _is_page_break_only_paragraph(child):
+            continue
+        prev = child.getprevious()
+        while (
+            prev is not None
+            and prev.tag == qn("w:p")
+            and _paragraph_is_visually_empty(prev)
+            and not _is_page_break_only_paragraph(prev)
+        ):
+            pprev = prev.getprevious()
+            parent = prev.getparent()
+            if parent is not None:
+                parent.remove(prev)
+                stats["empty_before_break"] += 1
+            prev = pprev
+
+        if prev is None:
+            continue
+        if prev.tag == qn("w:tbl"):
+            # Attach break to last paragraph inside the table's last cell
+            paras = list(prev.iter(qn("w:p")))
+            if not paras:
+                continue
+            target = paras[-1]
+            if not _paragraph_has_page_break(target):
+                r = OxmlElement("w:r")
+                br = OxmlElement("w:br")
+                br.set(qn("w:type"), "page")
+                r.append(br)
+                target.append(r)
+            parent = child.getparent()
+            if parent is not None:
+                parent.remove(child)
+                stats["absorbed_breaks"] += 1
+            continue
+        if prev.tag != qn("w:p"):
+            continue
+        if _is_page_break_only_paragraph(prev):
+            # consecutive breaks — leave for collapse pass
+            continue
+        # Don't duplicate if previous already ends with a page break
+        if _paragraph_has_page_break(prev):
+            parent = child.getparent()
+            if parent is not None:
+                parent.remove(child)
+                stats["absorbed_breaks"] += 1
+            continue
+        r = OxmlElement("w:r")
+        br = OxmlElement("w:br")
+        br.set(qn("w:type"), "page")
+        r.append(br)
+        prev.append(r)
+        parent = child.getparent()
+        if parent is not None:
+            parent.remove(child)
+            stats["absorbed_breaks"] += 1
+
+    # Pass 4: empty-only runs between two page breaks
+    children = list(_body_children(doc))
+    i = 0
+    while i < len(children):
+        child = children[i]
+        if child.tag == qn("w:p") and _paragraph_has_page_break(child):
+            j = i + 1
+            only_empty = True
+            saw_empty = False
+            while j < len(children) and children[j].tag == qn("w:p"):
+                if _is_page_break_only_paragraph(children[j]) or (
+                    _paragraph_has_page_break(children[j])
+                    and _paragraph_is_visually_empty(children[j])
+                ):
+                    if saw_empty and only_empty:
+                        for k in range(i + 1, j):
+                            parent = children[k].getparent()
+                            if parent is not None:
+                                parent.remove(children[k])
+                                stats["empty_between_breaks"] += 1
+                        parent = children[j].getparent()
+                        if parent is not None and _is_page_break_only_paragraph(children[j]):
+                            parent.remove(children[j])
+                            stats["collapsed_breaks"] += 1
+                        children = list(_body_children(doc))
+                        break
+                    break
+                if _paragraph_is_visually_empty(children[j]):
+                    saw_empty = True
+                    j += 1
+                    continue
+                only_empty = False
+                break
+        i += 1
+
+    stats["collapsed_breaks"] += _collapse_consecutive_page_breaks(doc)
+    return stats
+
+
 def remove_unused_front_matter_sections(
     doc,
     active_sections: Optional[set[str]] = None,
@@ -1884,11 +2656,21 @@ def arrange_front_matter_lists(
 
 
 def count_figures(doc) -> int:
-    return sum(1 for p in doc.paragraphs if paragraph_has_image(p))
+    """Count images in the report body (excludes cover / project-info)."""
+    body_start = find_formatify_body_start_element(doc)
+    return sum(
+        1
+        for p in doc.paragraphs
+        if paragraph_has_image(p)
+        and not _paragraph_is_before_body_start(doc, p, body_start)
+    )
 
 
 def count_tables(doc) -> int:
-    return len(doc.tables)
+    """Count tables in the report body (excludes cover / project-info)."""
+    return sum(
+        1 for t in doc.tables if not _element_is_before_body_start(doc, t._tbl)
+    )
 
 
 def analyze_document_lists(doc) -> Dict[str, Any]:
@@ -1896,9 +2678,12 @@ def analyze_document_lists(doc) -> Dict[str, Any]:
     headings = collect_headings(doc)
     table_count = count_tables(doc)
     figure_count = count_figures(doc)
+    body_start = find_formatify_body_start_element(doc)
 
     tables_with_captions = 0
     for table in doc.tables:
+        if _element_is_before_body_start(doc, table._tbl):
+            continue
         idx = _body_index(doc, table._tbl)
         if idx > 0:
             prev = _body_children(doc)[idx - 1]
@@ -1909,6 +2694,8 @@ def analyze_document_lists(doc) -> Dict[str, Any]:
 
     figures_with_captions = 0
     for idx, para in enumerate(doc.paragraphs):
+        if _paragraph_is_before_body_start(doc, para, body_start):
+            continue
         if not paragraph_has_image(para):
             continue
         if idx + 1 < len(doc.paragraphs):
@@ -1971,6 +2758,9 @@ def generate_document_lists(
         "entry_count": 0,
     }
 
+    # Disable template outline auto-numbering on Heading styles (causes 5./6./7. leaks)
+    result["heading_style_numbering_cleared"] = clear_numbering_from_heading_styles(doc)
+
     if ensure_styles and formatting_rules:
         heading_cleanup = sanitize_document_headings_for_lists(doc, formatting_rules)
         result["headings_demoted"] = heading_cleanup.get("demoted", 0)
@@ -1983,7 +2773,13 @@ def generate_document_lists(
         result["headings_demoted"] = heading_cleanup.get("demoted", 0)
         result["meta_headings_styled"] = heading_cleanup.get("meta_styled", 0)
 
+    # Remove outline numbers from body prose + demote false headings before renumber
+    result["outline_cleanup"] = strip_accidental_body_outline_numbering(doc)
+
     result["headings_renumbered"] = apply_hierarchical_heading_numbering(doc)
+
+    # Meta titles (TOC/LOF/LOT) must never keep a leftover "5." prefix
+    sanitize_document_headings_for_lists(doc, formatting_rules)
 
     if ensure_captions:
         cap_result = ensure_table_captions(doc)
@@ -1992,8 +2788,14 @@ def generate_document_lists(
 
         fig_cap_result = ensure_figure_captions_for_lists(doc)
         result["figure_captions_upgraded"] = fig_cap_result.get("captions_added", 0)
+        result["frontmatter_captions_removed"] = fig_cap_result.get(
+            "frontmatter_captions_removed", 0
+        )
 
+        body_start = find_formatify_body_start_element(doc)
         for para in doc.paragraphs:
+            if _paragraph_is_before_body_start(doc, para, body_start):
+                continue
             if upgrade_plain_caption_to_seq(para):
                 result["figure_captions_upgraded"] += 1
 
@@ -2060,6 +2862,9 @@ def generate_document_lists(
         include_lot=bool(result.get("lot_added")),
         include_lof=bool(result.get("lof_added")),
     )
+
+    # Final pass: TOC/LOF/LOT titles must never keep leftover section numbers
+    sanitize_document_headings_for_lists(doc, formatting_rules)
 
     doc.save(file_path)
     result.update(analyze_document_lists(doc))

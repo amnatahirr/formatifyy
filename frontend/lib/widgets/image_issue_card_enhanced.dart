@@ -18,13 +18,16 @@ const _yellow = Color(0xFFFACC15);
 const _red = Color(0xFFEF4444);
 const _blue = Color(0xFF4A9EFF);
 
-/// Enhanced image issue card with replacement capability
+/// Enhanced image issue card with replacement / removal capability
 class ImageIssueCardEnhanced extends StatefulWidget {
   final Map<String, dynamic> issue;
   final String imageBaseUrl;
   final int documentId;
+  final int? userId;
   final void Function(Map<String, dynamic> result) onImageReplaced;
-  final Function(String) onError; // Error callback
+  final void Function(Map<String, dynamic> result)? onImageRemoved;
+  final VoidCallback? onIgnore;
+  final Function(String) onError;
 
   const ImageIssueCardEnhanced({
     Key? key,
@@ -33,6 +36,9 @@ class ImageIssueCardEnhanced extends StatefulWidget {
     required this.documentId,
     required this.onImageReplaced,
     required this.onError,
+    this.userId,
+    this.onImageRemoved,
+    this.onIgnore,
   }) : super(key: key);
 
   @override
@@ -43,6 +49,7 @@ class _ImageIssueCardEnhancedState extends State<ImageIssueCardEnhanced> {
   late ImageReplacementService _replacementService;
   bool _isReplacementVisible = false;
   bool _showReplacedBadge = false;
+  bool _isRemoving = false;
 
   @override
   void initState() {
@@ -50,17 +57,19 @@ class _ImageIssueCardEnhancedState extends State<ImageIssueCardEnhanced> {
     _replacementService = ImageReplacementService(imageBaseUrl: widget.imageBaseUrl);
   }
 
+  int get _imageIndex => jsonIntOr(widget.issue['image_index'], 0);
+
   void _showReplacementDialog() {
-    final rawPath = widget.issue['image_path'] as String? ?? '';
     final filename = widget.issue['current'] as String? ?? '';
 
     showDialog(
       context: context,
       builder: (ctx) => ImageReplacementDialog(
         documentId: widget.documentId,
-        imageIndex: widget.issue['image_index'] ?? 0,
+        imageIndex: _imageIndex,
         currentImagePath: filename,
         service: _replacementService,
+        userId: widget.userId,
         onSuccess: (result) {
           setState(() => _showReplacedBadge = true);
           widget.onImageReplaced(result);
@@ -79,6 +88,65 @@ class _ImageIssueCardEnhancedState extends State<ImageIssueCardEnhanced> {
     );
   }
 
+  Future<void> _confirmAndRemove() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: _surface,
+        title: Text('Remove Image?', style: TextStyle(color: _textPri)),
+        content: Text(
+          'This permanently deletes the image from the document'
+          '${widget.issue['image_id'] != null ? ' (${widget.issue['image_id']})' : ''}'
+          '. A nearby figure caption will also be removed if present.',
+          style: TextStyle(color: _textSec, fontSize: 13, height: 1.4),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text('Cancel', style: TextStyle(color: _textSec)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: _red,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Remove'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _isRemoving = true);
+    try {
+      final result = await _replacementService.removeImage(
+        documentId: widget.documentId,
+        imageIndex: _imageIndex,
+        userId: widget.userId,
+      );
+      if (!mounted) return;
+      if (widget.onImageRemoved != null) {
+        widget.onImageRemoved!(result);
+      } else {
+        // Fallback: treat as resolved via replace handler path
+        widget.onImageReplaced({...result, 'cleared': true});
+      }
+    } catch (e) {
+      widget.onError(e.toString());
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Remove failed: $e'),
+            backgroundColor: _red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isRemoving = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     _ap = context.watch<ThemeProvider>().palette;
@@ -89,6 +157,10 @@ class _ImageIssueCardEnhancedState extends State<ImageIssueCardEnhanced> {
         '';
     final confidence = normalizedConfidence(widget.issue['confidence']);
     final pct = (confidence * 100).toInt();
+    final textBefore =
+        ((widget.issue['text_before'] as String?) ?? '').trim();
+    final textAfter = ((widget.issue['text_after'] as String?) ?? '').trim();
+    final hasNearbyContext = textBefore.isNotEmpty || textAfter.isNotEmpty;
 
     // Build image URL
     final cleanPath = rawPath.startsWith('uploads/')
@@ -276,8 +348,60 @@ class _ImageIssueCardEnhancedState extends State<ImageIssueCardEnhanced> {
                   Text(
                     reason,
                     style: TextStyle(color: _textSec, fontSize: 11, height: 1.4),
-                    maxLines: 4,
+                    maxLines: 5,
                     overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 8),
+                ],
+
+                if (hasNearbyContext) ...[
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: _surface2,
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: _border),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Checked against nearby text',
+                          style: TextStyle(
+                            color: _textPri,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        if (textBefore.isNotEmpty) ...[
+                          const SizedBox(height: 6),
+                          Text(
+                            'Before: $textBefore',
+                            style: TextStyle(
+                              color: _textSec,
+                              fontSize: 10,
+                              height: 1.35,
+                            ),
+                            maxLines: 3,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                        if (textAfter.isNotEmpty) ...[
+                          const SizedBox(height: 4),
+                          Text(
+                            'After: $textAfter',
+                            style: TextStyle(
+                              color: _textSec,
+                              fontSize: 10,
+                              height: 1.35,
+                            ),
+                            maxLines: 3,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ],
+                    ),
                   ),
                   const SizedBox(height: 8),
                 ],
@@ -344,7 +468,7 @@ class _ImageIssueCardEnhancedState extends State<ImageIssueCardEnhanced> {
                 ),
                 const SizedBox(height: 12),
 
-                // Replace button
+                // Actions: Replace / Remove / Ignore
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton.icon(
@@ -355,9 +479,39 @@ class _ImageIssueCardEnhancedState extends State<ImageIssueCardEnhanced> {
                       foregroundColor: Colors.white,
                       padding: const EdgeInsets.symmetric(vertical: 10),
                     ),
-                    onPressed: _showReplacementDialog,
+                    onPressed: _isRemoving ? null : _showReplacementDialog,
                   ),
                 ),
+                const SizedBox(height: 8),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    icon: _isRemoving
+                        ? const SizedBox(
+                            width: 14,
+                            height: 14,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.delete_outline, size: 16),
+                    label: Text(_isRemoving ? 'Removing…' : 'Remove Image'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: _red,
+                      side: BorderSide(color: _red.withOpacity(0.55)),
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                    ),
+                    onPressed: _isRemoving ? null : _confirmAndRemove,
+                  ),
+                ),
+                if (widget.onIgnore != null) ...[
+                  const SizedBox(height: 8),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton(
+                      onPressed: _isRemoving ? null : widget.onIgnore,
+                      child: const Text('Ignore'),
+                    ),
+                  ),
+                ],
               ],
             ),
           ),

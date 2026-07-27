@@ -2338,9 +2338,14 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
   }
 
   List<dynamic> _issuesForFunction(List<dynamic> issues, String func) {
-    return issues
-        .where((i) => (i as Map)['function'] == func)
-        .toList();
+    final needle = func.toLowerCase().replaceAll(' ', '_');
+    return issues.where((i) {
+      final m = i as Map;
+      final fn = (m['function'] as String? ?? '').toLowerCase().replaceAll(' ', '_');
+      final cat = (m['category'] as String? ?? '').toLowerCase().replaceAll(' ', '_');
+      final type = (m['type'] as String? ?? '').toLowerCase().replaceAll(' ', '_');
+      return fn == needle || cat == needle || type == needle;
+    }).toList();
   }
 
   /// Issues still open (not ignored / not resolved after fix or image replace).
@@ -2778,6 +2783,62 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
     );
   }
 
+  bool _isImageIssueFn(String fn) {
+    final f = fn.toLowerCase();
+    return f.contains('image_relevance') ||
+        f.contains('image_ethics') ||
+        f.contains('image ethics') ||
+        f.contains('image relevance');
+  }
+
+  void _handleImageRemoveSuccess(Map<String, dynamic> result, {String? issueId}) {
+    final imageIndex = jsonIntOr(result['image_index'], -1);
+    final imageId = result['image_id'] as String? ?? '';
+
+    final blocks = result['document_blocks'] as List<dynamic>?;
+    if (blocks != null && blocks.isNotEmpty) {
+      _mergeWorkingDocumentState(result, issueId: issueId);
+    }
+
+    setState(() {
+      for (final i in _pipelineIssues) {
+        final fn = (i['function'] as String? ?? i['category'] as String? ?? '').toLowerCase();
+        if (!_isImageIssueFn(fn)) continue;
+        final idx = jsonIntOr(i['image_index'], -1);
+        final iid = i['image_id'] as String? ?? '';
+        final matches = (imageIndex >= 0 && idx == imageIndex) ||
+            (imageId.isNotEmpty && iid == imageId);
+        if (matches) {
+          final id = i['issue_id'] as String? ?? '';
+          if (id.isNotEmpty) _resolvedIssueIds.add(id);
+        } else if (imageIndex >= 0 && idx > imageIndex) {
+          // DOCX image order shifted after removal — keep later issues aligned
+          final newIdx = idx - 1;
+          i['image_index'] = newIdx;
+          i['image_id'] = 'img$newIdx';
+        }
+      }
+      if (issueId != null && issueId.isNotEmpty) {
+        _resolvedIssueIds.add(issueId);
+      }
+      if (blocks == null || blocks.isEmpty) {
+        _previewBlocks.removeWhere(
+          (b) => jsonIntOr(b['image_index'], -1) == imageIndex,
+        );
+        for (final block in _previewBlocks) {
+          final idx = jsonIntOr(block['image_index'], -1);
+          if (idx > imageIndex) {
+            final newIdx = idx - 1;
+            block['image_index'] = newIdx;
+            block['image_id'] = 'img$newIdx';
+          }
+        }
+      }
+      _isFixApplied = true;
+    });
+    _showSnack('Image removed from document', _green);
+  }
+
   int _inferHeadingLevel(String text) {
     final match = RegExp(r'heading\s*(\d)', caseSensitive: false).firstMatch(text);
     if (match != null) return int.tryParse(match.group(1)!) ?? 1;
@@ -2922,7 +2983,12 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
           '$_baseUrl/documents/apply-all-fixes/${widget.documentId}?user_id=${auth.userId}',
         ),
         headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'fixes': fixes}),
+        body: jsonEncode({
+          'fixes': fixes,
+          'include_toc': _includeToc,
+          'include_lot': _includeLot,
+          'include_lof': _includeLof,
+        }),
       );
       if (resp.statusCode == 200) {
         final data = json.decode(resp.body) as Map<String, dynamic>;
@@ -4502,6 +4568,10 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
       onApplyFix: _handlePreviewApplyFix,
       onIgnoreIssue: _handlePreviewIgnore,
       onImageReplaced: (result, issue) => _handleImageReplaceSuccess(
+        result,
+        issueId: issue['issue_id'] as String?,
+      ),
+      onImageRemoved: (result, issue) => _handleImageRemoveSuccess(
         result,
         issueId: issue['issue_id'] as String?,
       ),
@@ -6221,11 +6291,21 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
                   issue: issue,
                   imageBaseUrl: _imageHostBase,
                   documentId: widget.documentId,
+                  userId: context.read<AuthProvider>().userId,
                   onImageReplaced: (result) => _handleImageReplaceSuccess(
                     result,
                     issueId: issue['issue_id'] as String?,
                   ),
-                  onError: (e) => _showSnack('Image replacement error: $e', _red),
+                  onImageRemoved: (result) => _handleImageRemoveSuccess(
+                    result,
+                    issueId: issue['issue_id'] as String?,
+                  ),
+                  onIgnore: () {
+                    final issueId = issue['issue_id'] as String? ?? '';
+                    setState(() => _ignoredIssueIds.add(issueId));
+                    _showSnack('Issue ignored', _textSec);
+                  },
+                  onError: (e) => _showSnack('Image error: $e', _red),
                 );
               },
             ),
@@ -6468,9 +6548,8 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _buildInfoBanner(
-            '🚫  Image Ethics Check',
-            'These images were flagged as potentially unethical or inappropriate. '
-                'Review and remove before publishing.',
+            'Unethical images flagged',
+            'These images are shown so you can identify them. Review each one and replace with appropriate academic content before publishing.',
             _red,
           ),
           const SizedBox(height: 16),
@@ -6549,18 +6628,76 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
           Container(
             height: 200,
             color: _surface2,
-            alignment: Alignment.center,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: const [
-                Icon(Icons.block, color: _red, size: 48),
-                SizedBox(height: 10),
-                Text(
-                  'Image blocked for ethical reasons',
-                  style: TextStyle(color: _red, fontSize: 12, fontWeight: FontWeight.w600),
-                ),
-              ],
-            ),
+            child: rawPath.isEmpty
+                ? Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.broken_image, color: _textSec, size: 40),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Image preview unavailable',
+                          style: TextStyle(color: _textSec, fontSize: 12),
+                        ),
+                      ],
+                    ),
+                  )
+                : Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      Image.network(
+                        _buildImageUrl(rawPath),
+                        fit: BoxFit.contain,
+                        loadingBuilder: (ctx, child, progress) {
+                          if (progress == null) return child;
+                          return Center(
+                            child: CircularProgressIndicator(
+                              value: progress.expectedTotalBytes != null
+                                  ? progress.cumulativeBytesLoaded /
+                                      progress.expectedTotalBytes!
+                                  : null,
+                              color: _blue,
+                              strokeWidth: 2,
+                            ),
+                          );
+                        },
+                        errorBuilder: (_, __, ___) => Center(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.broken_image, color: _textSec, size: 28),
+                              const SizedBox(height: 6),
+                              Text(
+                                'Failed to load image',
+                                style: TextStyle(color: _textSec, fontSize: 11),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      Positioned(
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        child: Container(
+                          color: _red.withOpacity(0.85),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 6,
+                          ),
+                          child: const Text(
+                            'Unethical — review and replace this image',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
           ),
           Padding(
             padding: const EdgeInsets.all(14),
@@ -6656,6 +6793,67 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
                           onError: (e) => _showSnack('Error: $e', _red),
                         ),
                       );
+                    },
+                  ),
+                ),
+                const SizedBox(height: 8),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    icon: const Icon(Icons.delete_outline, size: 16),
+                    label: const Text('Remove Image'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: _red,
+                      side: BorderSide(color: _red.withOpacity(0.55)),
+                    ),
+                    onPressed: () async {
+                      final confirmed = await showDialog<bool>(
+                        context: context,
+                        builder: (ctx) => AlertDialog(
+                          backgroundColor: _surface,
+                          title: Text(
+                            'Remove Image?',
+                            style: TextStyle(color: _textPri),
+                          ),
+                          content: Text(
+                            'This permanently deletes the image from the document. '
+                            'A nearby figure caption will also be removed if present.',
+                            style: TextStyle(color: _textSec, fontSize: 13),
+                          ),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.pop(ctx, false),
+                              child: Text('Cancel', style: TextStyle(color: _textSec)),
+                            ),
+                            ElevatedButton(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: _red,
+                                foregroundColor: Colors.white,
+                              ),
+                              onPressed: () => Navigator.pop(ctx, true),
+                              child: const Text('Remove'),
+                            ),
+                          ],
+                        ),
+                      );
+                      if (confirmed != true || !mounted) return;
+                      try {
+                        final auth = context.read<AuthProvider>();
+                        final service =
+                            ImageReplacementService(imageBaseUrl: _imageHostBase);
+                        final result = await service.removeImage(
+                          documentId: widget.documentId,
+                          imageIndex: jsonIntOr(issue['image_index'], 0),
+                          userId: auth.userId,
+                        );
+                        if (!mounted) return;
+                        _handleImageRemoveSuccess(
+                          result,
+                          issueId: issue['issue_id'] as String?,
+                        );
+                      } catch (e) {
+                        if (mounted) _showSnack('Remove failed: $e', _red);
+                      }
                     },
                   ),
                 ),

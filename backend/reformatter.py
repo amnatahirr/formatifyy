@@ -426,10 +426,13 @@ def _reformat_docx(
     body_start = None
     try:
         from docx_fields import (
+            clear_numbering_from_heading_styles,
             find_formatify_body_start_element,
+            strip_accidental_body_outline_numbering,
             _paragraph_is_before_body_start,
         )
         body_start = find_formatify_body_start_element(doc)
+        clear_numbering_from_heading_styles(doc)
     except Exception as exc:
         print(f"[reformatter] body-start lookup skipped: {exc}")
 
@@ -514,6 +517,12 @@ def _reformat_docx(
             _apply_style(para, spec, ALIGN_MAP)
 
         prev_was_heading = is_heading
+
+    try:
+        from docx_fields import strip_accidental_body_outline_numbering
+        strip_accidental_body_outline_numbering(doc)
+    except Exception as exc:
+        print(f"[reformatter] outline cleanup skipped: {exc}")
 
     doc.save(output_path)
     return output_path

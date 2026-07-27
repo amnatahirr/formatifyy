@@ -50,6 +50,39 @@ class ImageReplacementService {
     }
   }
 
+  /// Permanently remove an image (and nearby figure caption) from the DOCX.
+  Future<Map<String, dynamic>> removeImage({
+    required int documentId,
+    required int imageIndex,
+    int? userId,
+  }) async {
+    try {
+      var uri = Uri.parse('${ApiConfig.baseUrl}/documents/$documentId/remove-image');
+      if (userId != null) {
+        uri = uri.replace(queryParameters: {'user_id': userId.toString()});
+      }
+
+      final request = http.MultipartRequest('POST', uri);
+      request.fields['image_index'] = imageIndex.toString();
+
+      final streamedResponse = await request.send();
+      final response = await http.Response.fromStream(streamedResponse);
+
+      if (response.statusCode == 200) {
+        final jsonResponse = jsonDecode(response.body) as Map<String, dynamic>;
+        debugPrint('[ImageRemoval] ✓ Success: $jsonResponse');
+        return jsonResponse;
+      }
+      final error = jsonDecode(response.body);
+      throw Exception(
+        'Failed to remove image: ${error['detail'] ?? response.body}',
+      );
+    } catch (e) {
+      debugPrint('[ImageRemoval] ✗ Error: $e');
+      rethrow;
+    }
+  }
+
   /// Re-check ethics + relevance for a replacement image (base64).
   Future<Map<String, dynamic>> recheckImage({
     required int documentId,

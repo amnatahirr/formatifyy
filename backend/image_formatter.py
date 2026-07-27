@@ -32,6 +32,11 @@ def _paragraph_has_image(para) -> bool:
     return paragraph_has_image(para)
 
 
+def _is_cover_or_info_para(doc, para) -> bool:
+    from docx_fields import is_paragraph_in_cover_or_info
+    return is_paragraph_in_cover_or_info(doc, para)
+
+
 def _element_has_real_image(el) -> bool:
     """True when OOXML element contains an actual embedded picture (not caption chrome)."""
     if el is None:
@@ -185,7 +190,11 @@ async def fix_image_captions(
     doc = Document(file_path)
     _remove_floating_figure_captions(doc)
 
-    image_indices = [i for i, p in enumerate(doc.paragraphs) if _paragraph_has_image(p)]
+    image_indices = [
+        i
+        for i, p in enumerate(doc.paragraphs)
+        if _paragraph_has_image(p) and not _is_cover_or_info_para(doc, p)
+    ]
     fig_map = {idx: n + 1 for n, idx in enumerate(image_indices)}
     fixed = 0
 
@@ -251,11 +260,11 @@ async def format_document_images(
 
     _remove_floating_figure_captions(doc)
 
-    fig_num = 0
-    results: List[Dict[str, Any]] = []
-    captions_added = 0
-
-    image_indices = [i for i, p in enumerate(doc.paragraphs) if _paragraph_has_image(p)]
+    image_indices = [
+        i
+        for i, p in enumerate(doc.paragraphs)
+        if _paragraph_has_image(p) and not _is_cover_or_info_para(doc, p)
+    ]
     fig_map = {idx: n + 1 for n, idx in enumerate(image_indices)}
     fig_num = 0
     results: List[Dict[str, Any]] = []

@@ -35,6 +35,8 @@ class ImageBlock(BaseModel):
     page_number: int
     base64: str = ""
     caption: str = ""
+    # Paragraph that embeds the image (e.g. "p12") — used for before/after relevance.
+    paragraph_id: str = ""
 
 
 class DocumentModel(BaseModel):

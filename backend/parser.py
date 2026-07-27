@@ -160,13 +160,22 @@ def _parse_docx(file_path: str, filename: str) -> DocumentModel:
                             page_number=page,
                             base64=b64,
                             caption=caption,
+                            paragraph_id=f"p{para_idx}",
                         )
                     )
                     img_counter += 1
                 except Exception:
                     continue
 
-        if text:
+        # Always keep paragraphs that contain images, even if text is empty,
+        # so image paragraph_id anchors resolve during analysis.
+        has_image = any(
+            True
+            for blip in para._element.iter(f"{{{blip_ns}}}blip")
+            if blip.get(f"{{{r_ns}}}embed") in rel_images
+        )
+
+        if text or has_image:
             paragraphs.append(
                 ParagraphBlock(
                     paragraph_id=f"p{para_idx}",

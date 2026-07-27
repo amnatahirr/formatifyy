@@ -223,6 +223,7 @@ def fix_frontmatter_and_lists_order(docx_path: str) -> Dict[str, Any]:
         find_formatify_body_start_element,
         insert_toc_field,
         repair_formatify_body_start_bookmark,
+        remove_blank_interstitial_pages,
         _prepare_toc_entries,
         _remove_toc_field_block,
         _find_section_heading_paragraph,
@@ -234,7 +235,15 @@ def fix_frontmatter_and_lists_order(docx_path: str) -> Dict[str, Any]:
         "bookmark_repaired": False,
         "lists_rearranged": False,
         "toc_rebuilt": False,
+        "blank_pages_removed": {},
     }
+
+    # Always strip blank interstitial pages (cover/info merge artifact)
+    try:
+        result["blank_pages_removed"] = remove_blank_interstitial_pages(doc)
+    except Exception as exc:
+        print(f"[frontmatter_apply] blank page cleanup skipped: {exc}")
+        result["blank_pages_error"] = str(exc)
 
     # How many leading page-breaks? cover-only → 1, cover+info → 2
     breaks = 0
@@ -279,6 +288,13 @@ def fix_frontmatter_and_lists_order(docx_path: str) -> Dict[str, Any]:
         )
         result["lists_rearranged"] = True
         result["layout"] = layout
+
+    # Final cleanup after TOC/list rearrangement
+    try:
+        final_clean = remove_blank_interstitial_pages(doc)
+        result["blank_pages_removed_final"] = final_clean
+    except Exception as exc:
+        print(f"[frontmatter_apply] final blank cleanup skipped: {exc}")
 
     doc.save(docx_path)
     return result

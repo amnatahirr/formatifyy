@@ -166,12 +166,37 @@ def generate_caption_from_b64(b64: str, cache_key: str | None = None) -> str:
 
 # ── CLIP embeddings & similarity ──────────────────────────────────────────────
 
+def _normalize_clip_features(feats) -> torch.Tensor:
+    """
+    Newer transformers may return BaseModelOutputWithPooling from
+    get_image_features / get_text_features instead of a raw tensor.
+    """
+    if torch.is_tensor(feats):
+        t = feats
+    elif getattr(feats, "pooler_output", None) is not None:
+        t = feats.pooler_output
+    elif getattr(feats, "image_embeds", None) is not None:
+        t = feats.image_embeds
+    elif getattr(feats, "text_embeds", None) is not None:
+        t = feats.text_embeds
+    elif getattr(feats, "last_hidden_state", None) is not None:
+        t = feats.last_hidden_state[:, 0, :]
+    elif isinstance(feats, (tuple, list)) and feats:
+        t = feats[0]
+    else:
+        raise TypeError(f"Unexpected CLIP feature type: {type(feats)!r}")
+
+    if not torch.is_tensor(t):
+        raise TypeError(f"CLIP features did not resolve to a tensor: {type(t)!r}")
+    return t / t.norm(dim=-1, keepdim=True)
+
+
 @torch.inference_mode()
 def clip_image_embedding(image: Image.Image) -> torch.Tensor:
     processor, model = _load_clip()
     inputs = processor(images=image, return_tensors="pt").to(_device)
     feats = model.get_image_features(**inputs)
-    return feats / feats.norm(dim=-1, keepdim=True)
+    return _normalize_clip_features(feats)
 
 
 @torch.inference_mode()
@@ -180,7 +205,7 @@ def clip_text_embedding(text: str) -> torch.Tensor:
     safe = (text or "")[:350].strip() or "empty"
     inputs = processor(text=[safe], return_tensors="pt", padding=True, truncation=True).to(_device)
     feats = model.get_text_features(**inputs)
-    return feats / feats.norm(dim=-1, keepdim=True)
+    return _normalize_clip_features(feats)
 
 
 def clip_cosine_similarity(image: Image.Image, text: str) -> float:
@@ -194,3 +219,16 @@ def clip_cosine_similarity(image: Image.Image, text: str) -> float:
 def clip_similarity_from_b64(b64: str, text: str) -> float:
     image = decode_base64_image(b64, for_inference=True)
     return clip_cosine_similarity(image, text)
+
+
+@torch.inference_mode()
+def clip_text_text_similarity(text_a: str, text_b: str) -> float:
+    """Cosine similarity between two text strings via CLIP text encoder."""
+    a = (text_a or "").strip()
+    b = (text_b or "").strip()
+    if not a or not b:
+        return 0.0
+    emb_a = clip_text_embedding(a)
+    emb_b = clip_text_embedding(b)
+    raw = float((emb_a @ emb_b.T).squeeze().item())
+    return float(max(0.0, min(1.0, raw)))

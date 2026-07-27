@@ -1041,6 +1041,7 @@ import '../widgets/template_config/action_buttons.dart';
 import '../widgets/template_config/upload_template_document_button.dart';
 import '../widgets/template_config/frontmatter_branding_card.dart';
 import '../widgets/template_config/frontmatter_assets_card.dart';
+import '../widgets/template_config/image_formatting_rules_card.dart';
 import '../utils/template_mapping_utils.dart';
 import '../screens/admin_reference_settings_screen.dart';
 import '../widgets/admin/admin_ui.dart';
@@ -1116,6 +1117,13 @@ class _TemplateConfigurationScreenState
   bool   _tableAutoFit     = true;
   bool   _tableRepeatHeader = true;
   // ─────────────────────────────────────────────────────────────────────────
+
+  // Image / caption formatting (Phase 1)
+  late TextEditingController _captionPatternController;
+  late TextEditingController _maxImageWidthPercentController;
+  String _imageNumberingScheme = 'global';
+  String _captionPosition = 'below';
+  bool _includeLof = true;
 
   String _pageSize = 'A4';
   String _spacingUnit = 'mm';
@@ -1195,6 +1203,10 @@ class _TemplateConfigurationScreenState
     _tablePaddingBottomController = TextEditingController(text: '60');
     _tablePaddingLeftController   = TextEditingController(text: '108');
     _tablePaddingRightController  = TextEditingController(text: '108');
+
+    _captionPatternController =
+        TextEditingController(text: 'Figure {n}: {caption}');
+    _maxImageWidthPercentController = TextEditingController(text: '80');
 
     _templateNameController.addListener(() => setState(() {}));
   }
@@ -1299,7 +1311,13 @@ class _TemplateConfigurationScreenState
       _tableCenterTable = true;
       _tableAutoFit     = true;
       _tableRepeatHeader = true;
+
+      _imageNumberingScheme = 'global';
+      _captionPosition = 'below';
+      _includeLof = true;
     });
+    _captionPatternController.text = 'Figure {n}: {caption}';
+    _maxImageWidthPercentController.text = '80';
   }
 
   void _fillDefaultValues() {
@@ -1478,6 +1496,21 @@ class _TemplateConfigurationScreenState
           _tablePaddingRightController.text =
               (tableStyle['cell_padding_rgt'] ?? 108).toString();
 
+          _imageNumberingScheme =
+              (rules['numbering_scheme'] ?? 'global').toString() == 'chapter'
+                  ? 'chapter'
+                  : 'global';
+          _captionPosition =
+              (rules['caption_position'] ?? 'below').toString() == 'above'
+                  ? 'above'
+                  : 'below';
+          _includeLof = rules['include_lof'] ?? true;
+          _captionPatternController.text =
+              (rules['caption_format_pattern'] ?? 'Figure {n}: {caption}')
+                  .toString();
+          _maxImageWidthPercentController.text =
+              (rules['max_image_width_percent'] ?? 80).toString();
+
           _isLoading = false;
         });
       }
@@ -1626,6 +1659,20 @@ class _TemplateConfigurationScreenState
         _tablePaddingRightController.text =
             (tableStyle['cell_padding_rgt'] ?? 108).toString();
       }
+
+      _imageNumberingScheme =
+          (rules['numbering_scheme'] ?? 'global').toString() == 'chapter'
+              ? 'chapter'
+              : 'global';
+      _captionPosition =
+          (rules['caption_position'] ?? 'below').toString() == 'above'
+              ? 'above'
+              : 'below';
+      _includeLof = rules['include_lof'] ?? true;
+      _captionPatternController.text =
+          (rules['caption_format_pattern'] ?? 'Figure {n}: {caption}').toString();
+      _maxImageWidthPercentController.text =
+          (rules['max_image_width_percent'] ?? 80).toString();
     });
   }
 
@@ -1901,6 +1948,16 @@ class _TemplateConfigurationScreenState
 
       // ── Table style (NEW) ─────────────────────────────────────────────────
       'table_style': _buildTableStyleData(),
+
+      // ── Image / caption formatting (Phase 1) ──────────────────────────────
+      'caption_format_pattern': _captionPatternController.text.trim().isEmpty
+          ? 'Figure {n}: {caption}'
+          : _captionPatternController.text.trim(),
+      'numbering_scheme': _imageNumberingScheme,
+      'caption_position': _captionPosition,
+      'max_image_width_percent':
+          int.tryParse(_maxImageWidthPercentController.text.trim()) ?? 80,
+      'include_lof': _includeLof,
     };
 
     // Reference rules — prefer updated UI rules, fall back to existing DB values
@@ -1956,6 +2013,8 @@ class _TemplateConfigurationScreenState
     _tablePaddingBottomController.dispose();
     _tablePaddingLeftController.dispose();
     _tablePaddingRightController.dispose();
+    _captionPatternController.dispose();
+    _maxImageWidthPercentController.dispose();
     super.dispose();
   }
 
@@ -2225,6 +2284,20 @@ class _TemplateConfigurationScreenState
             const FrontmatterBrandingCard(),
             const SizedBox(height: 32),
             const FrontmatterAssetsCard(),
+            const SizedBox(height: 32),
+
+            ImageFormattingRulesCard(
+              captionPatternController: _captionPatternController,
+              maxWidthPercentController: _maxImageWidthPercentController,
+              numberingScheme: _imageNumberingScheme,
+              onNumberingSchemeChanged: (v) =>
+                  setState(() => _imageNumberingScheme = v),
+              captionPosition: _captionPosition,
+              onCaptionPositionChanged: (v) =>
+                  setState(() => _captionPosition = v),
+              includeLof: _includeLof,
+              onIncludeLofChanged: (v) => setState(() => _includeLof = v),
+            ),
             const SizedBox(height: 32),
 
             _buildReferenceRulesButton(),

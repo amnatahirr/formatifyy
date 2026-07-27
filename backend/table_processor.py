@@ -13,6 +13,7 @@ from docx.text.paragraph import Paragraph
 
 from docx_fields import (
     CAPTION_TEXT_RE,
+    _element_is_before_body_start,
     paragraph_has_seq_caption,
     rebuild_caption_with_seq,
     _body_children,
@@ -147,11 +148,14 @@ def _insert_caption_before_table(doc, table, description: str) -> Paragraph:
 
 
 def ensure_table_captions(doc) -> Dict[str, Any]:
-    """Add SEQ-based captions above tables that lack them."""
+    """Add SEQ-based captions above tables that lack them (report body only)."""
     added = 0
     upgraded = 0
 
     for table in doc.tables:
+        # Never caption tables on Cover / Project Details pages
+        if _element_is_before_body_start(doc, table._tbl):
+            continue
         cap_para = _caption_paragraph_before_table(doc, table)
         if cap_para is not None:
             text = cap_para.text.strip()

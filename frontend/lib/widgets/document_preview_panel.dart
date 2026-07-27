@@ -30,6 +30,7 @@ class DocumentPreviewPanel extends StatefulWidget {
   final void Function(String issueId, String correctedText) onApplyFix;
   final void Function(String issueId) onIgnoreIssue;
   final void Function(Map<String, dynamic> result, Map<String, dynamic> issue)? onImageReplaced;
+  final void Function(Map<String, dynamic> result, Map<String, dynamic> issue)? onImageRemoved;
 
   const DocumentPreviewPanel({
     super.key,
@@ -43,6 +44,7 @@ class DocumentPreviewPanel extends StatefulWidget {
     required this.onApplyFix,
     required this.onIgnoreIssue,
     this.onImageReplaced,
+    this.onImageRemoved,
   });
 
   @override
@@ -225,6 +227,49 @@ class _DocumentPreviewPanelState extends State<DocumentPreviewPanel> {
     );
   }
 
+  Future<void> _confirmAndRemove(Map<String, dynamic> block, Map<String, dynamic> issue) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: _surface,
+        title: Text('Remove Image?', style: TextStyle(color: _textPri)),
+        content: Text(
+          'This permanently deletes the image from the document. '
+          'A nearby figure caption will also be removed if present.',
+          style: TextStyle(color: _textSec, fontSize: 13),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text('Cancel', style: TextStyle(color: _textSec)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: _red,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Remove'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    try {
+      final result = await _replacementService.removeImage(
+        documentId: widget.documentId,
+        imageIndex: jsonIntOr(issue['image_index'], jsonIntOr(block['image_index'], 0)),
+      );
+      if (!mounted) return;
+      widget.onImageRemoved?.call(result, issue);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Remove failed: $e'), backgroundColor: _red),
+      );
+    }
+  }
+
   Widget _chip(String label, Color color) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
@@ -346,7 +391,9 @@ class _DocumentPreviewPanelState extends State<DocumentPreviewPanel> {
               color: (isUnethical ? _red : _yellow).withOpacity(0.12),
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               child: Text(
-                isUnethical ? 'Blocked — unethical image' : 'Warning — irrelevant image',
+                isUnethical
+                    ? 'Flagged — unethical image (shown for review)'
+                    : 'Warning — irrelevant image',
                 style: TextStyle(
                   color: isUnethical ? _red : _yellow,
                   fontSize: 12,
@@ -359,32 +406,51 @@ class _DocumentPreviewPanelState extends State<DocumentPreviewPanel> {
             child: Stack(
               fit: StackFit.expand,
               children: [
-                if (isUnethical)
-                  Container(
-                    color: _surface2,
-                    alignment: Alignment.center,
-                    child: const Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.block, color: _red, size: 40),
-                        SizedBox(height: 8),
-                        Text('Image blocked', style: TextStyle(color: _red, fontSize: 12)),
-                      ],
-                    ),
-                  )
-                else if (imageUrl.isNotEmpty)
+                if (imageUrl.isNotEmpty)
                   Image.network(
                     imageUrl,
                     fit: BoxFit.contain,
                     errorBuilder: (_, __, ___) => Center(
                       child: Icon(Icons.broken_image, color: _textSec),
                     ),
+                  )
+                else
+                  Container(
+                    color: _surface2,
+                    alignment: Alignment.center,
+                    child: Icon(Icons.broken_image, color: _textSec),
                   ),
-                if (isIrrelevant && !isUnethical)
+                if (isUnethical)
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    child: Container(
+                      color: _red.withOpacity(0.85),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 5,
+                      ),
+                      child: const Text(
+                        'Unethical image — visible for review',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  )
+                else if (isIrrelevant)
                   Container(
                     color: _yellow.withOpacity(0.25),
                     alignment: Alignment.center,
-                    child: const Icon(Icons.warning_amber_rounded, color: _yellow, size: 36),
+                    child: const Icon(
+                      Icons.warning_amber_rounded,
+                      color: _yellow,
+                      size: 36,
+                    ),
                   ),
               ],
             ),
@@ -392,11 +458,29 @@ class _DocumentPreviewPanelState extends State<DocumentPreviewPanel> {
           if (issue != null && corrected)
             Padding(
               padding: const EdgeInsets.all(10),
-              child: ElevatedButton.icon(
-                onPressed: () => _showReplaceDialog(block, issue),
-                icon: const Icon(Icons.image_search, size: 16),
-                label: const Text('Replace Image'),
-                style: ElevatedButton.styleFrom(backgroundColor: _blue, foregroundColor: _textPri),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  ElevatedButton.icon(
+                    onPressed: () => _showReplaceDialog(block, issue),
+                    icon: const Icon(Icons.image_search, size: 16),
+                    label: const Text('Replace Image'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: _blue,
+                      foregroundColor: _textPri,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  OutlinedButton.icon(
+                    onPressed: () => _confirmAndRemove(block, issue),
+                    icon: const Icon(Icons.delete_outline, size: 16),
+                    label: const Text('Remove Image'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: _red,
+                      side: BorderSide(color: _red.withOpacity(0.55)),
+                    ),
+                  ),
+                ],
               ),
             ),
         ],

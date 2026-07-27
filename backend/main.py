@@ -64,6 +64,8 @@ from issue_utils import (
     save_document_images,
 )
 from image_formatter import format_document_images, fix_image_captions
+from services.image_formatting_service import run_image_formatting_pipeline
+from services.image_config import DEFAULT_IMAGE_FORMAT_RULES
 from docx_fields import (
     analyze_document_lists,
     apply_toc_heading_styles,
@@ -782,6 +784,20 @@ def _ensure_formatted_working_copy(doc: Any, tmpl: Dict[str, Any]) -> str:
             ensure_frontmatter_pages(int(doc["id"]), working_copy)
         except Exception as exc:
             print(f"[working_copy] frontmatter apply skipped: {exc}")
+    else:
+        # Existing copies: only collapse duplicate page-break paragraphs.
+        # Do NOT run aggressive absorb/empty cleanup here — that previously
+        # deleted TOC/LOF/LOT field-end markers and then wiped the body.
+        try:
+            from docx import Document as DocxDoc
+            from docx_fields import _collapse_consecutive_page_breaks
+            d = DocxDoc(working_copy)
+            removed = _collapse_consecutive_page_breaks(d)
+            if removed:
+                d.save(working_copy)
+                print(f"[working_copy] collapsed {removed} duplicate page breaks doc={doc['id']}")
+        except Exception as exc:
+            print(f"[working_copy] page-break collapse skipped: {exc}")
     return working_copy
 
 
@@ -978,7 +994,11 @@ def apply_section_bullets_to_file(docx_path: str, para_indices: list[int]):
                 continue
             _np = _OE("w:p")
             if _pPr is not None:
-                _np.append(_dc2(_pPr))
+                # Copy paragraph props but never inherit outline/list numbering
+                _pPr_copy = _dc2(_pPr)
+                for _bad in list(_pPr_copy.findall(qn("w:numPr"))):
+                    _pPr_copy.remove(_bad)
+                _np.append(_pPr_copy)
             _nr = _OE("w:r")
             _rp = next((rp for rp, _ in _frags if rp is not None), None)
             if _rp is not None:
@@ -1530,7 +1550,41 @@ async def _get_ai_client():
 
 @app.post("/api/format-images/{document_id}", tags=["Documents"])
 async def format_images_endpoint(document_id: int, user_id: int = Query(...)):
-    """Auto-format images: center, resize, add AI captions."""
+    """
+    Phase 1 image formatting: caption detect/standardize, numbering,
+    in-text reference validation, and List of Figures refresh.
+    (Legacy AI caption/resize lives behind ?legacy=1.)
+    """
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM documents WHERE id = ? AND user_id = ?", (document_id, user_id))
+    doc = cursor.fetchone()
+    conn.close()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    tmpl = get_template_by_id(doc["template_id"])
+    if not tmpl:
+        raise HTTPException(status_code=400, detail="Template not found")
+
+    working_copy = os.path.join(UPLOAD_DIR, "working", f"doc_{document_id}_working.docx")
+    file_path = working_copy if os.path.exists(working_copy) else doc["file_path"]
+    if not file_path.endswith(".docx"):
+        raise HTTPException(status_code=400, detail="Only DOCX files support image formatting.")
+
+    output_path = os.path.join(OUTPUT_DIR, f"images_formatted_{document_id}.docx")
+    rules = tmpl.get("formatting_rules", {}) or {}
+
+    result = run_image_formatting_pipeline(file_path, output_path, rules)
+    os.makedirs(os.path.dirname(working_copy) or ".", exist_ok=True)
+    shutil.copy2(output_path, working_copy)
+    result["download_url"] = f"/api/format-images/download/{document_id}"
+    return result
+
+
+@app.post("/api/format-images/{document_id}/legacy", tags=["Documents"])
+async def format_images_legacy_endpoint(document_id: int, user_id: int = Query(...)):
+    """Legacy auto-format: center, resize, AI captions."""
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM documents WHERE id = ? AND user_id = ?", (document_id, user_id))
@@ -1557,6 +1611,12 @@ async def format_images_endpoint(document_id: int, user_id: int = Query(...)):
     shutil.copy2(output_path, working_copy)
     result["download_url"] = f"/api/format-images/download/{document_id}"
     return result
+
+
+@app.get("/api/templates/image-format-defaults", tags=["Templates"])
+async def image_format_defaults():
+    """Default image/caption formatting_rules keys for admin UI."""
+    return {"defaults": DEFAULT_IMAGE_FORMAT_RULES}
 
 
 @app.get("/api/format-images/download/{document_id}", tags=["Documents"])
@@ -2095,14 +2155,20 @@ async def apply_all_fixes(
     if working_copy.endswith(".docx"):
         try:
             rules = tmpl.get("formatting_rules", {})
+            # Prefer explicit UI toggles from payload; fall back to template rules
+            include_toc = payload.get("include_toc", rules.get("include_toc", True))
+            include_lot = payload.get("include_lot", rules.get("include_lot", True))
+            include_lof = payload.get("include_lof", rules.get("include_lof", True))
             lists_result = generate_document_lists(
                 working_copy,
                 rules,
                 tmpl.get("required_sections", []),
-                include_toc=bool(rules.get("include_toc", True)),
-                include_lot=bool(rules.get("include_lot", True)),
-                include_lof=bool(rules.get("include_lof", True)),
-                toc_levels=str(rules.get("toc_levels", "1-3")),
+                include_toc=bool(include_toc),
+                include_lot=bool(include_lot),
+                include_lof=bool(include_lof),
+                toc_levels=str(
+                    payload.get("toc_levels") or rules.get("toc_levels", "1-3")
+                ),
             )
         except Exception as exc:
             lists_result = {"status": "error", "message": str(exc)}
@@ -2265,12 +2331,20 @@ async def replace_image(
             found += 1
 
         if img_para_idx is not None:
-            parts = []
-            for j in range(max(0, img_para_idx - 3), min(len(docx.paragraphs), img_para_idx + 4)):
+            before_parts = []
+            after_parts = []
+            for j in range(max(0, img_para_idx - 4), img_para_idx):
                 t = docx.paragraphs[j].text.strip()
-                if t:
-                    parts.append(t)
-            surrounding_text = "\n".join(parts)
+                if t and not t.lower().startswith(("figure", "fig.", "image")):
+                    before_parts.append(t)
+            for j in range(img_para_idx + 1, min(len(docx.paragraphs), img_para_idx + 5)):
+                t = docx.paragraphs[j].text.strip()
+                if not t:
+                    continue
+                if t.lower().startswith(("figure", "fig.", "image")):
+                    continue
+                after_parts.append(t)
+            surrounding_text = "\n".join(before_parts[-4:] + after_parts[:4])
 
         docx.save(working_copy)
 
@@ -2333,6 +2407,134 @@ async def replace_image(
             "reason": validation.get("reason", ""),
             "recommendation": validation.get("reason", ""),
         },
+        "document_blocks": commit.get("document_blocks", []),
+    }
+
+
+@app.post("/api/documents/{document_id}/remove-image", tags=["Documents"])
+async def remove_image(
+    document_id: int,
+    image_index: int = Form(...),
+    user_id: int = Query(None),
+):
+    """Remove an image (and nearby figure caption) from the working DOCX."""
+    import re
+    from docx import Document as DocxDoc
+    from docx.oxml.ns import qn
+
+    conn = get_db()
+    cursor = conn.cursor()
+    if user_id:
+        cursor.execute(
+            "SELECT * FROM documents WHERE id = ? AND user_id = ?",
+            (document_id, user_id),
+        )
+    else:
+        cursor.execute("SELECT * FROM documents WHERE id = ?", (document_id,))
+    doc = cursor.fetchone()
+    conn.close()
+
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    if not doc["file_path"].endswith(".docx"):
+        raise HTTPException(
+            status_code=400,
+            detail="Image removal is only supported for DOCX files.",
+        )
+
+    tmpl = get_template_by_id(doc["template_id"])
+    if not tmpl:
+        raise HTTPException(status_code=400, detail="Template not found")
+
+    working_copy = _ensure_formatted_working_copy(doc, tmpl)
+    image_id = f"img{image_index}"
+    removed_caption = False
+    commit: Dict[str, Any] = {}
+
+    blip_ns = "{http://schemas.openxmlformats.org/drawingml/2006/main}blip"
+    drawing_tag = qn("w:drawing")
+    pict_tag = qn("w:pict")
+    caption_re = re.compile(
+        r"^(figure|fig\.?|image)\s*\d*\s*[:.\-–—]?",
+        re.IGNORECASE,
+    )
+
+    try:
+        docx = DocxDoc(working_copy)
+        found = 0
+        target_para = None
+        for para in docx.paragraphs:
+            if not list(para._element.iter(blip_ns)):
+                continue
+            if found == image_index:
+                target_para = para
+                break
+            found += 1
+
+        if target_para is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Image at index {image_index} not found in document",
+            )
+
+        para_el = target_para._element
+        next_el = para_el.getnext()
+
+        for tag in (drawing_tag, pict_tag):
+            for node in list(para_el.iter(tag)):
+                parent = node.getparent()
+                if parent is not None:
+                    parent.remove(node)
+
+        remaining_text = "".join(
+            (t.text or "") for t in para_el.iter(qn("w:t"))
+        ).strip()
+        still_has_image = bool(list(para_el.iter(blip_ns)))
+        removed_caption = False
+
+        if not remaining_text and not still_has_image:
+            parent = para_el.getparent()
+            if parent is not None:
+                parent.remove(para_el)
+
+        # Remove immediate following figure caption paragraph (if image-free)
+        if next_el is not None and next_el.tag == qn("w:p"):
+            next_text = "".join(
+                (t.text or "") for t in next_el.iter(qn("w:t"))
+            ).strip()
+            next_has_image = bool(list(next_el.iter(blip_ns)))
+            if (
+                next_text
+                and not next_has_image
+                and caption_re.match(next_text)
+            ):
+                parent = next_el.getparent()
+                if parent is not None:
+                    parent.remove(next_el)
+                    removed_caption = True
+
+        docx.save(working_copy)
+        commit = _commit_working_document(document_id, working_copy, doc)
+
+    except HTTPException:
+        raise
+    except Exception as exc:
+        print(f"[remove-image] error: {exc}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to remove document image: {exc}",
+        )
+
+    return {
+        "success": True,
+        "status": "success",
+        "removed": True,
+        "cleared": True,
+        "image_id": image_id,
+        "image_index": image_index,
+        "removed_caption": removed_caption,
+        "message": "Image removed from document",
         "document_blocks": commit.get("document_blocks", []),
     }
 

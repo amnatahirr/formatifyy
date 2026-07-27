@@ -33,10 +33,101 @@ def _ensure_dir(path: str) -> None:
 
 
 def _add_page_break(doc: Document) -> None:
-    """Append a hard page break at the end of the document body."""
+    """
+    Append a hard page break WITHOUT creating a blank interstitial page.
+
+    Adding a *new* empty paragraph with a page break after a full page of
+    content often lands that paragraph on the next page, and the break then
+    advances one more page — leaving a blank sheet. Attach the break to the
+    last real content paragraph instead.
+    """
+    _strip_trailing_empty_paragraphs(doc)
+
+    for para in reversed(list(doc.paragraphs)):
+        el = para._element
+        has_text = bool((para.text or "").strip())
+        has_media = bool(
+            list(el.iter(qn("w:drawing")))
+            or list(el.iter(qn("w:pict")))
+            or list(el.iter("{http://schemas.openxmlformats.org/drawingml/2006/main}blip"))
+        )
+        if not has_text and not has_media:
+            continue
+        run = para.add_run()
+        run.add_break(WD_BREAK.PAGE)
+        return
+
+    # Truly empty document — fall back to a dedicated break paragraph
     para = doc.add_paragraph()
     run = para.add_run()
     run.add_break(WD_BREAK.PAGE)
+
+
+def _strip_trailing_empty_paragraphs(doc: Document) -> int:
+    """Remove trailing empty body paragraphs (keep final sectPr intact)."""
+    body = doc.element.body
+    removed = 0
+    children = list(body)
+    i = len(children) - 1
+    while i >= 0:
+        child = children[i]
+        if child.tag == qn("w:sectPr"):
+            i -= 1
+            continue
+        if child.tag != qn("w:p"):
+            break
+        text = "".join((t.text or "") for t in child.iter(qn("w:t"))).strip()
+        has_media = bool(
+            list(child.iter(qn("w:drawing")))
+            or list(child.iter(qn("w:pict")))
+            or list(child.iter("{http://schemas.openxmlformats.org/drawingml/2006/main}blip"))
+        )
+        has_break = any(
+            br.get(qn("w:type")) == "page" for br in child.iter(qn("w:br"))
+        )
+        # Keep a trailing page-break paragraph for callers that already added one;
+        # only strip pure empties.
+        if text or has_media or has_break:
+            break
+        body.remove(child)
+        removed += 1
+        i -= 1
+    return removed
+
+
+def _strip_trailing_page_breaks(doc: Document) -> int:
+    """Remove trailing page-break-only paragraphs so we can add exactly one."""
+    body = doc.element.body
+    removed = 0
+    children = list(body)
+    i = len(children) - 1
+    while i >= 0:
+        child = children[i]
+        if child.tag == qn("w:sectPr"):
+            i -= 1
+            continue
+        if child.tag != qn("w:p"):
+            break
+        text = "".join((t.text or "") for t in child.iter(qn("w:t"))).strip()
+        has_media = bool(
+            list(child.iter(qn("w:drawing")))
+            or list(child.iter(qn("w:pict")))
+        )
+        has_break = any(
+            br.get(qn("w:type")) == "page" for br in child.iter(qn("w:br"))
+        )
+        if has_break and not text and not has_media:
+            body.remove(child)
+            removed += 1
+            i -= 1
+            continue
+        if not text and not has_media and not has_break:
+            body.remove(child)
+            removed += 1
+            i -= 1
+            continue
+        break
+    return removed
 
 
 def _set_section_page_start(section, start: int = 1) -> None:
@@ -305,15 +396,22 @@ def merge_frontmatter_into_report(
     if insert_cover and cover_bytes:
         # Attach admin cover EXACTLY as uploaded — no style/TOC mutations
         cover_doc = _bytes_to_document(cover_bytes)
+        _strip_trailing_empty_paragraphs(cover_doc)
+        _strip_trailing_page_breaks(cover_doc)
         _add_page_break(cover_doc)
         parts.append(cover_doc)
     if insert_info and info_bytes:
         # Attach admin info page EXACTLY as uploaded — no style/TOC mutations
         info_doc = _bytes_to_document(info_bytes)
+        _strip_trailing_empty_paragraphs(info_doc)
+        _strip_trailing_page_breaks(info_doc)
         _add_page_break(info_doc)
         parts.append(info_doc)
 
     original = Document(original_docx)
+    # Avoid leading blank page before original body content
+    _strip_trailing_empty_paragraphs(original)  # no-op on leading; strip leading below
+    _strip_leading_empty_paragraphs(original)
     # Mark where report body (and TOC/lists) belong — after cover/info
     ensure_formatify_body_start_bookmark(original)
     # Restart numbering on the report body (best-effort)
@@ -331,9 +429,45 @@ def merge_frontmatter_into_report(
         composer.append(extra)
     composer.append(original)
 
+    # Final pass: collapse any blank interstitial pages from merge artifacts
+    try:
+        from docx_fields import remove_blank_interstitial_pages
+        remove_blank_interstitial_pages(composer.doc)
+    except Exception as exc:
+        print(f"[frontmatter_generator] blank-page cleanup skipped: {exc}")
+
     out = io.BytesIO()
     composer.save(out)
     return out.getvalue()
+
+
+def _strip_leading_empty_paragraphs(doc: Document) -> int:
+    """Remove leading empty paragraphs so body does not start with a blank page."""
+    body = doc.element.body
+    removed = 0
+    for child in list(body):
+        if child.tag == qn("w:sectPr"):
+            break
+        if child.tag != qn("w:p"):
+            break
+        text = "".join((t.text or "") for t in child.iter(qn("w:t"))).strip()
+        has_media = bool(
+            list(child.iter(qn("w:drawing")))
+            or list(child.iter(qn("w:pict")))
+        )
+        has_break = any(
+            br.get(qn("w:type")) == "page" for br in child.iter(qn("w:br"))
+        )
+        if text or has_media:
+            break
+        if has_break:
+            # Leading page-break-only would create a blank first body page
+            body.remove(child)
+            removed += 1
+            continue
+        body.remove(child)
+        removed += 1
+    return removed
 
 
 def generate_frontmatter_docx(
