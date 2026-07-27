@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
+import '../utils/logout_confirm.dart';
 
 class AppSidebar extends StatelessWidget {
   final int selectedIndex;
@@ -133,10 +134,14 @@ class AppSidebar extends StatelessWidget {
                         const SizedBox(height: 12),
                         TextButton(
                           onPressed: () {
-                            auth.logout();
-                            Navigator.of(context).pushNamedAndRemoveUntil(
-                              '/login',
-                              (route) => false,
+                            confirmAndLogout(
+                              context,
+                              afterLogout: () {
+                                Navigator.of(context).pushNamedAndRemoveUntil(
+                                  '/login',
+                                  (route) => false,
+                                );
+                              },
                             );
                           },
                           style: TextButton.styleFrom(

@@ -14,6 +14,7 @@ import '../providers/document_provider.dart';
 import '../providers/template_provider.dart';
 import '../providers/collaboration_provider.dart';
 import '../providers/fyp_provider.dart';
+import '../utils/logout_confirm.dart';
 import 'new_report_screen.dart';
 import 'analyze_screen.dart';
 import '../widgets/export_dialog.dart';
@@ -4801,9 +4802,7 @@ void _handleDownload(Map<String, dynamic> doc) {
     }
   }
 
-  void _logout(BuildContext context) {
-    context.read<AuthProvider>().logout();
-  }
+  Future<void> _logout(BuildContext context) => confirmAndLogout(context);
 }
 
 class TemplatesPanel extends StatelessWidget {

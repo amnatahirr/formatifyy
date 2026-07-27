@@ -20,26 +20,39 @@ _INSTRUCTION_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Whole-suggestion patterns only — never match common prose fragments like
+# "to the" / "under the" inside normal grammar corrections.
+_INSTRUCTION_PHRASES = (
+    "move this paragraph",
+    "relocate this paragraph",
+    "apply heading",
+    "apply the heading",
+    "section order",
+    "wrong section",
+    "should be moved",
+    "belongs under",
+    "belongs in the",
+    "place this under",
+    "move this to",
+    "reorder this",
+)
+
 
 def _is_instruction_suggestion(text: str) -> bool:
     """True if suggestion is a structural instruction, not corrected prose."""
     s = (text or "").strip()
     if not s:
         return False
-    if _INSTRUCTION_RE.match(s):
+    # Short imperative instructions only — long prose is almost never structural
+    if len(s) > 180:
+        return False
+    if _INSTRUCTION_RE.match(s) and len(s.split()) <= 24:
+        # "Use of …" is normal academic prose, not a fix instruction
+        if re.match(r"^use\s+of\b", s, re.IGNORECASE):
+            return False
         return True
     lowered = s.lower()
-    return any(
-        phrase in lowered
-        for phrase in (
-            "move this paragraph",
-            "apply heading",
-            "section order",
-            "to the ",
-            "under the ",
-            "wrong section",
-        )
-    )
+    return any(phrase in lowered for phrase in _INSTRUCTION_PHRASES)
 
 
 def _run_contains_drawing(run) -> bool:
@@ -51,6 +64,10 @@ def _run_contains_drawing(run) -> bool:
     pict = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}pict"
     blip = "{http://schemas.openxmlformats.org/drawingml/2006/main}blip"
     return bool(list(el.iter(drawing)) or list(el.iter(pict)) or list(el.iter(blip)))
+
+
+def _normalize_ws(text: str) -> str:
+    return re.sub(r"\s+", " ", (text or "").strip())
 
 
 def _replace_in_paragraph(para, original: str, suggestion: str) -> bool:
@@ -89,6 +106,23 @@ def _replace_in_paragraph(para, original: str, suggestion: str) -> bool:
             new_text = full[:idx] + sugg + full[idx + len(orig):]
             if para.runs:
                 return _set_text_keep_images(new_text)
+            return False
+        # Whitespace-normalized fallback (analysis text vs Word runs)
+        norm_full = _normalize_ws(full)
+        norm_orig = _normalize_ws(orig)
+        if norm_orig and norm_orig.lower() in norm_full.lower():
+            # Prefer replacing whole paragraph when original ≈ full text
+            if (
+                not _is_instruction_suggestion(sugg)
+                and len(norm_orig) >= 12
+                and (
+                    norm_orig.lower() == norm_full.lower()
+                    or norm_orig.lower() in norm_full.lower()
+                    and len(norm_orig) >= max(20, int(len(norm_full) * 0.6))
+                )
+            ):
+                if para.runs:
+                    return _set_text_keep_images(sugg)
         # Full-sentence grammar correction only (never instructions)
         if (
             not _is_instruction_suggestion(sugg)
@@ -136,9 +170,20 @@ def apply_text_fix(
         doc.save(file_path)
         return True, "Fix applied."
 
-    # Never overwrite entire paragraph unless original matched partially
-    if suggestion.strip() and original.strip() and len(original.strip()) >= 3:
-        return False, "Could not locate original text in paragraph."
+    # Index may drift after prior edits — search nearby paragraphs by original text
+    orig_norm = _normalize_ws(original).lower()
+    if orig_norm and len(orig_norm) >= 8:
+        search_range = list(range(max(0, idx - 8), min(len(doc.paragraphs), idx + 9)))
+        for alt_idx in search_range:
+            if alt_idx == idx:
+                continue
+            alt = doc.paragraphs[alt_idx]
+            if orig_norm in _normalize_ws(alt.text).lower() or (
+                len(orig_norm) >= 20 and orig_norm[:40] in _normalize_ws(alt.text).lower()
+            ):
+                if _replace_in_paragraph(alt, original, suggestion):
+                    doc.save(file_path)
+                    return True, "Fix applied."
 
     return False, "Could not locate original text in paragraph."
 

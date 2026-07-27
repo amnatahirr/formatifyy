@@ -12,6 +12,7 @@ import '../screens/admin_settings_screen.dart';
 import '../screens/admin_universities_screen.dart';
 import '../screens/admin_users_screen.dart';
 import '../screens/admin_verify_screen.dart';
+import '../utils/logout_confirm.dart';
 import '../widgets/admin/admin_ui.dart';
 
 class AdminDashboard extends StatefulWidget {
@@ -263,7 +264,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                 icon: const Icon(Icons.logout_rounded),
                 color: AdminColors.primary,
                 tooltip: 'Logout',
-                onPressed: _logout,
+                onPressed: () => confirmAndLogout(context),
               ),
             ],
           ),
@@ -299,28 +300,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
     }
   }
 
-  void _logout() {
-    context.read<AuthProvider>().logout();
-  }
-
   void _showLogoutDialog() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: AdminColors.surface,
-        title: const Text('Logout'),
-        content: const Text('Are you sure you want to logout?'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-          TextButton(
-            onPressed: () {
-              Navigator.pop(context);
-              _logout();
-            },
-            child: const Text('Logout'),
-          ),
-        ],
-      ),
-    );
+    confirmAndLogout(context);
   }
 }

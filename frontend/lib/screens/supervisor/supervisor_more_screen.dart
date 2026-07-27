@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../providers/auth_provider.dart';
+import '../../utils/logout_confirm.dart';
 import '../../widgets/admin/admin_ui.dart';
 
 /// Mobile "More" hub — secondary supervisor tools + account.
@@ -66,7 +67,7 @@ class SupervisorMoreScreen extends StatelessWidget {
           SizedBox(
             width: double.infinity,
             child: OutlinedButton.icon(
-              onPressed: () => context.read<AuthProvider>().logout(),
+              onPressed: () => confirmAndLogout(context),
               icon: const Icon(Icons.logout_rounded, size: 18),
               label: const Text('Log out'),
               style: OutlinedButton.styleFrom(

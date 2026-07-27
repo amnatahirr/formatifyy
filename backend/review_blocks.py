@@ -36,7 +36,7 @@ _TOC_TITLE_RE = re.compile(
     re.IGNORECASE,
 )
 _LOF_TITLE_RE = re.compile(
-    r"^(list\s+of\s+figures|table\s+of\s+figures)$",
+    r"^(list\s+of\s+(?:figures|images|illustrations)|table\s+of\s+figures)$",
     re.IGNORECASE,
 )
 _LOT_TITLE_RE = re.compile(
@@ -212,7 +212,7 @@ def _page_kind(page_texts: Sequence[str]) -> Optional[str]:
 
     # TOC-like short pages with dotted leaders
     if leader_hits >= 3 and len(lines) >= 4 and word_count < 400:
-        if re.search(r"\bfigures?\b", first_few, re.I):
+        if re.search(r"\b(?:figures?|images?|illustrations?)\b", first_few, re.I):
             return "lof"
         if re.search(r"\btables?\b", first_few, re.I) and not re.search(
             r"table\s+of\s+contents", first_few, re.I
@@ -283,8 +283,9 @@ def _split_docx_pages(doc) -> List[List[Tuple[Any, str, str, bool]]]:
     return pages or [[]]
 
 
-def _leading_frontmatter_page_count(pages: List[List[Tuple[Any, str, str, bool]]]) -> int:
+def _leading_frontmatter_skip_count(page_text_lists: Sequence[Sequence[str]]) -> int:
     """How many leading pages to skip (cover/info/toc/lof/lot). Cap at 5."""
+    pages = list(page_text_lists)
     skip = 0
     front_kinds = {"cover", "info", "toc", "lof", "lot"}
     max_front_pages = min(5, max(0, len(pages) - 1))  # never skip the only/last page wholesale
@@ -292,7 +293,7 @@ def _leading_frontmatter_page_count(pages: List[List[Tuple[Any, str, str, bool]]
     for idx, page in enumerate(pages[: max_front_pages + 1]):
         if idx >= max_front_pages:
             break
-        texts = [t for _, t, _, _ in page]
+        texts = [t for t in page if (t or "").strip()]
         words = _word_count(" ".join(texts))
         # Large pages are body — stop skipping
         if words >= 180 or len(texts) >= 40:
@@ -303,27 +304,114 @@ def _leading_frontmatter_page_count(pages: List[List[Tuple[Any, str, str, bool]]
         if kind in front_kinds:
             skip = idx + 1
             continue
+        joined = " ".join(texts).lower()
+        soft_keys = (
+            "university",
+            "final year project",
+            "submitted in partial",
+            "table of contents",
+            "list of figures",
+            "list of images",
+            "list of illustrations",
+            "list of tables",
+            "project details",
+            "supervisor",
+            "registration number",
+            "group members",
+        )
+        # Soft match: first two short pages, or continue after known front-matter
+        if kind is None and words < 160 and any(k in joined for k in soft_keys):
+            if idx < 2 or skip > 0:
+                skip = idx + 1
+                continue
         # Unknown page after front-matter → start of body
         if skip > 0:
             break
-        # Soft match only for the first two short pages
-        if idx < 2 and kind is None and words < 160:
-            joined = " ".join(texts).lower()
-            if any(
-                k in joined
-                for k in (
-                    "university",
-                    "final year project",
-                    "submitted in partial",
-                    "table of contents",
-                    "list of figures",
-                    "list of tables",
-                )
-            ):
-                skip = idx + 1
-                continue
         break
     return skip
+
+
+def _leading_frontmatter_page_count(pages: List[List[Tuple[Any, str, str, bool]]]) -> int:
+    """How many leading docx pages to skip (cover/info/toc/lof/lot). Cap at 5."""
+    return _leading_frontmatter_skip_count([[t for _, t, _, _ in page] for page in pages])
+
+
+def strip_frontmatter_from_document(doc: Any) -> Any:
+    """
+    Return a copy of DocumentModel without leading front-matter pages.
+
+    Used by the student analysis pipeline so cover / info / TOC / LOF / LOT
+    (and list-of-images) pages are not scored. Original paragraph_id values are
+    preserved so issues still map to the full-document preview. Remaining pages
+    are renumbered contiguously from 1 for batching.
+    """
+    try:
+        from models import DocumentModel, ImageBlock, ParagraphBlock
+    except Exception:
+        return doc
+
+    if not isinstance(doc, DocumentModel) or not doc.paragraphs:
+        return doc
+
+    by_page: Dict[int, List[str]] = {}
+    for p in doc.paragraphs:
+        by_page.setdefault(int(p.page_number), []).append(p.text or "")
+
+    ordered_pages = sorted(by_page.keys())
+    skip_n = _leading_frontmatter_skip_count([by_page[pn] for pn in ordered_pages])
+    if skip_n <= 0:
+        return doc
+
+    skip_pages = set(ordered_pages[:skip_n])
+    keep_pages = [pn for pn in ordered_pages if pn not in skip_pages]
+    if not keep_pages:
+        # Mis-detect: would drop entire document — keep original
+        return doc
+
+    page_map = {old: idx + 1 for idx, old in enumerate(keep_pages)}
+    # Include image-only pages that sit after the front-matter block
+    for img in doc.images:
+        pn = int(img.page_number)
+        if pn in skip_pages or pn in page_map:
+            continue
+        if ordered_pages and pn > ordered_pages[min(skip_n - 1, len(ordered_pages) - 1)]:
+            page_map[pn] = len(page_map) + 1
+
+    new_paras = [
+        ParagraphBlock(
+            **{
+                **p.model_dump(),
+                "page_number": page_map[int(p.page_number)],
+            }
+        )
+        for p in doc.paragraphs
+        if int(p.page_number) in page_map
+    ]
+    new_imgs = [
+        ImageBlock(
+            **{
+                **img.model_dump(),
+                "page_number": page_map[int(img.page_number)],
+            }
+        )
+        for img in doc.images
+        if int(img.page_number) in page_map
+    ]
+    if not new_paras:
+        return doc
+
+    logger.info(
+        "analysis frontmatter skip: dropped %s leading page(s) (%s → %s body pages)",
+        skip_n,
+        doc.total_pages,
+        len(keep_pages),
+    )
+    return DocumentModel(
+        filename=doc.filename,
+        total_pages=max(page_map.values()) if page_map else len(keep_pages),
+        paragraphs=new_paras,
+        images=new_imgs,
+    )
 
 
 def extract_review_blocks(file_path: str, limit: int = 400) -> List[Dict[str, Any]]:

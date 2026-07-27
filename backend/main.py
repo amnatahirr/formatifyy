@@ -556,6 +556,13 @@ async def _run_analysis(
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"Failed to parse document: {exc}")
 
+    # Skip cover / info / TOC / LOF / LOT (list of images) pages for scoring.
+    # Reformat still uses the original file path below — front-matter untouched.
+    try:
+        from review_blocks import strip_frontmatter_from_document
+        doc_model = strip_frontmatter_from_document(doc_model)
+    except Exception as exc:
+        print(f"[analysis] frontmatter skip failed (non-fatal): {exc}")
 
     # ── Step 2: Batch ─────────────────────────────────────────────────────────
     batches = create_batches(doc_model)
@@ -824,13 +831,18 @@ def _detect_missing_bullet_issues(docx_path: str) -> list:
         from docx import Document as DocxDoc
         from docx.oxml.ns import qn
         from list_detection import detect_list_groups, list_groups_to_issues
+        from review_blocks import frontmatter_text_set
 
         docx = DocxDoc(docx_path)
+        fm_texts = frontmatter_text_set(docx_path)
 
         blocks = []
         for idx, p in enumerate(docx.paragraphs):
             text = p.text.strip()
             if not text:
+                continue
+            # Do not flag cover / TOC / list-of-* pages as missing bullets
+            if text in fm_texts:
                 continue
             style_name = (p.style.name or "").lower()
             has_numpr = p._element.find(f".//{qn('w:numPr')}") is not None
@@ -1333,9 +1345,12 @@ async def analyze_document_endpoint(document_id: int, user_id: int = Query(...))
             pass
 
     # Heading analysis — Claude-first detection, then template/rule cross-check
+    # (body pages only — same front-matter skip as the AI analysis pipeline)
     template_heading_matches: List[Dict[str, Any]] = []
     if doc_model and tmpl:
         try:
+            from review_blocks import strip_frontmatter_from_document
+            heading_doc = strip_frontmatter_from_document(doc_model)
             decisions = _load_heading_decisions(document_id)
             client = None
             try:
@@ -1345,14 +1360,14 @@ async def analyze_document_endpoint(document_id: int, user_id: int = Query(...))
 
             if client is not None:
                 template_heading_matches = await analyze_document_headings_with_claude(
-                    doc_model,
+                    heading_doc,
                     tmpl,
                     client,
                     user_decisions=decisions,
                 )
             else:
                 template_heading_matches = analyze_document_headings(
-                    doc_model,
+                    heading_doc,
                     tmpl,
                     user_decisions=decisions,
                 )

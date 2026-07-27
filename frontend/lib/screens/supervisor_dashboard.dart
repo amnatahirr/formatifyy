@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../providers/auth_provider.dart';
+import '../utils/logout_confirm.dart';
 import '../utils/responsive.dart';
 import '../widgets/admin/admin_ui.dart';
 import 'supervisor/assignment_requests_screen.dart';
@@ -428,7 +429,7 @@ class _SupervisorDashboardState extends State<SupervisorDashboard> {
             color: AdminColors.primary,
             tooltip: 'Logout',
             visualDensity: VisualDensity.compact,
-            onPressed: () => context.read<AuthProvider>().logout(),
+            onPressed: () => confirmAndLogout(context),
           ),
         ],
       ),
