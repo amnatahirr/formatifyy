@@ -129,6 +129,38 @@ def _purge_legacy_demo_fyp_data(cursor, supervisor_id: int) -> None:
         (supervisor_id, *demo_request_names),
     )
 
+    _purge_legacy_demo_notifications(cursor)
+
+
+def _purge_legacy_demo_notifications(cursor) -> None:
+    """Remove inbox rows that mention hardcoded Alpha/Beta/… demo groups."""
+    demo_tokens = (
+        "Alpha Team",
+        "Beta Squad",
+        "Gamma Group",
+        "Delta Crew",
+        "Epsilon Lab",
+        "Zeta Unit",
+        "Omega Team",
+        "Nova Cell",
+        "ayesha@student.edu",
+        "hassan@student.edu",
+        "sara@student.edu",
+        "ali@student.edu",
+        "zainab@student.edu",
+    )
+    # Match title OR message containing any demo token (case-insensitive)
+    clauses = []
+    params: list = []
+    for token in demo_tokens:
+        clauses.append("(LOWER(COALESCE(title, '')) LIKE ? OR LOWER(COALESCE(message, '')) LIKE ?)")
+        like = f"%{token.lower()}%"
+        params.extend([like, like])
+    cursor.execute(
+        f"DELETE FROM notifications WHERE {' OR '.join(clauses)}",
+        params,
+    )
+
 
 def init_db():
     """
@@ -696,6 +728,8 @@ def init_db():
         supervisor_id = supervisor_row["id"]
         # One-time cleanup of legacy dummy groups that filled supervisor slots
         _purge_legacy_demo_fyp_data(cursor, supervisor_id)
+    else:
+        _purge_legacy_demo_notifications(cursor)
 
     # Keep every supervisor's slot counter in sync with accepted groups only
     cursor.execute("SELECT id FROM supervisors")

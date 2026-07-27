@@ -40,6 +40,11 @@ class _SupervisorDashboardState extends State<SupervisorDashboard> {
   int _selectedTab = 0;
   int _unreadCount = 0;
 
+  /// Per-tab nested navigators so detail screens (Group Detail, Document Review,
+  /// etc.) push beside the sidebar instead of covering the whole dashboard.
+  final Map<int, GlobalKey<NavigatorState>> _contentNavKeys = {};
+  final Map<int, _ShellNavObserver> _navObservers = {};
+
   final List<String> _tabs = const [
     'Dashboard',
     'Assignment Requests',
@@ -67,6 +72,32 @@ class _SupervisorDashboardState extends State<SupervisorDashboard> {
   static const int _moreTabIndex = 6;
   static const int _notificationsTabIndex = 7;
 
+  GlobalKey<NavigatorState> _navKeyFor(int tab) {
+    return _contentNavKeys.putIfAbsent(tab, GlobalKey<NavigatorState>.new);
+  }
+
+  _ShellNavObserver _observerFor(int tab) {
+    return _navObservers.putIfAbsent(
+      tab,
+      () => _ShellNavObserver(onChanged: () {
+        if (mounted) setState(() {});
+      }),
+    );
+  }
+
+  bool get _contentCanPop {
+    final nav = _navKeyFor(_selectedTab).currentState;
+    return nav != null && nav.canPop();
+  }
+
+  void _selectTab(int index) {
+    if (_selectedTab == index) {
+      _navKeyFor(index).currentState?.popUntil((route) => route.isFirst);
+      return;
+    }
+    setState(() => _selectedTab = index);
+  }
+
   String get _title {
     if (_selectedTab >= 0 && _selectedTab < _tabs.length) {
       return _tabs[_selectedTab];
@@ -78,32 +109,56 @@ class _SupervisorDashboardState extends State<SupervisorDashboard> {
   Widget build(BuildContext context) {
     final compact = isCompact(context);
 
-    return Scaffold(
-      backgroundColor: AdminColors.background,
-      body: compact
-          ? SafeArea(
-              bottom: false,
-              child: Column(
+    return PopScope(
+      canPop: !_contentCanPop,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) return;
+        final nav = _navKeyFor(_selectedTab).currentState;
+        if (nav != null && nav.canPop()) {
+          nav.pop(result);
+        }
+      },
+      child: Scaffold(
+        backgroundColor: AdminColors.background,
+        body: compact
+            ? SafeArea(
+                bottom: false,
+                child: Column(
+                  children: [
+                    _buildTopBar(compact: true),
+                    Expanded(child: _buildShellNavigator()),
+                  ],
+                ),
+              )
+            : Row(
                 children: [
-                  _buildTopBar(compact: true),
-                  Expanded(child: _buildContent()),
+                  _buildSidebar(),
+                  Expanded(
+                    child: Column(
+                      children: [
+                        _buildTopBar(compact: false),
+                        Expanded(child: _buildShellNavigator()),
+                      ],
+                    ),
+                  ),
                 ],
               ),
-            )
-          : Row(
-              children: [
-                _buildSidebar(),
-                Expanded(
-                  child: Column(
-                    children: [
-                      _buildTopBar(compact: false),
-                      Expanded(child: _buildContent()),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-      bottomNavigationBar: compact ? _buildMobileBottomNav() : null,
+        bottomNavigationBar: compact ? _buildMobileBottomNav() : null,
+      ),
+    );
+  }
+
+  /// Nested navigator: keeps sidebar/bottom-nav visible on pushed detail routes.
+  Widget _buildShellNavigator() {
+    return Navigator(
+      key: _navKeyFor(_selectedTab),
+      observers: [_observerFor(_selectedTab)],
+      onGenerateRoute: (settings) {
+        return MaterialPageRoute<void>(
+          settings: settings,
+          builder: (_) => _buildContent(),
+        );
+      },
     );
   }
 
@@ -147,7 +202,7 @@ class _SupervisorDashboardState extends State<SupervisorDashboard> {
     final color = selected ? AdminColors.primary : Colors.white.withOpacity(0.55);
 
     return InkWell(
-      onTap: () => setState(() => _selectedTab = item.tabIndex),
+      onTap: () => _selectTab(item.tabIndex),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
@@ -276,7 +331,7 @@ class _SupervisorDashboardState extends State<SupervisorDashboard> {
     final title = label ?? _tabs[index];
     final tabIcon = icon ?? _tabIcons[index];
     return GestureDetector(
-      onTap: () => setState(() => _selectedTab = index),
+      onTap: () => _selectTab(index),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 180),
         margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
@@ -361,7 +416,7 @@ class _SupervisorDashboardState extends State<SupervisorDashboard> {
             IconButton(
               tooltip: 'Notifications',
               visualDensity: VisualDensity.compact,
-              onPressed: () => setState(() => _selectedTab = _notificationsTabIndex),
+              onPressed: () => _selectTab(_notificationsTabIndex),
               icon: Badge(
                 isLabelVisible: _unreadCount > 0,
                 label: Text('$_unreadCount'),
@@ -384,11 +439,11 @@ class _SupervisorDashboardState extends State<SupervisorDashboard> {
     switch (_selectedTab) {
       case 0:
         return SupervisorHomeScreen(
-          onOpenAssignmentRequests: () => setState(() => _selectedTab = _requestsTabIndex),
-          onOpenMyGroups: () => setState(() => _selectedTab = _groupsTabIndex),
-          onOpenSubmissions: () => setState(() => _selectedTab = _submissionsTabIndex),
-          onOpenPlagiarism: () => setState(() => _selectedTab = _plagiarismTabIndex),
-          onOpenNotifications: () => setState(() => _selectedTab = _notificationsTabIndex),
+          onOpenAssignmentRequests: () => _selectTab(_requestsTabIndex),
+          onOpenMyGroups: () => _selectTab(_groupsTabIndex),
+          onOpenSubmissions: () => _selectTab(_submissionsTabIndex),
+          onOpenPlagiarism: () => _selectTab(_plagiarismTabIndex),
+          onOpenNotifications: () => _selectTab(_notificationsTabIndex),
           onUnreadCount: (count) {
             if (_unreadCount != count && mounted) {
               setState(() => _unreadCount = count);
@@ -408,9 +463,9 @@ class _SupervisorDashboardState extends State<SupervisorDashboard> {
       case 6:
         return SupervisorMoreScreen(
           unreadCount: _unreadCount,
-          onOpenNotifications: () => setState(() => _selectedTab = _notificationsTabIndex),
-          onOpenPlagiarism: () => setState(() => _selectedTab = _plagiarismTabIndex),
-          onOpenProfile: () => setState(() => _selectedTab = _profileTabIndex),
+          onOpenNotifications: () => _selectTab(_notificationsTabIndex),
+          onOpenPlagiarism: () => _selectTab(_plagiarismTabIndex),
+          onOpenProfile: () => _selectTab(_profileTabIndex),
         );
       case 7:
         return const SupervisorNotificationsScreen();
@@ -418,6 +473,30 @@ class _SupervisorDashboardState extends State<SupervisorDashboard> {
         return const _SupervisorProfileView();
     }
   }
+}
+
+/// Rebuilds the dashboard shell when nested routes push/pop (keeps PopScope in sync).
+class _ShellNavObserver extends NavigatorObserver {
+  final VoidCallback onChanged;
+
+  _ShellNavObserver({required this.onChanged});
+
+  void _notify() {
+    // Defer so NavigatorState.canPop() is up to date.
+    WidgetsBinding.instance.addPostFrameCallback((_) => onChanged());
+  }
+
+  @override
+  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) => _notify();
+
+  @override
+  void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) => _notify();
+
+  @override
+  void didRemove(Route<dynamic> route, Route<dynamic>? previousRoute) => _notify();
+
+  @override
+  void didReplace({Route<dynamic>? newRoute, Route<dynamic>? oldRoute}) => _notify();
 }
 
 class _SupervisorProfileView extends StatefulWidget {
