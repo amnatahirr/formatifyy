@@ -18,7 +18,9 @@ __pycache__/
 backend/.env
 
 # Virtual environments
+.venv/
 venv/
+backend/.venv/
 backend/venv/
 ENV/
 env/
@@ -60,6 +62,7 @@ frontend/.flutter-plugins
 frontend/.flutter-plugins-dependencies
 
 # Python
+backend/.venv/
 backend/venv/
 __pycache__/
 *.pyc
