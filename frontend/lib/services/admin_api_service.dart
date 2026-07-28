@@ -205,6 +205,52 @@ class AdminApiService {
     await _request('DELETE', '/admin/deadlines/$id', queryParameters: {'user_id': userId});
   }
 
+  Future<List<SemesterDeadlineModel>> fetchSemesterDeadlines(int userId) async {
+    final data = await _request(
+      'GET',
+      '/admin/semester-deadlines',
+      queryParameters: {'user_id': userId},
+    );
+    final map = Map<String, dynamic>.from(data as Map);
+    return List<Map<String, dynamic>>.from(map['deadlines'] as List? ?? const [])
+        .map(SemesterDeadlineModel.fromJson)
+        .toList();
+  }
+
+  Future<SemesterDeadlineModel> createSemesterDeadline(
+    int userId, {
+    required int semester,
+    required String deadlineDate,
+  }) async {
+    final data = await _request(
+      'POST',
+      '/admin/semester-deadlines',
+      queryParameters: {'user_id': userId},
+      body: {'semester': semester, 'deadline_date': deadlineDate},
+    );
+    final map = Map<String, dynamic>.from(data as Map);
+    return SemesterDeadlineModel.fromJson(
+      Map<String, dynamic>.from(map['deadline'] as Map),
+    );
+  }
+
+  Future<SemesterDeadlineModel> updateSemesterDeadline(
+    int userId,
+    int id, {
+    required String deadlineDate,
+  }) async {
+    final data = await _request(
+      'PATCH',
+      '/admin/semester-deadlines/$id',
+      queryParameters: {'user_id': userId},
+      body: {'deadline_date': deadlineDate},
+    );
+    final map = Map<String, dynamic>.from(data as Map);
+    return SemesterDeadlineModel.fromJson(
+      Map<String, dynamic>.from(map['deadline'] as Map),
+    );
+  }
+
   Future<AdminAnalyticsModel> fetchAnalytics(int userId) async {
     final data = await _request('GET', '/admin/analytics', queryParameters: {'user_id': userId});
     return AdminAnalyticsModel.fromJson(Map<String, dynamic>.from(data));

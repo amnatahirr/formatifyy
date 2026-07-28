@@ -22,12 +22,14 @@ class FypProvider extends ChangeNotifier {
   Map<String, dynamic>? _plagiarismReport;
   List<Map<String, dynamic>> _submissions = [];
   Map<String, dynamic>? _latestSubmission;
+  Map<String, dynamic>? _semesterDeadline;
   bool _isLoading = false;
   bool _isSubmitting = false;
   bool _isStatusLoading = false;
   bool _isMilestonesLoading = false;
   bool _isPlagiarismLoading = false;
   bool _isSubmissionsLoading = false;
+  bool _isSemesterDeadlineLoading = false;
   String? _errorMessage;
 
   List<Map<String, dynamic>> get supervisors => _supervisors;
@@ -51,12 +53,15 @@ class FypProvider extends ChangeNotifier {
   Map<String, dynamic>? get plagiarismReport => _plagiarismReport;
   List<Map<String, dynamic>> get submissions => _submissions;
   Map<String, dynamic>? get latestSubmission => _latestSubmission;
+  /// Admin global semester deadline for this student's current_semester.
+  Map<String, dynamic>? get semesterDeadline => _semesterDeadline;
   bool get isLoading => _isLoading;
   bool get isSubmitting => _isSubmitting;
   bool get isStatusLoading => _isStatusLoading;
   bool get isMilestonesLoading => _isMilestonesLoading;
   bool get isPlagiarismLoading => _isPlagiarismLoading;
   bool get isSubmissionsLoading => _isSubmissionsLoading;
+  bool get isSemesterDeadlineLoading => _isSemesterDeadlineLoading;
   String? get errorMessage => _errorMessage;
 
   void setFypGroupId(int? groupId) {
@@ -282,6 +287,33 @@ class FypProvider extends ChangeNotifier {
       return const [];
     } finally {
       _isSubmissionsLoading = false;
+      notifyListeners();
+    }
+  }
+
+  /// Admin-managed global deadline for this student's `current_semester`.
+  Future<Map<String, dynamic>?> fetchSemesterDeadline({
+    required int userId,
+  }) async {
+    _isSemesterDeadlineLoading = true;
+    await _notifyAfterAsyncGap();
+    try {
+      final response = await http.get(
+        _uri('/student/semester-deadline', {'user_id': userId}),
+      );
+      if (response.statusCode == 200) {
+        _semesterDeadline =
+            Map<String, dynamic>.from(jsonDecode(response.body) as Map);
+        return _semesterDeadline;
+      }
+      _semesterDeadline = null;
+      return null;
+    } catch (e) {
+      _semesterDeadline = null;
+      debugPrint('[FypProvider] fetchSemesterDeadline error: $e');
+      return null;
+    } finally {
+      _isSemesterDeadlineLoading = false;
       notifyListeners();
     }
   }

@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../screens/admin/analytics_screen.dart';
 import '../screens/admin/deadlines_screen.dart';
+import '../screens/admin/semester_deadlines_screen.dart';
 import '../screens/admin/department_manager_screen.dart';
 import '../screens/admin/supervisor_management_screen.dart';
 import '../screens/admin/template_manager_screen.dart';
@@ -31,6 +32,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
     'Supervisors',
     'Template Manager',
     'Deadlines',
+    'Semester Deadlines',
     'Users',
     'Universities',
     'Analytics',
@@ -44,6 +46,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
     Icons.supervisor_account_rounded,
     Icons.layers_rounded,
     Icons.event_note_rounded,
+    Icons.event_available_rounded,
     Icons.people_rounded,
     Icons.school_rounded,
     Icons.bar_chart_rounded,
@@ -286,14 +289,16 @@ class _AdminDashboardState extends State<AdminDashboard> {
       case 4:
         return const DeadlinesScreen(embedded: true);
       case 5:
-        return const AdminUsersScreen();
+        return const SemesterDeadlinesScreen(embedded: true);
       case 6:
-        return const AdminUniversitiesScreen();
+        return const AdminUsersScreen();
       case 7:
-        return const AnalyticsScreen(embedded: true);
+        return const AdminUniversitiesScreen();
       case 8:
-        return const AdminVerifyScreen();
+        return const AnalyticsScreen(embedded: true);
       case 9:
+        return const AdminVerifyScreen();
+      case 10:
         return const AdminSettingsScreen();
       default:
         return const SizedBox();

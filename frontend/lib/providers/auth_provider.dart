@@ -184,6 +184,8 @@ class AuthProvider extends ChangeNotifier {
     String email,
     String password, {
     int? universityId,
+    required int departmentId,
+    required int currentSemester,
     bool rememberMe = true,
   }) async {
     _isLoading = true;
@@ -200,6 +202,8 @@ class AuthProvider extends ChangeNotifier {
               "email": email,
               "password": password,
               "university_id": universityId ?? 1,
+              "department_id": departmentId,
+              "current_semester": currentSemester,
             }),
           )
           .timeout(

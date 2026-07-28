@@ -142,6 +142,8 @@ class UserSignupRequest(BaseModel):
     email: str
     password: str
     university_id: Optional[int] = 1
+    department_id: int
+    current_semester: int
 
 
 class UserLoginRequest(BaseModel):

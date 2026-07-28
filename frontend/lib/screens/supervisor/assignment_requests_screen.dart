@@ -19,6 +19,7 @@ class _AssignmentRequestsScreenState extends State<AssignmentRequestsScreen> {
   String? _error;
   bool _loading = true;
   final Set<int> _busyIds = {};
+  List<String> _profileMismatchWarnings = const [];
 
   @override
   void initState() {
@@ -48,8 +49,20 @@ class _AssignmentRequestsScreenState extends State<AssignmentRequestsScreen> {
     if (userId == null) return;
     setState(() => _busyIds.add(request.id));
     try {
-      await _api.acceptAssignmentRequest(userId, request.id);
+      final result = await _api.acceptAssignmentRequest(userId, request.id);
       if (!mounted) return;
+      final rawWarnings = result['profile_mismatch_warnings'];
+      final warnings = <String>[];
+      if (rawWarnings is List) {
+        for (final item in rawWarnings) {
+          if (item is Map && item['message'] != null) {
+            warnings.add(item['message'].toString());
+          } else if (item != null) {
+            warnings.add(item.toString());
+          }
+        }
+      }
+      setState(() => _profileMismatchWarnings = warnings);
       showAdminSnackBar(context, '${request.groupName} accepted and added to My Groups.');
       await _loadRequests();
     } catch (e) {
@@ -166,6 +179,13 @@ class _AssignmentRequestsScreenState extends State<AssignmentRequestsScreen> {
                 ? 'No pending requests right now'
                 : '${_requests.length} pending request${_requests.length == 1 ? '' : 's'} awaiting your decision',
           ),
+          if (_profileMismatchWarnings.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            _ProfileMismatchBanner(
+              messages: _profileMismatchWarnings,
+              onDismiss: () => setState(() => _profileMismatchWarnings = const []),
+            ),
+          ],
           const SizedBox(height: 24),
           if (_requests.isEmpty)
             const AdminEmptyView(
@@ -183,6 +203,74 @@ class _AssignmentRequestsScreenState extends State<AssignmentRequestsScreen> {
                 ),
               ),
             ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ProfileMismatchBanner extends StatelessWidget {
+  final List<String> messages;
+  final VoidCallback onDismiss;
+
+  const _ProfileMismatchBanner({
+    required this.messages,
+    required this.onDismiss,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(14, 12, 8, 12),
+      decoration: BoxDecoration(
+        color: AdminColors.warning.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AdminColors.warning.withOpacity(0.45)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Padding(
+            padding: EdgeInsets.only(top: 2),
+            child: Icon(Icons.info_outline, color: AdminColors.warning, size: 20),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Profile mismatch notice',
+                  style: TextStyle(
+                    color: AdminColors.warning,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 13,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                ...messages.map(
+                  (m) => Padding(
+                    padding: const EdgeInsets.only(bottom: 4),
+                    child: Text(
+                      m,
+                      style: TextStyle(
+                        color: Colors.white.withOpacity(0.82),
+                        fontSize: 12.5,
+                        height: 1.4,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          IconButton(
+            onPressed: onDismiss,
+            tooltip: 'Dismiss',
+            visualDensity: VisualDensity.compact,
+            icon: Icon(Icons.close, size: 18, color: Colors.white.withOpacity(0.55)),
+          ),
         ],
       ),
     );

@@ -221,6 +221,26 @@ class DeadlineModel {
       );
 }
 
+/// Global admin-managed FYP semester deadline (semester 6 or 7).
+class SemesterDeadlineModel {
+  final int id;
+  final int semester;
+  final String deadlineDate;
+
+  const SemesterDeadlineModel({
+    required this.id,
+    required this.semester,
+    required this.deadlineDate,
+  });
+
+  factory SemesterDeadlineModel.fromJson(Map<String, dynamic> json) =>
+      SemesterDeadlineModel(
+        id: _asInt(json['id']),
+        semester: _asInt(json['semester']),
+        deadlineDate: (json['deadline_date'] ?? '').toString(),
+      );
+}
+
 class AnalyticsIssueBreakdown {
   final String label;
   final int percentage;

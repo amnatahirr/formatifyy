@@ -30,6 +30,7 @@ import 'student/plagiarism_report_screen.dart';
 import 'student/status_tracker_screen.dart';
 import '../widgets/notifications_panel.dart';
 import '../widgets/student/mobile_status_summary_card.dart';
+import '../widgets/student/desktop_semester_deadline_card.dart';
 import '../utils/responsive.dart';
 import 'mobile_companion_screen.dart';
 
@@ -779,6 +780,9 @@ class _StudentDashboardState extends State<StudentDashboard> {
                 const MobileStatusSummaryCard(),
                 SizedBox(height: 16),
                 _buildSendFromPhoneCard(),
+                SizedBox(height: 20),
+              ] else ...[
+                const DesktopSemesterDeadlineCard(),
                 SizedBox(height: 20),
               ],
               _buildStatsRow(compact: compact, totalReports: totalReports, draftCount: draftCount, completedCount: completedCount),

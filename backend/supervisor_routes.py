@@ -54,6 +54,102 @@ def _email_from_member_label(label: str) -> str | None:
     return None
 
 
+def _display_name_from_member_label(label: str) -> str:
+    """Best-effort display name from 'Name <email>' or bare label."""
+    text = (label or "").strip()
+    if not text:
+        return "A member"
+    if "<" in text:
+        return text.split("<", 1)[0].strip() or text
+    email = _email_from_member_label(text)
+    if email and text.lower() == email:
+        return email
+    return text
+
+
+def _lookup_user_profile_by_email(cursor, email: str | None) -> dict[str, Any] | None:
+    """Return users.department_id / current_semester / username for an email, if any."""
+    cleaned = (email or "").strip().lower()
+    if not cleaned or "@" not in cleaned:
+        return None
+    cursor.execute(
+        """
+        SELECT id, username, email, department_id, current_semester
+        FROM users
+        WHERE LOWER(TRIM(email)) = ?
+          AND role = 'student'
+        LIMIT 1
+        """,
+        (cleaned,),
+    )
+    row = cursor.fetchone()
+    return _row_to_dict(row) if row else None
+
+
+def _collect_member_profile_mismatches(
+    cursor,
+    *,
+    leader_email: str | None,
+    leader_department_id: int | None,
+    leader_semester: int | None,
+    member_labels: list[str],
+) -> list[dict[str, Any]]:
+    """
+    Informational only: compare resolvable member profiles to the leader.
+    Members are resolvable only when member_names includes an email
+    (e.g. 'Name <email@x.com>') that matches a users row.
+    Name-only entries are skipped.
+    """
+    warnings: list[dict[str, Any]] = []
+    leader_norm = (leader_email or "").strip().lower()
+    seen_emails: set[str] = set()
+    if leader_norm:
+        seen_emails.add(leader_norm)
+
+    for label in member_labels:
+        email = _email_from_member_label(label)
+        if not email or email in seen_emails:
+            continue
+        seen_emails.add(email)
+        profile = _lookup_user_profile_by_email(cursor, email)
+        if not profile:
+            continue
+
+        mem_dept = profile.get("department_id")
+        mem_sem = profile.get("current_semester")
+        # Only flag when the member profile actually has a value that differs.
+        dept_mismatch = (
+            mem_dept is not None
+            and leader_department_id is not None
+            and int(mem_dept) != int(leader_department_id)
+        )
+        sem_mismatch = (
+            mem_sem is not None
+            and leader_semester is not None
+            and int(mem_sem) != int(leader_semester)
+        )
+        if not dept_mismatch and not sem_mismatch:
+            continue
+
+        name = _display_name_from_member_label(label)
+        if not name or name == "A member":
+            name = (profile.get("username") or email).strip() or "A member"
+        warnings.append(
+            {
+                "member_label": label,
+                "member_name": name,
+                "member_email": email,
+                "member_department_id": mem_dept,
+                "member_current_semester": mem_sem,
+                "message": (
+                    f"Note: {name}'s profile shows a different department/semester "
+                    "than the group leader — you may want to verify with the group."
+                ),
+            }
+        )
+    return warnings
+
+
 def _get_group_notify_emails(cursor, group_id: int, supervisor_id: int | None = None) -> list[str]:
     """All group emails that should receive supervisor comment notifications."""
     emails: list[str] = []
@@ -341,6 +437,11 @@ def _serialize_group(row) -> dict[str, Any]:
         "is_behind": behind,
         "track_status": "behind" if behind else "on_track",
         "created_at": row["created_at"],
+        "department_id": row["department_id"] if "department_id" in keys else None,
+        "current_semester": row["current_semester"] if "current_semester" in keys else None,
+        "student_contact_email": (
+            row["student_contact_email"] if "student_contact_email" in keys else ""
+        ) or "",
     }
 
 
@@ -704,6 +805,38 @@ def accept_assignment_request(
         members = request_row["member_names"]
         if not members and request_row["student_leader_name"]:
             members = json.dumps([request_row["student_leader_name"]])
+        member_labels = _parse_member_names(members)
+        leader_email = (request_row["student_leader_email"] or "").strip() or None
+
+        # Prefill group department/semester from the LEADER's user profile.
+        leader_profile = _lookup_user_profile_by_email(cursor, leader_email)
+        leader_department_id = None
+        leader_semester = None
+        if leader_profile:
+            if leader_profile.get("department_id") is not None:
+                try:
+                    leader_department_id = int(leader_profile["department_id"])
+                except (TypeError, ValueError):
+                    leader_department_id = None
+            if leader_profile.get("current_semester") is not None:
+                try:
+                    leader_semester = int(leader_profile["current_semester"])
+                except (TypeError, ValueError):
+                    leader_semester = None
+
+        if leader_department_id is not None:
+            department_id = leader_department_id
+        current_semester = leader_semester if leader_semester in (6, 7) else 6
+
+        # Informational only — never blocks accept.
+        profile_mismatch_warnings = _collect_member_profile_mismatches(
+            cursor,
+            leader_email=leader_email,
+            leader_department_id=department_id if department_id is not None else leader_department_id,
+            leader_semester=current_semester,
+            member_labels=member_labels,
+        )
+
         deadline = _resolve_default_deadline(cursor, department_id)
         req_keys = set(request_row.keys()) if hasattr(request_row, "keys") else set()
         cosupervisor_name = (
@@ -716,8 +849,9 @@ def accept_assignment_request(
             """
             INSERT INTO fyp_groups
                 (supervisor_id, title, project_title, status, progress, member_names,
-                 deadline_date, department_id, student_contact_email, cosupervisor_name)
-            VALUES (?, ?, ?, 'accepted', 0, ?, ?, ?, ?, ?)
+                 deadline_date, department_id, student_contact_email, cosupervisor_name,
+                 current_semester)
+            VALUES (?, ?, ?, 'accepted', 0, ?, ?, ?, ?, ?, ?)
             """,
             (
                 supervisor_id,
@@ -726,8 +860,9 @@ def accept_assignment_request(
                 members,
                 deadline,
                 department_id,
-                (request_row["student_leader_email"] or "").strip() or None,
+                leader_email,
                 cosupervisor_name,
+                current_semester,
             ),
         )
         group_id = cursor.lastrowid
@@ -773,7 +908,8 @@ def accept_assignment_request(
         updated = cursor.fetchone()
         cursor.execute(
             """
-            SELECT id, title, project_title, status, progress, member_names, deadline_date, created_at
+            SELECT id, title, project_title, status, progress, member_names, deadline_date,
+                   created_at, department_id, current_semester, student_contact_email
             FROM fyp_groups WHERE id = ?
             """,
             (group_id,),
@@ -784,6 +920,7 @@ def accept_assignment_request(
             "message": "Request accepted. Group added to My Groups.",
             "request": _serialize_assignment_request(updated),
             "group": _serialize_group(group_row),
+            "profile_mismatch_warnings": profile_mismatch_warnings,
         }
     except HTTPException:
         conn.rollback()

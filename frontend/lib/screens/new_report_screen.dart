@@ -2218,6 +2218,28 @@ void _showSuccess(String message) {
     if (!mounted) return;
     if (result != null) {
       _showSuccess('Submitted for supervisor review.');
+    } else if (docs.lastSubmitErrorCode == 'deadline_passed') {
+      await showDialog<void>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          backgroundColor: const Color(0xFF161B22),
+          title: const Text(
+            'Submissions closed',
+            style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
+          ),
+          content: Text(
+            docs.errorMessage ??
+                'The semester deadline has passed — submissions are closed.',
+            style: TextStyle(color: Colors.white.withOpacity(0.8), height: 1.4),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('OK'),
+            ),
+          ],
+        ),
+      );
     } else {
       _showError(docs.errorMessage ?? 'Submit failed');
     }

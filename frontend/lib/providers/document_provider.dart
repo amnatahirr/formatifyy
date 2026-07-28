@@ -23,6 +23,7 @@ class DocumentProvider extends ChangeNotifier {
   bool _isLoading = false;
   bool _isSubmittingFinal = false;
   String? _errorMessage;
+  String? _lastSubmitErrorCode;
   String? _lastDownloadedPath;
   final Set<int> _reAnalyzingIds = {};
 
@@ -42,6 +43,8 @@ class DocumentProvider extends ChangeNotifier {
   bool get isLoading => _isLoading;
   bool get isSubmittingFinal => _isSubmittingFinal;
   String? get errorMessage => _errorMessage;
+  /// e.g. `deadline_passed` from final-submissions 403 payload.
+  String? get lastSubmitErrorCode => _lastSubmitErrorCode;
   /// Absolute path of the last successful [downloadFormattedDocument] save.
   String? get lastDownloadedPath => _lastDownloadedPath;
   bool isReAnalyzing(int documentId) => _reAnalyzingIds.contains(documentId);
@@ -189,6 +192,7 @@ class DocumentProvider extends ChangeNotifier {
   }) async {
     _isSubmittingFinal = true;
     _errorMessage = null;
+    _lastSubmitErrorCode = null;
     notifyListeners();
     try {
       final report = analysisReport ??
@@ -217,10 +221,13 @@ class DocumentProvider extends ChangeNotifier {
         clearPendingSupervisorSubmit();
         return data;
       }
-      _errorMessage = _detail(response.body) ?? 'Failed to submit for review';
+      final parsed = _parseSubmitError(response.body);
+      _lastSubmitErrorCode = parsed.$1;
+      _errorMessage = parsed.$2 ?? 'Failed to submit for review';
       return null;
     } catch (e) {
       _errorMessage = 'Network error: $e';
+      _lastSubmitErrorCode = null;
       debugPrint('[DocumentProvider] submitFinalSubmission error: $e');
       return null;
     } finally {
@@ -229,11 +236,33 @@ class DocumentProvider extends ChangeNotifier {
     }
   }
 
+  /// Returns (errorCode, message) from FastAPI detail (string or object).
+  (String?, String?) _parseSubmitError(String body) {
+    try {
+      final data = jsonDecode(body);
+      if (data is Map && data['detail'] != null) {
+        final detail = data['detail'];
+        if (detail is Map) {
+          return (
+            detail['code']?.toString(),
+            (detail['message'] ?? detail['detail'] ?? detail).toString(),
+          );
+        }
+        return (null, detail.toString());
+      }
+    } catch (_) {}
+    return (null, null);
+  }
+
   String? _detail(String body) {
     try {
       final data = jsonDecode(body);
       if (data is Map && data['detail'] != null) {
-        return data['detail'].toString();
+        final detail = data['detail'];
+        if (detail is Map) {
+          return (detail['message'] ?? detail).toString();
+        }
+        return detail.toString();
       }
     } catch (_) {}
     return null;

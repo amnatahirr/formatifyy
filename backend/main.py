@@ -7,6 +7,7 @@ Base URL served:   http://localhost:8000
     POST /api/auth/signup      → register a new student account
     POST /api/auth/login       → login and return user profile
     GET  /api/auth/me          → validate restored session by user_id
+    GET  /api/auth/departments → public department list for signup
     GET  /api/auth/google/debug/tokens   → mock Google auth debug stub
 
   Templates (public):
@@ -240,6 +241,12 @@ async def signup(payload: UserSignupRequest):
     Register a new student account.
     Returns: user profile dict on success.
     """
+    if payload.current_semester not in (6, 7):
+        raise HTTPException(
+            status_code=400,
+            detail="current_semester must be 6 or 7.",
+        )
+
     conn = get_db()
     cursor = conn.cursor()
 
@@ -255,6 +262,12 @@ async def signup(payload: UserSignupRequest):
         conn.close()
         raise HTTPException(status_code=409, detail="Username is already taken.")
 
+    # Validate department (admin-managed list)
+    cursor.execute("SELECT id FROM departments WHERE id = ?", (payload.department_id,))
+    if not cursor.fetchone():
+        conn.close()
+        raise HTTPException(status_code=400, detail="Invalid department_id.")
+
     # Validate university
     university_id = payload.university_id or 1
     cursor.execute("SELECT id FROM universities WHERE id = ?", (university_id,))
@@ -264,10 +277,21 @@ async def signup(payload: UserSignupRequest):
     pw_hash = hash_password(payload.password)
     cursor.execute(
         """
-        INSERT INTO users (username, email, password_hash, role, university_id)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO users (
+            username, email, password_hash, role, university_id,
+            department_id, current_semester
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?)
         """,
-        (payload.username, payload.email, pw_hash, "student", university_id),
+        (
+            payload.username,
+            payload.email,
+            pw_hash,
+            "student",
+            university_id,
+            payload.department_id,
+            payload.current_semester,
+        ),
     )
     conn.commit()
     new_id = cursor.lastrowid
@@ -282,8 +306,30 @@ async def signup(payload: UserSignupRequest):
         "email": user["email"],
         "role": user["role"],
         "university_id": user["university_id"],
+        "department_id": user["department_id"],
+        "current_semester": user["current_semester"],
         "message": "User registered successfully."
     }
+
+
+@app.get("/api/auth/departments", tags=["Auth"])
+async def list_signup_departments():
+    """
+    Public department list for student signup (no auth).
+    Same admin-managed departments table used elsewhere.
+    """
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        SELECT id, name, code
+        FROM departments
+        ORDER BY name ASC
+        """
+    )
+    rows = [dict(row) for row in cursor.fetchall()]
+    conn.close()
+    return {"departments": rows, "count": len(rows)}
 
 
 @app.post("/api/auth/login", tags=["Auth"])

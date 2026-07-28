@@ -1008,6 +1008,151 @@ def delete_deadline(deadline_id: int, user_id: int | None = Query(default=None))
     return {"success": True, "deleted_id": deadline_id}
 
 
+def _serialize_semester_deadline(row) -> dict[str, Any]:
+    return {
+        "id": row["id"],
+        "semester": int(row["semester"]),
+        "deadline_date": _format_date(row["deadline_date"] if "deadline_date" in row.keys() else None),
+        "created_by": row["created_by"] if "created_by" in row.keys() else None,
+        "created_at": row["created_at"] if "created_at" in row.keys() else None,
+        "updated_at": row["updated_at"] if "updated_at" in row.keys() else None,
+    }
+
+
+@router.get("/semester-deadlines")
+def list_semester_deadlines(user_id: int | None = Query(default=None)):
+    """Global Semester 6 / 7 FYP submission deadlines (one row per semester)."""
+    _require_admin(user_id)
+    conn = get_db()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            """
+            SELECT id, semester, deadline_date, created_by, created_at, updated_at
+            FROM semester_deadlines
+            ORDER BY semester ASC
+            """
+        )
+        rows = [_serialize_semester_deadline(r) for r in cursor.fetchall()]
+        return {"deadlines": rows, "count": len(rows)}
+    finally:
+        conn.close()
+
+
+@router.post("/semester-deadlines")
+def create_semester_deadline(
+    payload: dict[str, Any] = Body(...),
+    user_id: int | None = Query(default=None),
+):
+    """Create a semester deadline row if that semester does not already exist."""
+    _require_admin(user_id)
+    try:
+        semester = int(payload.get("semester"))
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="semester must be 6 or 7.")
+    if semester not in (6, 7):
+        raise HTTPException(status_code=400, detail="semester must be 6 or 7.")
+
+    deadline_raw = (payload.get("deadline_date") or "").strip()
+    if not deadline_raw:
+        raise HTTPException(status_code=400, detail="deadline_date is required.")
+    try:
+        deadline = datetime.strptime(deadline_raw[:10], "%Y-%m-%d").date()
+    except ValueError:
+        raise HTTPException(status_code=400, detail="deadline_date must be YYYY-MM-DD.")
+
+    conn = get_db()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "SELECT id FROM semester_deadlines WHERE semester = ?",
+            (semester,),
+        )
+        if cursor.fetchone():
+            raise HTTPException(
+                status_code=409,
+                detail=f"Semester {semester} deadline already exists. Use PATCH to update.",
+            )
+
+        now = datetime.utcnow().isoformat(sep=" ", timespec="seconds")
+        cursor.execute(
+            """
+            INSERT INTO semester_deadlines
+                (semester, deadline_date, created_by, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (semester, deadline.isoformat(), user_id, now, now),
+        )
+        conn.commit()
+        new_id = cursor.lastrowid
+        cursor.execute(
+            """
+            SELECT id, semester, deadline_date, created_by, created_at, updated_at
+            FROM semester_deadlines WHERE id = ?
+            """,
+            (new_id,),
+        )
+        row = cursor.fetchone()
+        return {"success": True, "deadline": _serialize_semester_deadline(row)}
+    except HTTPException:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+@router.patch("/semester-deadlines/{deadline_id}")
+def update_semester_deadline(
+    deadline_id: int,
+    payload: dict[str, Any] = Body(...),
+    user_id: int | None = Query(default=None),
+):
+    """Update deadline_date for an existing semester deadline row."""
+    _require_admin(user_id)
+    deadline_raw = (payload.get("deadline_date") or "").strip()
+    if not deadline_raw:
+        raise HTTPException(status_code=400, detail="deadline_date is required.")
+    try:
+        deadline = datetime.strptime(deadline_raw[:10], "%Y-%m-%d").date()
+    except ValueError:
+        raise HTTPException(status_code=400, detail="deadline_date must be YYYY-MM-DD.")
+
+    conn = get_db()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "SELECT id FROM semester_deadlines WHERE id = ?",
+            (deadline_id,),
+        )
+        if not cursor.fetchone():
+            raise HTTPException(status_code=404, detail="Semester deadline not found.")
+
+        now = datetime.utcnow().isoformat(sep=" ", timespec="seconds")
+        cursor.execute(
+            """
+            UPDATE semester_deadlines
+            SET deadline_date = ?, updated_at = ?
+            WHERE id = ?
+            """,
+            (deadline.isoformat(), now, deadline_id),
+        )
+        conn.commit()
+        cursor.execute(
+            """
+            SELECT id, semester, deadline_date, created_by, created_at, updated_at
+            FROM semester_deadlines WHERE id = ?
+            """,
+            (deadline_id,),
+        )
+        row = cursor.fetchone()
+        return {"success": True, "deadline": _serialize_semester_deadline(row)}
+    except HTTPException:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
 @router.get("/analytics")
 def get_admin_analytics(user_id: int | None = Query(default=None)):
     _require_admin(user_id)

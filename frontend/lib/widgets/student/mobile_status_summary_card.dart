@@ -65,6 +65,7 @@ class _MobileStatusSummaryCardState extends State<MobileStatusSummaryCard> {
       if (groupId != null) {
         await fyp.fetchSubmissions(userId: userId, groupId: groupId);
       }
+      await fyp.fetchSemesterDeadline(userId: userId);
       if (!mounted) return;
 
       // No group is a valid empty state — not an error.
@@ -95,31 +96,10 @@ class _MobileStatusSummaryCardState extends State<MobileStatusSummaryCard> {
     }
   }
 
-  DateTime? _parseDate(dynamic raw) {
-    if (raw == null) return null;
-    final s = raw.toString().trim();
-    if (s.isEmpty) return null;
-    return DateTime.tryParse(s.length >= 10 ? s.substring(0, 10) : s) ??
-        DateTime.tryParse(s);
-  }
-
   String _formatDate(dynamic raw) {
     final s = (raw ?? '').toString();
     if (s.isEmpty) return '—';
     return s.length >= 16 ? s.substring(0, 16) : (s.length >= 10 ? s.substring(0, 10) : s);
-  }
-
-  String? _daysRemainingLabel(DateTime? deadline) {
-    if (deadline == null) return null;
-    final today = DateTime.now();
-    final start = DateTime(today.year, today.month, today.day);
-    final end = DateTime(deadline.year, deadline.month, deadline.day);
-    final days = end.difference(start).inDays;
-    if (days > 1) return '$days days left';
-    if (days == 1) return '1 day left';
-    if (days == 0) return 'Due today';
-    if (days == -1) return '1 day overdue';
-    return '${-days} days overdue';
   }
 
   @override
@@ -205,9 +185,29 @@ class _MobileStatusSummaryCardState extends State<MobileStatusSummaryCard> {
         ((statusMap?['supervisor'] as Map?)?['name'] ?? '').toString().trim();
     final group = statusMap?['group'] as Map?;
     final groupStatus = (group?['status'] ?? 'accepted').toString();
-    final deadlineRaw = group?['deadline_date'];
-    final deadline = _parseDate(deadlineRaw);
-    final daysLabel = _daysRemainingLabel(deadline);
+
+    // Admin-managed semester deadline (replaces fyp_groups.deadline_date here).
+    final semDl = fyp.semesterDeadline;
+    final semFound = semDl?['found'] == true;
+    // Parentheses required: `?[` inside a ternary confuses the parser.
+    final deadlineRaw = semFound ? (semDl?['deadline_date']) : null;
+    final isPassed = semDl?['is_passed'] == true;
+    final daysRemaining = (semDl?['days_remaining'] as num?)?.toInt();
+    final semester = (semDl?['semester'] as num?)?.toInt();
+    String? daysLabel;
+    if (semFound) {
+      if (isPassed) {
+        daysLabel = 'Deadline passed';
+      } else if (daysRemaining != null) {
+        if (daysRemaining > 1) {
+          daysLabel = '$daysRemaining days left';
+        } else if (daysRemaining == 1) {
+          daysLabel = '1 day left';
+        } else {
+          daysLabel = 'Due today';
+        }
+      }
+    }
 
     final latest = fyp.latestSubmission;
     final subStatus = (latest?['status'] ?? '').toString();
@@ -274,16 +274,15 @@ class _MobileStatusSummaryCardState extends State<MobileStatusSummaryCard> {
           _row('Last updated', _formatDate(lastUpdated), muted: true),
         ],
         const SizedBox(height: 8),
-        if (deadline == null)
+        if (!semFound)
           _row('Deadline', 'Not set', muted: true)
         else
           _row(
-            'Deadline',
-            '${_formatDate(deadlineRaw)}${daysLabel != null ? ' · $daysLabel' : ''}',
-            valueColor: (daysLabel != null &&
-                    (daysLabel.contains('overdue') || daysLabel == 'Due today'))
-                ? _warn
-                : null,
+            semester != null ? 'Sem $semester' : 'Deadline',
+            isPassed
+                ? 'Deadline passed'
+                : '${_formatDate(deadlineRaw)}${daysLabel != null ? ' · $daysLabel' : ''}',
+            valueColor: isPassed || daysLabel == 'Due today' ? _warn : null,
           ),
         if (latest != null && summary != null) ...[
           const SizedBox(height: 8),

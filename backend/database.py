@@ -194,6 +194,14 @@ def init_db():
         )
     """)
 
+    # Student profile fields collected at signup (nullable for legacy accounts).
+    cursor.execute("PRAGMA table_info(users)")
+    user_columns = {row[1] for row in cursor.fetchall()}
+    if "department_id" not in user_columns:
+        cursor.execute("ALTER TABLE users ADD COLUMN department_id INTEGER")
+    if "current_semester" not in user_columns:
+        cursor.execute("ALTER TABLE users ADD COLUMN current_semester INTEGER")
+
     # 3. Create Templates table
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS templates (
@@ -357,6 +365,29 @@ def init_db():
         )
     if "cosupervisor_name" not in fyp_group_columns:
         cursor.execute("ALTER TABLE fyp_groups ADD COLUMN cosupervisor_name TEXT")
+    if "current_semester" not in fyp_group_columns:
+        cursor.execute("ALTER TABLE fyp_groups ADD COLUMN current_semester INTEGER")
+    # Backfill accepted groups so existing students resolve against semester deadlines.
+    cursor.execute(
+        """
+        UPDATE fyp_groups
+        SET current_semester = 6
+        WHERE current_semester IS NULL AND status = 'accepted'
+        """
+    )
+
+    # Admin-managed global FYP semester deadlines (one row per semester 6/7).
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS semester_deadlines (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            semester INTEGER NOT NULL UNIQUE,
+            deadline_date DATE NOT NULL,
+            created_by INTEGER,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (created_by) REFERENCES users(id)
+        )
+    """)
 
     # 12. Assignment requests awaiting supervisor decision
     cursor.execute("""

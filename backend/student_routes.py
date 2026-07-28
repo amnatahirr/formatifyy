@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+from datetime import date, datetime
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Body, HTTPException, Query
@@ -96,7 +97,7 @@ def _create_group_document_for_submission(
     """
     import os
 
-    from review_blocks import BLOCK_PARAGRAPH, extract_review_blocks
+    from review_blocks import BLOCK_LINE, BLOCK_PARAGRAPH, extract_review_blocks
 
     file_path = None
     if source_document_id is not None:
@@ -167,7 +168,8 @@ def _student_in_accepted_group(cursor, group_id: int, student_email: str):
     email = (student_email or "").strip().lower()
     cursor.execute(
         """
-        SELECT id, title, project_title, supervisor_id, student_contact_email, member_names, status
+        SELECT id, title, project_title, supervisor_id, student_contact_email,
+               member_names, status, current_semester
         FROM fyp_groups
         WHERE id = ? AND status = 'accepted'
         """,
@@ -572,7 +574,7 @@ def _find_accepted_group_for_email(cursor, email: str):
     cursor.execute(
         """
         SELECT id, title, project_title, supervisor_id, student_contact_email,
-               member_names, status, deadline_date, department_id
+               member_names, status, deadline_date, department_id, current_semester
         FROM fyp_groups
         WHERE status = 'accepted'
         ORDER BY id DESC
@@ -932,6 +934,134 @@ def _serialize_student_final_submission(row) -> dict[str, Any]:
     }
 
 
+@router.get("/semester-deadline")
+def get_student_semester_deadline(
+    user_id: Annotated[int | None, Query()] = None,
+):
+    """
+    Global admin deadline for this student's semester.
+    Prefer fyp_groups.current_semester when an accepted group exists;
+    otherwise fall back to users.current_semester (set at signup).
+    Empty/null state (not an error) when semester unset or no deadline row yet.
+    """
+    student = _require_student(user_id)
+    email = (student.get("email") or "").strip().lower()
+    if not email:
+        return {
+            "found": False,
+            "semester": None,
+            "deadline_date": None,
+            "days_remaining": None,
+            "is_passed": False,
+            "reason": "no_email",
+        }
+
+    conn = get_db()
+    cursor = conn.cursor()
+    try:
+        group = _find_accepted_group_for_email(cursor, email)
+        group_id = None
+        raw_sem = None
+        source = None
+
+        if group:
+            group_id = group["id"]
+            keys = group.keys() if hasattr(group, "keys") else []
+            raw_sem = group["current_semester"] if "current_semester" in keys else None
+            if raw_sem is None:
+                cursor.execute(
+                    "SELECT current_semester FROM fyp_groups WHERE id = ?",
+                    (group_id,),
+                )
+                row = cursor.fetchone()
+                raw_sem = row["current_semester"] if row else None
+            source = "group"
+
+        if raw_sem is None:
+            # No accepted group yet, or group semester unset — use signup profile.
+            cursor.execute(
+                "SELECT current_semester, department_id FROM users WHERE id = ?",
+                (user_id,),
+            )
+            profile = cursor.fetchone()
+            raw_sem = profile["current_semester"] if profile else None
+            source = "profile" if raw_sem is not None else source
+
+        if raw_sem is None:
+            return {
+                "found": False,
+                "group_id": group_id,
+                "semester": None,
+                "deadline_date": None,
+                "days_remaining": None,
+                "is_passed": False,
+                "reason": "semester_unset" if group_id else "no_group",
+            }
+
+        try:
+            semester = int(raw_sem)
+        except (TypeError, ValueError):
+            return {
+                "found": False,
+                "group_id": group_id,
+                "semester": None,
+                "deadline_date": None,
+                "days_remaining": None,
+                "is_passed": False,
+                "reason": "semester_unset",
+            }
+
+        cursor.execute(
+            """
+            SELECT id, semester, deadline_date
+            FROM semester_deadlines
+            WHERE semester = ?
+            """,
+            (semester,),
+        )
+        dl = cursor.fetchone()
+        if not dl or not dl["deadline_date"]:
+            return {
+                "found": False,
+                "group_id": group_id,
+                "semester": semester,
+                "deadline_date": None,
+                "days_remaining": None,
+                "is_passed": False,
+                "reason": "no_deadline_configured",
+                "source": source,
+            }
+
+        try:
+            deadline = date.fromisoformat(str(dl["deadline_date"])[:10])
+        except ValueError:
+            return {
+                "found": False,
+                "group_id": group_id,
+                "semester": semester,
+                "deadline_date": None,
+                "days_remaining": None,
+                "is_passed": False,
+                "reason": "no_deadline_configured",
+                "source": source,
+            }
+
+        today = date.today()
+        days_remaining = (deadline - today).days
+        return {
+            "found": True,
+            "group_id": group_id,
+            "semester": semester,
+            "deadline_date": deadline.isoformat(),
+            "days_remaining": days_remaining,
+            "is_passed": days_remaining < 0,
+            "reason": None,
+            "source": source,
+        }
+    finally:
+        conn.close()
+
+
 @router.post("/final-submissions")
 def create_final_submission(
     user_id: Annotated[int | None, Query()] = None,
@@ -989,6 +1119,43 @@ def create_final_submission(
                 status_code=404,
                 detail="No accepted FYP group found for this student.",
             )
+
+        # Hard block after admin-managed semester deadline (if configured).
+        keys = group.keys() if hasattr(group, "keys") else []
+        semester = group["current_semester"] if "current_semester" in keys else None
+        if semester is not None:
+            try:
+                semester_int = int(semester)
+            except (TypeError, ValueError):
+                semester_int = None
+            if semester_int in (6, 7):
+                cursor.execute(
+                    """
+                    SELECT deadline_date FROM semester_deadlines
+                    WHERE semester = ?
+                    """,
+                    (semester_int,),
+                )
+                dl_row = cursor.fetchone()
+                if dl_row and dl_row["deadline_date"]:
+                    try:
+                        deadline = date.fromisoformat(str(dl_row["deadline_date"])[:10])
+                    except ValueError:
+                        deadline = None
+                    if deadline is not None and date.today() > deadline:
+                        pretty = deadline.strftime("%d %b %Y")
+                        raise HTTPException(
+                            status_code=403,
+                            detail={
+                                "code": "deadline_passed",
+                                "message": (
+                                    f"The Semester {semester_int} deadline ({pretty}) "
+                                    "has passed — submissions are closed."
+                                ),
+                                "semester": semester_int,
+                                "deadline_date": deadline.isoformat(),
+                            },
+                        )
 
         supervisor_id = group["supervisor_id"]
         if source_document_id is not None:
