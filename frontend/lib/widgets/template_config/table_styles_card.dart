@@ -41,6 +41,26 @@ class TableStylesCard extends StatelessWidget {
   final bool repeatHeader;
   final Function(bool) onRepeatHeaderChanged;
 
+  // ── Extended table formatting ─────────────────────────────────────────────
+  final String borderStyle; // none | single_line | double_line | academic_standard
+  final Function(String) onBorderStyleChanged;
+  final bool headerRowShading;
+  final Function(bool) onHeaderRowShadingChanged;
+  final TextEditingController maxWidthPercentController;
+  final TextEditingController minColumnWidthController;
+  final String wideTableHandling;
+  final Function(String) onWideTableHandlingChanged;
+  final String numericColumnAlign;
+  final Function(String) onNumericColumnAlignChanged;
+  final String textColumnAlign;
+  final Function(String) onTextColumnAlignChanged;
+  final String rowHeightPolicy;
+  final Function(String) onRowHeightPolicyChanged;
+  final TextEditingController spaceBeforeController;
+  final TextEditingController spaceAfterController;
+  final String alignmentOnPage; // Center | Left
+  final Function(String) onAlignmentOnPageChanged;
+
   const TableStylesCard({
     super.key,
     required this.fontSizeController,
@@ -70,6 +90,24 @@ class TableStylesCard extends StatelessWidget {
     required this.onAutoFitChanged,
     required this.repeatHeader,
     required this.onRepeatHeaderChanged,
+    required this.borderStyle,
+    required this.onBorderStyleChanged,
+    required this.headerRowShading,
+    required this.onHeaderRowShadingChanged,
+    required this.maxWidthPercentController,
+    required this.minColumnWidthController,
+    required this.wideTableHandling,
+    required this.onWideTableHandlingChanged,
+    required this.numericColumnAlign,
+    required this.onNumericColumnAlignChanged,
+    required this.textColumnAlign,
+    required this.onTextColumnAlignChanged,
+    required this.rowHeightPolicy,
+    required this.onRowHeightPolicyChanged,
+    required this.spaceBeforeController,
+    required this.spaceAfterController,
+    required this.alignmentOnPage,
+    required this.onAlignmentOnPageChanged,
   });
 
   // ── Helpers ───────────────────────────────────────────────────────────────
@@ -209,12 +247,13 @@ class TableStylesCard extends StatelessWidget {
     return CommonWidgets.buildCardContainer(
       icon: Icons.table_chart_outlined,
       title: 'Table Styles',
-      subtitle: 'Configure table font, header, borders, padding & layout',
+      subtitle:
+          'Borders, sizing, cell formatting & layout (applied to detected tables)',
       child: Column(
         children: [
           // ── 1. Font ──────────────────────────────────────────────────────
           _section(
-            title: 'Font',
+            title: 'Font (cell_font_family / cell_font_size)',
             child: Row(
               children: [
                 Expanded(
@@ -276,22 +315,53 @@ class TableStylesCard extends StatelessWidget {
                 const SizedBox(height: 8),
                 _toggleRow('Bold header text', headerBold,
                     onHeaderBoldChanged),
+                _toggleRow('Header row shading', headerRowShading,
+                    onHeaderRowShadingChanged),
               ],
             ),
           ),
 
           const SizedBox(height: 16),
 
-          // ── 3. Body Rows ──────────────────────────────────────────────────
+          // ── 3. Body Rows / cell alignment ─────────────────────────────────
           _section(
-            title: 'Body Rows',
+            title: 'Cell Formatting',
             child: Column(
               children: [
                 CommonWidgets.buildDropdown(
-                  'Text Alignment',
+                  'Default body alignment',
                   bodyAlign,
                   ['Left', 'Center', 'Right', 'Justify'],
                   onBodyAlignChanged,
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(
+                      child: CommonWidgets.buildDropdown(
+                        'Numeric columns',
+                        numericColumnAlign,
+                        ['Left', 'Center', 'Right'],
+                        onNumericColumnAlignChanged,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: CommonWidgets.buildDropdown(
+                        'Text columns',
+                        textColumnAlign,
+                        ['Left', 'Center', 'Right'],
+                        onTextColumnAlignChanged,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                CommonWidgets.buildDropdown(
+                  'Row height policy',
+                  rowHeightPolicy,
+                  ['Auto', 'Fixed minimum'],
+                  onRowHeightPolicyChanged,
                 ),
                 const SizedBox(height: 8),
                 _toggleRow(
@@ -308,9 +378,21 @@ class TableStylesCard extends StatelessWidget {
 
           // ── 4. Borders ────────────────────────────────────────────────────
           _section(
-            title: 'Borders',
+            title: 'Borders & Style',
             child: Column(
               children: [
+                CommonWidgets.buildDropdown(
+                  'Border style',
+                  borderStyle,
+                  [
+                    'None',
+                    'Single line',
+                    'Double line',
+                    'Academic standard',
+                  ],
+                  onBorderStyleChanged,
+                ),
+                const SizedBox(height: 8),
                 _toggleRow(
                     'Show borders', borders, onBordersChanged),
                 if (borders) ...[
@@ -325,7 +407,7 @@ class TableStylesCard extends StatelessWidget {
                       const SizedBox(width: 12),
                       Expanded(
                         child: CommonWidgets.buildNumberInput(
-                          'Border Size',
+                          'Thickness',
                           borderSizeController,
                           'hp',
                         ),
@@ -377,15 +459,84 @@ class TableStylesCard extends StatelessWidget {
 
           const SizedBox(height: 16),
 
-          // ── 6. Layout Options ─────────────────────────────────────────────
+          // ── 6. Sizing ─────────────────────────────────────────────────────
           _section(
-            title: 'Layout Options',
+            title: 'Sizing',
             child: Column(
               children: [
-                _toggleRow('Centre table on page', centerTable,
-                    onCenterTableChanged),
+                Row(
+                  children: [
+                    Expanded(
+                      child: CommonWidgets.buildNumberInput(
+                        'Max width %',
+                        maxWidthPercentController,
+                        '%',
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: CommonWidgets.buildNumberInput(
+                        'Min column width',
+                        minColumnWidthController,
+                        'in',
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                CommonWidgets.buildDropdown(
+                  'Wide table handling',
+                  wideTableHandling,
+                  [
+                    'Shrink font',
+                    'Landscape page',
+                    'Flag for manual review',
+                  ],
+                  onWideTableHandlingChanged,
+                ),
+                const SizedBox(height: 8),
                 _toggleRow(
-                    'Auto-fit to page width', autoFit, onAutoFitChanged),
+                    'Auto-fit columns', autoFit, onAutoFitChanged),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 16),
+
+          // ── 7. Layout Options ─────────────────────────────────────────────
+          _section(
+            title: 'Layout',
+            child: Column(
+              children: [
+                CommonWidgets.buildDropdown(
+                  'Alignment on page',
+                  alignmentOnPage,
+                  ['Center', 'Left'],
+                  onAlignmentOnPageChanged,
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(
+                      child: CommonWidgets.buildNumberInput(
+                        'Space before',
+                        spaceBeforeController,
+                        'pt',
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: CommonWidgets.buildNumberInput(
+                        'Space after',
+                        spaceAfterController,
+                        'pt',
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                _toggleRow('Centre table on page (legacy)', centerTable,
+                    onCenterTableChanged),
                 _toggleRow('Repeat header on page break', repeatHeader,
                     onRepeatHeaderChanged),
               ],
@@ -411,8 +562,8 @@ class TableStylesCard extends StatelessWidget {
                 SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    'These settings are applied automatically to all tables '
-                    'detected in a user\'s uploaded document.',
+                    'These settings are stored on the template now. '
+                    'Automatic table reformatting will use them in a later step.',
                     style: TextStyle(
                       fontSize: 11,
                       color: Color(0xFF8B949E),

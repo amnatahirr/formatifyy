@@ -396,7 +396,7 @@
 //           _tableFontSizeController.text =
 //               (tableStyle['font_size'] ?? 12).toString();
 //           _tableHeaderBgColorController.text =
-//               (tableStyle['header_bg'] ?? 'D6E4F0').toString().replaceAll('#', '');
+//               (tableStyle['header_bg'] ?? 'FFFFFF').toString().replaceAll('#', '');
 //           _tableBandColorController.text =
 //               (tableStyle['band_color'] ?? 'F2F8FC').toString().replaceAll('#', '');
 //           _tableBorderColorController.text =
@@ -1037,6 +1037,7 @@ import '../widgets/template_config/paragraph_style_card.dart';
 import '../widgets/template_config/list_bullet_styles_card.dart';
 import '../widgets/template_config/heading_styles_card.dart';
 import '../widgets/template_config/table_styles_card.dart';    // ← NEW
+import '../widgets/template_config/table_formatting_rules_card.dart';
 import '../widgets/template_config/action_buttons.dart';
 import '../widgets/template_config/upload_template_document_button.dart';
 import '../widgets/template_config/frontmatter_branding_card.dart';
@@ -1110,12 +1111,31 @@ class _TemplateConfigurationScreenState
   String _tableFontName   = 'Times New Roman';
   String _tableHeaderAlign = 'Center';
   String _tableBodyAlign   = 'Left';
-  bool   _tableHeaderBold  = true;
-  bool   _tableBandedRows  = true;
+  bool   _tableHeaderBold  = false;
+  bool   _tableBandedRows  = false;
   bool   _tableBorders     = true;
   bool   _tableCenterTable = true;
   bool   _tableAutoFit     = true;
   bool   _tableRepeatHeader = true;
+  String _tableBorderStyle = 'Academic standard';
+  bool   _tableHeaderRowShading = false;
+  String _tableWideHandling = 'Flag for manual review';
+  String _tableNumericAlign = 'Left';
+  String _tableTextAlign = 'Left';
+  String _tableRowHeightPolicy = 'Auto';
+  String _tableAlignmentOnPage = 'Center';
+  late TextEditingController _tableMaxWidthPercentController;
+  late TextEditingController _tableMinColumnWidthController;
+  late TextEditingController _tableSpaceBeforeController;
+  late TextEditingController _tableSpaceAfterController;
+  late TextEditingController _tableCaptionPatternController;
+  late TextEditingController _tableLotFormatController;
+  late TextEditingController _tableMaxEmptyCellPercentController;
+  String _tableNumberingScheme = 'global';
+  String _tableCaptionPosition = 'above';
+  bool _includeLot = true;
+  bool _tableRequireCaption = true;
+  bool _tableRequireIntextReference = false;
   // ─────────────────────────────────────────────────────────────────────────
 
   // Image / caption formatting (Phase 1)
@@ -1124,6 +1144,8 @@ class _TemplateConfigurationScreenState
   String _imageNumberingScheme = 'global';
   String _captionPosition = 'below';
   bool _includeLof = true;
+  bool _imageRequireCaption = true;
+  bool _imageRequireIntextReference = false;
 
   String _pageSize = 'A4';
   String _spacingUnit = 'mm';
@@ -1195,7 +1217,7 @@ class _TemplateConfigurationScreenState
 
     // Table style controllers
     _tableFontSizeController      = TextEditingController(text: '12');
-    _tableHeaderBgColorController = TextEditingController(text: 'D6E4F0');
+    _tableHeaderBgColorController = TextEditingController(text: 'FFFFFF');
     _tableBandColorController     = TextEditingController(text: 'F2F8FC');
     _tableBorderColorController   = TextEditingController(text: '000000');
     _tableBorderSizeController    = TextEditingController(text: '4');
@@ -1203,6 +1225,15 @@ class _TemplateConfigurationScreenState
     _tablePaddingBottomController = TextEditingController(text: '60');
     _tablePaddingLeftController   = TextEditingController(text: '108');
     _tablePaddingRightController  = TextEditingController(text: '108');
+    _tableMaxWidthPercentController = TextEditingController(text: '100');
+    _tableMinColumnWidthController = TextEditingController(text: '0.5');
+    _tableSpaceBeforeController = TextEditingController(text: '6');
+    _tableSpaceAfterController = TextEditingController(text: '6');
+    _tableCaptionPatternController =
+        TextEditingController(text: 'Table {n}: {description}');
+    _tableLotFormatController =
+        TextEditingController(text: 'Table {n}: {description}');
+    _tableMaxEmptyCellPercentController = TextEditingController(text: '30');
 
     _captionPatternController =
         TextEditingController(text: 'Figure {n}: {caption}');
@@ -1264,7 +1295,7 @@ class _TemplateConfigurationScreenState
 
     // Reset table style to defaults
     _tableFontSizeController.text      = '12';
-    _tableHeaderBgColorController.text = 'D6E4F0';
+    _tableHeaderBgColorController.text = 'FFFFFF';
     _tableBandColorController.text     = 'F2F8FC';
     _tableBorderColorController.text   = '000000';
     _tableBorderSizeController.text    = '4';
@@ -1272,6 +1303,15 @@ class _TemplateConfigurationScreenState
     _tablePaddingBottomController.text = '60';
     _tablePaddingLeftController.text   = '108';
     _tablePaddingRightController.text  = '108';
+    _tableMaxWidthPercentController.text = '100';
+    _tableMinColumnWidthController.text = '0.5';
+    _tableSpaceBeforeController.text = '6';
+    _tableSpaceAfterController.text = '6';
+    _tableCaptionPatternController.text = 'Table {n}: {description}';
+    _tableLotFormatController.text = 'Table {n}: {description}';
+    _tableMaxEmptyCellPercentController.text = '30';
+    _captionPatternController.text = 'Figure {n}: {caption}';
+    _maxImageWidthPercentController.text = '80';
 
     setState(() {
       _pageSize = 'A4';
@@ -1305,12 +1345,29 @@ class _TemplateConfigurationScreenState
       _tableFontName    = 'Times New Roman';
       _tableHeaderAlign = 'Center';
       _tableBodyAlign   = 'Left';
-      _tableHeaderBold  = true;
-      _tableBandedRows  = true;
+      _tableHeaderBold  = false;
+      _tableBandedRows  = false;
       _tableBorders     = true;
       _tableCenterTable = true;
       _tableAutoFit     = true;
       _tableRepeatHeader = true;
+      _tableBorderStyle = 'Academic standard';
+      _tableHeaderRowShading = false;
+      _tableWideHandling = 'Flag for manual review';
+      _tableNumericAlign = 'Left';
+      _tableTextAlign = 'Left';
+      _tableRowHeightPolicy = 'Auto';
+      _tableAlignmentOnPage = 'Center';
+      _tableNumberingScheme = 'global';
+      _tableCaptionPosition = 'above';
+      _includeLot = true;
+      _tableRequireCaption = true;
+      _tableRequireIntextReference = false;
+      _imageNumberingScheme = 'global';
+      _captionPosition = 'below';
+      _includeLof = true;
+      _imageRequireCaption = true;
+      _imageRequireIntextReference = false;
 
       _imageNumberingScheme = 'global';
       _captionPosition = 'below';
@@ -1469,24 +1526,41 @@ class _TemplateConfigurationScreenState
           _tableFontName = loadedTableFontName;
           _tableHeaderAlign = loadedHeaderAlign;
           _tableBodyAlign = loadedBodyAlign;
-          _tableHeaderBold = tableStyle['header_bold'] ?? true;
-          _tableBandedRows = tableStyle['banded_rows'] ?? true;
+          _tableHeaderBold = tableStyle['header_bold'] ?? false;
+          _tableBandedRows = tableStyle['banded_rows'] ?? false;
           _tableBorders = tableStyle['borders'] ?? true;
           _tableCenterTable = tableStyle['center_table'] ?? true;
           _tableAutoFit = tableStyle['auto_fit'] ?? true;
           _tableRepeatHeader = tableStyle['repeat_header'] ?? true;
+          _tableBorderStyle = _borderStyleToDisplay(
+              (tableStyle['border_style'] ?? 'academic_standard').toString());
+          _tableHeaderRowShading = tableStyle['header_row_shading'] ?? false;
+          _tableWideHandling = _wideHandlingToDisplay(
+              (tableStyle['wide_table_handling'] ?? 'flag_for_manual_review')
+                  .toString());
+          _tableNumericAlign = _capitalise(
+              (tableStyle['numeric_column_alignment'] ?? 'left').toString());
+          _tableTextAlign = _capitalise(
+              (tableStyle['text_column_alignment'] ?? 'left').toString());
+          _tableRowHeightPolicy = _rowHeightToDisplay(
+              (tableStyle['row_height_policy'] ?? 'auto').toString());
+          _tableAlignmentOnPage = _capitalise(
+              (tableStyle['alignment_on_page'] ??
+                      ((tableStyle['center_table'] == false) ? 'left' : 'center'))
+                  .toString());
 
           // Populate text controllers
           _tableFontSizeController.text =
               (tableStyle['font_size'] ?? 12).toString();
           _tableHeaderBgColorController.text =
-              (tableStyle['header_bg'] ?? 'D6E4F0').toString().replaceAll('#', '');
+              (tableStyle['header_bg'] ?? 'FFFFFF').toString().replaceAll('#', '');
           _tableBandColorController.text =
               (tableStyle['band_color'] ?? 'F2F8FC').toString().replaceAll('#', '');
           _tableBorderColorController.text =
               (tableStyle['border_color'] ?? '000000').toString().replaceAll('#', '');
           _tableBorderSizeController.text =
-              (tableStyle['border_size'] ?? 4).toString();
+              (tableStyle['border_thickness'] ?? tableStyle['border_size'] ?? 4)
+                  .toString();
           _tablePaddingTopController.text =
               (tableStyle['cell_padding_top'] ?? 60).toString();
           _tablePaddingBottomController.text =
@@ -1495,6 +1569,16 @@ class _TemplateConfigurationScreenState
               (tableStyle['cell_padding_lft'] ?? 108).toString();
           _tablePaddingRightController.text =
               (tableStyle['cell_padding_rgt'] ?? 108).toString();
+          _tableMaxWidthPercentController.text =
+              (tableStyle['max_width_percent'] ?? 100).toString();
+          _tableMinColumnWidthController.text =
+              (tableStyle['min_column_width'] ?? 0.5).toString();
+          _tableSpaceBeforeController.text =
+              (tableStyle['space_before'] ?? 6).toString();
+          _tableSpaceAfterController.text =
+              (tableStyle['space_after'] ?? 6).toString();
+          _tableMaxEmptyCellPercentController.text =
+              (tableStyle['max_empty_cell_percent'] ?? 30).toString();
 
           _imageNumberingScheme =
               (rules['numbering_scheme'] ?? 'global').toString() == 'chapter'
@@ -1505,11 +1589,37 @@ class _TemplateConfigurationScreenState
                   ? 'above'
                   : 'below';
           _includeLof = rules['include_lof'] ?? true;
+          _imageRequireCaption = rules['require_caption'] ?? true;
+          _imageRequireIntextReference =
+              rules['require_intext_reference'] ?? false;
           _captionPatternController.text =
               (rules['caption_format_pattern'] ?? 'Figure {n}: {caption}')
                   .toString();
           _maxImageWidthPercentController.text =
               (rules['max_image_width_percent'] ?? 80).toString();
+
+          _tableNumberingScheme =
+              (rules['table_numbering_scheme'] ?? 'global').toString() ==
+                      'chapter'
+                  ? 'chapter'
+                  : 'global';
+          _tableCaptionPosition =
+              (rules['table_caption_position'] ?? 'above').toString() == 'below'
+                  ? 'below'
+                  : 'above';
+          _includeLot = rules['include_lot'] ?? true;
+          _tableRequireCaption = rules['table_require_caption'] ?? true;
+          _tableRequireIntextReference =
+              rules['table_require_intext_reference'] ?? false;
+          _tableCaptionPatternController.text =
+              (rules['table_caption_format_pattern'] ??
+                      'Table {n}: {description}')
+                  .toString();
+          _tableLotFormatController.text =
+              (rules['list_of_tables_format'] ??
+                      rules['table_caption_format_pattern'] ??
+                      'Table {n}: {description}')
+                  .toString();
 
           _isLoading = false;
         });
@@ -1526,6 +1636,60 @@ class _TemplateConfigurationScreenState
   // ── Capitalise first letter for dropdown values loaded from DB ────────────
   String _capitalise(String s) =>
       s.isEmpty ? s : s[0].toUpperCase() + s.substring(1).toLowerCase();
+
+  String _borderStyleToDisplay(String db) {
+    switch (db.toLowerCase()) {
+      case 'none':
+        return 'None';
+      case 'single_line':
+        return 'Single line';
+      case 'double_line':
+        return 'Double line';
+      default:
+        return 'Academic standard';
+    }
+  }
+
+  String _borderStyleToDb(String display) {
+    switch (display) {
+      case 'None':
+        return 'none';
+      case 'Single line':
+        return 'single_line';
+      case 'Double line':
+        return 'double_line';
+      default:
+        return 'academic_standard';
+    }
+  }
+
+  String _wideHandlingToDisplay(String db) {
+    switch (db.toLowerCase()) {
+      case 'shrink_font':
+        return 'Shrink font';
+      case 'landscape_page':
+        return 'Landscape page';
+      default:
+        return 'Flag for manual review';
+    }
+  }
+
+  String _wideHandlingToDb(String display) {
+    switch (display) {
+      case 'Shrink font':
+        return 'shrink_font';
+      case 'Landscape page':
+        return 'landscape_page';
+      default:
+        return 'flag_for_manual_review';
+    }
+  }
+
+  String _rowHeightToDisplay(String db) =>
+      db.toLowerCase() == 'fixed_minimum' ? 'Fixed minimum' : 'Auto';
+
+  String _rowHeightToDb(String display) =>
+      display == 'Fixed minimum' ? 'fixed_minimum' : 'auto';
 
   /// Populate the existing form fields from an extracted draft.
   /// Does not save — admin still uses Create Template / Save Changes as usual.
@@ -1632,16 +1796,32 @@ class _TemplateConfigurationScreenState
             _capitalise((tableStyle['header_align'] ?? 'center').toString());
         _tableBodyAlign =
             _capitalise((tableStyle['body_align'] ?? 'left').toString());
-        _tableHeaderBold = tableStyle['header_bold'] ?? true;
-        _tableBandedRows = tableStyle['banded_rows'] ?? true;
+        _tableHeaderBold = tableStyle['header_bold'] ?? false;
+        _tableBandedRows = tableStyle['banded_rows'] ?? false;
         _tableBorders = tableStyle['borders'] ?? true;
         _tableCenterTable = tableStyle['center_table'] ?? true;
         _tableAutoFit = tableStyle['auto_fit'] ?? true;
         _tableRepeatHeader = tableStyle['repeat_header'] ?? true;
+        _tableBorderStyle = _borderStyleToDisplay(
+            (tableStyle['border_style'] ?? 'academic_standard').toString());
+        _tableHeaderRowShading = tableStyle['header_row_shading'] ?? false;
+        _tableWideHandling = _wideHandlingToDisplay(
+            (tableStyle['wide_table_handling'] ?? 'flag_for_manual_review')
+                .toString());
+        _tableNumericAlign = _capitalise(
+            (tableStyle['numeric_column_alignment'] ?? 'left').toString());
+        _tableTextAlign = _capitalise(
+            (tableStyle['text_column_alignment'] ?? 'left').toString());
+        _tableRowHeightPolicy = _rowHeightToDisplay(
+            (tableStyle['row_height_policy'] ?? 'auto').toString());
+        _tableAlignmentOnPage = _capitalise(
+            (tableStyle['alignment_on_page'] ??
+                    ((tableStyle['center_table'] == false) ? 'left' : 'center'))
+                .toString());
         _tableFontSizeController.text =
             (tableStyle['font_size'] ?? 12).toString();
         _tableHeaderBgColorController.text =
-            (tableStyle['header_bg'] ?? 'D6E4F0').toString().replaceAll('#', '');
+            (tableStyle['header_bg'] ?? 'FFFFFF').toString().replaceAll('#', '');
         _tableBandColorController.text =
             (tableStyle['band_color'] ?? 'F2F8FC').toString().replaceAll('#', '');
         _tableBorderColorController.text =
@@ -1649,7 +1829,8 @@ class _TemplateConfigurationScreenState
                 .toString()
                 .replaceAll('#', '');
         _tableBorderSizeController.text =
-            (tableStyle['border_size'] ?? 4).toString();
+            (tableStyle['border_thickness'] ?? tableStyle['border_size'] ?? 4)
+                .toString();
         _tablePaddingTopController.text =
             (tableStyle['cell_padding_top'] ?? 60).toString();
         _tablePaddingBottomController.text =
@@ -1658,6 +1839,16 @@ class _TemplateConfigurationScreenState
             (tableStyle['cell_padding_lft'] ?? 108).toString();
         _tablePaddingRightController.text =
             (tableStyle['cell_padding_rgt'] ?? 108).toString();
+        _tableMaxWidthPercentController.text =
+            (tableStyle['max_width_percent'] ?? 100).toString();
+        _tableMinColumnWidthController.text =
+            (tableStyle['min_column_width'] ?? 0.5).toString();
+        _tableSpaceBeforeController.text =
+            (tableStyle['space_before'] ?? 6).toString();
+        _tableSpaceAfterController.text =
+            (tableStyle['space_after'] ?? 6).toString();
+        _tableMaxEmptyCellPercentController.text =
+            (tableStyle['max_empty_cell_percent'] ?? 30).toString();
       }
 
       _imageNumberingScheme =
@@ -1669,10 +1860,34 @@ class _TemplateConfigurationScreenState
               ? 'above'
               : 'below';
       _includeLof = rules['include_lof'] ?? true;
+      _imageRequireCaption = rules['require_caption'] ?? true;
+      _imageRequireIntextReference =
+          rules['require_intext_reference'] ?? false;
       _captionPatternController.text =
           (rules['caption_format_pattern'] ?? 'Figure {n}: {caption}').toString();
       _maxImageWidthPercentController.text =
           (rules['max_image_width_percent'] ?? 80).toString();
+
+      _tableNumberingScheme =
+          (rules['table_numbering_scheme'] ?? 'global').toString() == 'chapter'
+              ? 'chapter'
+              : 'global';
+      _tableCaptionPosition =
+          (rules['table_caption_position'] ?? 'above').toString() == 'below'
+              ? 'below'
+              : 'above';
+      _includeLot = rules['include_lot'] ?? true;
+      _tableRequireCaption = rules['table_require_caption'] ?? true;
+      _tableRequireIntextReference =
+          rules['table_require_intext_reference'] ?? false;
+      _tableCaptionPatternController.text =
+          (rules['table_caption_format_pattern'] ?? 'Table {n}: {description}')
+              .toString();
+      _tableLotFormatController.text =
+          (rules['list_of_tables_format'] ??
+                  rules['table_caption_format_pattern'] ??
+                  'Table {n}: {description}')
+              .toString();
     });
   }
 
@@ -1810,6 +2025,9 @@ class _TemplateConfigurationScreenState
 
   /// Build the table_style sub-object from current UI state.
   Map<String, dynamic> _buildTableStyleData() {
+    final alignmentOnPage = _tableAlignmentOnPage.toLowerCase() == 'left'
+        ? 'left'
+        : 'center';
     return {
       'font_name':        _tableFontName,
       'font_size':        _safeInt(_tableFontSizeController.text, 12),
@@ -1822,13 +2040,29 @@ class _TemplateConfigurationScreenState
       'borders':          _tableBorders,
       'border_color':     _tableBorderColorController.text.replaceAll('#', ''),
       'border_size':      _safeInt(_tableBorderSizeController.text, 4),
+      'border_thickness': _safeInt(_tableBorderSizeController.text, 4),
+      'border_style':     _borderStyleToDb(_tableBorderStyle),
+      'header_row_shading': _tableHeaderRowShading,
       'cell_padding_top': _safeInt(_tablePaddingTopController.text, 60),
       'cell_padding_bot': _safeInt(_tablePaddingBottomController.text, 60),
       'cell_padding_lft': _safeInt(_tablePaddingLeftController.text, 108),
       'cell_padding_rgt': _safeInt(_tablePaddingRightController.text, 108),
-      'center_table':     _tableCenterTable,
+      'center_table':     alignmentOnPage == 'center',
+      'alignment_on_page': alignmentOnPage,
       'auto_fit':         _tableAutoFit,
       'repeat_header':    _tableRepeatHeader,
+      'max_width_percent':
+          _safeInt(_tableMaxWidthPercentController.text, 100),
+      'min_column_width':
+          _safeDouble(_tableMinColumnWidthController.text, 0.5),
+      'wide_table_handling': _wideHandlingToDb(_tableWideHandling),
+      'numeric_column_alignment': _tableNumericAlign.toLowerCase(),
+      'text_column_alignment': _tableTextAlign.toLowerCase(),
+      'row_height_policy': _rowHeightToDb(_tableRowHeightPolicy),
+      'space_before': _safeDouble(_tableSpaceBeforeController.text, 6.0),
+      'space_after': _safeDouble(_tableSpaceAfterController.text, 6.0),
+      'max_empty_cell_percent':
+          _safeInt(_tableMaxEmptyCellPercentController.text, 30),
     };
   }
 
@@ -1949,6 +2183,20 @@ class _TemplateConfigurationScreenState
       // ── Table style (NEW) ─────────────────────────────────────────────────
       'table_style': _buildTableStyleData(),
 
+      // ── Table caption / LOT (flat keys) ───────────────────────────────────
+      'table_caption_format_pattern':
+          _tableCaptionPatternController.text.trim().isEmpty
+              ? 'Table {n}: {description}'
+              : _tableCaptionPatternController.text.trim(),
+      'table_caption_position': _tableCaptionPosition,
+      'table_numbering_scheme': _tableNumberingScheme,
+      'include_lot': _includeLot,
+      'table_require_caption': _tableRequireCaption,
+      'table_require_intext_reference': _tableRequireIntextReference,
+      'list_of_tables_format': _tableLotFormatController.text.trim().isEmpty
+          ? 'Table {n}: {description}'
+          : _tableLotFormatController.text.trim(),
+
       // ── Image / caption formatting (Phase 1) ──────────────────────────────
       'caption_format_pattern': _captionPatternController.text.trim().isEmpty
           ? 'Figure {n}: {caption}'
@@ -1958,6 +2206,8 @@ class _TemplateConfigurationScreenState
       'max_image_width_percent':
           int.tryParse(_maxImageWidthPercentController.text.trim()) ?? 80,
       'include_lof': _includeLof,
+      'require_caption': _imageRequireCaption,
+      'require_intext_reference': _imageRequireIntextReference,
     };
 
     // Reference rules — prefer updated UI rules, fall back to existing DB values
@@ -2013,6 +2263,13 @@ class _TemplateConfigurationScreenState
     _tablePaddingBottomController.dispose();
     _tablePaddingLeftController.dispose();
     _tablePaddingRightController.dispose();
+    _tableMaxWidthPercentController.dispose();
+    _tableMinColumnWidthController.dispose();
+    _tableSpaceBeforeController.dispose();
+    _tableSpaceAfterController.dispose();
+    _tableCaptionPatternController.dispose();
+    _tableLotFormatController.dispose();
+    _tableMaxEmptyCellPercentController.dispose();
     _captionPatternController.dispose();
     _maxImageWidthPercentController.dispose();
     super.dispose();
@@ -2241,7 +2498,30 @@ class _TemplateConfigurationScreenState
             ),
             const SizedBox(height: 32),
 
-            // ── Table Styles Card (NEW) ────────────────────────────────────
+            // ── Table Formatting Rules (captions / LOT / validation) ───────
+            TableFormattingRulesCard(
+              captionPatternController: _tableCaptionPatternController,
+              listOfTablesFormatController: _tableLotFormatController,
+              numberingScheme: _tableNumberingScheme,
+              onNumberingSchemeChanged: (v) =>
+                  setState(() => _tableNumberingScheme = v),
+              captionPosition: _tableCaptionPosition,
+              onCaptionPositionChanged: (v) =>
+                  setState(() => _tableCaptionPosition = v),
+              includeLot: _includeLot,
+              onIncludeLotChanged: (v) => setState(() => _includeLot = v),
+              requireCaption: _tableRequireCaption,
+              onRequireCaptionChanged: (v) =>
+                  setState(() => _tableRequireCaption = v),
+              requireIntextReference: _tableRequireIntextReference,
+              onRequireIntextReferenceChanged: (v) =>
+                  setState(() => _tableRequireIntextReference = v),
+              maxEmptyCellPercentController:
+                  _tableMaxEmptyCellPercentController,
+            ),
+            const SizedBox(height: 32),
+
+            // ── Table Styles Card ───────────────────────────────────────────
             TableStylesCard(
               fontSizeController:       _tableFontSizeController,
               fontName:                 _tableFontName,
@@ -2265,11 +2545,43 @@ class _TemplateConfigurationScreenState
               paddingLeftController:    _tablePaddingLeftController,
               paddingRightController:   _tablePaddingRightController,
               centerTable:              _tableCenterTable,
-              onCenterTableChanged:     (v) => setState(() => _tableCenterTable = v),
+              onCenterTableChanged:     (v) => setState(() {
+                _tableCenterTable = v;
+                _tableAlignmentOnPage = v ? 'Center' : 'Left';
+              }),
               autoFit:                  _tableAutoFit,
               onAutoFitChanged:         (v) => setState(() => _tableAutoFit = v),
               repeatHeader:             _tableRepeatHeader,
               onRepeatHeaderChanged:    (v) => setState(() => _tableRepeatHeader = v),
+              borderStyle:              _tableBorderStyle,
+              onBorderStyleChanged:     (v) => setState(() {
+                _tableBorderStyle = v;
+                _tableBorders = v != 'None';
+              }),
+              headerRowShading:         _tableHeaderRowShading,
+              onHeaderRowShadingChanged:(v) =>
+                  setState(() => _tableHeaderRowShading = v),
+              maxWidthPercentController: _tableMaxWidthPercentController,
+              minColumnWidthController:  _tableMinColumnWidthController,
+              wideTableHandling:         _tableWideHandling,
+              onWideTableHandlingChanged:(v) =>
+                  setState(() => _tableWideHandling = v),
+              numericColumnAlign:        _tableNumericAlign,
+              onNumericColumnAlignChanged:(v) =>
+                  setState(() => _tableNumericAlign = v),
+              textColumnAlign:           _tableTextAlign,
+              onTextColumnAlignChanged:  (v) =>
+                  setState(() => _tableTextAlign = v),
+              rowHeightPolicy:           _tableRowHeightPolicy,
+              onRowHeightPolicyChanged:  (v) =>
+                  setState(() => _tableRowHeightPolicy = v),
+              spaceBeforeController:     _tableSpaceBeforeController,
+              spaceAfterController:      _tableSpaceAfterController,
+              alignmentOnPage:           _tableAlignmentOnPage,
+              onAlignmentOnPageChanged:  (v) => setState(() {
+                _tableAlignmentOnPage = v;
+                _tableCenterTable = v == 'Center';
+              }),
             ),
 
             const SizedBox(height: 32),
@@ -2297,6 +2609,12 @@ class _TemplateConfigurationScreenState
                   setState(() => _captionPosition = v),
               includeLof: _includeLof,
               onIncludeLofChanged: (v) => setState(() => _includeLof = v),
+              requireCaption: _imageRequireCaption,
+              onRequireCaptionChanged: (v) =>
+                  setState(() => _imageRequireCaption = v),
+              requireIntextReference: _imageRequireIntextReference,
+              onRequireIntextReferenceChanged: (v) =>
+                  setState(() => _imageRequireIntextReference = v),
             ),
             const SizedBox(height: 32),
 

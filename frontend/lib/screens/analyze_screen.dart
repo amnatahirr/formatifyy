@@ -2125,16 +2125,36 @@ class _TableIssue {
   final String code;
   final String message;
   final String severity;
+  final int? row;
+  final int? col;
+  final String? action;
+
   const _TableIssue({
     required this.code,
     required this.message,
     required this.severity,
+    this.row,
+    this.col,
+    this.action,
   });
+
   factory _TableIssue.fromJson(Map<String, dynamic> j) => _TableIssue(
     code: j['code'] as String? ?? '',
     message: j['message'] as String? ?? '',
     severity: j['severity'] as String? ?? 'info',
+    row: (j['row'] as num?)?.toInt(),
+    col: (j['col'] as num?)?.toInt(),
+    action: j['action'] as String?,
   );
+
+  bool get isFillableEmptyCell =>
+      code == 'EMPTY_CELL' &&
+      action == 'fill_cell' &&
+      row != null &&
+      col != null;
+
+  bool get isNormalizeFontIssue =>
+      code == 'FONT_INCONSISTENT' && action == 'normalize_font';
 }
 
 class _TableMeta {
@@ -2296,15 +2316,29 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 8, vsync: this);
+    _tabController = TabController(length: 9, vsync: this);
     _tabController.addListener(_onAnalysisTabChanged);
     _baseUrl = ApiConfig.getBaseUrl();
     _analysisFuture = _fetchAnalysis();
+    // Preload table issues so the Tables tab badge has a real count.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _loadTables();
+    });
   }
 
   void _onAnalysisTabChanged() {
-    if (_tabController.index != 7) return;
-    _loadTocCheck();
+    if (_tabController.indexIsChanging) return;
+    // Tables tab (after Image Relevance)
+    if (_tabController.index == 5) {
+      if (!_tablesLoading && _tables.isEmpty) {
+        _loadTables();
+      }
+      return;
+    }
+    // Document Lists tab
+    if (_tabController.index == 8) {
+      _loadTocCheck();
+    }
   }
 
   @override
@@ -3453,6 +3487,178 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
     return _tables.fold<int>(0, (sum, table) => sum + table.issueCount);
   }
 
+  Future<void> _promptAndFillEmptyCell(_TableMeta table, _TableIssue issue) async {
+    if (!issue.isFillableEmptyCell) return;
+
+    final controller = TextEditingController();
+    final row = issue.row!;
+    final col = issue.col!;
+
+    final text = await showDialog<String>(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          backgroundColor: _surface,
+          title: Text(
+            'Fill empty cell',
+            style: TextStyle(color: _textPri, fontSize: 16, fontWeight: FontWeight.w700),
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '${table.label} · Row ${row + 1}, Column ${col + 1}',
+                style: TextStyle(color: _textSec, fontSize: 12),
+              ),
+              const SizedBox(height: 14),
+              TextField(
+                controller: controller,
+                autofocus: true,
+                maxLines: 3,
+                style: TextStyle(color: _textPri, fontSize: 14),
+                decoration: InputDecoration(
+                  hintText: 'Enter text for this cell',
+                  hintStyle: TextStyle(color: _textSec.withOpacity(0.7)),
+                  filled: true,
+                  fillColor: _bg,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: BorderSide(color: _border),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: BorderSide(color: _border),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: const BorderSide(color: _blue),
+                  ),
+                ),
+                onSubmitted: (v) => Navigator.of(ctx).pop(v.trim()),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: Text('Cancel', style: TextStyle(color: _textSec)),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.of(ctx).pop(controller.text.trim()),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _blue,
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('Save to cell'),
+            ),
+          ],
+        );
+      },
+    );
+
+    // Dispose after dialog closes
+    controller.dispose();
+
+    if (text == null || text.isEmpty) return;
+    await _fillEmptyCell(
+      tableIndex: table.index,
+      row: row,
+      col: col,
+      text: text,
+    );
+  }
+
+  Future<void> _fillEmptyCell({
+    required int tableIndex,
+    required int row,
+    required int col,
+    required String text,
+  }) async {
+    setState(() {
+      _tablesFormatting = true;
+      _tablesError = null;
+      _tablesSuccess = null;
+    });
+    try {
+      final auth = context.read<AuthProvider>();
+      final url =
+          '$_baseUrl/tables/fill-cell/${widget.documentId}?user_id=${auth.userId}';
+      final resp = await http.post(
+        Uri.parse(url),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'table_index': tableIndex,
+          'row': row,
+          'col': col,
+          'text': text,
+        }),
+      );
+      if (resp.statusCode == 200) {
+        setState(() {
+          _tablesSuccess =
+              'Filled cell at row ${row + 1}, column ${col + 1}';
+        });
+        _showSnack(_tablesSuccess!, _green);
+        await _loadTables();
+      } else {
+        setState(() {
+          _tablesError = 'Failed to fill cell: ${resp.body}';
+        });
+        _showSnack(_tablesError!, _red);
+      }
+    } catch (e) {
+      setState(() {
+        _tablesError = 'Error filling cell: $e';
+      });
+      _showSnack(_tablesError!, _red);
+    } finally {
+      setState(() {
+        _tablesFormatting = false;
+      });
+    }
+  }
+
+  Future<void> _normalizeTableFonts(_TableMeta table) async {
+    setState(() {
+      _tablesFormatting = true;
+      _tablesError = null;
+      _tablesSuccess = null;
+    });
+    try {
+      final auth = context.read<AuthProvider>();
+      final url =
+          '$_baseUrl/tables/normalize-fonts/${widget.documentId}?user_id=${auth.userId}';
+      final resp = await http.post(
+        Uri.parse(url),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'table_index': table.index}),
+      );
+      if (resp.statusCode == 200) {
+        setState(() {
+          _tablesSuccess =
+              'Normalized fonts in ${table.label} to match template style';
+        });
+        _showSnack(_tablesSuccess!, _green);
+        await _loadTables();
+      } else {
+        setState(() {
+          _tablesError = 'Failed to normalize fonts: ${resp.body}';
+        });
+        _showSnack(_tablesError!, _red);
+      }
+    } catch (e) {
+      setState(() {
+        _tablesError = 'Error normalizing fonts: $e';
+      });
+      _showSnack(_tablesError!, _red);
+    } finally {
+      setState(() {
+        _tablesFormatting = false;
+      });
+    }
+  }
+
   // ── API — content check ───────────────────────────────────────────────────
 
   Future<void> _loadContentCheck() async {
@@ -4051,6 +4257,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
           summary,
           imageIssues.length,
           imageEthicsIssues.length,
+          _calculateTableIssueCount(),
         ),
         Container(
           color: _surface,
@@ -4066,6 +4273,11 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
               Tab(text: 'Formatting  ($formattingTabCount)'),
               Tab(text: 'Image Ethics  (${imageEthicsIssues.length})'),
               Tab(text: 'Image Relevance  (${imageIssues.length})'),
+              Tab(
+                text: _tablesLoading
+                    ? 'Tables  (…)'
+                    : 'Tables  (${_calculateTableIssueCount()})',
+              ),
               Tab(text: 'Para Relevance  (${paraRelevanceIssues.length})'),
               Tab(text: 'Plagiarism  (${plagiarismIssues.length})'),
               Tab(text: 'Document Lists'),
@@ -4086,6 +4298,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
               _buildFormattingTab(formattingIssues),
               _buildImageEthicsTab(imageEthicsIssues),
               _buildImageRelevancyTab(imageIssues, const []),
+              _buildTablesTab(),
               _buildFunctionTab(
                 'Paragraph Relevance',
                 paraRelevanceIssues,
@@ -4458,6 +4671,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
     Map<String, dynamic> summary, [
     int imageIssueCount = 0,
     int imageEthicsCount = 0,
+    int tableIssueCount = 0,
   ]) {
     final scoreColor =
         score >= 80
@@ -4546,6 +4760,10 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
           if (imageEthicsCount > 0) ...[
             const SizedBox(width: 8),
             _SummaryPill('Ethics', '$imageEthicsCount', _red),
+          ],
+          if (tableIssueCount > 0) ...[
+            const SizedBox(width: 8),
+            _SummaryPill('Tables', '$tableIssueCount', _yellow),
           ],
         ],
       ),
@@ -6928,6 +7146,9 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
     }
 
     final tablesWithIssues = _tables.where((t) => !t.isClean).toList();
+    // Prefer showing issue tables; if none, show all so users can still apply style.
+    final displayTables =
+        tablesWithIssues.isNotEmpty ? tablesWithIssues : _tables;
 
     if (_tables.isEmpty) {
       return _buildEmptyState(
@@ -6943,6 +7164,12 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
           _buildBanner(_tablesSuccess!, _green, Icons.check_circle_outline),
         if (_tablesError != null)
           _buildBanner(_tablesError!, _red, Icons.error_outline),
+        if (tablesWithIssues.isEmpty)
+          _buildBanner(
+            'All ${_tables.length} table(s) look good — select any to apply template style.',
+            _green,
+            Icons.check_circle_outline,
+          ),
 
         Expanded(
           child: Row(
@@ -6957,14 +7184,12 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
                       children: [
                         OutlinedButton.icon(
                           onPressed:
-                              tablesWithIssues.isNotEmpty
+                              displayTables.isNotEmpty
                                   ? () => setState(
                                     () =>
                                         _selectedTableIndices.isEmpty
                                             ? _selectedTableIndices.addAll(
-                                              tablesWithIssues.map(
-                                                (t) => t.index,
-                                              ),
+                                              displayTables.map((t) => t.index),
                                             )
                                             : _selectedTableIndices.clear(),
                                   )
@@ -6992,13 +7217,15 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
                         ),
                         const SizedBox(width: 12),
                         _Tag(
-                          '${tablesWithIssues.length} tables with issues',
-                          _yellow,
+                          tablesWithIssues.isEmpty
+                              ? '${_tables.length} tables'
+                              : '${tablesWithIssues.length} tables with issues',
+                          tablesWithIssues.isEmpty ? _green : _yellow,
                         ),
                         const SizedBox(width: 6),
                         _Tag(
-                          '${tablesWithIssues.fold(0, (s, t) => s + t.issueCount)} issues',
-                          _yellow,
+                          '${_calculateTableIssueCount()} issues',
+                          tablesWithIssues.isEmpty ? _green : _yellow,
                         ),
                         if (_selectedTableIndices.isNotEmpty) ...[
                           const SizedBox(width: 6),
@@ -7009,6 +7236,8 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
                         ],
                       ],
                     ),
+                    const SizedBox(height: 16),
+                    ...displayTables.map((t) => _buildTableCard(t)),
                   ],
                 ),
               ),
@@ -7244,32 +7473,50 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
                                             : Colors.transparent,
                                   ),
                                   children:
-                                      entry.value
-                                          .map(
-                                            (cell) => Padding(
-                                              padding:
-                                                  const EdgeInsets.symmetric(
-                                                    horizontal: 8,
-                                                    vertical: 6,
-                                                  ),
-                                              child: Text(
-                                                cell,
-                                                style: TextStyle(
-                                                  color:
-                                                      isHeader
-                                                          ? _blue
-                                                          : _textSec,
-                                                  fontSize: 11,
-                                                  fontWeight:
-                                                      isHeader
-                                                          ? FontWeight.w600
-                                                          : FontWeight.w400,
-                                                ),
-                                                overflow: TextOverflow.ellipsis,
+                                      entry.value.asMap().entries.map((cellEntry) {
+                                        final cell = cellEntry.value;
+                                        final isEmptyCell = cell.trim().isEmpty;
+                                        return Padding(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 8,
+                                            vertical: 6,
+                                          ),
+                                          child: Container(
+                                            padding: isEmptyCell
+                                                ? const EdgeInsets.symmetric(
+                                                    horizontal: 4,
+                                                    vertical: 2,
+                                                  )
+                                                : EdgeInsets.zero,
+                                            decoration: isEmptyCell
+                                                ? BoxDecoration(
+                                                    color: _yellow.withOpacity(0.12),
+                                                    borderRadius:
+                                                        BorderRadius.circular(4),
+                                                    border: Border.all(
+                                                      color: _yellow.withOpacity(0.45),
+                                                    ),
+                                                  )
+                                                : null,
+                                            child: Text(
+                                              isEmptyCell ? '(empty)' : cell,
+                                              style: TextStyle(
+                                                color: isEmptyCell
+                                                    ? _yellow
+                                                    : (isHeader ? _blue : _textSec),
+                                                fontSize: 11,
+                                                fontWeight: isHeader
+                                                    ? FontWeight.w600
+                                                    : FontWeight.w400,
+                                                fontStyle: isEmptyCell
+                                                    ? FontStyle.italic
+                                                    : FontStyle.normal,
                                               ),
+                                              overflow: TextOverflow.ellipsis,
                                             ),
-                                          )
-                                          .toList(),
+                                          ),
+                                        );
+                                      }).toList(),
                                 );
                               }).toList(),
                         ),
@@ -7334,6 +7581,67 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
                                       height: 1.4,
                                     ),
                                   ),
+                                  if (issue.isFillableEmptyCell) ...[
+                                    const SizedBox(height: 8),
+                                    Align(
+                                      alignment: Alignment.centerLeft,
+                                      child: OutlinedButton.icon(
+                                        onPressed: _tablesFormatting
+                                            ? null
+                                            : () => _promptAndFillEmptyCell(
+                                                  table,
+                                                  issue,
+                                                ),
+                                        icon: const Icon(
+                                          Icons.edit_note,
+                                          size: 14,
+                                        ),
+                                        label: const Text(
+                                          'Fill empty cell',
+                                          style: TextStyle(fontSize: 11),
+                                        ),
+                                        style: OutlinedButton.styleFrom(
+                                          foregroundColor: _blue,
+                                          side: BorderSide(color: _blue.withOpacity(0.5)),
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 10,
+                                            vertical: 6,
+                                          ),
+                                          visualDensity: VisualDensity.compact,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                  if (issue.isNormalizeFontIssue) ...[
+                                    const SizedBox(height: 8),
+                                    Align(
+                                      alignment: Alignment.centerLeft,
+                                      child: OutlinedButton.icon(
+                                        onPressed: _tablesFormatting
+                                            ? null
+                                            : () => _normalizeTableFonts(table),
+                                        icon: const Icon(
+                                          Icons.font_download_outlined,
+                                          size: 14,
+                                        ),
+                                        label: const Text(
+                                          'Normalize font',
+                                          style: TextStyle(fontSize: 11),
+                                        ),
+                                        style: OutlinedButton.styleFrom(
+                                          foregroundColor: _purple,
+                                          side: BorderSide(
+                                            color: _purple.withOpacity(0.5),
+                                          ),
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 10,
+                                            vertical: 6,
+                                          ),
+                                          visualDensity: VisualDensity.compact,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
                                 ],
                               ),
                             ),

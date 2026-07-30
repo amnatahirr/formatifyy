@@ -2,15 +2,27 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
+from services.captioned_element_config import (
+    clamp_percent,
+    format_caption_label as shared_format_caption_label,
+    normalize_caption_position,
+    normalize_numbering_scheme,
+    resolve_caption_pattern,
+)
+
+DEFAULT_FIGURE_CAPTION_GLOBAL = "Figure {n}: {caption}"
+DEFAULT_FIGURE_CAPTION_CHAPTER = "Figure {chapter}.{n}: {caption}"
 
 DEFAULT_IMAGE_FORMAT_RULES: Dict[str, Any] = {
-    "caption_format_pattern": "Figure {n}: {caption}",
+    "caption_format_pattern": DEFAULT_FIGURE_CAPTION_GLOBAL,
     "numbering_scheme": "global",  # global | chapter
     "caption_position": "below",  # above | below
     "max_image_width_percent": 80,
     "include_lof": True,
+    "require_caption": True,
+    "require_intext_reference": False,
 }
 
 
@@ -22,34 +34,24 @@ def get_image_format_config(formatting_rules: Dict[str, Any] | None) -> Dict[str
         if key in src and src[key] is not None and src[key] != "":
             rules[key] = src[key]
 
-    scheme = str(rules.get("numbering_scheme", "global")).strip().lower()
-    if scheme in ("chapter", "chapter-wise", "chapter_wise"):
-        rules["numbering_scheme"] = "chapter"
-    else:
-        rules["numbering_scheme"] = "global"
-
-    pos = str(rules.get("caption_position", "below")).strip().lower()
-    rules["caption_position"] = "above" if pos == "above" else "below"
-
-    try:
-        pct = int(rules.get("max_image_width_percent", 80))
-    except (TypeError, ValueError):
-        pct = 80
-    rules["max_image_width_percent"] = max(10, min(100, pct))
-
-    pattern = str(rules.get("caption_format_pattern") or "").strip()
-    if not pattern:
-        if rules["numbering_scheme"] == "chapter":
-            pattern = "Figure {chapter}.{n}: {caption}"
-        else:
-            pattern = "Figure {n}: {caption}"
-    elif rules["numbering_scheme"] == "chapter" and "{chapter}" not in pattern:
-        # Admin picked chapter scheme but left the global default pattern.
-        if pattern == DEFAULT_IMAGE_FORMAT_RULES["caption_format_pattern"]:
-            pattern = "Figure {chapter}.{n}: {caption}"
-    rules["caption_format_pattern"] = pattern
-
+    rules["numbering_scheme"] = normalize_numbering_scheme(rules.get("numbering_scheme"))
+    rules["caption_position"] = normalize_caption_position(
+        rules.get("caption_position"), default="below"
+    )
+    rules["max_image_width_percent"] = clamp_percent(
+        rules.get("max_image_width_percent"), default=80, lo=10, hi=100
+    )
+    rules["caption_format_pattern"] = resolve_caption_pattern(
+        rules.get("caption_format_pattern"),
+        numbering_scheme=rules["numbering_scheme"],
+        default_global=DEFAULT_FIGURE_CAPTION_GLOBAL,
+        default_chapter=DEFAULT_FIGURE_CAPTION_CHAPTER,
+    )
     rules["include_lof"] = bool(src.get("include_lof", rules["include_lof"]))
+    rules["require_caption"] = bool(src.get("require_caption", rules["require_caption"]))
+    rules["require_intext_reference"] = bool(
+        src.get("require_intext_reference", rules["require_intext_reference"])
+    )
     return rules
 
 
@@ -57,18 +59,14 @@ def format_caption_label(
     *,
     pattern: str,
     n: int,
-    chapter: int | None,
+    chapter: Optional[int],
     caption: str,
 ) -> str:
     """Fill admin caption pattern. Unknown placeholders are left blank."""
-    desc = (caption or "").strip()
-    try:
-        return pattern.format(
-            n=n,
-            chapter=chapter if chapter is not None else "",
-            caption=desc,
-        ).strip()
-    except (KeyError, ValueError, IndexError):
-        if chapter is not None:
-            return f"Figure {chapter}.{n}: {desc}".strip(": ").strip()
-        return f"Figure {n}: {desc}".strip(": ").strip()
+    return shared_format_caption_label(
+        pattern=pattern,
+        n=n,
+        chapter=chapter,
+        caption=caption,
+        fallback_label="Figure",
+    )

@@ -66,7 +66,13 @@ from issue_utils import (
 )
 from image_formatter import format_document_images, fix_image_captions
 from services.image_formatting_service import run_image_formatting_pipeline
+from services.table_formatting_service import run_table_formatting_pipeline
 from services.image_config import DEFAULT_IMAGE_FORMAT_RULES
+from services.table_config import (
+    DEFAULT_TABLE_FORMAT_RULES,
+    normalize_formatting_rules_table_section,
+    validate_table_format_rules,
+)
 from docx_fields import (
     analyze_document_lists,
     apply_toc_heading_styles,
@@ -77,7 +83,12 @@ from docx_fields import (
     insert_lot_field,
     insert_toc_field,
 )
-from table_processor import detect_tables, format_tables_in_document
+from table_processor import (
+    detect_tables,
+    format_tables_in_document,
+    fill_table_cell,
+    normalize_table_fonts,
+)
 from content_fixer import (
     apply_text_fix,
     apply_all_text_fixes,
@@ -497,6 +508,8 @@ async def create_template(
         conn.close()
         raise HTTPException(status_code=404, detail="Admin user not found.")
 
+    formatting_rules = _normalize_template_formatting_rules(payload.formatting_rules)
+
     cursor.execute(
         """
         INSERT INTO templates (university_id, department_id, name, description, required_sections, formatting_rules, created_by)
@@ -508,7 +521,7 @@ async def create_template(
             payload.name,
             payload.description or "",
             json.dumps(payload.required_sections),
-            json.dumps(payload.formatting_rules),
+            json.dumps(formatting_rules),
             admin_id,
         ),
     )
@@ -533,6 +546,11 @@ async def edit_template(
         updates["department_id"] = department_id
     if not updates:
         raise HTTPException(status_code=400, detail="No fields to update.")
+
+    if "formatting_rules" in updates and updates["formatting_rules"] is not None:
+        updates["formatting_rules"] = _normalize_template_formatting_rules(
+            updates["formatting_rules"]
+        )
 
     tmpl = update_template(template_id, updates)
     if not tmpl:
@@ -1665,6 +1683,48 @@ async def image_format_defaults():
     return {"defaults": DEFAULT_IMAGE_FORMAT_RULES}
 
 
+@app.get("/api/templates/table-format-defaults", tags=["Templates"])
+async def table_format_defaults():
+    """Default table formatting_rules keys (flat + table_style) for admin UI."""
+    return {"defaults": DEFAULT_TABLE_FORMAT_RULES}
+
+
+def _normalize_template_formatting_rules(rules: Dict[str, Any] | None) -> Dict[str, Any]:
+    """Validate + normalize table section; preserve all other keys."""
+    data = dict(rules or {})
+    errors = validate_table_format_rules(data)
+    if errors:
+        raise HTTPException(status_code=400, detail="; ".join(errors))
+    # Also lightly validate figure caption enums if present
+    if "numbering_scheme" in data and data["numbering_scheme"] is not None:
+        raw = str(data["numbering_scheme"]).strip().lower()
+        if raw not in ("global", "chapter", "chapter-wise", "chapter_wise"):
+            raise HTTPException(
+                status_code=400,
+                detail="numbering_scheme must be 'global' or 'chapter'",
+            )
+    if "caption_position" in data and data["caption_position"] is not None:
+        pos = str(data["caption_position"]).strip().lower()
+        if pos not in ("above", "below"):
+            raise HTTPException(
+                status_code=400,
+                detail="caption_position must be 'above' or 'below'",
+            )
+    if "max_image_width_percent" in data and data["max_image_width_percent"] is not None:
+        try:
+            pct = int(data["max_image_width_percent"])
+        except (TypeError, ValueError):
+            raise HTTPException(
+                status_code=400, detail="max_image_width_percent must be an integer"
+            )
+        if pct < 0 or pct > 100:
+            raise HTTPException(
+                status_code=400,
+                detail="max_image_width_percent must be between 0 and 100",
+            )
+    return normalize_formatting_rules_table_section(data)
+
+
 @app.get("/api/format-images/download/{document_id}", tags=["Documents"])
 async def download_formatted_images(document_id: int, user_id: int = Query(...), file: str = Query(None)):
     """Download image-formatted document."""
@@ -2791,12 +2851,119 @@ def tables_detect(document_id: int, user_id: int = Query(...)):
     doc_row, tmpl = _get_user_document(document_id, user_id)
     working_copy = _ensure_formatted_working_copy(doc_row, tmpl)
     doc = DocxDocument(working_copy)
-    tables = detect_tables(doc)
+    rules = tmpl.get("formatting_rules", {}) or {}
+    tables = detect_tables(doc, rules)
     return {
         "status": "success",
         "document_id": document_id,
         "table_count": len(tables),
+        "issue_count": sum(len(t.get("issues") or []) for t in tables),
         "tables": tables,
+    }
+
+
+@app.post("/api/tables/fill-cell/{document_id}", tags=["Documents"])
+def tables_fill_cell(
+    document_id: int,
+    user_id: int = Query(...),
+    payload: Dict[str, Any] = Body(default={}),
+):
+    """Fill a specific empty table cell with user-provided text."""
+    from docx import Document as DocxDocument
+    from services.table_config import get_table_format_config
+
+    table_index = payload.get("table_index")
+    row = payload.get("row")
+    col = payload.get("col")
+    text = payload.get("text")
+
+    if table_index is None or row is None or col is None:
+        raise HTTPException(
+            status_code=400,
+            detail="table_index, row, and col are required",
+        )
+    if text is None or not str(text).strip():
+        raise HTTPException(status_code=400, detail="text must be a non-empty string")
+
+    doc_row, tmpl = _get_user_document(document_id, user_id)
+    working_copy = _ensure_formatted_working_copy(doc_row, tmpl)
+    doc = DocxDocument(working_copy)
+    style = get_table_format_config(tmpl.get("formatting_rules") or {}).get(
+        "table_style", {}
+    )
+
+    try:
+        result = fill_table_cell(
+            doc,
+            table_index=int(table_index),
+            row=int(row),
+            col=int(col),
+            text=str(text),
+            font_name=str(style.get("font_name") or "Times New Roman"),
+            font_size=int(style.get("font_size") or 12),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    doc.save(working_copy)
+    commit = _commit_working_document(document_id, working_copy, doc_row)
+    return {
+        "status": "success",
+        "message": f"Filled cell at row {int(row) + 1}, column {int(col) + 1}",
+        **result,
+        **commit,
+    }
+
+
+@app.post("/api/tables/normalize-fonts/{document_id}", tags=["Documents"])
+def tables_normalize_fonts(
+    document_id: int,
+    user_id: int = Query(...),
+    payload: Dict[str, Any] = Body(default={}),
+):
+    """
+    Normalize inconsistent cell fonts in a table to the template font
+    (or to the dominant font of that table).
+    """
+    from docx import Document as DocxDocument
+    from services.table_config import get_table_format_config
+
+    table_index = payload.get("table_index")
+    if table_index is None:
+        raise HTTPException(status_code=400, detail="table_index is required")
+
+    doc_row, tmpl = _get_user_document(document_id, user_id)
+    working_copy = _ensure_formatted_working_copy(doc_row, tmpl)
+    doc = DocxDocument(working_copy)
+    idx = int(table_index)
+    if idx < 0 or idx >= len(doc.tables):
+        raise HTTPException(status_code=400, detail="table_index out of range")
+
+    style = get_table_format_config(tmpl.get("formatting_rules") or {}).get(
+        "table_style", {}
+    )
+    result = normalize_table_fonts(
+        doc.tables[idx],
+        font_name=str(
+            payload.get("font_name")
+            or style.get("font_name")
+            or "Times New Roman"
+        ),
+        font_size=int(payload.get("font_size") or style.get("font_size") or 12),
+        header_bold=bool(
+            payload["header_bold"]
+            if "header_bold" in payload
+            else style.get("header_bold", False)
+        ),
+    )
+    doc.save(working_copy)
+    commit = _commit_working_document(document_id, working_copy, doc_row)
+    return {
+        "status": "success",
+        "message": f"Normalized fonts in table {idx + 1}",
+        "table_index": idx,
+        **result,
+        **commit,
     }
 
 
@@ -2823,6 +2990,7 @@ def tables_format(
         preset=str(payload.get("preset", "academic")),
         custom_rules=payload.get("custom_rules"),
         add_captions=True,
+        formatting_rules=tmpl.get("formatting_rules"),
     )
     doc.save(working_copy)
     commit = _commit_working_document(document_id, working_copy, doc_row)
@@ -2840,34 +3008,70 @@ def tables_format_with_template(
     user_id: int = Query(...),
     payload: Dict[str, Any] = Body(default={}),
 ):
-    """Format selected tables using admin template table_style rules."""
-    from docx import Document as DocxDocument
-
+    """
+    Format selected (or all) tables using the full admin template rules:
+    captions, numbering, references, visual styles, and List of Tables.
+    """
     doc_row, tmpl = _get_user_document(document_id, user_id)
     working_copy = _ensure_formatted_working_copy(doc_row, tmpl)
-    doc = DocxDocument(working_copy)
+    rules = tmpl.get("formatting_rules", {}) or {}
 
-    selected = set(payload.get("selected_indices", []))
-    if not selected:
-        raise HTTPException(status_code=400, detail="No tables selected")
+    selected_raw = payload.get("selected_indices")
+    selected = set(selected_raw) if selected_raw else None
 
-    rules = tmpl.get("formatting_rules", {})
-    table_style = rules.get("table_style", {})
-    result = format_tables_in_document(
-        doc,
-        selected,
-        template_rules=table_style,
-        add_captions=True,
+    output_path = os.path.join(OUTPUT_DIR, f"tables_formatted_{document_id}.docx")
+    result = run_table_formatting_pipeline(
+        working_copy,
+        output_path,
+        rules,
+        selected_indices=selected,
     )
-    doc.save(working_copy)
+    os.makedirs(os.path.dirname(working_copy) or ".", exist_ok=True)
+    shutil.copy2(output_path, working_copy)
     commit = _commit_working_document(document_id, working_copy, doc_row)
     return {
-        "status": "success",
-        "formatted_tables": result.get("formatted_tables", []),
+        "status": result.get("status", "success"),
         "template_name": tmpl.get("name", ""),
+        "download_url": f"/api/format-tables/download/{document_id}",
         **result,
         **commit,
     }
+
+
+@app.post("/api/format-tables/{document_id}", tags=["Documents"])
+def format_tables_endpoint(document_id: int, user_id: int = Query(...)):
+    """
+    Full template-driven table pipeline for all body tables:
+    captions, numbering, in-text refs, visual styles, List of Tables.
+    """
+    doc_row, tmpl = _get_user_document(document_id, user_id)
+    working_copy = _ensure_formatted_working_copy(doc_row, tmpl)
+    if not working_copy.endswith(".docx"):
+        raise HTTPException(status_code=400, detail="Only DOCX files support table formatting.")
+
+    rules = tmpl.get("formatting_rules", {}) or {}
+    output_path = os.path.join(OUTPUT_DIR, f"tables_formatted_{document_id}.docx")
+    result = run_table_formatting_pipeline(working_copy, output_path, rules)
+    os.makedirs(os.path.dirname(working_copy) or ".", exist_ok=True)
+    shutil.copy2(output_path, working_copy)
+    commit = _commit_working_document(document_id, working_copy, doc_row)
+    result["download_url"] = f"/api/format-tables/download/{document_id}"
+    return {**result, **commit}
+
+
+@app.get("/api/format-tables/download/{document_id}", tags=["Documents"])
+def download_formatted_tables(document_id: int, user_id: int = Query(...)):
+    """Download the last tables-formatted working document."""
+    doc_row, _tmpl = _get_user_document(document_id, user_id)
+    working_copy = os.path.join(UPLOAD_DIR, "working", f"doc_{document_id}_working.docx")
+    path = working_copy if os.path.exists(working_copy) else doc_row["file_path"]
+    if not os.path.exists(path):
+        raise HTTPException(status_code=404, detail="Formatted document not found")
+    return FileResponse(
+        path,
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        filename=f"tables_formatted_{document_id}.docx",
+    )
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

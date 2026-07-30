@@ -11,6 +11,10 @@ class ImageFormattingRulesCard extends StatelessWidget {
   final ValueChanged<String> onCaptionPositionChanged;
   final bool includeLof;
   final ValueChanged<bool> onIncludeLofChanged;
+  final bool requireCaption;
+  final ValueChanged<bool> onRequireCaptionChanged;
+  final bool requireIntextReference;
+  final ValueChanged<bool> onRequireIntextReferenceChanged;
 
   const ImageFormattingRulesCard({
     super.key,
@@ -22,6 +26,10 @@ class ImageFormattingRulesCard extends StatelessWidget {
     required this.onCaptionPositionChanged,
     required this.includeLof,
     required this.onIncludeLofChanged,
+    required this.requireCaption,
+    required this.onRequireCaptionChanged,
+    required this.requireIntextReference,
+    required this.onRequireIntextReferenceChanged,
   });
 
   @override
@@ -125,6 +133,32 @@ class ImageFormattingRulesCard extends StatelessWidget {
             value: includeLof,
             activeColor: const Color(0xFF6366F1),
             onChanged: onIncludeLofChanged,
+          ),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            dense: true,
+            title: const Text(
+              'Require caption',
+              style: TextStyle(color: Colors.white, fontSize: 13),
+            ),
+            value: requireCaption,
+            activeColor: const Color(0xFF6366F1),
+            onChanged: onRequireCaptionChanged,
+          ),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            dense: true,
+            title: const Text(
+              'Require in-text reference',
+              style: TextStyle(color: Colors.white, fontSize: 13),
+            ),
+            subtitle: Text(
+              'Flag figures never cited as “Figure N” in body text',
+              style: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 11),
+            ),
+            value: requireIntextReference,
+            activeColor: const Color(0xFF6366F1),
+            onChanged: onRequireIntextReferenceChanged,
           ),
         ],
       ),

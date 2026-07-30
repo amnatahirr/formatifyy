@@ -804,6 +804,9 @@ def strip_frontmatter_figure_captions(doc) -> int:
     Remove any figure captions on Cover / Project Details pages.
 
     Cover logos must never receive 'Figure N:' captions or appear in LOF.
+
+    IMPORTANT: never remove generated TOC/LOF/LOT entry paragraphs, and never
+    treat 'Table N: …' list entries as figure captions.
     """
     body_start = find_formatify_body_start_element(doc)
     removed = 0
@@ -812,12 +815,23 @@ def strip_frontmatter_figure_captions(doc) -> int:
             continue
         if paragraph_has_image(para):
             continue
-        if not (
+        # Preserve Formatify list entries (LOT lines look like "Table 1: …")
+        if _is_generated_list_entry_paragraph(para._element):
+            continue
+        if _is_meta_list_heading((para.text or "").strip()):
+            continue
+
+        text = (para.text or "").strip()
+        is_figure_caption = (
             paragraph_is_figure_caption(para)
             or paragraph_has_seq_caption(para._element, "Figure")
-            or CAPTION_TEXT_RE.match((para.text or "").strip())
-        ):
-            continue
+        )
+        # Only plain Figure captions — do NOT match Table N: via CAPTION_TEXT_RE
+        if not is_figure_caption:
+            m = CAPTION_TEXT_RE.match(text)
+            if not m or m.group(1).lower() != "figure":
+                continue
+
         _remove_paragraph_element(para)
         removed += 1
     return removed
@@ -1836,45 +1850,65 @@ def _prepare_lof_entries(doc) -> List[Dict[str, Any]]:
     return entries
 
 
-def _prepare_lot_entries(doc) -> List[Dict[str, Any]]:
+def _prepare_lot_entries(
+    doc,
+    formatting_rules: Dict[str, Any] | None = None,
+) -> List[Dict[str, Any]]:
     """Collect table captions from the REPORT BODY only (skip cover / info tables)."""
-    from table_processor import ensure_table_captions
+    from services.table_caption_service import find_caption_near_table
+    from services.table_config import format_table_caption_label, get_table_format_config
+    from services.table_numbering_service import (
+        apply_numbering_to_table_captions,
+        assign_table_numbers,
+    )
 
-    ensure_table_captions(doc)
+    cfg = get_table_format_config(formatting_rules)
+    assignments = assign_table_numbers(doc, formatting_rules)
+    applied = apply_numbering_to_table_captions(doc, assignments, formatting_rules)
+    by_id = {a["table_id"]: a for a in applied}
+
     next_bookmark_id = _get_max_bookmark_id(doc) + 1
     entries: List[Dict[str, Any]] = []
     page_map = estimate_body_page_numbers(doc)
+    list_pattern = cfg.get("list_of_tables_format") or cfg.get(
+        "table_caption_format_pattern"
+    )
 
-    table_number = 0
+    tbl_i = 0
     for table in doc.tables:
         if _element_is_before_body_start(doc, table._tbl):
             continue
-        idx = _body_index(doc, table._tbl)
-        if idx <= 0:
-            continue
-        prev = _body_children(doc)[idx - 1]
-        if prev.tag != qn("w:p"):
-            continue
-        if _element_is_before_body_start(doc, prev):
-            continue
-        cap_para = Paragraph(prev, doc.element.body)
-        cap_text = cap_para.text.strip()
-        if not cap_text and not paragraph_has_seq_caption(cap_para._element, "Table"):
+        table_id = f"tbl{tbl_i}"
+        tbl_i += 1
+        a = by_id.get(table_id, {})
+
+        cap_para, _pos, raw = find_caption_near_table(doc, table)
+        if cap_para is None:
             continue
 
-        table_number += 1
-        description = _caption_description_from_text(cap_text, "Table")
+        description = a.get("caption_description") or _caption_description_from_text(
+            raw or (cap_para.text or ""), "Table"
+        )
         if not description:
             description = "Table"
-        rebuild_caption_with_seq(
-            cap_para, "Table", description, number=table_number
-        )
+
+        n = int(a["n"]) if a.get("n") is not None else tbl_i
+        chapter = a.get("chapter")
+        if a.get("scheme") == "global" or chapter is None:
+            rebuild_caption_with_seq(
+                cap_para, "Table", description, number=n
+            )
 
         bookmark_name = f"_Toc{next_bookmark_id:09d}"
         _ensure_bookmark_on_paragraph(cap_para, bookmark_name, next_bookmark_id)
-        display = f"Table {table_number}: {description}"
+        display = format_table_caption_label(
+            pattern=list_pattern,
+            n=n,
+            chapter=chapter,
+            description=description,
+        )
         entries.append({
-            "paragraph_index": idx - 1,
+            "paragraph_index": _body_index(doc, table._tbl),
             "level": 1,
             "text": display,
             "bookmark": bookmark_name,
@@ -2643,6 +2677,21 @@ def arrange_front_matter_lists(
 
     _collapse_consecutive_page_breaks(doc)
 
+    # Remove any leftover empty list headings that were not arranged
+    # (e.g. blank "List of Tables" left in the wrong place).
+    arranged_keys = {key for key, _ in sections}
+    include_map = {"toc": include_toc, "lof": include_lof, "lot": include_lot}
+    for key, heading_re, field_re in _FRONT_MATTER_SECTIONS:
+        if key in arranged_keys:
+            continue
+        # Drop orphan headings for sections we didn't keep as populated blocks
+        if not include_map[key] or not _front_matter_section_is_active(
+            doc, key, heading_re, field_re, include_map[key]
+        ):
+            _remove_meta_list_heading_paragraphs(doc, heading_re)
+
+    _collapse_consecutive_page_breaks(doc)
+
     return {
         "sections_arranged": len(sections),
         "page_breaks_inserted": page_breaks,
@@ -2745,8 +2794,6 @@ def generate_document_lists(
     """
     from docx import Document
 
-    from table_processor import ensure_table_captions, upgrade_all_table_captions_to_seq
-
     doc = Document(file_path)
     result: Dict[str, Any] = {
         "headings_styled": 0,
@@ -2757,6 +2804,7 @@ def generate_document_lists(
         "lof_added": False,
         "entry_count": 0,
     }
+
 
     # Disable template outline auto-numbering on Heading styles (causes 5./6./7. leaks)
     result["heading_style_numbering_cleared"] = clear_numbering_from_heading_styles(doc)
@@ -2782,9 +2830,28 @@ def generate_document_lists(
     sanitize_document_headings_for_lists(doc, formatting_rules)
 
     if ensure_captions:
-        cap_result = ensure_table_captions(doc)
-        result["table_captions_added"] = cap_result.get("captions_added", 0)
-        upgrade_all_table_captions_to_seq(doc)
+        from services.table_numbering_service import (
+            apply_numbering_to_table_captions,
+            assign_table_numbers,
+        )
+
+        assignments = assign_table_numbers(doc, formatting_rules)
+        applied = apply_numbering_to_table_captions(
+            doc, assignments, formatting_rules
+        )
+        result["table_captions_added"] = sum(
+            1 for a in applied if a.get("caption_created")
+        )
+        # Keep legacy SEQ upgrade for any leftover plain captions when no rules
+        if not formatting_rules:
+            from table_processor import (
+                ensure_table_captions,
+                upgrade_all_table_captions_to_seq,
+            )
+
+            cap_result = ensure_table_captions(doc)
+            result["table_captions_added"] += cap_result.get("captions_added", 0)
+            upgrade_all_table_captions_to_seq(doc)
 
         fig_cap_result = ensure_figure_captions_for_lists(doc)
         result["figure_captions_upgraded"] = fig_cap_result.get("captions_added", 0)
@@ -2828,23 +2895,35 @@ def generate_document_lists(
             result["toc_added"] = True
             result["toc_entry_count"] = len(toc_entries)
 
-    lot_entries = _prepare_lot_entries(doc) if include_lot else []
-    if include_lot and lot_entries:
-        _remove_lot_field_block(doc)
-        lot_heading = _find_section_heading_paragraph(doc, _LOT_HEADING_RE)
-        insert_lot_field(doc, heading_para=lot_heading, entries=lot_entries)
-        result["lot_added"] = True
-        result["lot_entry_count"] = len(lot_entries)
-
+    # Strict order: TOC → List of Figures → List of Tables
     lof_entries = _prepare_lof_entries(doc) if include_lof else []
-    if include_lof and lof_entries:
+    if include_lof:
         _remove_lof_field_block(doc)
-        lof_heading = _find_section_heading_paragraph(doc, _LOF_HEADING_RE)
-        insert_lof_field(doc, heading_para=lof_heading, entries=lof_entries)
-        result["lof_added"] = True
-        result["lof_entry_count"] = len(lof_entries)
-    elif include_lof and count_figures(doc) > 0 and not lof_entries:
-        result["lof_error"] = "Figures found but captions could not be prepared"
+        if lof_entries:
+            lof_heading = _find_section_heading_paragraph(doc, _LOF_HEADING_RE)
+            insert_lof_field(doc, heading_para=lof_heading, entries=lof_entries)
+            result["lof_added"] = True
+            result["lof_entry_count"] = len(lof_entries)
+        elif count_figures(doc) > 0:
+            result["lof_error"] = "Figures found but captions could not be prepared"
+
+    lot_entries = (
+        _prepare_lot_entries(doc, formatting_rules) if include_lot else []
+    )
+    if include_lot:
+        _remove_lot_field_block(doc)
+        # Drop orphan empty LOT heading before rebuild
+        if not lot_entries:
+            _remove_meta_list_heading_paragraphs(doc, _LOT_HEADING_RE)
+        if lot_entries:
+            lot_heading = _find_section_heading_paragraph(doc, _LOT_HEADING_RE)
+            insert_lot_field(doc, heading_para=lot_heading, entries=lot_entries)
+            result["lot_added"] = True
+            result["lot_entry_count"] = len(lot_entries)
+        elif count_tables(doc) > 0:
+            result["lot_error"] = (
+                "Tables found but captions could not be prepared for List of Tables"
+            )
 
     active_sections = {
         key for key, added in (

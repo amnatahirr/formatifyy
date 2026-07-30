@@ -59,7 +59,9 @@ class ActionButtons extends StatelessWidget {
             backgroundColor: isCreatingNew
                 ? const Color(0xFF10B981)
                 : const Color(0xFF3B82F6),
-            disabledBackgroundColor: Colors.grey[700],
+            foregroundColor: Colors.white,
+            disabledBackgroundColor: const Color(0xFF4A5568),
+            disabledForegroundColor: Colors.white70,
             padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
           ),
         ),
