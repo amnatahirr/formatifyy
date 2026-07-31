@@ -2330,7 +2330,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
     if (_tabController.indexIsChanging) return;
     // Tables tab (after Image Relevance)
     if (_tabController.index == 5) {
-      if (!_tablesLoading && _tables.isEmpty) {
+      if (!_tablesLoading) {
         _loadTables();
       }
       return;

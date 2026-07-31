@@ -32,7 +32,7 @@ W_P = qn("w:p")
 # ═══════════════════════════════════════════════════════════════════════════════
 
 
-def _table_preview_rows(table, max_rows: int = 3) -> List[List[str]]:
+def _table_preview_rows(table, max_rows: int = 8) -> List[List[str]]:
     rows: List[List[str]] = []
     row_count = min(max_rows, len(table.rows))
     col_count = len(table.columns) if table.rows else 0
@@ -56,6 +56,81 @@ def _table_has_header_row(table) -> bool:
     first_alpha = sum(1 for t in first if t and not t.replace(".", "").isdigit())
     second_alpha = sum(1 for t in second if t and not t.replace(".", "").isdigit())
     return first_alpha >= second_alpha
+
+
+def _header_cell_is_bold(cell) -> bool:
+    """True when any non-empty run in the cell is explicitly bold."""
+    saw_text = False
+    for para in cell.paragraphs:
+        for run in para.runs:
+            if not (run.text or "").strip():
+                continue
+            saw_text = True
+            if run.font.bold is True:
+                return True
+            r_pr = run._element.find(qn("w:rPr"))
+            if r_pr is not None and r_pr.find(qn("w:b")) is not None:
+                return True
+    return False if saw_text else False
+
+
+def _header_cell_has_shading(cell) -> bool:
+    tc_pr = cell._tc.find(qn("w:tcPr"))
+    if tc_pr is None:
+        return False
+    shd = tc_pr.find(qn("w:shd"))
+    if shd is None:
+        return False
+    fill = (shd.get(qn("w:fill")) or "").strip().upper()
+    return fill not in ("", "AUTO", "FFFFFF", "NONE")
+
+
+def _detect_header_style_issues(
+    table,
+    *,
+    require_bold: bool,
+    require_shading: bool,
+) -> List[Dict[str, Any]]:
+    """Flag missing header bold / shading when the template requires them."""
+    if not table.rows:
+        return []
+    if not _table_has_header_row(table):
+        return []
+
+    issues: List[Dict[str, Any]] = []
+    header = table.rows[0]
+    col_count = len(table.columns)
+    bold_missing = 0
+    shade_missing = 0
+    for c_idx in range(col_count):
+        cell = table.cell(0, c_idx)
+        if not (cell.text or "").strip():
+            continue
+        if require_bold and not _header_cell_is_bold(cell):
+            bold_missing += 1
+        if require_shading and not _header_cell_has_shading(cell):
+            shade_missing += 1
+
+    if require_bold and bold_missing > 0:
+        issues.append({
+            "code": "HEADER_STYLE",
+            "message": (
+                "Header row is not bold. Apply template header style "
+                "(bold header text)."
+            ),
+            "severity": "warning",
+            "action": "apply_table_style",
+        })
+    if require_shading and shade_missing > 0:
+        issues.append({
+            "code": "HEADER_SHADING",
+            "message": (
+                "Header row is missing the template background shading."
+            ),
+            "severity": "info",
+            "action": "apply_table_style",
+        })
+    return issues
 
 
 def _caption_paragraph_before_table(doc, table) -> Optional[Paragraph]:
@@ -191,6 +266,17 @@ def detect_tables(
                 "message": "Table may be missing a header row.",
                 "severity": "info",
             })
+
+        style = cfg.get("table_style") or {}
+        # Academic tables: header text should be bold. Shading only when template asks.
+        issues.extend(
+            _detect_header_style_issues(
+                table,
+                require_bold=True,
+                require_shading=bool(style.get("header_row_shading")),
+            )
+        )
+
         if (
             captioned.get("require_intext_reference")
             and table_id in orphaned_ids
@@ -217,7 +303,6 @@ def detect_tables(
                 "action": "fill_cell",
             })
 
-        style = cfg.get("table_style") or {}
         expected_font = str(style.get("font_name") or "Times New Roman").strip()
         expected_size = int(style.get("font_size") or 12)
         for bad in _find_inconsistent_font_cells(

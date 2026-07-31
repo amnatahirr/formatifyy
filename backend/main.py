@@ -822,21 +822,54 @@ def _export_copy_path(document_id: int) -> str:
     return os.path.join(OUTPUT_DIR, f"export_{document_id}.docx")
 
 
-def _ensure_formatted_working_copy(doc: Any, tmpl: Dict[str, Any]) -> str:
+def _ensure_formatted_working_copy(
+    doc: Any,
+    tmpl: Dict[str, Any],
+    *,
+    force_rebuild: bool = False,
+) -> str:
     """
-    Return the working DOCX path, creating it from the template if needed.
-    All Apply Fix operations run on this file so the downloadable document matches.
+    Return the working DOCX path, creating it from the original upload if needed.
+
+    Rebuilds when missing, when force_rebuild=True, or when the original upload
+    is newer than the working copy (so Analysis sees the latest upload, not a
+    stale pre-fixed working file).
     """
     if not str(doc["file_path"]).endswith(".docx"):
         raise HTTPException(status_code=400, detail="Working fixes require a DOCX document.")
 
     working_copy = _working_copy_path(doc["id"])
     os.makedirs(os.path.dirname(working_copy), exist_ok=True)
+    original = doc["file_path"]
 
-    if not os.path.exists(working_copy):
+    needs_rebuild = force_rebuild or not os.path.exists(working_copy)
+    if (
+        not needs_rebuild
+        and original
+        and os.path.exists(original)
+        and os.path.exists(working_copy)
+    ):
+        try:
+            # Rebuild when upload is newer (re-upload / replace without new doc id,
+            # or analyze after a fresher source file landed).
+            if os.path.getmtime(original) > os.path.getmtime(working_copy) + 1.0:
+                needs_rebuild = True
+                print(
+                    f"[working_copy] original newer than working — rebuilding "
+                    f"doc={doc['id']}"
+                )
+        except OSError:
+            pass
+
+    if needs_rebuild:
+        if os.path.exists(working_copy):
+            try:
+                os.remove(working_copy)
+            except OSError as exc:
+                print(f"[working_copy] could not remove stale copy: {exc}")
         report = AnalysisReport(issues=[], stats={})
         reformat_document(
-            doc["file_path"],
+            original,
             working_copy,
             report,
             tmpl["formatting_rules"],
@@ -849,19 +882,23 @@ def _ensure_formatted_working_copy(doc: Any, tmpl: Dict[str, Any]) -> str:
         except Exception as exc:
             print(f"[working_copy] frontmatter apply skipped: {exc}")
     else:
-        # Existing copies: only collapse duplicate page-break paragraphs.
-        # Do NOT run aggressive absorb/empty cleanup here — that previously
-        # deleted TOC/LOF/LOT field-end markers and then wiped the body.
+        # Existing copies: collapse duplicate page breaks + strip empty body gaps.
         try:
             from docx import Document as DocxDoc
             from docx_fields import _collapse_consecutive_page_breaks
+            from reformatter import remove_empty_body_paragraph_gaps
+
             d = DocxDoc(working_copy)
             removed = _collapse_consecutive_page_breaks(d)
-            if removed:
+            removed_gaps = remove_empty_body_paragraph_gaps(d)
+            if removed or removed_gaps:
                 d.save(working_copy)
-                print(f"[working_copy] collapsed {removed} duplicate page breaks doc={doc['id']}")
+                print(
+                    f"[working_copy] cleaned doc={doc['id']}: "
+                    f"page_breaks={removed}, empty_gaps={removed_gaps}"
+                )
         except Exception as exc:
-            print(f"[working_copy] page-break collapse skipped: {exc}")
+            print(f"[working_copy] cleanup skipped: {exc}")
     return working_copy
 
 
@@ -1344,7 +1381,9 @@ async def analyze_document_endpoint(document_id: int, user_id: int = Query(...))
 
     tmpl = get_template_by_id(doc["template_id"])
     if tmpl and str(doc["file_path"]).endswith(".docx"):
-        file_path = _ensure_formatted_working_copy(doc, tmpl)
+        # Always rebuild from the upload on Analyze so Tables / style issues
+        # reflect the source document, not a previously fixed working copy.
+        file_path = _ensure_formatted_working_copy(doc, tmpl, force_rebuild=True)
     else:
         working_copy = _working_copy_path(document_id)
         file_path = working_copy if os.path.exists(working_copy) else doc["file_path"]
