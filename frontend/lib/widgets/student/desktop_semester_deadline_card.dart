@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../../providers/auth_provider.dart';
 import '../../providers/fyp_provider.dart';
+import '../../theme/app_theme.dart';
 
 /// Desktop Dashboard semester deadline strip (admin-managed global deadline).
 class DesktopSemesterDeadlineCard extends StatefulWidget {
@@ -17,9 +18,6 @@ class _DesktopSemesterDeadlineCardState
     extends State<DesktopSemesterDeadlineCard> {
   bool _loading = true;
 
-  static const _card = Color(0xFF161B22);
-  static const _border = Color(0x22FFFFFF);
-  static const _accent = Color(0xFF3B82F6);
   static const _warn = Color(0xFFF59E0B);
 
   @override
@@ -56,37 +54,42 @@ class _DesktopSemesterDeadlineCardState
   @override
   Widget build(BuildContext context) {
     final fyp = context.watch<FypProvider>();
+    final p = context.watch<ThemeProvider>().palette;
     final semDl = fyp.semesterDeadline;
 
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: _card,
+        color: p.surface,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: _border),
+        border: Border.all(color: p.border),
+        boxShadow: p.cardShadow,
       ),
       child: _loading || fyp.isSemesterDeadlineLoading
-          ? const SizedBox(
+          ? SizedBox(
               height: 28,
               child: Center(
-                child: CircularProgressIndicator(color: _accent, strokeWidth: 2),
+                child: CircularProgressIndicator(
+                  color: p.accent,
+                  strokeWidth: 2,
+                ),
               ),
             )
-          : _buildContent(semDl),
+          : _buildContent(semDl, p),
     );
   }
 
-  Widget _buildContent(Map<String, dynamic>? semDl) {
+  Widget _buildContent(Map<String, dynamic>? semDl, AppPalette p) {
     final found = semDl?['found'] == true;
     if (!found) {
       return Row(
         children: [
-          Icon(Icons.event_outlined, color: Colors.white.withOpacity(0.45), size: 20),
+          Icon(Icons.event_outlined, color: p.iconMuted, size: 20),
           const SizedBox(width: 12),
           Text(
             'Semester deadline not set',
-            style: TextStyle(color: Colors.white.withOpacity(0.55), fontSize: 14),
+            style: TextStyle(color: p.textMuted, fontSize: 14),
           ),
         ],
       );
@@ -96,6 +99,7 @@ class _DesktopSemesterDeadlineCardState
     final daysRemaining = (semDl?['days_remaining'] as num?)?.toInt();
     final semester = (semDl?['semester'] as num?)?.toInt();
     final deadlineRaw = semDl?['deadline_date'];
+    final urgent = isPassed || daysRemaining == 0;
 
     String status;
     if (isPassed) {
@@ -114,7 +118,7 @@ class _DesktopSemesterDeadlineCardState
       children: [
         Icon(
           isPassed ? Icons.event_busy : Icons.event_available,
-          color: isPassed || daysRemaining == 0 ? _warn : _accent,
+          color: urgent ? _warn : p.accent,
           size: 22,
         ),
         const SizedBox(width: 12),
@@ -127,7 +131,7 @@ class _DesktopSemesterDeadlineCardState
                     ? 'Semester $semester submission deadline'
                     : 'Submission deadline',
                 style: TextStyle(
-                  color: Colors.white.withOpacity(0.5),
+                  color: p.textMuted,
                   fontSize: 12,
                   fontWeight: FontWeight.w600,
                 ),
@@ -136,9 +140,7 @@ class _DesktopSemesterDeadlineCardState
               Text(
                 status,
                 style: TextStyle(
-                  color: isPassed || daysRemaining == 0
-                      ? _warn
-                      : Colors.white,
+                  color: urgent ? _warn : p.textPrimary,
                   fontSize: 15,
                   fontWeight: FontWeight.w700,
                 ),
