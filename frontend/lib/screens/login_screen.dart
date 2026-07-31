@@ -1,10 +1,12 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:provider/provider.dart';
 import '../config/api_config.dart';
 import '../providers/auth_provider.dart';
+import '../services/login_credentials_store.dart';
 import '../theme/app_theme.dart';
 import '../utils/responsive.dart';
 
@@ -36,7 +38,9 @@ class _LoginScreenState extends State<LoginScreen> {
   final _passwordController = TextEditingController();
   final _firstNameController = TextEditingController();
   final _lastNameController = TextEditingController();
+  final _emailFocusNode = FocusNode();
   bool _isSignupMode = false;
+  List<SavedLoginAccount> _savedAccounts = const [];
 
   List<Map<String, dynamic>> _departments = const [];
   bool _loadingDepartments = false;
@@ -44,12 +48,73 @@ class _LoginScreenState extends State<LoginScreen> {
   int? _selectedDepartmentId;
   int? _selectedSemester;
 
+  List<String> get _savedEmails =>
+      _savedAccounts.map((a) => a.email).toList(growable: false);
+
+  @override
+  void initState() {
+    super.initState();
+    _emailFocusNode.addListener(_onEmailFocusChanged);
+    _loadSavedCredentials();
+  }
+
+  void _onEmailFocusChanged() {
+    if (!_emailFocusNode.hasFocus || _savedAccounts.isEmpty) return;
+    // Re-notify the controller so RawAutocomplete refreshes suggestions on tap.
+    final text = _emailController.text;
+    _emailController.value = TextEditingValue(
+      text: text,
+      selection: TextSelection.collapsed(offset: text.length),
+    );
+  }
+
+  Future<void> _loadSavedCredentials() async {
+    final accounts = await LoginCredentialsStore.suggestedAccounts();
+    final prefill = await LoginCredentialsStore.loadPrefill();
+    if (!mounted) return;
+    setState(() {
+      _savedAccounts = accounts;
+      _rememberMe = prefill.rememberMe;
+      if (prefill.email != null && prefill.email!.isNotEmpty) {
+        _emailController.text = prefill.email!;
+        if (prefill.password != null && prefill.password!.isNotEmpty) {
+          _passwordController.text = prefill.password!;
+        }
+      }
+    });
+  }
+
+  Future<void> _applySuggestedAccount(String email) async {
+    final normalized = email.trim().toLowerCase();
+    _emailController.value = TextEditingValue(
+      text: normalized,
+      selection: TextSelection.collapsed(offset: normalized.length),
+    );
+    SavedLoginAccount? known;
+    for (final a in _savedAccounts) {
+      if (a.email == normalized) {
+        known = a;
+        break;
+      }
+    }
+    final password =
+        known?.password ?? await LoginCredentialsStore.passwordFor(normalized);
+    if (!mounted) return;
+    if (password != null && password.isNotEmpty) {
+      _passwordController.text = password;
+    } else {
+      _passwordController.clear();
+    }
+  }
+
   @override
   void dispose() {
+    _emailFocusNode.removeListener(_onEmailFocusChanged);
     _emailController.dispose();
     _passwordController.dispose();
     _firstNameController.dispose();
     _lastNameController.dispose();
+    _emailFocusNode.dispose();
     super.dispose();
   }
 
@@ -310,111 +375,111 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Widget _buildLoginFields({required bool showCompactBrand}) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        if (showCompactBrand) ...[
-          _buildBrandMark(centered: true),
-          const SizedBox(height: 28),
-        ],
-        const Text(
-          'Welcome Back',
-          style: TextStyle(
-            fontSize: 26,
-            fontWeight: FontWeight.w800,
-            color: Colors.white,
-            letterSpacing: -0.3,
-          ),
-        ),
-        const SizedBox(height: 8),
-        const Text(
-          'Enter your details to access your dashboard.',
-          style: TextStyle(fontSize: 14, color: _AuthColors.muted, height: 1.4),
-        ),
-        const SizedBox(height: 28),
-        _buildTextField(
-          controller: _emailController,
-          hint: 'Email address',
-          icon: Icons.mail_outline_rounded,
-          keyboardType: TextInputType.emailAddress,
-        ),
-        const SizedBox(height: 14),
-        _buildTextField(
-          controller: _passwordController,
-          hint: 'Password',
-          icon: Icons.lock_outline_rounded,
-          obscure: !_isPasswordVisible,
-          suffix: IconButton(
-            onPressed: () =>
-                setState(() => _isPasswordVisible = !_isPasswordVisible),
-            icon: Icon(
-              _isPasswordVisible
-                  ? Icons.visibility_off_outlined
-                  : Icons.visibility_outlined,
-              color: _AuthColors.mutedSoft,
-              size: 20,
-            ),
-          ),
-        ),
-        const SizedBox(height: 14),
-        Row(
-          children: [
-            SizedBox(
-              height: 20,
-              width: 20,
-              child: Checkbox(
-                value: _rememberMe,
-                onChanged: (v) => setState(() => _rememberMe = v ?? true),
-                activeColor: _AuthColors.accentDeep,
-                checkColor: Colors.white,
-                side: const BorderSide(color: _AuthColors.border, width: 1.4),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                visualDensity: VisualDensity.compact,
-              ),
-            ),
-            const SizedBox(width: 8),
-            const Text(
-              'Remember me',
-              style: TextStyle(
-                fontSize: 13,
-                color: _AuthColors.muted,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-            const Spacer(),
-            TextButton(
-              onPressed: () {},
-              style: TextButton.styleFrom(
-                foregroundColor: _AuthColors.accent,
-                padding: EdgeInsets.zero,
-                minimumSize: Size.zero,
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              ),
-              child: const Text(
-                'Forgot password?',
-                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-              ),
-            ),
+    return AutofillGroup(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (showCompactBrand) ...[
+            _buildBrandMark(centered: true),
+            const SizedBox(height: 28),
           ],
-        ),
-        const SizedBox(height: 18),
-        _buildErrorBanner(),
-        _buildPrimaryButton(label: 'Sign In', onPressed: () => _login(context)),
-        const SizedBox(height: 22),
-        _buildOrDivider(),
-        const SizedBox(height: 18),
-        _buildGoogleButton(),
-        const SizedBox(height: 12),
-        _buildMicrosoftButton(),
-        const SizedBox(height: 24),
-        _buildFooterToggle(
-          prefix: "Don't have an account? ",
-          action: 'Sign Up',
-        ),
-      ],
+          const Text(
+            'Welcome Back',
+            style: TextStyle(
+              fontSize: 26,
+              fontWeight: FontWeight.w800,
+              color: Colors.white,
+              letterSpacing: -0.3,
+            ),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'Enter your details to access your dashboard.',
+            style: TextStyle(fontSize: 14, color: _AuthColors.muted, height: 1.4),
+          ),
+          const SizedBox(height: 28),
+          _buildEmailAutocompleteField(),
+          const SizedBox(height: 14),
+          _buildTextField(
+            controller: _passwordController,
+            hint: 'Password',
+            icon: Icons.lock_outline_rounded,
+            obscure: !_isPasswordVisible,
+            autofillHints: const [AutofillHints.password],
+            textInputAction: TextInputAction.done,
+            onSubmitted: (_) => _login(context),
+            suffix: IconButton(
+              onPressed: () =>
+                  setState(() => _isPasswordVisible = !_isPasswordVisible),
+              icon: Icon(
+                _isPasswordVisible
+                    ? Icons.visibility_off_outlined
+                    : Icons.visibility_outlined,
+                color: _AuthColors.mutedSoft,
+                size: 20,
+              ),
+            ),
+          ),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              SizedBox(
+                height: 20,
+                width: 20,
+                child: Checkbox(
+                  value: _rememberMe,
+                  onChanged: (v) => setState(() => _rememberMe = v ?? true),
+                  activeColor: _AuthColors.accentDeep,
+                  checkColor: Colors.white,
+                  side: const BorderSide(color: _AuthColors.border, width: 1.4),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  visualDensity: VisualDensity.compact,
+                ),
+              ),
+              const SizedBox(width: 8),
+              const Text(
+                'Remember me',
+                style: TextStyle(
+                  fontSize: 13,
+                  color: _AuthColors.muted,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              const Spacer(),
+              TextButton(
+                onPressed: () {},
+                style: TextButton.styleFrom(
+                  foregroundColor: _AuthColors.accent,
+                  padding: EdgeInsets.zero,
+                  minimumSize: Size.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+                child: const Text(
+                  'Forgot password?',
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 18),
+          _buildErrorBanner(),
+          _buildPrimaryButton(label: 'Sign In', onPressed: () => _login(context)),
+          const SizedBox(height: 22),
+          _buildOrDivider(),
+          const SizedBox(height: 18),
+          _buildGoogleButton(),
+          const SizedBox(height: 12),
+          _buildMicrosoftButton(),
+          const SizedBox(height: 24),
+          _buildFooterToggle(
+            prefix: "Don't have an account? ",
+            action: 'Sign Up',
+          ),
+        ],
+      ),
     );
   }
 
@@ -650,6 +715,140 @@ class _LoginScreenState extends State<LoginScreen> {
 
   // ── Shared field / button widgets ───────────────────────────────────────
 
+  InputDecoration _fieldDecoration({
+    required String hint,
+    required IconData icon,
+    Widget? suffix,
+  }) {
+    return InputDecoration(
+      hintText: hint,
+      hintStyle: const TextStyle(color: _AuthColors.mutedSoft, fontSize: 14),
+      filled: true,
+      fillColor: _AuthColors.inputFill,
+      prefixIcon: Icon(icon, size: 20, color: _AuthColors.mutedSoft),
+      suffixIcon: suffix,
+      contentPadding: const EdgeInsets.symmetric(
+        horizontal: 14,
+        vertical: 16,
+      ),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: _AuthColors.border),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: _AuthColors.border),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(
+          color: _AuthColors.accentDeep,
+          width: 1.5,
+        ),
+      ),
+    );
+  }
+
+  /// Email field with saved-account suggestions (fills password when available).
+  Widget _buildEmailAutocompleteField() {
+    return RawAutocomplete<String>(
+      textEditingController: _emailController,
+      focusNode: _emailFocusNode,
+      optionsBuilder: (TextEditingValue value) {
+        if (_savedAccounts.isEmpty) return const Iterable<String>.empty();
+        final emails = _savedEmails;
+        final q = value.text.trim().toLowerCase();
+        // If empty OR exactly a saved account (pre-filled), show ALL accounts
+        // so testers can switch student / admin / supervisor quickly.
+        if (q.isEmpty || emails.contains(q)) {
+          return emails;
+        }
+        return emails.where((e) => e.contains(q));
+      },
+      onSelected: (String selection) {
+        _applySuggestedAccount(selection);
+      },
+      optionsViewBuilder: (context, onSelected, options) {
+        final opts = options.toList(growable: false);
+        if (opts.isEmpty) return const SizedBox.shrink();
+        final byEmail = {
+          for (final a in _savedAccounts) a.email: a,
+        };
+        return Align(
+          alignment: Alignment.topLeft,
+          child: Material(
+            elevation: 6,
+            color: _AuthColors.card,
+            borderRadius: BorderRadius.circular(12),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 260, minWidth: 300),
+              child: ListView.separated(
+                padding: const EdgeInsets.symmetric(vertical: 6),
+                shrinkWrap: true,
+                itemCount: opts.length,
+                separatorBuilder: (_, __) => Divider(
+                  height: 1,
+                  color: Colors.white.withOpacity(0.08),
+                ),
+                itemBuilder: (context, index) {
+                  final email = opts[index];
+                  final account = byEmail[email];
+                  final role = account?.roleLabel;
+                  return ListTile(
+                    dense: true,
+                    leading: Icon(
+                      role == 'Admin'
+                          ? Icons.admin_panel_settings_outlined
+                          : role == 'Supervisor'
+                              ? Icons.school_outlined
+                              : Icons.person_outline,
+                      color: _AuthColors.accent,
+                      size: 22,
+                    ),
+                    title: Text(
+                      email,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    subtitle: Text(
+                      role != null && role.isNotEmpty
+                          ? '$role · Tap to autofill'
+                          : 'Tap to autofill',
+                      style: const TextStyle(
+                        color: _AuthColors.mutedSoft,
+                        fontSize: 11,
+                      ),
+                    ),
+                    onTap: () => onSelected(email),
+                  );
+                },
+              ),
+            ),
+          ),
+        );
+      },
+      fieldViewBuilder: (context, controller, focusNode, onFieldSubmitted) {
+        return TextField(
+          controller: controller,
+          focusNode: focusNode,
+          keyboardType: TextInputType.emailAddress,
+          autofillHints: const [AutofillHints.username, AutofillHints.email],
+          textInputAction: TextInputAction.next,
+          style: const TextStyle(color: Colors.white, fontSize: 14),
+          cursorColor: _AuthColors.accent,
+          decoration: _fieldDecoration(
+            hint: 'Email address',
+            icon: Icons.mail_outline_rounded,
+          ),
+          onSubmitted: (_) => onFieldSubmitted(),
+        );
+      },
+    );
+  }
+
   Widget _buildTextField({
     required TextEditingController controller,
     required String hint,
@@ -657,40 +856,20 @@ class _LoginScreenState extends State<LoginScreen> {
     bool obscure = false,
     TextInputType? keyboardType,
     Widget? suffix,
+    Iterable<String>? autofillHints,
+    TextInputAction? textInputAction,
+    ValueChanged<String>? onSubmitted,
   }) {
     return TextField(
       controller: controller,
       obscureText: obscure,
       keyboardType: keyboardType,
+      autofillHints: autofillHints,
+      textInputAction: textInputAction,
+      onSubmitted: onSubmitted,
       style: const TextStyle(color: Colors.white, fontSize: 14),
       cursorColor: _AuthColors.accent,
-      decoration: InputDecoration(
-        hintText: hint,
-        hintStyle: const TextStyle(color: _AuthColors.mutedSoft, fontSize: 14),
-        filled: true,
-        fillColor: _AuthColors.inputFill,
-        prefixIcon: Icon(icon, size: 20, color: _AuthColors.mutedSoft),
-        suffixIcon: suffix,
-        contentPadding: const EdgeInsets.symmetric(
-          horizontal: 14,
-          vertical: 16,
-        ),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: _AuthColors.border),
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: _AuthColors.border),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(
-            color: _AuthColors.accentDeep,
-            width: 1.5,
-          ),
-        ),
-      ),
+      decoration: _fieldDecoration(hint: hint, icon: icon, suffix: suffix),
     );
   }
 
@@ -919,16 +1098,41 @@ class _LoginScreenState extends State<LoginScreen> {
 
   // ── Auth actions (unchanged logic) ──────────────────────────────────────
 
+  String? _friendlyRoleLabel(String? role) {
+    switch ((role ?? '').toLowerCase()) {
+      case 'admin':
+        return 'Admin';
+      case 'supervisor':
+        return 'Supervisor';
+      case 'student':
+        return 'Student';
+      default:
+        return role;
+    }
+  }
+
   void _login(BuildContext context) async {
     final auth = context.read<AuthProvider>();
     final theme = context.read<ThemeProvider>();
+    final email = _emailController.text.trim();
+    final password = _passwordController.text;
     final success = await auth.login(
-      _emailController.text.trim(),
-      _passwordController.text,
+      email,
+      password,
       rememberMe: _rememberMe,
     );
 
     if (success && mounted) {
+      await LoginCredentialsStore.saveSuccessfulLogin(
+        email: email,
+        password: password,
+        rememberMe: _rememberMe,
+        roleLabel: _friendlyRoleLabel(auth.userRole),
+      );
+      TextInput.finishAutofillContext(shouldSave: _rememberMe);
+      final accounts = await LoginCredentialsStore.suggestedAccounts();
+      if (mounted) setState(() => _savedAccounts = accounts);
+
       await theme.bindToUser(auth.userId);
       if (!mounted) return;
       ScaffoldMessenger.of(
@@ -964,11 +1168,20 @@ class _LoginScreenState extends State<LoginScreen> {
     );
 
     if (success && mounted) {
+      await LoginCredentialsStore.saveSuccessfulLogin(
+        email: _emailController.text.trim(),
+        password: _passwordController.text,
+        rememberMe: true,
+        roleLabel: _friendlyRoleLabel(auth.userRole) ?? 'Student',
+      );
+      final accounts = await LoginCredentialsStore.suggestedAccounts();
+      if (mounted) setState(() => _savedAccounts = accounts);
+
       await theme.bindToUser(auth.userId);
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Signup successful!')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Signup successful!')),
+      );
     }
   }
 
