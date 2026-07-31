@@ -9,6 +9,14 @@ import secrets
 from database import get_db
 
 
+def _ensure_column(cursor, table: str, column: str, ddl: str) -> None:
+    """Idempotent ALTER TABLE ADD COLUMN."""
+    cursor.execute(f"PRAGMA table_info({table})")
+    cols = {row[1] for row in cursor.fetchall()}
+    if column not in cols:
+        cursor.execute(f"ALTER TABLE {table} ADD COLUMN {ddl}")
+
+
 def init_vc_tables() -> None:
     conn = get_db()
     cursor = conn.cursor()
@@ -170,6 +178,13 @@ def init_vc_tables() -> None:
             FOREIGN KEY (document_id) REFERENCES documents(id)
         )
     """)
+
+    _ensure_column(
+        cursor,
+        "collaboration_projects",
+        "org_id",
+        "org_id INTEGER DEFAULT 1",
+    )
 
     conn.commit()
     conn.close()

@@ -129,7 +129,10 @@ class DocumentProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final response = await http.get(Uri.parse("$baseUrl/?user_id=$userId"));
+      final response = await http.get(
+        Uri.parse("$baseUrl/?user_id=$userId"),
+        headers: ApiConfig.getHeaders(),
+      );
 
       if (response.statusCode == 200) {
         _documents = List<Map<String, dynamic>>.from(
@@ -157,7 +160,7 @@ class DocumentProvider extends ChangeNotifier {
     notifyListeners();
     try {
       final url = Uri.parse('$baseUrl/analyze/$documentId?user_id=$userId');
-      final resp = await http.get(url);
+      final resp = await http.get(url, headers: ApiConfig.getHeaders());
       if (resp.statusCode == 200) {
         final data = json.decode(resp.body);
         if (data is Map) {
@@ -274,6 +277,7 @@ class DocumentProvider extends ChangeNotifier {
         "POST",
         Uri.parse("$baseUrl/upload?template_id=$templateId&user_id=$userId"),
       );
+      request.headers.addAll(ApiConfig.getHeaders());
 
       request.files.add(await http.MultipartFile.fromPath("file", file.path));
       var response = await request.send();
@@ -306,7 +310,7 @@ class DocumentProvider extends ChangeNotifier {
         Uri.parse(
           "$baseUrl/upload-text?template_id=$templateId&user_id=$userId",
         ),
-        headers: {"Content-Type": "application/json"},
+        headers: ApiConfig.getHeaders(json: true),
         body: jsonEncode({"content": content}),
       );
 

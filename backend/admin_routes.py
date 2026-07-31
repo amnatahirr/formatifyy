@@ -9,12 +9,21 @@ from datetime import date, datetime, timedelta
 from email.message import EmailMessage
 from typing import Any
 
-from fastapi import APIRouter, Body, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Body, File, HTTPException, Query, Request, UploadFile
 
 from database import get_db, hash_password
+from middleware.org_middleware import resolve_organization_from_request
 
 router = APIRouter(prefix="/api/admin", tags=["Admin"])
 logger = logging.getLogger(__name__)
+
+
+def _org_id(request: Request) -> int:
+    """Current tenant from middleware / headers (default org 1)."""
+    org = getattr(request.state, "org", None)
+    if isinstance(org, dict) and org.get("id"):
+        return int(org["id"])
+    return int(resolve_organization_from_request(request)["id"])
 
 DEFAULT_SETTINGS: dict[str, str] = {
     "system_name": "FORMATIFY Admin Panel",
@@ -63,9 +72,21 @@ def _as_bool(value: str | None) -> bool:
     return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
 
 
-def _load_settings(cursor) -> dict[str, Any]:
-    cursor.execute("SELECT key, value FROM admin_settings")
-    rows = {row["key"]: row["value"] for row in cursor.fetchall()}
+def _org_setting_key(org_id: int, key: str) -> str:
+    return f"org:{org_id}:{key}"
+
+
+def _load_settings(cursor, org_id: int) -> dict[str, Any]:
+    prefix = f"org:{org_id}:"
+    cursor.execute(
+        "SELECT key, value FROM admin_settings WHERE key LIKE ?",
+        (f"{prefix}%",),
+    )
+    rows: dict[str, str] = {}
+    for row in cursor.fetchall():
+        raw_key = row["key"] or ""
+        if raw_key.startswith(prefix):
+            rows[raw_key[len(prefix) :]] = row["value"]
     merged = {**DEFAULT_SETTINGS, **rows}
     return {
         "system_name": merged["system_name"],
@@ -80,7 +101,7 @@ def _load_settings(cursor) -> dict[str, Any]:
     }
 
 
-def _save_settings(cursor, payload: dict[str, Any]) -> dict[str, Any]:
+def _save_settings(cursor, payload: dict[str, Any], org_id: int) -> dict[str, Any]:
     mapping = {
         "system_name": str,
         "version": str,
@@ -104,22 +125,23 @@ def _save_settings(cursor, payload: dict[str, Any]) -> dict[str, Any]:
                 value = excluded.value,
                 updated_at = CURRENT_TIMESTAMP
             """,
-            (key, value),
+            (_org_setting_key(org_id, key), value),
         )
-    return _load_settings(cursor)
+    return _load_settings(cursor, org_id)
 
 
-def _documents_last_7_days(cursor) -> list[dict[str, Any]]:
+def _documents_last_7_days(cursor, org_id: int) -> list[dict[str, Any]]:
     start_day = date.today() - timedelta(days=6)
     cursor.execute(
         """
-        SELECT date(created_at) AS day, COUNT(*) AS count
-        FROM documents
-        WHERE date(created_at) >= date(?)
-        GROUP BY date(created_at)
+        SELECT date(d.created_at) AS day, COUNT(*) AS count
+        FROM documents d
+        INNER JOIN users u ON u.id = d.user_id
+        WHERE u.org_id = ? AND date(d.created_at) >= date(?)
+        GROUP BY date(d.created_at)
         ORDER BY day ASC
         """,
-        (start_day.isoformat(),),
+        (org_id, start_day.isoformat()),
     )
     counts = {row["day"]: int(row["count"] or 0) for row in cursor.fetchall()}
     days: list[dict[str, Any]] = []
@@ -136,17 +158,20 @@ def _documents_last_7_days(cursor) -> list[dict[str, Any]]:
     return days
 
 
-def _top_templates(cursor, limit: int = 5) -> list[dict[str, Any]]:
+def _top_templates(cursor, org_id: int, limit: int = 5) -> list[dict[str, Any]]:
     cursor.execute(
         """
         SELECT t.id, t.name, COUNT(d.id) AS uses
         FROM templates t
         LEFT JOIN documents d ON d.template_id = t.id
+        LEFT JOIN users u ON u.id = d.user_id
+        WHERE t.org_id = ?
+          AND (d.id IS NULL OR u.org_id = ?)
         GROUP BY t.id
         ORDER BY uses DESC, t.name ASC
         LIMIT ?
         """,
-        (limit,),
+        (org_id, org_id, limit),
     )
     return [
         {
@@ -158,10 +183,18 @@ def _top_templates(cursor, limit: int = 5) -> list[dict[str, Any]]:
     ]
 
 
-def _issue_breakdown(cursor) -> list[dict[str, Any]]:
+def _issue_breakdown(cursor, org_id: int) -> list[dict[str, Any]]:
     formatting = grammar = plagiarism = structure = 0
     cursor.execute(
-        "SELECT analysis_report FROM project_merges WHERE analysis_report IS NOT NULL AND analysis_report != ''"
+        """
+        SELECT pm.analysis_report
+        FROM project_merges pm
+        INNER JOIN collaboration_projects cp ON cp.id = pm.project_id
+        WHERE cp.org_id = ?
+          AND pm.analysis_report IS NOT NULL
+          AND pm.analysis_report != ''
+        """,
+        (org_id,),
     )
     for row in cursor.fetchall():
         try:
@@ -196,7 +229,7 @@ def _issue_breakdown(cursor) -> list[dict[str, Any]]:
     ]
 
 
-def _department_scores(cursor) -> list[dict[str, Any]]:
+def _department_scores(cursor, org_id: int) -> list[dict[str, Any]]:
     cursor.execute(
         """
         SELECT
@@ -205,11 +238,15 @@ def _department_scores(cursor) -> list[dict[str, Any]]:
             COUNT(DISTINCT doc.id) AS document_count,
             SUM(CASE WHEN doc.status = 'completed' THEN 1 ELSE 0 END) AS completed_count
         FROM departments d
-        LEFT JOIN templates t ON t.department_id = d.id
+        LEFT JOIN templates t ON t.department_id = d.id AND t.org_id = ?
         LEFT JOIN documents doc ON doc.template_id = t.id
+        LEFT JOIN users u ON u.id = doc.user_id AND u.org_id = ?
+        WHERE d.org_id = ?
+          AND (doc.id IS NULL OR u.id IS NOT NULL)
         GROUP BY d.id
         ORDER BY d.name ASC
-        """
+        """,
+        (org_id, org_id, org_id),
     )
     scores: list[dict[str, Any]] = []
     for row in cursor.fetchall():
@@ -228,30 +265,53 @@ def _department_scores(cursor) -> list[dict[str, Any]]:
     return scores
 
 
-def _build_analytics(cursor) -> dict[str, Any]:
-    cursor.execute("SELECT COUNT(*) FROM documents")
+def _build_analytics(cursor, org_id: int) -> dict[str, Any]:
+    cursor.execute(
+        """
+        SELECT COUNT(*) FROM documents d
+        INNER JOIN users u ON u.id = d.user_id
+        WHERE u.org_id = ?
+        """,
+        (org_id,),
+    )
     total_documents = int(cursor.fetchone()[0] or 0)
 
-    cursor.execute("SELECT COUNT(*) FROM documents WHERE status = 'completed'")
+    cursor.execute(
+        """
+        SELECT COUNT(*) FROM documents d
+        INNER JOIN users u ON u.id = d.user_id
+        WHERE u.org_id = ? AND d.status = 'completed'
+        """,
+        (org_id,),
+    )
     completed_documents = int(cursor.fetchone()[0] or 0)
 
-    cursor.execute("SELECT COUNT(*) FROM users WHERE role = 'student'")
+    cursor.execute(
+        "SELECT COUNT(*) FROM users WHERE role = 'student' AND org_id = ?",
+        (org_id,),
+    )
     total_students = int(cursor.fetchone()[0] or 0)
 
-    cursor.execute("SELECT COUNT(*) FROM users WHERE role = 'supervisor'")
+    cursor.execute(
+        "SELECT COUNT(*) FROM users WHERE role = 'supervisor' AND org_id = ?",
+        (org_id,),
+    )
     total_supervisors = int(cursor.fetchone()[0] or 0)
 
-    cursor.execute("SELECT COUNT(*) FROM templates")
+    cursor.execute("SELECT COUNT(*) FROM templates WHERE org_id = ?", (org_id,))
     total_templates = int(cursor.fetchone()[0] or 0)
 
-    cursor.execute("SELECT COUNT(*) FROM departments")
+    cursor.execute("SELECT COUNT(*) FROM departments WHERE org_id = ?", (org_id,))
     total_departments = int(cursor.fetchone()[0] or 0)
 
     cursor.execute(
         """
-        SELECT COUNT(*) FROM documents
-        WHERE strftime('%Y-%m', created_at) = strftime('%Y-%m', 'now')
-        """
+        SELECT COUNT(*) FROM documents d
+        INNER JOIN users u ON u.id = d.user_id
+        WHERE u.org_id = ?
+          AND strftime('%Y-%m', d.created_at) = strftime('%Y-%m', 'now')
+        """,
+        (org_id,),
     )
     documents_this_month = int(cursor.fetchone()[0] or 0)
 
@@ -262,11 +322,13 @@ def _build_analytics(cursor) -> dict[str, Any]:
     monthly_map: dict[str, int] = {}
     cursor.execute(
         """
-        SELECT strftime('%Y-%m', created_at) AS month_key, COUNT(*) AS count
-        FROM documents
-        WHERE created_at IS NOT NULL
+        SELECT strftime('%Y-%m', d.created_at) AS month_key, COUNT(*) AS count
+        FROM documents d
+        INNER JOIN users u ON u.id = d.user_id
+        WHERE u.org_id = ? AND d.created_at IS NOT NULL
         GROUP BY month_key
-        """
+        """,
+        (org_id,),
     )
     for row in cursor.fetchall():
         month_key = row["month_key"]
@@ -302,32 +364,54 @@ def _build_analytics(cursor) -> dict[str, Any]:
         "total_departments": total_departments,
         "success_rate": success_rate,
         "avg_compliance_score": avg_compliance_score,
-        "top_templates": _top_templates(cursor),
-        "documents_last_7_days": _documents_last_7_days(cursor),
-        "issue_breakdown": _issue_breakdown(cursor),
-        "department_scores": _department_scores(cursor),
+        "top_templates": _top_templates(cursor, org_id),
+        "documents_last_7_days": _documents_last_7_days(cursor, org_id),
+        "issue_breakdown": _issue_breakdown(cursor, org_id),
+        "department_scores": _department_scores(cursor, org_id),
         "monthly_documents": monthly_documents,
         "generated_at": datetime.utcnow().isoformat(),
         "today": date.today().isoformat(),
+        "org_id": org_id,
     }
 
 
 @router.get("/stats")
-def get_admin_stats(user_id: int | None = Query(default=None)):
+def get_admin_stats(
+    request: Request,
+    user_id: int | None = Query(default=None),
+):
     _require_admin(user_id)
+    org_id = _org_id(request)
     conn = get_db()
     cursor = conn.cursor()
 
-    cursor.execute("SELECT COUNT(*) FROM supervisors")
+    cursor.execute("SELECT COUNT(*) FROM supervisors WHERE org_id = ?", (org_id,))
     total_supervisors = cursor.fetchone()[0]
 
-    cursor.execute("SELECT COUNT(*) FROM users WHERE role = 'student'")
+    cursor.execute(
+        "SELECT COUNT(*) FROM users WHERE role = 'student' AND org_id = ?",
+        (org_id,),
+    )
     total_students = cursor.fetchone()[0]
 
-    cursor.execute("SELECT COUNT(*) FROM collaboration_projects WHERE status = 'active'")
+    cursor.execute(
+        """
+        SELECT COUNT(*) FROM collaboration_projects p
+        INNER JOIN users u ON u.id = p.created_by
+        WHERE u.org_id = ? AND p.status = 'active'
+        """,
+        (org_id,),
+    )
     total_active_projects = cursor.fetchone()[0]
 
-    cursor.execute("SELECT COUNT(*) FROM documents WHERE status = 'completed'")
+    cursor.execute(
+        """
+        SELECT COUNT(*) FROM documents d
+        INNER JOIN users u ON u.id = d.user_id
+        WHERE u.org_id = ? AND d.status = 'completed'
+        """,
+        (org_id,),
+    )
     total_documents_checked = cursor.fetchone()[0]
 
     conn.close()
@@ -336,25 +420,47 @@ def get_admin_stats(user_id: int | None = Query(default=None)):
         "total_students": total_students,
         "total_active_projects": total_active_projects,
         "total_documents_checked": total_documents_checked,
+        "org_id": org_id,
     }
 
 
 @router.get("/overview")
-def get_admin_overview(user_id: int | None = Query(default=None)):
+def get_admin_overview(
+    request: Request,
+    user_id: int | None = Query(default=None),
+):
     _require_admin(user_id)
+    org_id = _org_id(request)
     conn = get_db()
     cursor = conn.cursor()
 
-    cursor.execute("SELECT COUNT(*) FROM supervisors")
+    cursor.execute("SELECT COUNT(*) FROM supervisors WHERE org_id = ?", (org_id,))
     total_supervisors = cursor.fetchone()[0]
-    cursor.execute("SELECT COUNT(*) FROM users WHERE role = 'student'")
+    cursor.execute(
+        "SELECT COUNT(*) FROM users WHERE role = 'student' AND org_id = ?",
+        (org_id,),
+    )
     total_students = cursor.fetchone()[0]
-    cursor.execute("SELECT COUNT(*) FROM collaboration_projects WHERE status = 'active'")
+    cursor.execute(
+        """
+        SELECT COUNT(*) FROM collaboration_projects p
+        INNER JOIN users u ON u.id = p.created_by
+        WHERE u.org_id = ? AND p.status = 'active'
+        """,
+        (org_id,),
+    )
     total_active_projects = cursor.fetchone()[0]
-    cursor.execute("SELECT COUNT(*) FROM documents WHERE status = 'completed'")
+    cursor.execute(
+        """
+        SELECT COUNT(*) FROM documents d
+        INNER JOIN users u ON u.id = d.user_id
+        WHERE u.org_id = ? AND d.status = 'completed'
+        """,
+        (org_id,),
+    )
     total_documents_checked = cursor.fetchone()[0]
 
-    analytics = _build_analytics(cursor)
+    analytics = _build_analytics(cursor, org_id)
     conn.close()
     return {
         "total_supervisors": total_supervisors,
@@ -366,12 +472,17 @@ def get_admin_overview(user_id: int | None = Query(default=None)):
         "top_templates": analytics["top_templates"],
         "documents_last_7_days": analytics["documents_last_7_days"],
         "recent_activity": analytics["documents_last_7_days"],
+        "org_id": org_id,
     }
 
 
 @router.get("/users")
-def get_admin_users(user_id: int | None = Query(default=None)):
+def get_admin_users(
+    request: Request,
+    user_id: int | None = Query(default=None),
+):
     _require_admin(user_id)
+    org_id = _org_id(request)
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute(
@@ -379,8 +490,10 @@ def get_admin_users(user_id: int | None = Query(default=None)):
         SELECT u.id, u.username, u.email, u.role, u.created_at, uni.name AS university_name
         FROM users u
         LEFT JOIN universities uni ON uni.id = u.university_id
+        WHERE u.org_id = ?
         ORDER BY u.created_at DESC
-        """
+        """,
+        (org_id,),
     )
     users = [dict(row) for row in cursor.fetchall()]
     conn.close()
@@ -388,8 +501,12 @@ def get_admin_users(user_id: int | None = Query(default=None)):
 
 
 @router.get("/departments")
-def get_departments(user_id: int | None = Query(default=None)):
+def get_departments(
+    request: Request,
+    user_id: int | None = Query(default=None),
+):
     _require_admin(user_id)
+    org_id = _org_id(request)
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute(
@@ -399,11 +516,13 @@ def get_departments(user_id: int | None = Query(default=None)):
             COUNT(DISTINCT s.id) AS supervisor_count,
             COUNT(DISTINCT t.id) AS template_count
         FROM departments d
-        LEFT JOIN supervisors s ON s.department_id = d.id
-        LEFT JOIN templates t ON t.department_id = d.id
+        LEFT JOIN supervisors s ON s.department_id = d.id AND s.org_id = ?
+        LEFT JOIN templates t ON t.department_id = d.id AND t.org_id = ?
+        WHERE d.org_id = ?
         GROUP BY d.id
         ORDER BY d.name ASC
-        """
+        """,
+        (org_id, org_id, org_id),
     )
     rows = [dict(row) for row in cursor.fetchall()]
     conn.close()
@@ -412,16 +531,18 @@ def get_departments(user_id: int | None = Query(default=None)):
 
 @router.post("/departments")
 def create_department(
+    request: Request,
     payload: dict[str, Any] = Body(...),
     user_id: int | None = Query(default=None),
 ):
     _require_admin(user_id)
+    org_id = _org_id(request)
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute(
         """
-        INSERT INTO departments (name, code, min_members, max_members, max_groups_per_supervisor)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO departments (name, code, min_members, max_members, max_groups_per_supervisor, org_id)
+        VALUES (?, ?, ?, ?, ?, ?)
         """,
         (
             payload.get("name"),
@@ -429,11 +550,15 @@ def create_department(
             int(payload.get("min_members", 1) or 1),
             int(payload.get("max_members", 3) or 3),
             int(payload.get("max_groups_per_supervisor", 6) or 6),
+            org_id,
         ),
     )
     conn.commit()
     department_id = cursor.lastrowid
-    cursor.execute("SELECT * FROM departments WHERE id = ?", (department_id,))
+    cursor.execute(
+        "SELECT * FROM departments WHERE id = ? AND org_id = ?",
+        (department_id, org_id),
+    )
     department = dict(cursor.fetchone())
     conn.close()
     return {"success": True, "department": department}
@@ -442,13 +567,18 @@ def create_department(
 @router.put("/departments/{department_id}")
 def update_department(
     department_id: int,
+    request: Request,
     payload: dict[str, Any] = Body(...),
     user_id: int | None = Query(default=None),
 ):
     _require_admin(user_id)
+    org_id = _org_id(request)
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute("SELECT * FROM departments WHERE id = ?", (department_id,))
+    cursor.execute(
+        "SELECT * FROM departments WHERE id = ? AND org_id = ?",
+        (department_id, org_id),
+    )
     existing = cursor.fetchone()
     if not existing:
         conn.close()
@@ -458,7 +588,7 @@ def update_department(
         """
         UPDATE departments
         SET name = ?, code = ?, min_members = ?, max_members = ?, max_groups_per_supervisor = ?
-        WHERE id = ?
+        WHERE id = ? AND org_id = ?
         """,
         (
             payload.get("name", existing["name"]),
@@ -467,21 +597,33 @@ def update_department(
             int(payload.get("max_members", existing["max_members"]) or 3),
             int(payload.get("max_groups_per_supervisor", existing["max_groups_per_supervisor"]) or 6),
             department_id,
+            org_id,
         ),
     )
     conn.commit()
-    cursor.execute("SELECT * FROM departments WHERE id = ?", (department_id,))
+    cursor.execute(
+        "SELECT * FROM departments WHERE id = ? AND org_id = ?",
+        (department_id, org_id),
+    )
     department = dict(cursor.fetchone())
     conn.close()
     return {"success": True, "department": department}
 
 
 @router.delete("/departments/{department_id}")
-def delete_department(department_id: int, user_id: int | None = Query(default=None)):
+def delete_department(
+    department_id: int,
+    request: Request,
+    user_id: int | None = Query(default=None),
+):
     _require_admin(user_id)
+    org_id = _org_id(request)
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute("SELECT id FROM departments WHERE id = ?", (department_id,))
+    cursor.execute(
+        "SELECT id FROM departments WHERE id = ? AND org_id = ?",
+        (department_id, org_id),
+    )
     if not cursor.fetchone():
         conn.close()
         raise HTTPException(status_code=404, detail="Department not found.")
@@ -494,7 +636,10 @@ def delete_department(department_id: int, user_id: int | None = Query(default=No
             detail="Cannot delete a department that still has supervisors. Remove supervisors first.",
         )
 
-    cursor.execute("DELETE FROM departments WHERE id = ?", (department_id,))
+    cursor.execute(
+        "DELETE FROM departments WHERE id = ? AND org_id = ?",
+        (department_id, org_id),
+    )
     conn.commit()
     conn.close()
     return {"success": True, "deleted_id": department_id}
@@ -502,16 +647,18 @@ def delete_department(department_id: int, user_id: int | None = Query(default=No
 
 @router.get("/supervisors")
 def get_supervisors(
+    request: Request,
     department_id: int | None = Query(default=None),
     search: str | None = Query(default=None),
     user_id: int | None = Query(default=None),
 ):
     _require_admin(user_id)
+    org_id = _org_id(request)
     conn = get_db()
     cursor = conn.cursor()
 
-    clauses: list[str] = []
-    params: list[Any] = []
+    clauses: list[str] = ["s.org_id = ?"]
+    params: list[Any] = [org_id]
     if department_id is not None:
         clauses.append("s.department_id = ?")
         params.append(department_id)
@@ -520,7 +667,7 @@ def get_supervisors(
         token = f"%{search.strip().lower()}%"
         params.extend([token, token])
 
-    where_sql = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+    where_sql = f"WHERE {' AND '.join(clauses)}"
     cursor.execute(
         f"""
         SELECT s.*, d.name AS department_name, d.code AS department_code
@@ -597,10 +744,12 @@ def _send_supervisor_credentials_email(
 
 @router.post("/supervisors")
 def create_supervisor(
+    request: Request,
     payload: dict[str, Any] = Body(...),
     user_id: int | None = Query(default=None),
 ):
     _require_admin(user_id)
+    org_id = _org_id(request)
     name = (payload.get("name") or "").strip()
     email = (payload.get("email") or "").strip().lower()
     if not name or not email:
@@ -609,7 +758,10 @@ def create_supervisor(
     conn = get_db()
     cursor = conn.cursor()
 
-    cursor.execute("SELECT id FROM supervisors WHERE LOWER(email) = ?", (email,))
+    cursor.execute(
+        "SELECT id FROM supervisors WHERE LOWER(email) = ? AND org_id = ?",
+        (email, org_id),
+    )
     if cursor.fetchone():
         conn.close()
         raise HTTPException(status_code=409, detail="A supervisor with this email already exists.")
@@ -617,7 +769,10 @@ def create_supervisor(
     temporary_password = _generate_temp_password()
     linked_user_id = None
 
-    cursor.execute("SELECT id, role FROM users WHERE LOWER(email) = ?", (email,))
+    cursor.execute(
+        "SELECT id, role, org_id FROM users WHERE LOWER(email) = ? AND org_id = ?",
+        (email, org_id),
+    )
     existing_user = cursor.fetchone()
     if existing_user:
         if existing_user["role"] == "admin":
@@ -630,25 +785,25 @@ def create_supervisor(
         cursor.execute(
             """
             UPDATE users
-            SET password_hash = ?, role = 'supervisor', username = ?
+            SET password_hash = ?, role = 'supervisor', username = ?, org_id = ?
             WHERE id = ?
             """,
-            (hash_password(temporary_password), name, linked_user_id),
+            (hash_password(temporary_password), name, org_id, linked_user_id),
         )
     else:
         cursor.execute(
             """
-            INSERT INTO users (username, email, password_hash, role, university_id)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO users (username, email, password_hash, role, university_id, org_id)
+            VALUES (?, ?, ?, ?, ?, ?)
             """,
-            (name, email, hash_password(temporary_password), "supervisor", 1),
+            (name, email, hash_password(temporary_password), "supervisor", 1, org_id),
         )
         linked_user_id = cursor.lastrowid
 
     cursor.execute(
         """
-        INSERT INTO supervisors (name, email, department_id, max_groups, current_groups, is_active)
-        VALUES (?, ?, ?, ?, ?, ?)
+        INSERT INTO supervisors (name, email, department_id, max_groups, current_groups, is_active, org_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
         """,
         (
             name,
@@ -657,6 +812,7 @@ def create_supervisor(
             int(payload.get("max_groups", 6) or 6),
             int(payload.get("current_groups", 0) or 0),
             1 if payload.get("is_active", True) else 0,
+            org_id,
         ),
     )
     conn.commit()
@@ -693,10 +849,12 @@ def create_supervisor(
 @router.post("/supervisors/{supervisor_id}/send-credentials")
 def send_supervisor_credentials(
     supervisor_id: int,
+    request: Request,
     payload: dict[str, Any] = Body(default={}),
     user_id: int | None = Query(default=None),
 ):
     _require_admin(user_id)
+    org_id = _org_id(request)
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute(
@@ -704,9 +862,9 @@ def send_supervisor_credentials(
         SELECT s.*, d.name AS department_name
         FROM supervisors s
         INNER JOIN departments d ON d.id = s.department_id
-        WHERE s.id = ?
+        WHERE s.id = ? AND s.org_id = ?
         """,
-        (supervisor_id,),
+        (supervisor_id, org_id),
     )
     supervisor = cursor.fetchone()
     if not supervisor:
@@ -714,12 +872,15 @@ def send_supervisor_credentials(
         raise HTTPException(status_code=404, detail="Supervisor not found.")
 
     temporary_password = (payload.get("temporary_password") or "").strip() or _generate_temp_password()
-    cursor.execute("SELECT id FROM users WHERE LOWER(email) = ?", (supervisor["email"].lower(),))
+    cursor.execute(
+        "SELECT id FROM users WHERE LOWER(email) = ? AND org_id = ?",
+        (supervisor["email"].lower(), org_id),
+    )
     user_row = cursor.fetchone()
     if user_row:
         cursor.execute(
-            "UPDATE users SET password_hash = ? WHERE id = ?",
-            (hash_password(temporary_password), user_row["id"]),
+            "UPDATE users SET password_hash = ? WHERE id = ? AND org_id = ?",
+            (hash_password(temporary_password), user_row["id"], org_id),
         )
         conn.commit()
     conn.close()
@@ -741,13 +902,18 @@ def send_supervisor_credentials(
 @router.put("/supervisors/{supervisor_id}")
 def update_supervisor(
     supervisor_id: int,
+    request: Request,
     payload: dict[str, Any] = Body(...),
     user_id: int | None = Query(default=None),
 ):
     _require_admin(user_id)
+    org_id = _org_id(request)
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute("SELECT * FROM supervisors WHERE id = ?", (supervisor_id,))
+    cursor.execute(
+        "SELECT * FROM supervisors WHERE id = ? AND org_id = ?",
+        (supervisor_id, org_id),
+    )
     existing = cursor.fetchone()
     if not existing:
         conn.close()
@@ -757,7 +923,7 @@ def update_supervisor(
         """
         UPDATE supervisors
         SET name = ?, email = ?, department_id = ?, max_groups = ?, current_groups = ?, is_active = ?
-        WHERE id = ?
+        WHERE id = ? AND org_id = ?
         """,
         (
             payload.get("name", existing["name"]),
@@ -767,6 +933,7 @@ def update_supervisor(
             int(payload.get("current_groups", existing["current_groups"]) or 0),
             1 if payload.get("is_active", bool(existing["is_active"])) else 0,
             supervisor_id,
+            org_id,
         ),
     )
     conn.commit()
@@ -775,9 +942,9 @@ def update_supervisor(
         SELECT s.*, d.name AS department_name, d.code AS department_code
         FROM supervisors s
         INNER JOIN departments d ON d.id = s.department_id
-        WHERE s.id = ?
+        WHERE s.id = ? AND s.org_id = ?
         """,
-        (supervisor_id,),
+        (supervisor_id, org_id),
     )
     supervisor = dict(cursor.fetchone())
     conn.close()
@@ -785,11 +952,19 @@ def update_supervisor(
 
 
 @router.patch("/supervisors/{supervisor_id}/toggle")
-def toggle_supervisor(supervisor_id: int, user_id: int | None = Query(default=None)):
+def toggle_supervisor(
+    supervisor_id: int,
+    request: Request,
+    user_id: int | None = Query(default=None),
+):
     _require_admin(user_id)
+    org_id = _org_id(request)
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute("SELECT * FROM supervisors WHERE id = ?", (supervisor_id,))
+    cursor.execute(
+        "SELECT * FROM supervisors WHERE id = ? AND org_id = ?",
+        (supervisor_id, org_id),
+    )
     existing = cursor.fetchone()
     if not existing:
         conn.close()
@@ -797,33 +972,47 @@ def toggle_supervisor(supervisor_id: int, user_id: int | None = Query(default=No
 
     next_state = 0 if existing["is_active"] else 1
     cursor.execute(
-        "UPDATE supervisors SET is_active = ? WHERE id = ?",
-        (next_state, supervisor_id),
+        "UPDATE supervisors SET is_active = ? WHERE id = ? AND org_id = ?",
+        (next_state, supervisor_id, org_id),
     )
     conn.commit()
-    cursor.execute("SELECT * FROM supervisors WHERE id = ?", (supervisor_id,))
+    cursor.execute(
+        "SELECT * FROM supervisors WHERE id = ? AND org_id = ?",
+        (supervisor_id, org_id),
+    )
     supervisor = dict(cursor.fetchone())
     conn.close()
     return {"success": True, "supervisor": supervisor}
 
 
 @router.delete("/supervisors/{supervisor_id}")
-def delete_supervisor(supervisor_id: int, user_id: int | None = Query(default=None)):
+def delete_supervisor(
+    supervisor_id: int,
+    request: Request,
+    user_id: int | None = Query(default=None),
+):
     _require_admin(user_id)
+    org_id = _org_id(request)
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute("SELECT * FROM supervisors WHERE id = ?", (supervisor_id,))
+    cursor.execute(
+        "SELECT * FROM supervisors WHERE id = ? AND org_id = ?",
+        (supervisor_id, org_id),
+    )
     row = cursor.fetchone()
     if not row:
         conn.close()
         raise HTTPException(status_code=404, detail="Supervisor not found.")
 
     email = (row["email"] or "").strip().lower()
-    cursor.execute("DELETE FROM supervisors WHERE id = ?", (supervisor_id,))
+    cursor.execute(
+        "DELETE FROM supervisors WHERE id = ? AND org_id = ?",
+        (supervisor_id, org_id),
+    )
     if email:
         cursor.execute(
-            "DELETE FROM users WHERE LOWER(email) = ? AND role = 'supervisor'",
-            (email,),
+            "DELETE FROM users WHERE LOWER(email) = ? AND role = 'supervisor' AND org_id = ?",
+            (email, org_id),
         )
     conn.commit()
     conn.close()
@@ -832,16 +1021,18 @@ def delete_supervisor(supervisor_id: int, user_id: int | None = Query(default=No
 
 @router.get("/templates")
 def get_admin_templates(
+    request: Request,
     department_id: int | None = Query(default=None),
     user_id: int | None = Query(default=None),
 ):
     _require_admin(user_id)
+    org_id = _org_id(request)
     conn = get_db()
     cursor = conn.cursor()
-    params: list[Any] = []
-    where_sql = ""
+    params: list[Any] = [org_id]
+    where_sql = "WHERE t.org_id = ?"
     if department_id is not None:
-        where_sql = "WHERE t.department_id = ?"
+        where_sql += " AND t.department_id = ?"
         params.append(department_id)
 
     cursor.execute(
@@ -882,8 +1073,12 @@ def get_admin_templates(
 
 
 @router.get("/deadlines")
-def get_deadlines(user_id: int | None = Query(default=None)):
+def get_deadlines(
+    request: Request,
+    user_id: int | None = Query(default=None),
+):
     _require_admin(user_id)
+    org_id = _org_id(request)
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute(
@@ -891,8 +1086,10 @@ def get_deadlines(user_id: int | None = Query(default=None)):
         SELECT dl.*, d.name AS department_name, d.code AS department_code
         FROM deadlines dl
         LEFT JOIN departments d ON d.id = dl.department_id
+        WHERE dl.org_id = ?
         ORDER BY dl.due_date ASC
-        """
+        """,
+        (org_id,),
     )
     deadlines = []
     for row in cursor.fetchall():
@@ -905,10 +1102,12 @@ def get_deadlines(user_id: int | None = Query(default=None)):
 
 @router.post("/deadlines")
 def create_deadline(
+    request: Request,
     payload: dict[str, Any] = Body(...),
     user_id: int | None = Query(default=None),
 ):
     _require_admin(user_id)
+    org_id = _org_id(request)
     applies_to_all = bool(payload.get("applies_to_all", not payload.get("department_id")))
     department_id = None if applies_to_all else int(payload.get("department_id"))
 
@@ -916,8 +1115,8 @@ def create_deadline(
     cursor = conn.cursor()
     cursor.execute(
         """
-        INSERT INTO deadlines (title, description, due_date, department_id, applies_to_all)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO deadlines (title, description, due_date, department_id, applies_to_all, org_id)
+        VALUES (?, ?, ?, ?, ?, ?)
         """,
         (
             payload.get("title"),
@@ -925,6 +1124,7 @@ def create_deadline(
             payload.get("due_date"),
             department_id,
             1 if applies_to_all else 0,
+            org_id,
         ),
     )
     conn.commit()
@@ -947,13 +1147,18 @@ def create_deadline(
 @router.put("/deadlines/{deadline_id}")
 def update_deadline(
     deadline_id: int,
+    request: Request,
     payload: dict[str, Any] = Body(...),
     user_id: int | None = Query(default=None),
 ):
     _require_admin(user_id)
+    org_id = _org_id(request)
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute("SELECT * FROM deadlines WHERE id = ?", (deadline_id,))
+    cursor.execute(
+        "SELECT * FROM deadlines WHERE id = ? AND org_id = ?",
+        (deadline_id, org_id),
+    )
     existing = cursor.fetchone()
     if not existing:
         conn.close()
@@ -965,7 +1170,7 @@ def update_deadline(
         """
         UPDATE deadlines
         SET title = ?, description = ?, due_date = ?, department_id = ?, applies_to_all = ?
-        WHERE id = ?
+        WHERE id = ? AND org_id = ?
         """,
         (
             payload.get("title", existing["title"]),
@@ -974,6 +1179,7 @@ def update_deadline(
             department_id,
             1 if applies_to_all else 0,
             deadline_id,
+            org_id,
         ),
     )
     conn.commit()
@@ -982,9 +1188,9 @@ def update_deadline(
         SELECT dl.*, d.name AS department_name, d.code AS department_code
         FROM deadlines dl
         LEFT JOIN departments d ON d.id = dl.department_id
-        WHERE dl.id = ?
+        WHERE dl.id = ? AND dl.org_id = ?
         """,
-        (deadline_id,),
+        (deadline_id, org_id),
     )
     deadline = dict(cursor.fetchone())
     deadline["due_date"] = _format_date(deadline.get("due_date"))
@@ -993,16 +1199,27 @@ def update_deadline(
 
 
 @router.delete("/deadlines/{deadline_id}")
-def delete_deadline(deadline_id: int, user_id: int | None = Query(default=None)):
+def delete_deadline(
+    deadline_id: int,
+    request: Request,
+    user_id: int | None = Query(default=None),
+):
     _require_admin(user_id)
+    org_id = _org_id(request)
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute("SELECT id FROM deadlines WHERE id = ?", (deadline_id,))
+    cursor.execute(
+        "SELECT id FROM deadlines WHERE id = ? AND org_id = ?",
+        (deadline_id, org_id),
+    )
     row = cursor.fetchone()
     if not row:
         conn.close()
         raise HTTPException(status_code=404, detail="Deadline not found.")
-    cursor.execute("DELETE FROM deadlines WHERE id = ?", (deadline_id,))
+    cursor.execute(
+        "DELETE FROM deadlines WHERE id = ? AND org_id = ?",
+        (deadline_id, org_id),
+    )
     conn.commit()
     conn.close()
     return {"success": True, "deleted_id": deadline_id}
@@ -1020,9 +1237,13 @@ def _serialize_semester_deadline(row) -> dict[str, Any]:
 
 
 @router.get("/semester-deadlines")
-def list_semester_deadlines(user_id: int | None = Query(default=None)):
-    """Global Semester 6 / 7 FYP submission deadlines (one row per semester)."""
+def list_semester_deadlines(
+    request: Request,
+    user_id: int | None = Query(default=None),
+):
+    """Org-scoped Semester 6 / 7 FYP submission deadlines (one row per semester per org)."""
     _require_admin(user_id)
+    org_id = _org_id(request)
     conn = get_db()
     cursor = conn.cursor()
     try:
@@ -1030,8 +1251,10 @@ def list_semester_deadlines(user_id: int | None = Query(default=None)):
             """
             SELECT id, semester, deadline_date, created_by, created_at, updated_at
             FROM semester_deadlines
+            WHERE org_id = ?
             ORDER BY semester ASC
-            """
+            """,
+            (org_id,),
         )
         rows = [_serialize_semester_deadline(r) for r in cursor.fetchall()]
         return {"deadlines": rows, "count": len(rows)}
@@ -1041,11 +1264,13 @@ def list_semester_deadlines(user_id: int | None = Query(default=None)):
 
 @router.post("/semester-deadlines")
 def create_semester_deadline(
+    request: Request,
     payload: dict[str, Any] = Body(...),
     user_id: int | None = Query(default=None),
 ):
-    """Create a semester deadline row if that semester does not already exist."""
+    """Create a semester deadline row if that semester does not already exist for this org."""
     _require_admin(user_id)
+    org_id = _org_id(request)
     try:
         semester = int(payload.get("semester"))
     except (TypeError, ValueError):
@@ -1065,8 +1290,8 @@ def create_semester_deadline(
     cursor = conn.cursor()
     try:
         cursor.execute(
-            "SELECT id FROM semester_deadlines WHERE semester = ?",
-            (semester,),
+            "SELECT id FROM semester_deadlines WHERE semester = ? AND org_id = ?",
+            (semester, org_id),
         )
         if cursor.fetchone():
             raise HTTPException(
@@ -1078,19 +1303,19 @@ def create_semester_deadline(
         cursor.execute(
             """
             INSERT INTO semester_deadlines
-                (semester, deadline_date, created_by, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?)
+                (semester, deadline_date, created_by, created_at, updated_at, org_id)
+            VALUES (?, ?, ?, ?, ?, ?)
             """,
-            (semester, deadline.isoformat(), user_id, now, now),
+            (semester, deadline.isoformat(), user_id, now, now, org_id),
         )
         conn.commit()
         new_id = cursor.lastrowid
         cursor.execute(
             """
             SELECT id, semester, deadline_date, created_by, created_at, updated_at
-            FROM semester_deadlines WHERE id = ?
+            FROM semester_deadlines WHERE id = ? AND org_id = ?
             """,
-            (new_id,),
+            (new_id, org_id),
         )
         row = cursor.fetchone()
         return {"success": True, "deadline": _serialize_semester_deadline(row)}
@@ -1104,11 +1329,13 @@ def create_semester_deadline(
 @router.patch("/semester-deadlines/{deadline_id}")
 def update_semester_deadline(
     deadline_id: int,
+    request: Request,
     payload: dict[str, Any] = Body(...),
     user_id: int | None = Query(default=None),
 ):
     """Update deadline_date for an existing semester deadline row."""
     _require_admin(user_id)
+    org_id = _org_id(request)
     deadline_raw = (payload.get("deadline_date") or "").strip()
     if not deadline_raw:
         raise HTTPException(status_code=400, detail="deadline_date is required.")
@@ -1121,8 +1348,8 @@ def update_semester_deadline(
     cursor = conn.cursor()
     try:
         cursor.execute(
-            "SELECT id FROM semester_deadlines WHERE id = ?",
-            (deadline_id,),
+            "SELECT id FROM semester_deadlines WHERE id = ? AND org_id = ?",
+            (deadline_id, org_id),
         )
         if not cursor.fetchone():
             raise HTTPException(status_code=404, detail="Semester deadline not found.")
@@ -1132,17 +1359,17 @@ def update_semester_deadline(
             """
             UPDATE semester_deadlines
             SET deadline_date = ?, updated_at = ?
-            WHERE id = ?
+            WHERE id = ? AND org_id = ?
             """,
-            (deadline.isoformat(), now, deadline_id),
+            (deadline.isoformat(), now, deadline_id, org_id),
         )
         conn.commit()
         cursor.execute(
             """
             SELECT id, semester, deadline_date, created_by, created_at, updated_at
-            FROM semester_deadlines WHERE id = ?
+            FROM semester_deadlines WHERE id = ? AND org_id = ?
             """,
-            (deadline_id,),
+            (deadline_id, org_id),
         )
         row = cursor.fetchone()
         return {"success": True, "deadline": _serialize_semester_deadline(row)}
@@ -1154,18 +1381,26 @@ def update_semester_deadline(
 
 
 @router.get("/analytics")
-def get_admin_analytics(user_id: int | None = Query(default=None)):
+def get_admin_analytics(
+    request: Request,
+    user_id: int | None = Query(default=None),
+):
     _require_admin(user_id)
+    org_id = _org_id(request)
     conn = get_db()
     cursor = conn.cursor()
-    payload = _build_analytics(cursor)
+    payload = _build_analytics(cursor, org_id)
     conn.close()
     return payload
 
 
 @router.get("/universities")
-def get_admin_universities(user_id: int | None = Query(default=None)):
+def get_admin_universities(
+    request: Request,
+    user_id: int | None = Query(default=None),
+):
     _require_admin(user_id)
+    org_id = _org_id(request)
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute(
@@ -1178,10 +1413,11 @@ def get_admin_universities(user_id: int | None = Query(default=None)):
             COUNT(users.id) AS user_count,
             SUM(CASE WHEN users.role = 'student' THEN 1 ELSE 0 END) AS student_count
         FROM universities u
-        LEFT JOIN users ON users.university_id = u.id
+        LEFT JOIN users ON users.university_id = u.id AND users.org_id = ?
         GROUP BY u.id
         ORDER BY u.name ASC
-        """
+        """,
+        (org_id,),
     )
     universities = [dict(row) for row in cursor.fetchall()]
     conn.close()
@@ -1189,24 +1425,30 @@ def get_admin_universities(user_id: int | None = Query(default=None)):
 
 
 @router.get("/settings")
-def get_admin_settings(user_id: int | None = Query(default=None)):
+def get_admin_settings(
+    request: Request,
+    user_id: int | None = Query(default=None),
+):
     _require_admin(user_id)
+    org_id = _org_id(request)
     conn = get_db()
     cursor = conn.cursor()
-    settings = _load_settings(cursor)
+    settings = _load_settings(cursor, org_id)
     conn.close()
     return settings
 
 
 @router.put("/settings")
 def update_admin_settings(
+    request: Request,
     payload: dict[str, Any] = Body(...),
     user_id: int | None = Query(default=None),
 ):
     _require_admin(user_id)
+    org_id = _org_id(request)
     conn = get_db()
     cursor = conn.cursor()
-    settings = _save_settings(cursor, payload)
+    settings = _save_settings(cursor, payload, org_id)
     conn.commit()
     conn.close()
     return {"success": True, "settings": settings}
@@ -1223,7 +1465,7 @@ _LOGO_DIR = os.path.join("uploads", "branding")
 _LOGO_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
 
 
-def _upsert_setting(cursor, key: str, value: str) -> None:
+def _upsert_setting(cursor, key: str, value: str, org_id: int) -> None:
     cursor.execute(
         """
         INSERT INTO admin_settings (key, value, updated_at)
@@ -1232,13 +1474,22 @@ def _upsert_setting(cursor, key: str, value: str) -> None:
             value = excluded.value,
             updated_at = CURRENT_TIMESTAMP
         """,
-        (key, value),
+        (_org_setting_key(org_id, key), value),
     )
 
 
-def _settings_raw_map(cursor) -> dict[str, str]:
-    cursor.execute("SELECT key, value FROM admin_settings")
-    return {row["key"]: (row["value"] or "") for row in cursor.fetchall()}
+def _settings_raw_map(cursor, org_id: int) -> dict[str, str]:
+    prefix = f"org:{org_id}:"
+    cursor.execute(
+        "SELECT key, value FROM admin_settings WHERE key LIKE ?",
+        (f"{prefix}%",),
+    )
+    rows: dict[str, str] = {}
+    for row in cursor.fetchall():
+        raw_key = row["key"] or ""
+        if raw_key.startswith(prefix):
+            rows[raw_key[len(prefix) :]] = row["value"] or ""
+    return rows
 
 
 def _template_file_info(path: str, kind: str) -> dict[str, Any]:
@@ -1268,11 +1519,11 @@ def _logo_public_url(logo_path: str) -> str | None:
     return None
 
 
-def _load_frontmatter_config(cursor) -> dict[str, Any]:
+def _load_frontmatter_config(cursor, org_id: int) -> dict[str, Any]:
     from frontmatter_generator import COVER_TEMPLATE, INFO_TEMPLATE, scaffold_templates
 
     scaffold_templates()
-    rows = _settings_raw_map(cursor)
+    rows = _settings_raw_map(cursor, org_id)
     logo_path = (rows.get("logo_path") or "").strip()
     return {
         "university_name": (rows.get("university_name") or "").strip(),
@@ -1287,24 +1538,30 @@ def _load_frontmatter_config(cursor) -> dict[str, Any]:
 
 
 @router.get("/frontmatter-config")
-def get_frontmatter_config(user_id: int | None = Query(default=None)):
+def get_frontmatter_config(
+    request: Request,
+    user_id: int | None = Query(default=None),
+):
     """Branding + template status for cover / project-info generation."""
     _require_admin(user_id)
+    org_id = _org_id(request)
     conn = get_db()
     cursor = conn.cursor()
     try:
-        return _load_frontmatter_config(cursor)
+        return _load_frontmatter_config(cursor, org_id)
     finally:
         conn.close()
 
 
 @router.put("/frontmatter-config")
 def update_frontmatter_config(
+    request: Request,
     payload: dict[str, Any] = Body(...),
     user_id: int | None = Query(default=None),
 ):
     """Update university_name / department_name / session text fields."""
     _require_admin(user_id)
+    org_id = _org_id(request)
     allowed = {"university_name", "department_name", "session"}
     conn = get_db()
     cursor = conn.cursor()
@@ -1312,20 +1569,22 @@ def update_frontmatter_config(
         for key in allowed:
             if key not in payload:
                 continue
-            _upsert_setting(cursor, key, str(payload.get(key) or "").strip())
+            _upsert_setting(cursor, key, str(payload.get(key) or "").strip(), org_id)
         conn.commit()
-        return {"success": True, "config": _load_frontmatter_config(cursor)}
+        return {"success": True, "config": _load_frontmatter_config(cursor, org_id)}
     finally:
         conn.close()
 
 
 @router.post("/frontmatter-config/logo")
 async def upload_frontmatter_logo(
+    request: Request,
     file: UploadFile = File(...),
     user_id: int | None = Query(default=None),
 ):
     """Upload university logo image; stores path in admin_settings.logo_path."""
     _require_admin(user_id)
+    org_id = _org_id(request)
     filename = file.filename or "logo.png"
     ext = os.path.splitext(filename)[1].lower()
     if ext not in _LOGO_EXTENSIONS:
@@ -1339,7 +1598,7 @@ async def upload_frontmatter_logo(
         raise HTTPException(status_code=400, detail="Uploaded logo file is empty.")
 
     os.makedirs(_LOGO_DIR, exist_ok=True)
-    stored_name = f"university_logo{ext}"
+    stored_name = f"university_logo_org{org_id}{ext}"
     stored_path = os.path.join(_LOGO_DIR, stored_name)
     with open(stored_path, "wb") as out:
         out.write(raw)
@@ -1350,9 +1609,9 @@ async def upload_frontmatter_logo(
     conn = get_db()
     cursor = conn.cursor()
     try:
-        _upsert_setting(cursor, "logo_path", stored_rel)
+        _upsert_setting(cursor, "logo_path", stored_rel, org_id)
         conn.commit()
-        config = _load_frontmatter_config(cursor)
+        config = _load_frontmatter_config(cursor, org_id)
     finally:
         conn.close()
 
@@ -1362,6 +1621,7 @@ async def upload_frontmatter_logo(
 @router.post("/frontmatter-config/templates/{kind}")
 async def upload_frontmatter_template(
     kind: str,
+    request: Request,
     file: UploadFile = File(...),
     user_id: int | None = Query(default=None),
 ):
@@ -1371,6 +1631,7 @@ async def upload_frontmatter_template(
     Overwrites the files frontmatter_generator already reads.
     """
     _require_admin(user_id)
+    org_id = _org_id(request)
     kind_norm = (kind or "").strip().lower()
     if kind_norm not in {"cover", "info"}:
         raise HTTPException(status_code=400, detail="kind must be 'cover' or 'info'.")
@@ -1394,7 +1655,7 @@ async def upload_frontmatter_template(
     conn = get_db()
     cursor = conn.cursor()
     try:
-        config = _load_frontmatter_config(cursor)
+        config = _load_frontmatter_config(cursor, org_id)
     finally:
         conn.close()
 

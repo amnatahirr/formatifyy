@@ -7,6 +7,8 @@ import 'package:app_links/app_links.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../config/api_config.dart';
 import '../config/dev_user_config.dart';
+import '../services/auth_token_store.dart';
+import '../services/super_admin_api_service.dart';
 
 /// SharedPreferences keys for the restored login session.
 /// Prefixed with `formatify.auth.` to avoid collisions with other packages/features.
@@ -100,19 +102,59 @@ class AuthProvider extends ChangeNotifier {
     await prefs.remove(AuthSessionKeys.username);
     await prefs.remove(AuthSessionKeys.email);
     await prefs.remove(AuthSessionKeys.role);
+    await AuthTokenStore.clear();
+  }
+
+  Future<void> _syncOrgAfterAuth() async {
+    try {
+      final info = await SuperAdminApiService().fetchOrgInfo();
+      DevUserConfig.applyOrgInfo(info);
+    } catch (e) {
+      debugPrint('[Auth] org/info sync failed: $e');
+    }
+  }
+
+  Future<void> _acceptAuthResponse(Map<String, dynamic> data, {required bool rememberMe}) async {
+    final token = (data['access_token'] ?? '').toString();
+    if (token.isEmpty) {
+      throw Exception('Server did not return access_token');
+    }
+    await AuthTokenStore.save(token);
+    _applyProfile(
+      id: data['id'] is int ? data['id'] as int : int.parse('${data['id']}'),
+      username: (data['username'] ?? '').toString(),
+      email: (data['email'] ?? '').toString(),
+      role: (data['role'] ?? 'student').toString(),
+    );
+    final orgCode = (data['org_code'] ?? '').toString();
+    if (orgCode.isNotEmpty) {
+      DevUserConfig.orgCode = orgCode;
+    }
+    if (rememberMe) {
+      await _persistSession();
+    } else {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(AuthSessionKeys.userId);
+      await prefs.remove(AuthSessionKeys.username);
+      await prefs.remove(AuthSessionKeys.email);
+      await prefs.remove(AuthSessionKeys.role);
+    }
+    await _syncOrgAfterAuth();
   }
 
   /// Wipe any leftover auto-login / remembered profile so launch always
   /// starts signed-out (fixes hot-restart landing on student2).
   Future<void> ensureCleanLaunch() async {
     if (_devBootstrap) {
-      // Hard-disable accidental bootstrap: treat as signed out unless an
-      // explicit --dart-define=USER_ID was intentionally provided.
-      // (Keep bootstrap only for that opt-in path.)
       _sessionRestoreAttempted = true;
       return;
     }
-    await _clearPersistedSession();
+    try {
+      await _clearPersistedSession().timeout(const Duration(seconds: 3));
+    } catch (e) {
+      debugPrint('[Auth] ensureCleanLaunch clear failed: $e');
+      await AuthTokenStore.clear();
+    }
     _currentUser = null;
     _userEmail = null;
     _userId = null;
@@ -138,6 +180,12 @@ class AuthProvider extends ChangeNotifier {
     }
 
     try {
+      await AuthTokenStore.load();
+      if (!AuthTokenStore.hasToken) {
+        _sessionRestoreAttempted = true;
+        return false;
+      }
+
       final prefs = await SharedPreferences.getInstance();
       final userId = prefs.getInt(AuthSessionKeys.userId);
       if (userId == null) {
@@ -146,7 +194,10 @@ class AuthProvider extends ChangeNotifier {
       }
 
       final response = await http
-          .get(Uri.parse('$baseUrl/auth/me?user_id=$userId'))
+          .get(
+            Uri.parse('$baseUrl/auth/me?user_id=$userId'),
+            headers: ApiConfig.getHeaders(),
+          )
           .timeout(const Duration(seconds: 10));
 
       if (response.statusCode != 200) {
@@ -165,7 +216,11 @@ class AuthProvider extends ChangeNotifier {
         email: (data['email'] ?? '').toString(),
         role: (data['role'] ?? 'student').toString(),
       );
+      if ((data['org_code'] ?? '').toString().isNotEmpty) {
+        DevUserConfig.orgCode = data['org_code'].toString();
+      }
       await _persistSession();
+      await _syncOrgAfterAuth();
       await checkGoogleDriveStatus();
       debugPrint('[Auth] Restored session for $_currentUser (id=$_userId)');
       _sessionRestoreAttempted = true;
@@ -196,7 +251,7 @@ class AuthProvider extends ChangeNotifier {
       final response = await http
           .post(
             Uri.parse("${baseUrl}/auth/signup"),
-            headers: {"Content-Type": "application/json"},
+            headers: ApiConfig.getHeaders(json: true),
             body: jsonEncode({
               "username": username,
               "email": email,
@@ -204,6 +259,7 @@ class AuthProvider extends ChangeNotifier {
               "university_id": universityId ?? 1,
               "department_id": departmentId,
               "current_semester": currentSemester,
+              "org_code": DevUserConfig.orgCode,
             }),
           )
           .timeout(
@@ -212,18 +268,8 @@ class AuthProvider extends ChangeNotifier {
           );
 
       if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        _applyProfile(
-          id: data["id"] is int ? data["id"] as int : int.parse('${data["id"]}'),
-          username: data["username"],
-          email: data["email"],
-          role: data.get("role", "student"),
-        );
-        if (rememberMe) {
-          await _persistSession();
-        } else {
-          await _clearPersistedSession();
-        }
+        final data = Map<String, dynamic>.from(jsonDecode(response.body) as Map);
+        await _acceptAuthResponse(data, rememberMe: rememberMe);
         debugPrint("[v0] Signup successful: ${data['message']}");
         return true;
       } else {
@@ -260,8 +306,12 @@ class AuthProvider extends ChangeNotifier {
       final response = await http
           .post(
             Uri.parse("${baseUrl}/auth/login"),
-            headers: {"Content-Type": "application/json"},
-            body: jsonEncode({"email": email, "password": password}),
+            headers: ApiConfig.getHeaders(json: true),
+            body: jsonEncode({
+              "email": email,
+              "password": password,
+              "org_code": DevUserConfig.orgCode,
+            }),
           )
           .timeout(
             Duration(seconds: 10),
@@ -269,18 +319,8 @@ class AuthProvider extends ChangeNotifier {
           );
 
       if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        _applyProfile(
-          id: data["id"] is int ? data["id"] as int : int.parse('${data["id"]}'),
-          username: data["username"],
-          email: data["email"],
-          role: data["role"],
-        );
-        if (rememberMe) {
-          await _persistSession();
-        } else {
-          await _clearPersistedSession();
-        }
+        final data = Map<String, dynamic>.from(jsonDecode(response.body) as Map);
+        await _acceptAuthResponse(data, rememberMe: rememberMe);
         debugPrint(
           "[v0] Login successful for user: $_currentUser with role: $_userRole",
         );

@@ -1,17 +1,22 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../config/dev_user_config.dart';
 import '../models/admin_models.dart';
 import '../providers/auth_provider.dart';
 import '../screens/admin/analytics_screen.dart';
 import '../screens/admin/deadlines_screen.dart';
+import '../screens/admin/department_manager_screen.dart';
 import '../screens/admin/supervisor_management_screen.dart';
 import '../screens/admin/template_manager_screen.dart';
 import '../services/admin_api_service.dart';
+import '../services/super_admin_api_service.dart';
 import '../widgets/admin/admin_ui.dart';
 
 class AdminOverviewScreen extends StatefulWidget {
-  const AdminOverviewScreen({super.key});
+  final VoidCallback? onOrgUpdated;
+
+  const AdminOverviewScreen({super.key, this.onOrgUpdated});
 
   @override
   State<AdminOverviewScreen> createState() => _AdminOverviewScreenState();
@@ -19,7 +24,10 @@ class AdminOverviewScreen extends StatefulWidget {
 
 class _AdminOverviewScreenState extends State<AdminOverviewScreen> {
   final AdminApiService _api = AdminApiService();
+  final SuperAdminApiService _orgApi = SuperAdminApiService();
   AdminOverviewModel? _overview;
+  Map<String, dynamic>? _orgInfo;
+  String? _orgInfoError;
   String? _error;
   bool _loading = true;
 
@@ -35,10 +43,35 @@ class _AdminOverviewScreenState extends State<AdminOverviewScreen> {
     setState(() {
       _loading = true;
       _error = null;
+      _orgInfoError = null;
     });
     try {
       final overview = await _api.fetchOverview(userId);
-      if (mounted) setState(() => _overview = overview);
+      Map<String, dynamic>? orgInfo;
+      String? orgErr;
+      try {
+        orgInfo = await _orgApi.fetchOrgInfo();
+        final expected = DevUserConfig.orgCode.trim().toUpperCase();
+        final got = (orgInfo['org_code'] ?? '').toString().trim().toUpperCase();
+        // Drop mismatched payload so UI keeps DevUserConfig (e.g. FAST-LHR).
+        if (expected.isNotEmpty && got.isNotEmpty && got != expected) {
+          orgErr =
+              'Server returned $got but app is configured for $expected. Check API key / org headers.';
+          orgInfo = null;
+        } else {
+          DevUserConfig.applyOrgInfo(orgInfo);
+          widget.onOrgUpdated?.call();
+        }
+      } catch (e) {
+        orgErr = e.toString();
+      }
+      if (mounted) {
+        setState(() {
+          _overview = overview;
+          _orgInfo = orgInfo;
+          _orgInfoError = orgErr;
+        });
+      }
     } catch (e) {
       if (mounted) setState(() => _error = e.toString());
     } finally {
@@ -76,16 +109,44 @@ class _AdminOverviewScreenState extends State<AdminOverviewScreen> {
             title: 'Dashboard Overview',
             subtitle: 'Live metrics and shortcuts for university administration',
           ),
-          const SizedBox(height: 24),
-          adminResponsiveGrid(
-            itemCount: 4,
-            itemBuilder: (context, index) {
-              final cards = [
-                AdminStatCard(
-                  title: 'Total Supervisors',
-                  value: '${overview.stats.totalSupervisors}',
-                  icon: Icons.supervisor_account_rounded,
+          const SizedBox(height: 18),
+          AdminSectionCard(
+            title: 'Organization Info',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _quickStatRow('Name', DevUserConfig.orgName),
+                const SizedBox(height: 10),
+                _quickStatRow('Code', DevUserConfig.orgCode),
+                const SizedBox(height: 10),
+                _quickStatRow('Plan', DevUserConfig.orgPlan),
+                const SizedBox(height: 10),
+                _quickStatRow('Modules', DevUserConfig.modulesLabel),
+                const SizedBox(height: 10),
+                _quickStatRow(
+                  'Documents used',
+                  '${DevUserConfig.documentsUsed} / ${DevUserConfig.documentsLimit}',
                 ),
+                if (_orgInfoError != null) ...[
+                  const SizedBox(height: 10),
+                  Text(
+                    'Could not refresh from server — showing local config. $_orgInfoError',
+                    style: TextStyle(color: AdminColors.warning.withOpacity(0.9), fontSize: 11, height: 1.35),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          const SizedBox(height: 24),
+          Builder(
+            builder: (context) {
+              final cards = <AdminStatCard>[
+                if (DevUserConfig.hasFypModule)
+                  AdminStatCard(
+                    title: 'Total Supervisors',
+                    value: '${overview.stats.totalSupervisors}',
+                    icon: Icons.supervisor_account_rounded,
+                  ),
                 AdminStatCard(
                   title: 'Total Students',
                   value: '${overview.stats.totalStudents}',
@@ -105,7 +166,10 @@ class _AdminOverviewScreenState extends State<AdminOverviewScreen> {
                   accent: AdminColors.success,
                 ),
               ];
-              return cards[index];
+              return adminResponsiveGrid(
+                itemCount: cards.length,
+                itemBuilder: (context, index) => cards[index],
+              );
             },
           ),
           const SizedBox(height: 28),
@@ -116,23 +180,31 @@ class _AdminOverviewScreenState extends State<AdminOverviewScreen> {
             runSpacing: 14,
             children: [
               AdminActionTile(
-                title: 'Supervisors',
-                subtitle: 'Manage department supervisors',
-                icon: Icons.supervisor_account_rounded,
-                onTap: () => _open(const SupervisorManagementScreen()),
+                title: 'Departments',
+                subtitle: 'Organize teams and structure',
+                icon: Icons.apartment_rounded,
+                onTap: () => _open(const DepartmentManagerScreen()),
               ),
+              if (DevUserConfig.hasFypModule)
+                AdminActionTile(
+                  title: 'Supervisors',
+                  subtitle: 'Manage department supervisors',
+                  icon: Icons.supervisor_account_rounded,
+                  onTap: () => _open(const SupervisorManagementScreen()),
+                ),
               AdminActionTile(
                 title: 'Templates',
                 subtitle: 'Department template rules',
                 icon: Icons.layers_rounded,
                 onTap: () => _open(const TemplateManagerScreen()),
               ),
-              AdminActionTile(
-                title: 'Deadlines',
-                subtitle: 'Track submission dates',
-                icon: Icons.event_note_rounded,
-                onTap: () => _open(const DeadlinesScreen()),
-              ),
+              if (DevUserConfig.hasFypModule)
+                AdminActionTile(
+                  title: 'Deadlines',
+                  subtitle: 'Track submission dates',
+                  icon: Icons.event_note_rounded,
+                  onTap: () => _open(const DeadlinesScreen()),
+                ),
               AdminActionTile(
                 title: 'Analytics',
                 subtitle: 'Usage and compliance trends',
@@ -224,6 +296,8 @@ class _AdminOverviewScreenState extends State<AdminOverviewScreen> {
       ),
     );
   }
+
+  String _modulesLabel() => DevUserConfig.modulesLabel;
 
   Widget _quickStatRow(String label, String value) {
     return Row(

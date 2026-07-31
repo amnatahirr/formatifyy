@@ -27,7 +27,7 @@ class StudentApiService {
     Map<String, dynamic>? queryParameters,
   }) async {
     final uri = _uri(path, queryParameters);
-    final response = await http.get(uri);
+    final response = await http.get(uri, headers: ApiConfig.getHeaders());
     final body = response.body.isEmpty ? null : jsonDecode(response.body);
     if (response.statusCode < 200 || response.statusCode >= 300) {
       final detail = body is Map && body['detail'] != null
@@ -86,7 +86,7 @@ class StudentApiService {
       '/student/notifications/$notificationId/read',
       {'user_id': userId, 'email': email},
     );
-    final response = await http.patch(uri);
+    final response = await http.patch(uri, headers: ApiConfig.getHeaders());
     final body = response.body.isEmpty ? null : jsonDecode(response.body);
     if (response.statusCode < 200 || response.statusCode >= 300) {
       final detail = body is Map && body['detail'] != null
@@ -117,7 +117,7 @@ class StudentApiService {
     required int commentId,
   }) async {
     final uri = _uri('/student/comments/$commentId/resolve', {'user_id': userId});
-    final response = await http.post(uri);
+    final response = await http.post(uri, headers: ApiConfig.getHeaders());
     final body = response.body.isEmpty ? null : jsonDecode(response.body);
     if (response.statusCode < 200 || response.statusCode >= 300) {
       final detail = body is Map && body['detail'] != null
@@ -138,7 +138,7 @@ class StudentApiService {
     final uri = _uri('/student/comments/$commentId/reply', {'user_id': userId});
     final response = await http.post(
       uri,
-      headers: {'Content-Type': 'application/json'},
+      headers: ApiConfig.getHeaders(json: true),
       body: jsonEncode({'reply_text': replyText}),
     );
     final body = response.body.isEmpty ? null : jsonDecode(response.body);

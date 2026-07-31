@@ -138,6 +138,19 @@ def _get_member_document_id(project_id: int, user_id: int) -> Optional[int]:
     return int(row["document_id"]) if row else None
 
 
+def _user_org_id(cursor, user_id: int) -> int:
+    cursor.execute("SELECT org_id FROM users WHERE id = ?", (user_id,))
+    row = cursor.fetchone()
+    if row and "org_id" in row.keys() and row["org_id"] is not None:
+        return int(row["org_id"])
+    return 1
+
+
+def _documents_has_org_id(cursor) -> bool:
+    cursor.execute("PRAGMA table_info(documents)")
+    return "org_id" in {row[1] for row in cursor.fetchall()}
+
+
 def _upsert_member_document(
     project_id: int,
     user_id: int,
@@ -161,13 +174,22 @@ def _upsert_member_document(
         )
         doc_id = existing_id
     else:
-        cursor.execute(
-            """
-            INSERT INTO documents (user_id, template_id, filename, file_path, status)
-            VALUES (?, ?, ?, ?, 'uploaded')
-            """,
-            (user_id, template_id, filename, file_path),
-        )
+        if _documents_has_org_id(cursor):
+            cursor.execute(
+                """
+                INSERT INTO documents (user_id, template_id, filename, file_path, status, org_id)
+                VALUES (?, ?, ?, ?, 'uploaded', ?)
+                """,
+                (user_id, template_id, filename, file_path, _user_org_id(cursor, user_id)),
+            )
+        else:
+            cursor.execute(
+                """
+                INSERT INTO documents (user_id, template_id, filename, file_path, status)
+                VALUES (?, ?, ?, ?, 'uploaded')
+                """,
+                (user_id, template_id, filename, file_path),
+            )
         doc_id = cursor.lastrowid
         cursor.execute(
             """

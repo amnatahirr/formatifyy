@@ -26,34 +26,35 @@ class AdminApiService {
   }) async {
     final uri = _uri(path, queryParameters);
     http.Response response;
+    final headers = ApiConfig.getHeaders(json: method != 'GET' && method != 'DELETE');
 
     switch (method) {
       case 'GET':
-        response = await http.get(uri);
+        response = await http.get(uri, headers: ApiConfig.getHeaders());
         break;
       case 'POST':
         response = await http.post(
           uri,
-          headers: {'Content-Type': 'application/json'},
+          headers: headers,
           body: jsonEncode(body ?? {}),
         );
         break;
       case 'PUT':
         response = await http.put(
           uri,
-          headers: {'Content-Type': 'application/json'},
+          headers: headers,
           body: jsonEncode(body ?? {}),
         );
         break;
       case 'PATCH':
         response = await http.patch(
           uri,
-          headers: {'Content-Type': 'application/json'},
+          headers: headers,
           body: jsonEncode(body ?? {}),
         );
         break;
       case 'DELETE':
-        response = await http.delete(uri);
+        response = await http.delete(uri, headers: ApiConfig.getHeaders());
         break;
       default:
         throw UnsupportedError('Unsupported HTTP method: $method');

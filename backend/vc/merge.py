@@ -17,6 +17,22 @@ from templates import get_template_by_id
 UPLOAD_DIR = "uploads"
 
 
+def _user_org_id(user_id: int) -> int:
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT org_id FROM users WHERE id = ?", (user_id,))
+    row = cursor.fetchone()
+    conn.close()
+    if row and "org_id" in row.keys() and row["org_id"] is not None:
+        return int(row["org_id"])
+    return 1
+
+
+def _documents_has_org_id(cursor) -> bool:
+    cursor.execute("PRAGMA table_info(documents)")
+    return "org_id" in {row[1] for row in cursor.fetchall()}
+
+
 def _apply_heading_style(para, level: int) -> None:
     level = max(1, min(4, level))
     try:
@@ -146,13 +162,22 @@ def register_uploaded_document(
 
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute(
-        """
-        INSERT INTO documents (user_id, template_id, filename, file_path, status)
-        VALUES (?, ?, ?, ?, ?)
-        """,
-        (user_id, template_id, safe_name, dest_path, status),
-    )
+    if _documents_has_org_id(cursor):
+        cursor.execute(
+            """
+            INSERT INTO documents (user_id, template_id, filename, file_path, status, org_id)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (user_id, template_id, safe_name, dest_path, status, _user_org_id(user_id)),
+        )
+    else:
+        cursor.execute(
+            """
+            INSERT INTO documents (user_id, template_id, filename, file_path, status)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (user_id, template_id, safe_name, dest_path, status),
+        )
     document_id = cursor.lastrowid
     conn.commit()
     conn.close()
@@ -169,13 +194,22 @@ def create_merged_document_record(
     conn = get_db()
     cursor = conn.cursor()
     filename = f"{project_name}_merged.docx"
-    cursor.execute(
-        """
-        INSERT INTO documents (user_id, template_id, filename, file_path, status)
-        VALUES (?, ?, ?, ?, 'completed')
-        """,
-        (user_id, template_id, filename, file_path),
-    )
+    if _documents_has_org_id(cursor):
+        cursor.execute(
+            """
+            INSERT INTO documents (user_id, template_id, filename, file_path, status, org_id)
+            VALUES (?, ?, ?, ?, 'completed', ?)
+            """,
+            (user_id, template_id, filename, file_path, _user_org_id(user_id)),
+        )
+    else:
+        cursor.execute(
+            """
+            INSERT INTO documents (user_id, template_id, filename, file_path, status)
+            VALUES (?, ?, ?, ?, 'completed')
+            """,
+            (user_id, template_id, filename, file_path),
+        )
     document_id = cursor.lastrowid
     conn.commit()
     conn.close()

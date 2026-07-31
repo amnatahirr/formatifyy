@@ -93,11 +93,16 @@ def create_project(
     base_document_path: Optional[str] = None,
     base_document_filename: Optional[str] = None,
 ) -> Dict[str, Any]:
-    tmpl = get_template_by_id(template_id)
-    if not tmpl:
-        raise HTTPException(status_code=400, detail="Template not found")
-
     user = _get_user(user_id)
+    user_org_id = int(user.get("org_id") or 1)
+
+    tmpl = get_template_by_id(template_id, org_id=user_org_id)
+    if not tmpl:
+        raise HTTPException(
+            status_code=400,
+            detail="Template not found or does not belong to your organization",
+        )
+
     invite_code = generate_invite_code()
     conn = get_db()
     cursor = conn.cursor()
@@ -106,12 +111,12 @@ def create_project(
         """
         INSERT INTO collaboration_projects
         (name, description, template_id, created_by, invite_code,
-         base_document_path, base_document_filename)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+         base_document_path, base_document_filename, org_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             name, description, template_id, user_id, invite_code,
-            base_document_path, base_document_filename,
+            base_document_path, base_document_filename, user_org_id,
         ),
     )
     project_id = cursor.lastrowid
@@ -183,6 +188,7 @@ def create_project(
         "owner_name": user.get("username"),
         "invite_code": invite_code,
         "status": "active",
+        "org_id": user_org_id,
         "base_document_id": base_document_id,
         "base_document_path": permanent_doc_path,
         "reports_sync": reports_sync,
@@ -578,6 +584,9 @@ def list_project_members(project_id: int) -> List[Dict[str, Any]]:
 
 
 def join_project_by_invite(user_id: int, invite_code: str) -> Dict[str, Any]:
+    user = _get_user(user_id)
+    user_org_id = int(user.get("org_id") or 1)
+
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute(
@@ -588,6 +597,14 @@ def join_project_by_invite(user_id: int, invite_code: str) -> Dict[str, Any]:
     if not project:
         conn.close()
         raise HTTPException(status_code=404, detail="Invalid invite code")
+
+    project_org = int(project["org_id"]) if "org_id" in project.keys() and project["org_id"] is not None else 1
+    if project_org != user_org_id:
+        conn.close()
+        raise HTTPException(
+            status_code=403,
+            detail="This project belongs to a different organization",
+        )
 
     project_id = project["id"]
     cursor.execute(

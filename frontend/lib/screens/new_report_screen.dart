@@ -1590,7 +1590,7 @@ class _NewReportScreenState extends State<NewReportScreen> {
         Uri.parse(
           '${ApiConfig.getBaseUrl()}/documents/create-report?user_id=$userId&template_id=$templateId',
         ),
-        headers: {'Content-Type': 'application/json'},
+        headers: ApiConfig.getHeaders(json: true),
         body: jsonEncode({
           'title': title,
           'content': content,
@@ -1684,6 +1684,7 @@ class _NewReportScreenState extends State<NewReportScreen> {
       );
 
       var request = http.MultipartRequest('POST', uri);
+      request.headers.addAll(ApiConfig.getHeaders());
       request.files.add(await http.MultipartFile.fromPath('file', file.path));
 
       var response = await request.send();

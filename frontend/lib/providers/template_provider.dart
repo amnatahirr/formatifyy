@@ -35,7 +35,7 @@ class TemplateProvider extends ChangeNotifier {
       final response = await http
           .get(
             Uri.parse("$baseUrl/templates/user/$userId"),
-            headers: {"Content-Type": "application/json"},
+            headers: ApiConfig.getHeaders(),
           )
           .timeout(
             Duration(seconds: 10),
@@ -81,7 +81,7 @@ class TemplateProvider extends ChangeNotifier {
       final response = await http
           .get(
             Uri.parse("$baseUrl/templates/university/$universityId"),
-            headers: {"Content-Type": "application/json"},
+            headers: ApiConfig.getHeaders(),
           )
           .timeout(
             Duration(seconds: 10),
@@ -172,7 +172,7 @@ class TemplateProvider extends ChangeNotifier {
       final response = await http
           .post(
             uri,
-            headers: {"Content-Type": "application/json"},
+            headers: ApiConfig.getHeaders(json: true),
             body: jsonEncode({
               "name": name,
               "required_sections": requiredSections,

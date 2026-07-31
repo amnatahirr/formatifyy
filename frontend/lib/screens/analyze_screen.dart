@@ -3058,6 +3058,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
       Uri.parse(
         '$_baseUrl/documents/analyze/${widget.documentId}?user_id=${auth.userId}',
       ),
+      headers: ApiConfig.getHeaders(),
     );
     if (resp.statusCode != 200) {
       throw Exception('Analysis failed (${resp.statusCode}): ${resp.body}');

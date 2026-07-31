@@ -108,85 +108,101 @@ Each section title paragraph MUST:
 """
 
 
-def get_all_templates() -> List[Dict[str, Any]]:
-    """Return all templates for general listing."""
+def _row_to_template(r) -> Dict[str, Any]:
+    req_sections = json.loads(r["required_sections"] or "[]")
+    rules = json.loads(r["formatting_rules"] or "{}")
+    markdown_rules = generate_markdown_rules(r["name"], req_sections, rules)
+    return {
+        "id": r["id"],
+        "name": r["name"],
+        "description": r["description"] or "",
+        "required_sections": req_sections,
+        "formatting_rules": rules,
+        "markdown_rules": markdown_rules,
+        "university_id": r["university_id"],
+        "department_id": r["department_id"] if "department_id" in r.keys() else None,
+        "org_id": r["org_id"] if "org_id" in r.keys() else None,
+        "created_by": r["created_by"],
+        "created_at": str(r["created_at"]),
+    }
+
+
+def get_all_templates(org_id: int | None = None) -> List[Dict[str, Any]]:
+    """Return all templates for general listing, optionally scoped to an org."""
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute("SELECT * FROM templates ORDER BY created_at DESC")
+    if org_id is not None:
+        cursor.execute(
+            "SELECT * FROM templates WHERE org_id = ? ORDER BY created_at DESC",
+            (org_id,),
+        )
+    else:
+        cursor.execute("SELECT * FROM templates ORDER BY created_at DESC")
     rows = cursor.fetchall()
     conn.close()
-
-    result = []
-    for r in rows:
-        req_sections = json.loads(r["required_sections"] or "[]")
-        rules = json.loads(r["formatting_rules"] or "{}")
-        markdown_rules = generate_markdown_rules(r["name"], req_sections, rules)
-        result.append({
-            "id": r["id"],
-            "name": r["name"],
-            "description": r["description"] or "",
-            "required_sections": req_sections,
-            "formatting_rules": rules,
-            "markdown_rules": markdown_rules,
-            "university_id": r["university_id"],
-            "department_id": r["department_id"] if "department_id" in r.keys() else None,
-            "created_by": r["created_by"],
-            "created_at": str(r["created_at"])
-        })
-    return result
+    return [_row_to_template(r) for r in rows]
 
 
-def get_templates_by_university(university_id: int) -> List[Dict[str, Any]]:
-    """Get all templates configured for a university."""
+def get_templates_by_university(
+    university_id: int,
+    org_id: int | None = None,
+) -> List[Dict[str, Any]]:
+    """Get all templates configured for a university (and optionally an org)."""
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute(
-        "SELECT * FROM templates WHERE university_id = ? ORDER BY created_at DESC",
-        (university_id,)
-    )
+    if org_id is not None:
+        cursor.execute(
+            """
+            SELECT * FROM templates
+            WHERE university_id = ? AND org_id = ?
+            ORDER BY created_at DESC
+            """,
+            (university_id, org_id),
+        )
+    else:
+        cursor.execute(
+            "SELECT * FROM templates WHERE university_id = ? ORDER BY created_at DESC",
+            (university_id,),
+        )
     rows = cursor.fetchall()
     conn.close()
-
-    result = []
-    for r in rows:
-        req_sections = json.loads(r["required_sections"] or "[]")
-        rules = json.loads(r["formatting_rules"] or "{}")
-        markdown_rules = generate_markdown_rules(r["name"], req_sections, rules)
-        result.append({
-            "id": r["id"],
-            "name": r["name"],
-            "description": r["description"] or "",
-            "required_sections": req_sections,
-            "formatting_rules": rules,
-            "markdown_rules": markdown_rules,
-            "university_id": r["university_id"],
-            "department_id": r["department_id"] if "department_id" in r.keys() else None,
-            "created_by": r["created_by"],
-            "created_at": str(r["created_at"])
-        })
-    return result
+    return [_row_to_template(r) for r in rows]
 
 
 def get_templates_by_user(user_id: int) -> List[Dict[str, Any]]:
-    """Get templates matching user's university."""
+    """Get templates matching user's university and org."""
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute("SELECT university_id FROM users WHERE id = ?", (user_id,))
+    cursor.execute(
+        "SELECT university_id, org_id FROM users WHERE id = ?",
+        (user_id,),
+    )
     row = cursor.fetchone()
     if not row:
         conn.close()
         return []
 
     university_id = row["university_id"]
+    user_org_id = row["org_id"] if "org_id" in row.keys() and row["org_id"] is not None else 1
     conn.close()
-    return get_templates_by_university(university_id)
+    return get_templates_by_university(university_id, org_id=int(user_org_id))
 
 
-def update_template(template_id: int, updates: Dict[str, Any]) -> Dict[str, Any] | None:
+def update_template(
+    template_id: int,
+    updates: Dict[str, Any],
+    org_id: int | None = None,
+) -> Dict[str, Any] | None:
     """Update an existing template. Returns the updated template or None."""
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute("SELECT id FROM templates WHERE id = ?", (template_id,))
+    if org_id is not None:
+        cursor.execute(
+            "SELECT id FROM templates WHERE id = ? AND org_id = ?",
+            (template_id, org_id),
+        )
+    else:
+        cursor.execute("SELECT id FROM templates WHERE id = ?", (template_id,))
     if not cursor.fetchone():
         conn.close()
         return None
@@ -211,19 +227,46 @@ def update_template(template_id: int, updates: Dict[str, Any]) -> Dict[str, Any]
 
     if not fields:
         conn.close()
-        return get_template_by_id(template_id)
+        return get_template_by_id(template_id, org_id=org_id)
 
     values.append(template_id)
-    cursor.execute(
-        f"UPDATE templates SET {', '.join(fields)} WHERE id = ?",
-        values,
-    )
+    if org_id is not None:
+        values.append(org_id)
+        cursor.execute(
+            f"UPDATE templates SET {', '.join(fields)} WHERE id = ? AND org_id = ?",
+            values,
+        )
+    else:
+        cursor.execute(
+            f"UPDATE templates SET {', '.join(fields)} WHERE id = ?",
+            values,
+        )
     conn.commit()
     conn.close()
-    return get_template_by_id(template_id)
+    return get_template_by_id(template_id, org_id=org_id)
 
 
-def get_template_by_id(template_id: Any) -> Dict[str, Any] | None:
+def delete_template(template_id: int, org_id: int | None = None) -> bool:
+    """Delete a template by id (optionally scoped to org). Returns True if deleted."""
+    conn = get_db()
+    cursor = conn.cursor()
+    if org_id is not None:
+        cursor.execute(
+            "DELETE FROM templates WHERE id = ? AND org_id = ?",
+            (template_id, org_id),
+        )
+    else:
+        cursor.execute("DELETE FROM templates WHERE id = ?", (template_id,))
+    deleted = cursor.rowcount > 0
+    conn.commit()
+    conn.close()
+    return deleted
+
+
+def get_template_by_id(
+    template_id: Any,
+    org_id: int | None = None,
+) -> Dict[str, Any] | None:
     """Retrieve details for a specific template (backward compatible with strings)."""
     # Map legacy string IDs to database integers
     legacy_map = {
@@ -242,26 +285,17 @@ def get_template_by_id(template_id: Any) -> Dict[str, Any] | None:
 
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute("SELECT * FROM templates WHERE id = ?", (db_id,))
+    if org_id is not None:
+        cursor.execute(
+            "SELECT * FROM templates WHERE id = ? AND org_id = ?",
+            (db_id, org_id),
+        )
+    else:
+        cursor.execute("SELECT * FROM templates WHERE id = ?", (db_id,))
     row = cursor.fetchone()
     conn.close()
 
     if not row:
         return None
 
-    req_sections = json.loads(row["required_sections"] or "[]")
-    rules = json.loads(row["formatting_rules"] or "{}")
-    markdown_rules = generate_markdown_rules(row["name"], req_sections, rules)
-
-    return {
-        "id": row["id"],
-        "name": row["name"],
-        "description": row["description"] or "",
-        "required_sections": req_sections,
-        "formatting_rules": rules,
-        "markdown_rules": markdown_rules,
-        "university_id": row["university_id"],
-        "department_id": row["department_id"] if "department_id" in row.keys() else None,
-        "created_by": row["created_by"],
-        "created_at": str(row["created_at"])
-    }
+    return _row_to_template(row)

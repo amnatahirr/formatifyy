@@ -144,11 +144,13 @@ class UserSignupRequest(BaseModel):
     university_id: Optional[int] = 1
     department_id: int
     current_semester: int
+    org_code: Optional[str] = None
 
 
 class UserLoginRequest(BaseModel):
     email: str
     password: str
+    org_code: Optional[str] = None
 
 
 class ChangePasswordRequest(BaseModel):

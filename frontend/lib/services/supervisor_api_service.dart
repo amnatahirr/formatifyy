@@ -74,12 +74,12 @@ class SupervisorApiService {
 
     switch (method) {
       case 'GET':
-        response = await http.get(uri);
+        response = await http.get(uri, headers: ApiConfig.getHeaders());
         break;
       case 'POST':
         response = await http.post(
           uri,
-          headers: {'Content-Type': 'application/json'},
+          headers: ApiConfig.getHeaders(json: true),
           body: jsonEncode(body ?? {}),
         );
         break;
@@ -287,7 +287,7 @@ class SupervisorApiService {
       '/supervisor/submissions/$submissionId/download',
       {'user_id': userId},
     );
-    final response = await http.get(uri);
+    final response = await http.get(uri, headers: ApiConfig.getHeaders());
     return _saveDownloadBytes(
       response: response,
       fallbackFilename: preferredFilename?.trim().isNotEmpty == true
@@ -307,7 +307,7 @@ class SupervisorApiService {
       '/supervisor/groups/$groupId/documents/$documentId/download',
       {'user_id': userId},
     );
-    final response = await http.get(uri);
+    final response = await http.get(uri, headers: ApiConfig.getHeaders());
     return _saveDownloadBytes(
       response: response,
       fallbackFilename: preferredFilename?.trim().isNotEmpty == true

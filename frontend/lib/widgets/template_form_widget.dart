@@ -363,7 +363,7 @@ class _TemplateFormWidgetState extends State<TemplateFormWidget> {
             Uri.parse(
               '$baseUrl/admin/templates?user_id=${authProvider.userId}&university_id=${widget.universityId}',
             ),
-            headers: {'Content-Type': 'application/json'},
+            headers: ApiConfig.getHeaders(json: true),
             body: jsonEncode(templateData),
           )
           .timeout(

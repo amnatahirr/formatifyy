@@ -4,10 +4,12 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:app_links/app_links.dart';
 import 'config/dev_user_config.dart';
+import 'services/auth_token_store.dart';
 import 'screens/login_screen.dart';
 import 'screens/student_dashboard.dart';
 import 'screens/admin_dashboard.dart';
 import 'screens/supervisor_dashboard.dart';
+import 'screens/super_admin/super_admin_screen.dart';
 import 'screens/mobile_qr_upload_screen.dart';
 import 'screens/mobile_qr_download_screen.dart';
 import 'providers/auth_provider.dart';
@@ -21,7 +23,13 @@ import 'theme/app_theme.dart';
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  try {
+    await AuthTokenStore.load().timeout(const Duration(seconds: 3));
+  } catch (e) {
+    debugPrint('[main] AuthTokenStore.load skipped: $e');
+  }
   // Dev auto-login is OFF unless BOTH dart-defines are set:
   //   flutter run --dart-define=USER_ID=member2 --dart-define=ENABLE_DEV_BOOTSTRAP=true
   const userId = String.fromEnvironment('USER_ID', defaultValue: '');
@@ -145,6 +153,7 @@ class _MyAppState extends State<MyApp> {
               '/student-dashboard': (_) => const StudentDashboard(),
               '/admin-dashboard': (_) => const AdminDashboard(),
               '/supervisor-dashboard': (_) => const SupervisorDashboard(),
+              '/super-admin': (_) => const SuperAdminScreen(),
               '/new-report': (_) => const StudentDashboard(initialIndex: 1),
               '/collaboration': (_) => const StudentDashboard(initialIndex: 3),
               '/collaboration/project': (context) {
@@ -187,19 +196,24 @@ class _AuthCheckState extends State<AuthCheck> {
   }
 
   Future<void> _restore() async {
-    final auth = context.read<AuthProvider>();
-    final theme = context.read<ThemeProvider>();
-    // Always clear leftover bootstrap/dev sessions and never auto-login on
-    // launch/hot-restart. User must sign in explicitly each cold start unless
-    // we later re-enable opt-in "Remember me" restore.
-    await auth.ensureCleanLaunch();
-    if (auth.isLoggedIn) {
-      // Dev bootstrap (--dart-define=USER_ID=…) still lands authenticated.
-      await theme.bindToUser(auth.userId);
-    } else {
-      await theme.resetToDefaultDark();
+    try {
+      final auth = context.read<AuthProvider>();
+      final theme = context.read<ThemeProvider>();
+      // Always clear leftover bootstrap/dev sessions and never auto-login on
+      // launch/hot-restart. User must sign in explicitly each cold start unless
+      // we later re-enable opt-in "Remember me" restore.
+      await auth.ensureCleanLaunch().timeout(const Duration(seconds: 4));
+      if (auth.isLoggedIn) {
+        // Dev bootstrap (--dart-define=USER_ID=…) still lands authenticated.
+        await theme.bindToUser(auth.userId).timeout(const Duration(seconds: 3));
+      } else {
+        await theme.resetToDefaultDark().timeout(const Duration(seconds: 3));
+      }
+    } catch (e) {
+      debugPrint('[AuthCheck] restore failed: $e');
+    } finally {
+      if (mounted) setState(() => _ready = true);
     }
-    if (mounted) setState(() => _ready = true);
   }
 
   @override

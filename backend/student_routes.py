@@ -7,9 +7,10 @@ import logging
 from datetime import date, datetime
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Body, HTTPException, Query
+from fastapi import APIRouter, Body, HTTPException, Query, Request
 
 from database import get_db
+from middleware.org_middleware import resolve_organization_from_request
 
 router = APIRouter(prefix="/api/student", tags=["Student"])
 logger = logging.getLogger(__name__)
@@ -19,20 +20,74 @@ def _row_to_dict(row) -> dict[str, Any]:
     return dict(row) if row is not None else {}
 
 
+def _table_has_column(cursor, table: str, column: str) -> bool:
+    cursor.execute(f"PRAGMA table_info({table})")
+    return any(row[1] == column for row in cursor.fetchall())
+
+
+def _request_org_id(request: Request | None) -> int | None:
+    if request is None:
+        return None
+    org_id = getattr(request.state, "org_id", None)
+    if org_id is not None:
+        return int(org_id)
+    org = getattr(request.state, "org", None)
+    if isinstance(org, dict) and org.get("id"):
+        return int(org["id"])
+    try:
+        return int(resolve_organization_from_request(request)["id"])
+    except Exception:
+        return None
+
+
+def _user_org_id(cursor, user_id: int) -> int:
+    cursor.execute("SELECT org_id FROM users WHERE id = ?", (user_id,))
+    row = cursor.fetchone()
+    return int(row["org_id"] or 1) if row else 1
+
+
+def _resolve_student_org_id(
+    cursor,
+    user_id: int,
+    request: Request | None = None,
+    *,
+    prefer_user: bool = True,
+) -> int:
+    """
+    Tenant for student routes.
+    Prefer users.org_id; optionally cross-check request.state.org_id.
+    """
+    user_org = _user_org_id(cursor, user_id)
+    req_org = _request_org_id(request)
+    if req_org is not None and int(req_org) != user_org:
+        raise HTTPException(
+            status_code=403,
+            detail="Your account does not belong to this organization.",
+        )
+    if prefer_user:
+        return user_org
+    return int(req_org) if req_org is not None else user_org
+
+
 def _require_student(user_id: int | None) -> dict[str, Any]:
     if user_id is None:
         raise HTTPException(status_code=401, detail="Student login required.")
 
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute("SELECT id, email, role, username FROM users WHERE id = ?", (user_id,))
+    cursor.execute(
+        "SELECT id, email, role, username, org_id FROM users WHERE id = ?",
+        (user_id,),
+    )
     user = cursor.fetchone()
     conn.close()
     if not user:
         raise HTTPException(status_code=404, detail="User not found.")
     if user["role"] != "student":
         raise HTTPException(status_code=403, detail="Student access required.")
-    return _row_to_dict(user)
+    data = _row_to_dict(user)
+    data["org_id"] = int(data.get("org_id") or 1)
+    return data
 
 
 def _parse_member_names(raw: Any) -> list[str]:
@@ -163,21 +218,43 @@ def _create_group_document_for_submission(
     return int(group_document_id)
 
 
-def _student_in_accepted_group(cursor, group_id: int, student_email: str):
+def _student_in_accepted_group(
+    cursor,
+    group_id: int,
+    student_email: str,
+    org_id: int | None = None,
+):
     """Return group row if [student_email] is leader or listed member of an accepted group."""
     email = (student_email or "").strip().lower()
-    cursor.execute(
-        """
-        SELECT id, title, project_title, supervisor_id, student_contact_email,
-               member_names, status, current_semester
-        FROM fyp_groups
-        WHERE id = ? AND status = 'accepted'
-        """,
-        (group_id,),
-    )
+    if org_id is not None and _table_has_column(cursor, "fyp_groups", "org_id"):
+        cursor.execute(
+            """
+            SELECT id, title, project_title, supervisor_id, student_contact_email,
+                   member_names, status, current_semester, org_id
+            FROM fyp_groups
+            WHERE id = ? AND status = 'accepted' AND COALESCE(org_id, 1) = ?
+            """,
+            (group_id, org_id),
+        )
+    else:
+        cursor.execute(
+            """
+            SELECT id, title, project_title, supervisor_id, student_contact_email,
+                   member_names, status, current_semester
+            FROM fyp_groups
+            WHERE id = ? AND status = 'accepted'
+            """,
+            (group_id,),
+        )
     group = cursor.fetchone()
     if not group or not email:
         return None
+
+    # Defensive: if org_id known and group has org_id, require match
+    if org_id is not None:
+        keys = set(group.keys()) if hasattr(group, "keys") else set()
+        if "org_id" in keys and int(group["org_id"] or 1) != int(org_id):
+            return None
 
     contact = (group["student_contact_email"] or "").strip().lower()
     if contact and contact == email:
@@ -191,13 +268,15 @@ def _student_in_accepted_group(cursor, group_id: int, student_email: str):
     # Fallback: assignment request leader / members linked to this group
     cursor.execute(
         """
-        SELECT student_leader_email, member_names
-        FROM assignment_requests
-        WHERE fyp_group_id = ? AND LOWER(TRIM(status)) = 'accepted'
-        ORDER BY id DESC
+        SELECT ar.student_leader_email, ar.member_names
+        FROM assignment_requests ar
+        JOIN supervisors s ON s.id = ar.supervisor_id
+        WHERE ar.fyp_group_id = ? AND LOWER(TRIM(ar.status)) = 'accepted'
+          AND (? IS NULL OR COALESCE(s.org_id, 1) = ?)
+        ORDER BY ar.id DESC
         LIMIT 1
         """,
-        (group_id,),
+        (group_id, org_id, org_id),
     )
     req = cursor.fetchone()
     if req:
@@ -481,16 +560,17 @@ def list_student_group_milestones(
     conn = get_db()
     cursor = conn.cursor()
     try:
-        group = _student_in_accepted_group(cursor, group_id, email)
+        org_id = int(student.get("org_id") or 1)
+        group = _student_in_accepted_group(cursor, group_id, email, org_id=org_id)
         if not group:
             raise HTTPException(status_code=404, detail="Group not found for this student.")
         cursor.execute(
             """
             SELECT id, title, project_title, progress, status
             FROM fyp_groups
-            WHERE id = ? AND status = 'accepted'
+            WHERE id = ? AND status = 'accepted' AND COALESCE(org_id, 1) = ?
             """,
-            (group_id,),
+            (group_id, org_id),
         )
         group = cursor.fetchone()
         if not group:
@@ -512,16 +592,23 @@ def list_student_group_milestones(
 
 
 @router.get("/supervisors")
-def list_student_supervisors(user_id: Annotated[int | None, Query()] = None):
+def list_student_supervisors(
+    request: Request,
+    user_id: Annotated[int | None, Query()] = None,
+):
     """
     List active supervisors for the Choose Supervisor form.
     Admin GET /admin/supervisors requires admin auth — this is the student-facing equivalent.
     Also returns departments for the form dropdown.
+    Scoped to the student's org_id (fallback: request org).
     """
-    _require_student(user_id)
+    student = _require_student(user_id)
     conn = get_db()
     cursor = conn.cursor()
     try:
+        org_id = _resolve_student_org_id(
+            cursor, int(student["id"]), request, prefer_user=True
+        )
         cursor.execute(
             """
             SELECT
@@ -537,8 +624,10 @@ def list_student_supervisors(user_id: Annotated[int | None, Query()] = None):
             FROM supervisors s
             LEFT JOIN departments d ON d.id = s.department_id
             WHERE COALESCE(s.is_active, 1) = 1
+              AND COALESCE(s.org_id, 1) = ?
             ORDER BY s.name ASC
-            """
+            """,
+            (org_id,),
         )
         supervisors = []
         for row in cursor.fetchall():
@@ -549,13 +638,24 @@ def list_student_supervisors(user_id: Annotated[int | None, Query()] = None):
             item["is_full"] = current >= max_groups
             supervisors.append(item)
 
-        cursor.execute(
-            """
-            SELECT id, name, code
-            FROM departments
-            ORDER BY name ASC
-            """
-        )
+        if _table_has_column(cursor, "departments", "org_id"):
+            cursor.execute(
+                """
+                SELECT id, name, code
+                FROM departments
+                WHERE COALESCE(org_id, 1) = ?
+                ORDER BY name ASC
+                """,
+                (org_id,),
+            )
+        else:
+            cursor.execute(
+                """
+                SELECT id, name, code
+                FROM departments
+                ORDER BY name ASC
+                """
+            )
         departments = [_row_to_dict(row) for row in cursor.fetchall()]
         return {
             "supervisors": supervisors,
@@ -566,22 +666,34 @@ def list_student_supervisors(user_id: Annotated[int | None, Query()] = None):
         conn.close()
 
 
-def _find_accepted_group_for_email(cursor, email: str):
+def _find_accepted_group_for_email(cursor, email: str, org_id: int | None = None):
     """Find an accepted fyp_groups row where email is contact or member."""
     email = (email or "").strip().lower()
     if not email:
         return None
-    cursor.execute(
-        """
-        SELECT id, title, project_title, supervisor_id, student_contact_email,
-               member_names, status, deadline_date, department_id, current_semester
-        FROM fyp_groups
-        WHERE status = 'accepted'
-        ORDER BY id DESC
-        """
-    )
+    if org_id is not None and _table_has_column(cursor, "fyp_groups", "org_id"):
+        cursor.execute(
+            """
+            SELECT id, title, project_title, supervisor_id, student_contact_email,
+                   member_names, status, deadline_date, department_id, current_semester, org_id
+            FROM fyp_groups
+            WHERE status = 'accepted' AND COALESCE(org_id, 1) = ?
+            ORDER BY id DESC
+            """,
+            (org_id,),
+        )
+    else:
+        cursor.execute(
+            """
+            SELECT id, title, project_title, supervisor_id, student_contact_email,
+                   member_names, status, deadline_date, department_id, current_semester
+            FROM fyp_groups
+            WHERE status = 'accepted'
+            ORDER BY id DESC
+            """
+        )
     for group in cursor.fetchall():
-        if _student_in_accepted_group(cursor, int(group["id"]), email):
+        if _student_in_accepted_group(cursor, int(group["id"]), email, org_id=org_id):
             return group
     return None
 
@@ -611,6 +723,7 @@ def get_assignment_request_status(
     conn = get_db()
     cursor = conn.cursor()
     try:
+        org_id = int(student.get("org_id") or 1)
         cursor.execute(
             """
             SELECT
@@ -634,20 +747,21 @@ def get_assignment_request_status(
                 g.status AS group_status,
                 g.deadline_date AS group_deadline_date
             FROM assignment_requests ar
-            LEFT JOIN supervisors s ON s.id = ar.supervisor_id
+            JOIN supervisors s ON s.id = ar.supervisor_id
             LEFT JOIN departments d ON d.id = COALESCE(ar.department_id, s.department_id)
             LEFT JOIN fyp_groups g ON g.id = ar.fyp_group_id
             WHERE LOWER(TRIM(ar.student_leader_email)) = LOWER(?)
+              AND COALESCE(s.org_id, 1) = ?
             ORDER BY datetime(ar.created_at) DESC, ar.id DESC
             LIMIT 1
             """,
-            (lookup_email,),
+            (lookup_email, org_id),
         )
         row = cursor.fetchone()
 
         # Member students: resolve via accepted group membership when not the leader
         if not row:
-            group = _find_accepted_group_for_email(cursor, lookup_email)
+            group = _find_accepted_group_for_email(cursor, lookup_email, org_id=org_id)
             if not group:
                 return {"found": False, "status": None, "email": lookup_email}
             cursor.execute(
@@ -753,6 +867,7 @@ def list_student_assignment_requests(user_id: Annotated[int | None, Query()] = N
     conn = get_db()
     cursor = conn.cursor()
     try:
+        org_id = int(student.get("org_id") or 1)
         cursor.execute(
             """
             SELECT
@@ -761,12 +876,13 @@ def list_student_assignment_requests(user_id: Annotated[int | None, Query()] = N
                 d.code AS department_code,
                 COALESCE(s.name, '') AS supervisor_name
             FROM assignment_requests ar
+            JOIN supervisors s ON s.id = ar.supervisor_id
             LEFT JOIN departments d ON d.id = ar.department_id
-            LEFT JOIN supervisors s ON s.id = ar.supervisor_id
             WHERE LOWER(TRIM(ar.student_leader_email)) = LOWER(?)
+              AND COALESCE(s.org_id, 1) = ?
             ORDER BY ar.created_at DESC, ar.id DESC
             """,
-            (email,),
+            (email, org_id),
         )
         rows = [_serialize_assignment_request(row) for row in cursor.fetchall()]
         return {"requests": rows, "count": len(rows)}
@@ -776,6 +892,7 @@ def list_student_assignment_requests(user_id: Annotated[int | None, Query()] = N
 
 @router.post("/assignment-requests")
 def create_assignment_request(
+    request: Request,
     payload: dict[str, Any] = Body(...),
     user_id: Annotated[int | None, Query()] = None,
 ):
@@ -829,13 +946,16 @@ def create_assignment_request(
     conn = get_db()
     cursor = conn.cursor()
     try:
+        org_id = _resolve_student_org_id(
+            cursor, int(student["id"]), request, prefer_user=True
+        )
         cursor.execute(
             """
-            SELECT id, name, max_groups, current_groups, is_active, department_id
+            SELECT id, name, max_groups, current_groups, is_active, department_id, org_id
             FROM supervisors
-            WHERE id = ?
+            WHERE id = ? AND COALESCE(org_id, 1) = ?
             """,
-            (supervisor_id,),
+            (supervisor_id, org_id),
         )
         supervisor = cursor.fetchone()
         if not supervisor:
@@ -856,12 +976,15 @@ def create_assignment_request(
         # Avoid duplicate pending requests to the same supervisor from this student
         cursor.execute(
             """
-            SELECT id FROM assignment_requests
-            WHERE supervisor_id = ?
-              AND LOWER(TRIM(student_leader_email)) = LOWER(?)
-              AND status = 'pending'
+            SELECT ar.id
+            FROM assignment_requests ar
+            JOIN supervisors s ON s.id = ar.supervisor_id
+            WHERE ar.supervisor_id = ?
+              AND LOWER(TRIM(ar.student_leader_email)) = LOWER(?)
+              AND ar.status = 'pending'
+              AND COALESCE(s.org_id, 1) = ?
             """,
-            (supervisor_id, student_email),
+            (supervisor_id, student_email, org_id),
         )
         if cursor.fetchone():
             raise HTTPException(
@@ -869,25 +992,48 @@ def create_assignment_request(
                 detail="You already have a pending request with this supervisor.",
             )
 
-        cursor.execute(
-            """
-            INSERT INTO assignment_requests
-                (supervisor_id, group_name, project_title, student_leader_name,
-                 student_leader_email, member_names, cosupervisor_name,
-                 department_id, status, fyp_group_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', NULL)
-            """,
-            (
-                supervisor_id,
-                group_name,
-                project_title,
-                student_leader_name,
-                student_leader_email,
-                member_names_json,
-                cosupervisor_name or None,
-                department_id,
-            ),
-        )
+        has_ar_org = _table_has_column(cursor, "assignment_requests", "org_id")
+        if has_ar_org:
+            cursor.execute(
+                """
+                INSERT INTO assignment_requests
+                    (supervisor_id, group_name, project_title, student_leader_name,
+                     student_leader_email, member_names, cosupervisor_name,
+                     department_id, status, fyp_group_id, org_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', NULL, ?)
+                """,
+                (
+                    supervisor_id,
+                    group_name,
+                    project_title,
+                    student_leader_name,
+                    student_leader_email,
+                    member_names_json,
+                    cosupervisor_name or None,
+                    department_id,
+                    org_id,
+                ),
+            )
+        else:
+            cursor.execute(
+                """
+                INSERT INTO assignment_requests
+                    (supervisor_id, group_name, project_title, student_leader_name,
+                     student_leader_email, member_names, cosupervisor_name,
+                     department_id, status, fyp_group_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', NULL)
+                """,
+                (
+                    supervisor_id,
+                    group_name,
+                    project_title,
+                    student_leader_name,
+                    student_leader_email,
+                    member_names_json,
+                    cosupervisor_name or None,
+                    department_id,
+                ),
+            )
         request_id = cursor.lastrowid
         conn.commit()
 
@@ -936,6 +1082,7 @@ def _serialize_student_final_submission(row) -> dict[str, Any]:
 
 @router.get("/semester-deadline")
 def get_student_semester_deadline(
+    request: Request,
     user_id: Annotated[int | None, Query()] = None,
 ):
     """
@@ -959,7 +1106,10 @@ def get_student_semester_deadline(
     conn = get_db()
     cursor = conn.cursor()
     try:
-        group = _find_accepted_group_for_email(cursor, email)
+        org_id = _resolve_student_org_id(
+            cursor, int(student["id"]), request, prefer_user=True
+        )
+        group = _find_accepted_group_for_email(cursor, email, org_id=org_id)
         group_id = None
         raw_sem = None
         source = None
@@ -1011,14 +1161,24 @@ def get_student_semester_deadline(
                 "reason": "semester_unset",
             }
 
-        cursor.execute(
-            """
-            SELECT id, semester, deadline_date
-            FROM semester_deadlines
-            WHERE semester = ?
-            """,
-            (semester,),
-        )
+        if _table_has_column(cursor, "semester_deadlines", "org_id"):
+            cursor.execute(
+                """
+                SELECT id, semester, deadline_date
+                FROM semester_deadlines
+                WHERE semester = ? AND COALESCE(org_id, 1) = ?
+                """,
+                (semester, org_id),
+            )
+        else:
+            cursor.execute(
+                """
+                SELECT id, semester, deadline_date
+                FROM semester_deadlines
+                WHERE semester = ?
+                """,
+                (semester,),
+            )
         dl = cursor.fetchone()
         if not dl or not dl["deadline_date"]:
             return {
@@ -1064,6 +1224,7 @@ def get_student_semester_deadline(
 
 @router.post("/final-submissions")
 def create_final_submission(
+    request: Request,
     user_id: Annotated[int | None, Query()] = None,
     payload: dict[str, Any] = Body(default_factory=dict),
 ):
@@ -1113,29 +1274,45 @@ def create_final_submission(
     conn = get_db()
     cursor = conn.cursor()
     try:
-        group = _student_in_accepted_group(cursor, group_id, student_email)
+        org_id = _resolve_student_org_id(
+            cursor, int(student["id"]), request, prefer_user=True
+        )
+        group = _student_in_accepted_group(cursor, group_id, student_email, org_id=org_id)
         if not group:
             raise HTTPException(
                 status_code=404,
                 detail="No accepted FYP group found for this student.",
             )
 
+        # Prefer group's org_id when present
+        group_keys = set(group.keys()) if hasattr(group, "keys") else set()
+        if "org_id" in group_keys and group["org_id"] is not None:
+            org_id = int(group["org_id"] or org_id)
+
         # Hard block after admin-managed semester deadline (if configured).
-        keys = group.keys() if hasattr(group, "keys") else []
-        semester = group["current_semester"] if "current_semester" in keys else None
+        semester = group["current_semester"] if "current_semester" in group_keys else None
         if semester is not None:
             try:
                 semester_int = int(semester)
             except (TypeError, ValueError):
                 semester_int = None
             if semester_int in (6, 7):
-                cursor.execute(
-                    """
-                    SELECT deadline_date FROM semester_deadlines
-                    WHERE semester = ?
-                    """,
-                    (semester_int,),
-                )
+                if _table_has_column(cursor, "semester_deadlines", "org_id"):
+                    cursor.execute(
+                        """
+                        SELECT deadline_date FROM semester_deadlines
+                        WHERE semester = ? AND COALESCE(org_id, 1) = ?
+                        """,
+                        (semester_int, org_id),
+                    )
+                else:
+                    cursor.execute(
+                        """
+                        SELECT deadline_date FROM semester_deadlines
+                        WHERE semester = ?
+                        """,
+                        (semester_int,),
+                    )
                 dl_row = cursor.fetchone()
                 if dl_row and dl_row["deadline_date"]:
                     try:
@@ -1169,24 +1346,46 @@ def create_final_submission(
                     detail="source_document_id not found for this student.",
                 )
 
-        cursor.execute(
-            """
-            INSERT INTO final_submissions
-                (group_id, supervisor_id, title, filename, status, analysis_report,
-                 source_document_id, student_contact_email, group_document_id)
-            VALUES (?, ?, ?, ?, 'pending', ?, ?, ?, ?)
-            """,
-            (
-                group_id,
-                supervisor_id,
-                title,
-                filename,
-                report_json,
-                source_document_id,
-                contact_email,
-                None,
-            ),
-        )
+        has_fs_org = _table_has_column(cursor, "final_submissions", "org_id")
+        if has_fs_org:
+            cursor.execute(
+                """
+                INSERT INTO final_submissions
+                    (group_id, supervisor_id, title, filename, status, analysis_report,
+                     source_document_id, student_contact_email, group_document_id, org_id)
+                VALUES (?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?)
+                """,
+                (
+                    group_id,
+                    supervisor_id,
+                    title,
+                    filename,
+                    report_json,
+                    source_document_id,
+                    contact_email,
+                    None,
+                    org_id,
+                ),
+            )
+        else:
+            cursor.execute(
+                """
+                INSERT INTO final_submissions
+                    (group_id, supervisor_id, title, filename, status, analysis_report,
+                     source_document_id, student_contact_email, group_document_id)
+                VALUES (?, ?, ?, ?, 'pending', ?, ?, ?, ?)
+                """,
+                (
+                    group_id,
+                    supervisor_id,
+                    title,
+                    filename,
+                    report_json,
+                    source_document_id,
+                    contact_email,
+                    None,
+                ),
+            )
         submission_id = cursor.lastrowid
 
         group_document_id = _create_group_document_for_submission(
@@ -1203,9 +1402,18 @@ def create_final_submission(
             (group_document_id, submission_id),
         )
 
-        cursor.execute("SELECT email, name FROM supervisors WHERE id = ?", (supervisor_id,))
+        cursor.execute(
+            "SELECT email, name FROM supervisors WHERE id = ? AND COALESCE(org_id, 1) = ?",
+            (supervisor_id, org_id),
+        )
         supervisor = cursor.fetchone()
         if supervisor and supervisor["email"]:
+            cursor.execute(
+                "SELECT id FROM users WHERE LOWER(email) = LOWER(?) AND COALESCE(org_id, 1) = ?",
+                (supervisor["email"], org_id),
+            )
+            user_row = cursor.fetchone()
+            notify_user_id = user_row["id"] if user_row else None
             cursor.execute(
                 """
                 INSERT INTO notifications
@@ -1213,7 +1421,7 @@ def create_final_submission(
                 VALUES (?, ?, ?, ?, ?, 0, ?, ?)
                 """,
                 (
-                    None,
+                    notify_user_id,
                     supervisor["email"],
                     "New final submission",
                     f"{group['title']} submitted '{title}' for review.",
@@ -1231,8 +1439,9 @@ def create_final_submission(
             FROM final_submissions fs
             JOIN fyp_groups fg ON fg.id = fs.group_id
             WHERE fs.id = ?
+              AND COALESCE(fg.org_id, 1) = ?
             """,
-            (submission_id,),
+            (submission_id, org_id),
         )
         row = cursor.fetchone()
         return {
@@ -1368,22 +1577,34 @@ def _plagiarism_payload_from_report(
     }
 
 
-def _require_student_group(cursor, group_id: int, email: str):
+def _require_student_group(cursor, group_id: int, email: str, org_id: int | None = None):
     """Accept contact leader or any listed group member (same as submit path)."""
-    group = _student_in_accepted_group(cursor, group_id, email)
+    group = _student_in_accepted_group(cursor, group_id, email, org_id=org_id)
     if not group:
         raise HTTPException(status_code=404, detail="Group not found for this student.")
     # Load full row used by plagiarism / status helpers
-    cursor.execute(
-        """
-        SELECT id, title, project_title, plagiarism_flagged, plagiarism_flag_reason,
-               plagiarism_flagged_at, student_contact_email, status, supervisor_id,
-               member_names
-        FROM fyp_groups
-        WHERE id = ? AND status = 'accepted'
-        """,
-        (group_id,),
-    )
+    if org_id is not None and _table_has_column(cursor, "fyp_groups", "org_id"):
+        cursor.execute(
+            """
+            SELECT id, title, project_title, plagiarism_flagged, plagiarism_flag_reason,
+                   plagiarism_flagged_at, student_contact_email, status, supervisor_id,
+                   member_names, org_id
+            FROM fyp_groups
+            WHERE id = ? AND status = 'accepted' AND COALESCE(org_id, 1) = ?
+            """,
+            (group_id, org_id),
+        )
+    else:
+        cursor.execute(
+            """
+            SELECT id, title, project_title, plagiarism_flagged, plagiarism_flag_reason,
+                   plagiarism_flagged_at, student_contact_email, status, supervisor_id,
+                   member_names
+            FROM fyp_groups
+            WHERE id = ? AND status = 'accepted'
+            """,
+            (group_id,),
+        )
     full = cursor.fetchone()
     if not full:
         raise HTTPException(status_code=404, detail="Group not found for this student.")
@@ -1421,7 +1642,9 @@ def get_final_submission_plagiarism(
         if not sub:
             raise HTTPException(status_code=404, detail="Submission not found.")
 
-        group = _require_student_group(cursor, sub["group_id"], email)
+        group = _require_student_group(
+            cursor, sub["group_id"], email, org_id=int(student.get("org_id") or 1)
+        )
         report = _parse_analysis_report_blob(sub["analysis_report"])
         payload = _plagiarism_payload_from_report(
             report, group_row=group, submission_id=sub["id"]
@@ -1451,7 +1674,9 @@ def get_group_plagiarism_report(
     conn = get_db()
     cursor = conn.cursor()
     try:
-        group = _require_student_group(cursor, group_id, email)
+        group = _require_student_group(
+            cursor, group_id, email, org_id=int(student.get("org_id") or 1)
+        )
         cursor.execute(
             """
             SELECT id, analysis_report, title, filename, status
@@ -1602,7 +1827,9 @@ def list_group_final_submissions(
     conn = get_db()
     cursor = conn.cursor()
     try:
-        _require_student_group(cursor, group_id, email)
+        _require_student_group(
+            cursor, group_id, email, org_id=int(student.get("org_id") or 1)
+        )
         cursor.execute(
             """
             SELECT id, group_id, title, filename, status, decision_note,
@@ -1757,9 +1984,11 @@ def _serialize_student_review_paragraphs(cursor, document_id: int) -> list[dict[
     return paragraphs
 
 
-def _require_student_group_document(cursor, group_id: int, document_id: int, email: str):
+def _require_student_group_document(
+    cursor, group_id: int, document_id: int, email: str, org_id: int | None = None
+):
     """Any accepted-group member may open the review document for feedback."""
-    _require_student_group(cursor, group_id, email)
+    _require_student_group(cursor, group_id, email, org_id=org_id)
     cursor.execute(
         """
         SELECT gd.id, gd.title, gd.filename, gd.status, gd.submitted_at,
@@ -1769,8 +1998,9 @@ def _require_student_group_document(cursor, group_id: int, document_id: int, ema
         WHERE gd.id = ?
           AND gd.group_id = ?
           AND fg.status = 'accepted'
+          AND (? IS NULL OR COALESCE(fg.org_id, 1) = ?)
         """,
-        (document_id, group_id),
+        (document_id, group_id, org_id, org_id),
     )
     doc = cursor.fetchone()
     if not doc:
@@ -1778,7 +2008,7 @@ def _require_student_group_document(cursor, group_id: int, document_id: int, ema
     return doc
 
 
-def _require_student_comment(cursor, comment_id: int, email: str):
+def _require_student_comment(cursor, comment_id: int, email: str, org_id: int | None = None):
     """Any accepted-group member may resolve/reply to comments on their document."""
     cursor.execute(
         """
@@ -1790,13 +2020,14 @@ def _require_student_comment(cursor, comment_id: int, email: str):
         JOIN fyp_groups fg ON fg.id = gd.group_id
         WHERE dc.id = ?
           AND fg.status = 'accepted'
+          AND (? IS NULL OR COALESCE(fg.org_id, 1) = ?)
         """,
-        (comment_id,),
+        (comment_id, org_id, org_id),
     )
     row = cursor.fetchone()
     if not row:
         raise HTTPException(status_code=404, detail="Comment not found.")
-    _require_student_group(cursor, int(row["group_id"]), email)
+    _require_student_group(cursor, int(row["group_id"]), email, org_id=org_id)
     return row
 
 
@@ -1818,7 +2049,9 @@ def get_student_document_comments(
     conn = get_db()
     cursor = conn.cursor()
     try:
-        doc = _require_student_group_document(cursor, group_id, document_id, email)
+        doc = _require_student_group_document(
+            cursor, group_id, document_id, email, org_id=int(student.get("org_id") or 1)
+        )
         # Backfill paragraphs for older submissions (same helper supervisor review uses)
         from supervisor_routes import _ensure_document_paragraphs
 
@@ -1859,7 +2092,9 @@ def resolve_student_comment(
     conn = get_db()
     cursor = conn.cursor()
     try:
-        comment = _require_student_comment(cursor, comment_id, email)
+        comment = _require_student_comment(
+            cursor, comment_id, email, org_id=int(student.get("org_id") or 1)
+        )
         if bool(comment["is_resolved"]):
             return {
                 "success": True,
@@ -1922,7 +2157,9 @@ def reply_to_student_comment(
     conn = get_db()
     cursor = conn.cursor()
     try:
-        parent = _require_student_comment(cursor, comment_id, email)
+        parent = _require_student_comment(
+            cursor, comment_id, email, org_id=int(student.get("org_id") or 1)
+        )
         if parent["parent_comment_id"] is not None:
             raise HTTPException(
                 status_code=400,
@@ -1947,14 +2184,21 @@ def reply_to_student_comment(
         reply_id = cursor.lastrowid
 
         # Notify supervisor so they can open review from their mobile inbox
+        org_id = int(student.get("org_id") or 1)
         cursor.execute(
-            "SELECT email, name FROM supervisors WHERE id = ?",
-            (parent["supervisor_id"],),
+            "SELECT email, name FROM supervisors WHERE id = ? AND COALESCE(org_id, 1) = ?",
+            (parent["supervisor_id"], org_id),
         )
         supervisor = cursor.fetchone()
         student_name = (student.get("username") or student.get("name") or "Student").strip()
         if supervisor and supervisor["email"]:
             snippet = reply_text[:120] + ("…" if len(reply_text) > 120 else "")
+            cursor.execute(
+                "SELECT id FROM users WHERE LOWER(email) = LOWER(?) AND COALESCE(org_id, 1) = ?",
+                (supervisor["email"], org_id),
+            )
+            user_row = cursor.fetchone()
+            notify_user_id = user_row["id"] if user_row else None
             cursor.execute(
                 """
                 INSERT INTO notifications
@@ -1962,7 +2206,7 @@ def reply_to_student_comment(
                 VALUES (?, ?, ?, ?, ?, 0, ?, ?)
                 """,
                 (
-                    None,
+                    notify_user_id,
                     supervisor["email"],
                     "Student replied to your comment",
                     f"{student_name}: {snippet}",

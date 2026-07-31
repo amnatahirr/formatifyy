@@ -18,6 +18,10 @@ def _row_to_dict(row) -> dict[str, Any]:
     return dict(row) if row is not None else {}
 
 
+def _supervisor_org_id(supervisor: dict[str, Any]) -> int:
+    return int(supervisor.get("org_id") or 1)
+
+
 def _parse_member_names(raw: Any) -> list[str]:
     if raw is None:
         return []
@@ -67,20 +71,23 @@ def _display_name_from_member_label(label: str) -> str:
     return text
 
 
-def _lookup_user_profile_by_email(cursor, email: str | None) -> dict[str, Any] | None:
+def _lookup_user_profile_by_email(
+    cursor, email: str | None, org_id: int
+) -> dict[str, Any] | None:
     """Return users.department_id / current_semester / username for an email, if any."""
     cleaned = (email or "").strip().lower()
     if not cleaned or "@" not in cleaned:
         return None
     cursor.execute(
         """
-        SELECT id, username, email, department_id, current_semester
+        SELECT id, username, email, department_id, current_semester, org_id
         FROM users
         WHERE LOWER(TRIM(email)) = ?
           AND role = 'student'
+          AND COALESCE(org_id, 1) = ?
         LIMIT 1
         """,
-        (cleaned,),
+        (cleaned, org_id),
     )
     row = cursor.fetchone()
     return _row_to_dict(row) if row else None
@@ -93,6 +100,7 @@ def _collect_member_profile_mismatches(
     leader_department_id: int | None,
     leader_semester: int | None,
     member_labels: list[str],
+    org_id: int,
 ) -> list[dict[str, Any]]:
     """
     Informational only: compare resolvable member profiles to the leader.
@@ -111,7 +119,7 @@ def _collect_member_profile_mismatches(
         if not email or email in seen_emails:
             continue
         seen_emails.add(email)
-        profile = _lookup_user_profile_by_email(cursor, email)
+        profile = _lookup_user_profile_by_email(cursor, email, org_id)
         if not profile:
             continue
 
@@ -225,13 +233,14 @@ def _is_group_behind(deadline_value: Any, progress: float) -> bool:
     return deadline < date.today() and progress < 100
 
 
-def _resolve_default_deadline(cursor, department_id: int | None) -> str:
+def _resolve_default_deadline(cursor, department_id: int | None, org_id: int) -> str:
     """Pick nearest upcoming department/global deadline, else +45 days."""
-    params: list[Any] = []
+    params: list[Any] = [org_id]
     query = """
         SELECT due_date
         FROM deadlines
         WHERE date(due_date) >= date('now')
+          AND COALESCE(org_id, 1) = ?
     """
     if department_id is not None:
         query += " AND (applies_to_all = 1 OR department_id = ?)"
@@ -253,7 +262,10 @@ def _require_supervisor(user_id: int | None) -> dict[str, Any]:
 
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute("SELECT id, email, role, username FROM users WHERE id = ?", (user_id,))
+    cursor.execute(
+        "SELECT id, email, role, username, org_id FROM users WHERE id = ?",
+        (user_id,),
+    )
     user = cursor.fetchone()
     if not user:
         conn.close()
@@ -262,14 +274,16 @@ def _require_supervisor(user_id: int | None) -> dict[str, Any]:
         conn.close()
         raise HTTPException(status_code=403, detail="Supervisor access required.")
 
+    user_org = int(user["org_id"] or 1)
     cursor.execute(
         """
         SELECT s.*, d.name AS department_name, d.code AS department_code
         FROM supervisors s
         LEFT JOIN departments d ON d.id = s.department_id
         WHERE LOWER(s.email) = LOWER(?)
+          AND COALESCE(s.org_id, 1) = ?
         """,
-        (user["email"],),
+        (user["email"], user_org),
     )
     supervisor = cursor.fetchone()
     conn.close()
@@ -278,7 +292,9 @@ def _require_supervisor(user_id: int | None) -> dict[str, Any]:
             status_code=404,
             detail="Supervisor profile not found. Ask an admin to add your account.",
         )
-    return _row_to_dict(supervisor)
+    data = _row_to_dict(supervisor)
+    data["org_id"] = int(data.get("org_id") or user_org)
+    return data
 
 
 def _create_notification(
@@ -290,12 +306,16 @@ def _create_notification(
     notification_type: str,
     related_type: str,
     related_id: int,
+    org_id: int,
 ) -> None:
     email = (recipient_email or "").strip().lower()
     if not email:
         return
 
-    cursor.execute("SELECT id FROM users WHERE LOWER(email) = LOWER(?)", (email,))
+    cursor.execute(
+        "SELECT id FROM users WHERE LOWER(email) = LOWER(?) AND COALESCE(org_id, 1) = ?",
+        (email, org_id),
+    )
     user_row = cursor.fetchone()
     user_id = user_row["id"] if user_row else None
 
@@ -487,9 +507,10 @@ def get_supervisor_home(user_id: Annotated[int | None, Query()] = None):
         SELECT id, title, project_title, status, progress, member_names, deadline_date, created_at
         FROM fyp_groups
         WHERE supervisor_id = ? AND status = 'accepted'
+          AND COALESCE(org_id, 1) = ?
         ORDER BY created_at DESC, id DESC
         """,
-        (supervisor_id,),
+        (supervisor_id, _supervisor_org_id(supervisor)),
     )
     groups = [_serialize_group(row) for row in cursor.fetchall()]
 
@@ -525,8 +546,9 @@ def list_my_groups(
         SELECT id, title, project_title, status, progress, member_names, deadline_date, created_at
         FROM fyp_groups
         WHERE supervisor_id = ? AND status = 'accepted'
+          AND COALESCE(org_id, 1) = ?
         """,
-        (supervisor_id,),
+        (supervisor_id, _supervisor_org_id(supervisor)),
     )
     all_groups = [_serialize_group(row) for row in cursor.fetchall()]
     conn.close()
@@ -653,8 +675,9 @@ def discard_group(
             SELECT id, title, project_title, status, student_contact_email, member_names
             FROM fyp_groups
             WHERE id = ? AND supervisor_id = ?
+              AND COALESCE(org_id, 1) = ?
             """,
-            (group_id, supervisor_id),
+            (group_id, supervisor_id, _supervisor_org_id(supervisor)),
         )
         group = cursor.fetchone()
         if not group:
@@ -707,6 +730,7 @@ def discard_group(
                 notification_type="group_discarded",
                 related_type="fyp_group",
                 related_id=group_id,
+                org_id=_supervisor_org_id(supervisor),
             )
 
         conn.commit()
@@ -782,10 +806,12 @@ def accept_assignment_request(
             """
             SELECT ar.*, d.name AS department_name, d.code AS department_code
             FROM assignment_requests ar
+            JOIN supervisors s ON s.id = ar.supervisor_id
             LEFT JOIN departments d ON d.id = ar.department_id
             WHERE ar.id = ? AND ar.supervisor_id = ?
+              AND COALESCE(s.org_id, 1) = ?
             """,
-            (request_id, supervisor_id),
+            (request_id, supervisor_id, _supervisor_org_id(supervisor)),
         )
         request_row = cursor.fetchone()
         if not request_row:
@@ -807,9 +833,10 @@ def accept_assignment_request(
             members = json.dumps([request_row["student_leader_name"]])
         member_labels = _parse_member_names(members)
         leader_email = (request_row["student_leader_email"] or "").strip() or None
+        org_id = _supervisor_org_id(supervisor)
 
         # Prefill group department/semester from the LEADER's user profile.
-        leader_profile = _lookup_user_profile_by_email(cursor, leader_email)
+        leader_profile = _lookup_user_profile_by_email(cursor, leader_email, org_id)
         leader_department_id = None
         leader_semester = None
         if leader_profile:
@@ -835,9 +862,10 @@ def accept_assignment_request(
             leader_department_id=department_id if department_id is not None else leader_department_id,
             leader_semester=current_semester,
             member_labels=member_labels,
+            org_id=org_id,
         )
 
-        deadline = _resolve_default_deadline(cursor, department_id)
+        deadline = _resolve_default_deadline(cursor, department_id, org_id)
         req_keys = set(request_row.keys()) if hasattr(request_row, "keys") else set()
         cosupervisor_name = (
             str(request_row["cosupervisor_name"]).strip()
@@ -850,8 +878,8 @@ def accept_assignment_request(
             INSERT INTO fyp_groups
                 (supervisor_id, title, project_title, status, progress, member_names,
                  deadline_date, department_id, student_contact_email, cosupervisor_name,
-                 current_semester)
-            VALUES (?, ?, ?, 'accepted', 0, ?, ?, ?, ?, ?, ?)
+                 current_semester, org_id)
+            VALUES (?, ?, ?, 'accepted', 0, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 supervisor_id,
@@ -863,6 +891,7 @@ def accept_assignment_request(
                 leader_email,
                 cosupervisor_name,
                 current_semester,
+                org_id,
             ),
         )
         group_id = cursor.lastrowid
@@ -893,6 +922,7 @@ def accept_assignment_request(
             notification_type="assignment_accepted",
             related_type="assignment_request",
             related_id=request_id,
+            org_id=_supervisor_org_id(supervisor),
         )
 
         conn.commit()
@@ -953,10 +983,12 @@ def reject_assignment_request(
             """
             SELECT ar.*, d.name AS department_name, d.code AS department_code
             FROM assignment_requests ar
+            JOIN supervisors s ON s.id = ar.supervisor_id
             LEFT JOIN departments d ON d.id = ar.department_id
             WHERE ar.id = ? AND ar.supervisor_id = ?
+              AND COALESCE(s.org_id, 1) = ?
             """,
-            (request_id, supervisor_id),
+            (request_id, supervisor_id, _supervisor_org_id(supervisor)),
         )
         request_row = cursor.fetchone()
         if not request_row:
@@ -986,6 +1018,7 @@ def reject_assignment_request(
             notification_type="assignment_rejected",
             related_type="assignment_request",
             related_id=request_id,
+            org_id=_supervisor_org_id(supervisor),
         )
 
         conn.commit()
@@ -1414,6 +1447,7 @@ def add_document_comment(
                 notification_type="document_comment",
                 related_type="document_comment",
                 related_id=comment_id,
+                org_id=_supervisor_org_id(supervisor),
             )
 
         # Mark document + linked final submission as needing revision so Status Tracker updates
@@ -1805,6 +1839,7 @@ def _decide_submission(
                 notification_type=f"submission_{new_status}",
                 related_type="final_submission",
                 related_id=submission_id,
+                org_id=_supervisor_org_id(supervisor),
             )
 
         group_doc_id = row["group_document_id"] if "group_document_id" in row.keys() else None
@@ -2225,6 +2260,7 @@ async def flag_group_plagiarism(
             notification_type="plagiarism_flag",
             related_type="fyp_group",
             related_id=group_id,
+            org_id=_supervisor_org_id(supervisor),
         )
         conn.commit()
         return {
@@ -2262,14 +2298,17 @@ def _serialize_meeting_note(row) -> dict[str, Any]:
     }
 
 
-def _require_accepted_group(cursor, group_id: int, supervisor_id: int):
+def _require_accepted_group(
+    cursor, group_id: int, supervisor_id: int, org_id: int | None = None
+):
     cursor.execute(
         """
         SELECT id, title, project_title, student_contact_email
         FROM fyp_groups
         WHERE id = ? AND supervisor_id = ? AND status = 'accepted'
+          AND (? IS NULL OR COALESCE(org_id, 1) = ?)
         """,
-        (group_id, supervisor_id),
+        (group_id, supervisor_id, org_id, org_id),
     )
     row = cursor.fetchone()
     if not row:
@@ -2289,7 +2328,9 @@ def list_meeting_notes(
     conn = get_db()
     cursor = conn.cursor()
     try:
-        group = _require_accepted_group(cursor, group_id, supervisor_id)
+        group = _require_accepted_group(
+            cursor, group_id, supervisor_id, org_id=_supervisor_org_id(supervisor)
+        )
         cursor.execute(
             """
             SELECT mn.*, g.title AS group_title, g.project_title AS project_title
@@ -2333,7 +2374,9 @@ def create_meeting_note(
     conn = get_db()
     cursor = conn.cursor()
     try:
-        group = _require_accepted_group(cursor, group_id, supervisor_id)
+        group = _require_accepted_group(
+            cursor, group_id, supervisor_id, org_id=_supervisor_org_id(supervisor)
+        )
         cursor.execute(
             """
             INSERT INTO meeting_notes
@@ -2358,6 +2401,7 @@ def create_meeting_note(
             notification_type="meeting_note",
             related_type="meeting_note",
             related_id=note_id,
+            org_id=_supervisor_org_id(supervisor),
         )
         conn.commit()
 

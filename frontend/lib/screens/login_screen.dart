@@ -5,8 +5,13 @@ import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:provider/provider.dart';
 import '../config/api_config.dart';
+import '../config/dev_user_config.dart';
 import '../providers/auth_provider.dart';
+
 import '../services/login_credentials_store.dart';
+
+import '../services/super_admin_api_service.dart';
+
 import '../theme/app_theme.dart';
 import '../utils/responsive.dart';
 
@@ -38,9 +43,19 @@ class _LoginScreenState extends State<LoginScreen> {
   final _passwordController = TextEditingController();
   final _firstNameController = TextEditingController();
   final _lastNameController = TextEditingController();
+
   final _emailFocusNode = FocusNode();
   bool _isSignupMode = false;
   List<SavedLoginAccount> _savedAccounts = const [];
+
+  final _orgCodeController = TextEditingController();
+  bool _isSignupMode = false;
+  /// false until user continues with a valid organization code
+  bool _orgResolved = false;
+  bool _resolvingOrg = false;
+  String? _orgResolveError;
+  bool _allowSelfSignup = true;
+
 
   List<Map<String, dynamic>> _departments = const [];
   bool _loadingDepartments = false;
@@ -115,6 +130,7 @@ class _LoginScreenState extends State<LoginScreen> {
     _firstNameController.dispose();
     _lastNameController.dispose();
     _emailFocusNode.dispose();
+    _orgCodeController.dispose();
     super.dispose();
   }
 
@@ -368,120 +384,322 @@ class _LoginScreenState extends State<LoginScreen> {
           ),
         ],
       ),
-      child: _isSignupMode
-          ? _buildSignupFields(showCompactBrand: showCompactBrand)
-          : _buildLoginFields(showCompactBrand: showCompactBrand),
+      child: !_orgResolved
+          ? _buildOrgCodeFields(showCompactBrand: showCompactBrand)
+          : _isSignupMode
+              ? _buildSignupFields(showCompactBrand: showCompactBrand)
+              : _buildLoginFields(showCompactBrand: showCompactBrand),
     );
   }
 
-  Widget _buildLoginFields({required bool showCompactBrand}) {
-    return AutofillGroup(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          if (showCompactBrand) ...[
-            _buildBrandMark(centered: true),
-            const SizedBox(height: 28),
-          ],
-          const Text(
-            'Welcome Back',
-            style: TextStyle(
-              fontSize: 26,
-              fontWeight: FontWeight.w800,
-              color: Colors.white,
-              letterSpacing: -0.3,
-            ),
-          ),
-          const SizedBox(height: 8),
-          const Text(
-            'Enter your details to access your dashboard.',
-            style: TextStyle(fontSize: 14, color: _AuthColors.muted, height: 1.4),
-          ),
+  Widget _buildOrgCodeFields({required bool showCompactBrand}) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (showCompactBrand) ...[
+          _buildBrandMark(centered: true),
           const SizedBox(height: 28),
-          _buildEmailAutocompleteField(),
-          const SizedBox(height: 14),
-          _buildTextField(
-            controller: _passwordController,
-            hint: 'Password',
-            icon: Icons.lock_outline_rounded,
-            obscure: !_isPasswordVisible,
-            autofillHints: const [AutofillHints.password],
-            textInputAction: TextInputAction.done,
-            onSubmitted: (_) => _login(context),
-            suffix: IconButton(
-              onPressed: () =>
-                  setState(() => _isPasswordVisible = !_isPasswordVisible),
-              icon: Icon(
-                _isPasswordVisible
-                    ? Icons.visibility_off_outlined
-                    : Icons.visibility_outlined,
-                color: _AuthColors.mutedSoft,
-                size: 20,
-              ),
+        ],
+        const Text(
+          'Welcome to Formatify',
+          style: TextStyle(
+            fontSize: 26,
+            fontWeight: FontWeight.w800,
+            color: Colors.white,
+            letterSpacing: -0.3,
+          ),
+        ),
+        const SizedBox(height: 8),
+        const Text(
+          'Enter your organization code to continue.',
+          style: TextStyle(fontSize: 14, color: _AuthColors.muted, height: 1.4),
+        ),
+        const SizedBox(height: 28),
+        _buildTextField(
+          controller: _orgCodeController,
+          hint: 'Organization Code (e.g. COMSATS-LHR)',
+          icon: Icons.apartment_rounded,
+          textCapitalization: TextCapitalization.characters,
+        ),
+        const SizedBox(height: 14),
+        if (_orgResolveError != null) ...[
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: const Color(0xFF3F1D2E),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: const Color(0xFFE11D48).withOpacity(0.5)),
+            ),
+            child: Text(
+              _orgResolveError!,
+              style: const TextStyle(color: Color(0xFFFFB4C0), fontSize: 13),
             ),
           ),
           const SizedBox(height: 14),
-          Row(
-            children: [
-              SizedBox(
-                height: 20,
-                width: 20,
-                child: Checkbox(
-                  value: _rememberMe,
-                  onChanged: (v) => setState(() => _rememberMe = v ?? true),
-                  activeColor: _AuthColors.accentDeep,
-                  checkColor: Colors.white,
-                  side: const BorderSide(color: _AuthColors.border, width: 1.4),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  visualDensity: VisualDensity.compact,
+        ],
+        _buildPrimaryButton(
+          label: _resolvingOrg ? 'Checking…' : 'Continue',
+          onPressed: _resolvingOrg ? () {} : () => _resolveOrganization(),
+        ),
+        const SizedBox(height: 12),
+        TextButton(
+          onPressed: () => Navigator.of(context).pushNamed('/super-admin'),
+          child: Text(
+            'Super Admin (organizations)',
+            style: TextStyle(color: Colors.white.withOpacity(0.55), fontSize: 13),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _resolveOrganization() async {
+    final code = _orgCodeController.text.trim();
+    if (code.isEmpty) {
+      setState(() => _orgResolveError = 'Please enter an organization code.');
+      return;
+    }
+    setState(() {
+      _resolvingOrg = true;
+      _orgResolveError = null;
+    });
+    try {
+      final info = await SuperAdminApiService().resolveOrganization(code);
+      DevUserConfig.bindTenant(
+        code: (info['org_code'] ?? code).toString(),
+        name: (info['org_name'] ?? '').toString(),
+        plan: (info['plan'] ?? '').toString(),
+        modules: info['modules'] is List ? info['modules'] as List : null,
+        allowSignup: info['allow_self_signup'] == true,
+        color: (info['primary_color'] ?? '').toString(),
+      );
+      if (!mounted) return;
+      setState(() {
+        _orgResolved = true;
+        _allowSelfSignup = DevUserConfig.allowSelfSignup;
+        _isSignupMode = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _orgResolveError = e.toString().replaceFirst('Exception: ', ''));
+    } finally {
+      if (mounted) setState(() => _resolvingOrg = false);
+    }
+  }
+
+Widget _buildLoginFields({required bool showCompactBrand}) {
+  return AutofillGroup(
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (showCompactBrand) ...[
+          _buildBrandMark(centered: true),
+          const SizedBox(height: 28),
+        ],
+
+        const Text(
+          'Welcome Back',
+          style: TextStyle(
+            fontSize: 26,
+            fontWeight: FontWeight.w800,
+            color: Colors.white,
+            letterSpacing: -0.3,
+          ),
+        ),
+
+        const SizedBox(height: 8),
+
+        Text(
+          DevUserConfig.orgName,
+          style: const TextStyle(
+            fontSize: 14,
+            color: _AuthColors.accent,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+
+        const SizedBox(height: 4),
+
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                'Org: ${DevUserConfig.orgCode}',
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: _AuthColors.muted,
                 ),
               ),
-              const SizedBox(width: 8),
-              const Text(
-                'Remember me',
+            ),
+            TextButton(
+              onPressed: () => setState(() {
+                _orgResolved = false;
+                _isSignupMode = false;
+                context.read<AuthProvider>().clearError();
+              }),
+              style: TextButton.styleFrom(
+                foregroundColor: _AuthColors.accent,
+                padding: EdgeInsets.zero,
+                minimumSize: Size.zero,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              child: const Text(
+                'Change',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
+        ),
+
+        const SizedBox(height: 8),
+
+        const Text(
+          'Enter your details to access your dashboard.',
+          style: TextStyle(
+            fontSize: 14,
+            color: _AuthColors.muted,
+            height: 1.4,
+          ),
+        ),
+
+        const SizedBox(height: 28),
+
+        _buildEmailAutocompleteField(),
+
+        const SizedBox(height: 14),
+
+        _buildTextField(
+          controller: _passwordController,
+          hint: 'Password',
+          icon: Icons.lock_outline_rounded,
+          obscure: !_isPasswordVisible,
+          autofillHints: const [AutofillHints.password],
+          textInputAction: TextInputAction.done,
+          onSubmitted: (_) => _login(context),
+          suffix: IconButton(
+            onPressed: () =>
+                setState(() => _isPasswordVisible = !_isPasswordVisible),
+            icon: Icon(
+              _isPasswordVisible
+                  ? Icons.visibility_off_outlined
+                  : Icons.visibility_outlined,
+              color: _AuthColors.mutedSoft,
+              size: 20,
+            ),
+          ),
+        ),
+
+        const SizedBox(height: 14),
+
+        Row(
+          children: [
+            SizedBox(
+              height: 20,
+              width: 20,
+              child: Checkbox(
+                value: _rememberMe,
+                onChanged: (v) => setState(() => _rememberMe = v ?? true),
+                activeColor: _AuthColors.accentDeep,
+                checkColor: Colors.white,
+                side: const BorderSide(
+                  color: _AuthColors.border,
+                  width: 1.4,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                visualDensity: VisualDensity.compact,
+              ),
+            ),
+            const SizedBox(width: 8),
+            const Text(
+              'Remember me',
+              style: TextStyle(
+                fontSize: 13,
+                color: _AuthColors.muted,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            const Spacer(),
+            TextButton(
+              onPressed: () {},
+              style: TextButton.styleFrom(
+                foregroundColor: _AuthColors.accent,
+                padding: EdgeInsets.zero,
+                minimumSize: Size.zero,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              child: const Text(
+                'Forgot password?',
                 style: TextStyle(
                   fontSize: 13,
-                  color: _AuthColors.muted,
-                  fontWeight: FontWeight.w500,
+                  fontWeight: FontWeight.w600,
                 ),
               ),
-              const Spacer(),
-              TextButton(
-                onPressed: () {},
-                style: TextButton.styleFrom(
-                  foregroundColor: _AuthColors.accent,
-                  padding: EdgeInsets.zero,
-                  minimumSize: Size.zero,
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                ),
-                child: const Text(
-                  'Forgot password?',
-                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-                ),
-              ),
-            ],
+            ),
+          ],
+        ),
+
+        const SizedBox(height: 18),
+
+        _buildErrorBanner(),
+
+        _buildPrimaryButton(
+          label: 'Sign In',
+          onPressed: () => _login(context),
+        ),
+
+        const SizedBox(height: 12),
+
+        TextButton(
+          onPressed: () =>
+              Navigator.of(context).pushNamed('/super-admin'),
+          child: Text(
+            'Super Admin (organizations)',
+            style: TextStyle(
+              color: Colors.white.withOpacity(0.55),
+              fontSize: 13,
+            ),
           ),
-          const SizedBox(height: 18),
-          _buildErrorBanner(),
-          _buildPrimaryButton(label: 'Sign In', onPressed: () => _login(context)),
-          const SizedBox(height: 22),
-          _buildOrDivider(),
-          const SizedBox(height: 18),
-          _buildGoogleButton(),
-          const SizedBox(height: 12),
-          _buildMicrosoftButton(),
+        ),
+
+        const SizedBox(height: 22),
+
+        _buildOrDivider(),
+
+        const SizedBox(height: 18),
+
+        _buildGoogleButton(),
+
+        const SizedBox(height: 12),
+
+        _buildMicrosoftButton(),
+
+        if (_allowSelfSignup) ...[
           const SizedBox(height: 24),
           _buildFooterToggle(
             prefix: "Don't have an account? ",
             action: 'Sign Up',
           ),
+        ] else ...[
+          const SizedBox(height: 20),
+          Text(
+            'No self-registration — ask your admin for an invite.',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 12,
+              color: Colors.white.withOpacity(0.45),
+            ),
+          ),
         ],
-      ),
-    );
-  }
+      ],
+    ),
+  );
+}
 
   /// Signup form — dark-theme card matching login, plus department/semester.
   Widget _buildSignupFields({required bool showCompactBrand}) {
@@ -502,11 +720,11 @@ class _LoginScreenState extends State<LoginScreen> {
           ),
         ),
         const SizedBox(height: 8),
-        const Text(
-          'Start formatting your thesis today.',
-          style: TextStyle(fontSize: 14, color: _AuthColors.muted, height: 1.4),
+        Text(
+          '${DevUserConfig.orgName} · ${DevUserConfig.orgCode}',
+          style: const TextStyle(fontSize: 13, color: _AuthColors.accent, fontWeight: FontWeight.w600),
         ),
-        const SizedBox(height: 28),
+        const SizedBox(height: 22),
         _buildTextField(
           controller: _firstNameController,
           hint: 'Full name',
@@ -683,7 +901,12 @@ class _LoginScreenState extends State<LoginScreen> {
       _departmentsError = null;
     });
     try {
-      final uri = Uri.parse('${ApiConfig.getBaseUrl()}/auth/departments');
+      final uri = Uri.parse('${ApiConfig.getBaseUrl()}/auth/departments').replace(
+        queryParameters: {
+          if (DevUserConfig.orgCode.trim().isNotEmpty)
+            'org_code': DevUserConfig.orgCode.trim(),
+        },
+      );
       final response = await http.get(uri).timeout(const Duration(seconds: 10));
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
@@ -849,29 +1072,31 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-  Widget _buildTextField({
-    required TextEditingController controller,
-    required String hint,
-    required IconData icon,
-    bool obscure = false,
-    TextInputType? keyboardType,
-    Widget? suffix,
-    Iterable<String>? autofillHints,
-    TextInputAction? textInputAction,
-    ValueChanged<String>? onSubmitted,
-  }) {
-    return TextField(
-      controller: controller,
-      obscureText: obscure,
-      keyboardType: keyboardType,
-      autofillHints: autofillHints,
-      textInputAction: textInputAction,
-      onSubmitted: onSubmitted,
-      style: const TextStyle(color: Colors.white, fontSize: 14),
-      cursorColor: _AuthColors.accent,
-      decoration: _fieldDecoration(hint: hint, icon: icon, suffix: suffix),
-    );
-  }
+Widget _buildTextField({
+  required TextEditingController controller,
+  required String hint,
+  required IconData icon,
+  bool obscure = false,
+  TextInputType? keyboardType,
+  Widget? suffix,
+  Iterable<String>? autofillHints,
+  TextInputAction? textInputAction,
+  ValueChanged<String>? onSubmitted,
+  TextCapitalization textCapitalization = TextCapitalization.none,
+}) {
+  return TextField(
+    controller: controller,
+    obscureText: obscure,
+    keyboardType: keyboardType,
+    autofillHints: autofillHints,
+    textInputAction: textInputAction,
+    onSubmitted: onSubmitted,
+    textCapitalization: textCapitalization,
+    style: const TextStyle(color: Colors.white, fontSize: 14),
+    cursorColor: _AuthColors.accent,
+    decoration: _fieldDecoration(hint: hint, icon: icon, suffix: suffix),
+  );
+}
 
   Widget _buildErrorBanner() {
     return Consumer<AuthProvider>(
@@ -1069,6 +1294,7 @@ class _LoginScreenState extends State<LoginScreen> {
     return Center(
       child: GestureDetector(
         onTap: () {
+          if (!_allowSelfSignup && !_isSignupMode) return;
           final next = !_isSignupMode;
           setState(() => _isSignupMode = next);
           context.read<AuthProvider>().clearError();

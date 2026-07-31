@@ -95,6 +95,7 @@ class _AdminVerifyScreenState extends State<AdminVerifyScreen> {
       );
 
       final request = http.MultipartRequest('POST', uri)
+        ..headers.addAll(ApiConfig.getHeaders())
         ..files.add(await http.MultipartFile.fromPath('file', file.path));
 
       final streamed = await request.send();

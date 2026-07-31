@@ -780,8 +780,361 @@ def init_db():
         )
     conn.commit()
 
+    # ── Organizations (multi-tenancy) — additive only ─────────────────────────
+    _ensure_organizations_schema(cursor)
+    conn.commit()
+
     conn.close()
     print("Database tables initialized and seeded successfully.")
 
     from vc.database import init_vc_tables
     init_vc_tables()
+
+
+def _ensure_column(cursor, table: str, column: str, ddl: str) -> None:
+    """Idempotent ALTER TABLE ADD COLUMN."""
+    cursor.execute(f"PRAGMA table_info({table})")
+    cols = {row[1] for row in cursor.fetchall()}
+    if column not in cols:
+        cursor.execute(f"ALTER TABLE {table} ADD COLUMN {ddl}")
+
+
+def _ensure_organizations_schema(cursor) -> None:
+    """Create organizations tables, seed default org, add org_id to tenants."""
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS organizations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            code TEXT UNIQUE NOT NULL,
+            type TEXT DEFAULT 'university',
+            api_key TEXT UNIQUE NOT NULL,
+            plan TEXT DEFAULT 'university',
+            modules TEXT DEFAULT 'core,fyp',
+            documents_used INTEGER DEFAULT 0,
+            documents_limit INTEGER DEFAULT 999999,
+            is_active INTEGER DEFAULT 1,
+            primary_color TEXT DEFAULT '#7B61FF',
+            logo_url TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS organization_modules (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            org_id INTEGER NOT NULL,
+            module_name TEXT NOT NULL,
+            is_enabled INTEGER DEFAULT 1,
+            FOREIGN KEY (org_id) REFERENCES organizations(id)
+        )
+        """
+    )
+
+    cursor.execute("SELECT COUNT(*) AS c FROM organizations")
+    if int(cursor.fetchone()[0] or 0) == 0:
+        cursor.execute(
+            """
+            INSERT INTO organizations
+                (name, code, type, api_key, plan, modules, documents_used, documents_limit, is_active, primary_color)
+            VALUES (?, ?, ?, ?, ?, ?, 0, 999999, 1, ?)
+            """,
+            (
+                "COMSATS University Islamabad",
+                "COMSATS-LHR",
+                "university",
+                "fmt_live_comsats_default",
+                "university",
+                "core,fyp",
+                "#7B61FF",
+            ),
+        )
+        org_id = cursor.lastrowid
+        for mod in ("core", "fyp"):
+            cursor.execute(
+                """
+                INSERT INTO organization_modules (org_id, module_name, is_enabled)
+                VALUES (?, ?, 1)
+                """,
+                (org_id, mod),
+            )
+
+    # org_id on existing tenant tables (safe defaults → org 1)
+    for table in (
+        "users",
+        "supervisors",
+        "fyp_groups",
+        "templates",
+        "final_submissions",
+        "deadlines",
+        "departments",
+        "assignment_requests",
+        "documents",
+        "semester_deadlines",
+    ):
+        try:
+            cursor.execute(f"SELECT 1 FROM {table} LIMIT 1")
+        except Exception:
+            continue
+        _ensure_column(cursor, table, "org_id", "org_id INTEGER DEFAULT 1")
+
+    _ensure_users_org_scoped_uniqueness(cursor)
+    _ensure_supervisors_org_scoped_uniqueness(cursor)
+    _ensure_semester_deadlines_org_scoped(cursor)
+
+    # Alias: user asked for "groups" / "submissions" — we use fyp_groups / final_submissions
+    print("[database] Organizations schema ready (default org_id=1).")
+
+def _ensure_users_org_scoped_uniqueness(cursor) -> None:
+    """
+    Allow same email/username across different orgs.
+    Rebuilds users table if it still has global UNIQUE on email/username.
+    """
+    cursor.execute(
+        "SELECT name FROM sqlite_master WHERE type='index' AND name='idx_users_email_org'"
+    )
+    if cursor.fetchone():
+        return
+
+    cursor.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='users'")
+    row = cursor.fetchone()
+    if not row:
+        return
+
+    table_sql = row[0] or ""
+    needs_rebuild = (
+        "email TEXT UNIQUE" in table_sql
+        or "username TEXT UNIQUE" in table_sql
+        or "email TEXT NOT NULL UNIQUE" in table_sql
+        or "username TEXT NOT NULL UNIQUE" in table_sql
+    )
+
+    if needs_rebuild:
+        cursor.execute("PRAGMA foreign_keys = OFF")
+        cursor.execute("DROP TABLE IF EXISTS users__org_scoped")
+        cursor.execute(
+            """
+            CREATE TABLE users__org_scoped (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT NOT NULL,
+                email TEXT NOT NULL,
+                password_hash TEXT NOT NULL,
+                role TEXT DEFAULT 'student',
+                university_id INTEGER,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                department_id INTEGER,
+                current_semester INTEGER,
+                org_id INTEGER DEFAULT 1,
+                FOREIGN KEY (university_id) REFERENCES universities(id)
+            )
+            """
+        )
+        cursor.execute("PRAGMA table_info(users)")
+        existing = {r[1] for r in cursor.fetchall()}
+        cols = [
+            c
+            for c in (
+                "id",
+                "username",
+                "email",
+                "password_hash",
+                "role",
+                "university_id",
+                "created_at",
+                "department_id",
+                "current_semester",
+                "org_id",
+            )
+            if c in existing
+        ]
+        col_csv = ", ".join(cols)
+        cursor.execute(
+            f"INSERT INTO users__org_scoped ({col_csv}) SELECT {col_csv} FROM users"
+        )
+        cursor.execute("DROP TABLE users")
+        cursor.execute("ALTER TABLE users__org_scoped RENAME TO users")
+        cursor.execute("PRAGMA foreign_keys = ON")
+        print("[database] users uniqueness scoped to (email, org_id) / (username, org_id).")
+
+    # Resolve legacy case-insensitive collisions within the same org
+    # (e.g. "ayesha" and "Ayesha") before creating unique indexes.
+    cursor.execute(
+        """
+        SELECT LOWER(username) AS uname, org_id, GROUP_CONCAT(id) AS ids
+        FROM users
+        GROUP BY LOWER(username), org_id
+        HAVING COUNT(*) > 1
+        """
+    )
+    for row in cursor.fetchall():
+        ids = [int(x) for x in str(row["ids"]).split(",") if x]
+        for extra_id in ids[1:]:
+            cursor.execute(
+                "UPDATE users SET username = username || '_' || CAST(id AS TEXT) WHERE id = ?",
+                (extra_id,),
+            )
+
+    cursor.execute(
+        """
+        SELECT LOWER(email) AS em, org_id, GROUP_CONCAT(id) AS ids
+        FROM users
+        GROUP BY LOWER(email), org_id
+        HAVING COUNT(*) > 1
+        """
+    )
+    for row in cursor.fetchall():
+        ids = [int(x) for x in str(row["ids"]).split(",") if x]
+        for extra_id in ids[1:]:
+            cursor.execute(
+                "UPDATE users SET email = printf('dup_%s_%s', id, email) WHERE id = ?",
+                (extra_id,),
+            )
+
+    cursor.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_org
+        ON users(email COLLATE NOCASE, org_id)
+        """
+    )
+    cursor.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username_org
+        ON users(username COLLATE NOCASE, org_id)
+        """
+    )
+
+
+def _ensure_supervisors_org_scoped_uniqueness(cursor) -> None:
+    """Allow same supervisor email across orgs."""
+    cursor.execute(
+        "SELECT name FROM sqlite_master WHERE type='index' AND name='idx_supervisors_email_org'"
+    )
+    if cursor.fetchone():
+        return
+
+    cursor.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='supervisors'")
+    row = cursor.fetchone()
+    if not row:
+        return
+    table_sql = row[0] or ""
+    needs_rebuild = "email TEXT NOT NULL UNIQUE" in table_sql or "email TEXT UNIQUE" in table_sql
+
+    if needs_rebuild:
+        cursor.execute("PRAGMA foreign_keys = OFF")
+        cursor.execute("DROP TABLE IF EXISTS supervisors__org_scoped")
+        cursor.execute(
+            """
+            CREATE TABLE supervisors__org_scoped (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                email TEXT NOT NULL,
+                department_id INTEGER NOT NULL,
+                max_groups INTEGER DEFAULT 6,
+                current_groups INTEGER DEFAULT 0,
+                is_active INTEGER DEFAULT 1,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                org_id INTEGER DEFAULT 1,
+                FOREIGN KEY (department_id) REFERENCES departments(id)
+            )
+            """
+        )
+        cursor.execute("PRAGMA table_info(supervisors)")
+        existing = {r[1] for r in cursor.fetchall()}
+        cols = [
+            c
+            for c in (
+                "id",
+                "name",
+                "email",
+                "department_id",
+                "max_groups",
+                "current_groups",
+                "is_active",
+                "created_at",
+                "org_id",
+            )
+            if c in existing
+        ]
+        col_csv = ", ".join(cols)
+        cursor.execute(
+            f"INSERT INTO supervisors__org_scoped ({col_csv}) SELECT {col_csv} FROM supervisors"
+        )
+        cursor.execute("DROP TABLE supervisors")
+        cursor.execute("ALTER TABLE supervisors__org_scoped RENAME TO supervisors")
+        cursor.execute("PRAGMA foreign_keys = ON")
+        print("[database] supervisors email uniqueness scoped to (email, org_id).")
+
+    cursor.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_supervisors_email_org
+        ON supervisors(email COLLATE NOCASE, org_id)
+        """
+    )
+
+
+def _ensure_semester_deadlines_org_scoped(cursor) -> None:
+    """Allow one deadline per semester per org (not globally)."""
+    cursor.execute(
+        "SELECT name FROM sqlite_master WHERE type='index' AND name='idx_semester_deadlines_org'"
+    )
+    if cursor.fetchone():
+        return
+
+    cursor.execute(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='semester_deadlines'"
+    )
+    row = cursor.fetchone()
+    if not row:
+        return
+    table_sql = row[0] or ""
+    needs_rebuild = "semester INTEGER NOT NULL UNIQUE" in table_sql
+
+    if needs_rebuild:
+        cursor.execute("PRAGMA foreign_keys = OFF")
+        cursor.execute("DROP TABLE IF EXISTS semester_deadlines__org_scoped")
+        cursor.execute(
+            """
+            CREATE TABLE semester_deadlines__org_scoped (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                semester INTEGER NOT NULL,
+                deadline_date DATE NOT NULL,
+                created_by INTEGER,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                org_id INTEGER DEFAULT 1,
+                FOREIGN KEY (created_by) REFERENCES users(id)
+            )
+            """
+        )
+        cursor.execute("PRAGMA table_info(semester_deadlines)")
+        existing = {r[1] for r in cursor.fetchall()}
+        cols = [
+            c
+            for c in (
+                "id",
+                "semester",
+                "deadline_date",
+                "created_by",
+                "created_at",
+                "updated_at",
+                "org_id",
+            )
+            if c in existing
+        ]
+        col_csv = ", ".join(cols)
+        cursor.execute(
+            f"INSERT INTO semester_deadlines__org_scoped ({col_csv}) "
+            f"SELECT {col_csv} FROM semester_deadlines"
+        )
+        cursor.execute("DROP TABLE semester_deadlines")
+        cursor.execute("ALTER TABLE semester_deadlines__org_scoped RENAME TO semester_deadlines")
+        cursor.execute("PRAGMA foreign_keys = ON")
+        print("[database] semester_deadlines uniqueness scoped to (semester, org_id).")
+
+    cursor.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_semester_deadlines_org
+        ON semester_deadlines(semester, org_id)
+        """
+    )

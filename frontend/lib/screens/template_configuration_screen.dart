@@ -1926,7 +1926,7 @@ class _TemplateConfigurationScreenState
       final response = await http.post(
         Uri.parse(
             '$baseUrl/admin/templates?created_by=${authProvider.userId}&user_id=${authProvider.userId}&university_id=1$departmentQuery'),
-        headers: {'Content-Type': 'application/json'},
+        headers: ApiConfig.getHeaders(json: true),
         body: jsonEncode(templateData),
       );
 
@@ -1984,7 +1984,7 @@ class _TemplateConfigurationScreenState
       final response = await http.put(
         Uri.parse(
             '$baseUrl/admin/templates/$_selectedTemplateId?user_id=${authProvider.userId}'),
-        headers: {'Content-Type': 'application/json'},
+        headers: ApiConfig.getHeaders(json: true),
         body: jsonEncode(templateData),
       );
 

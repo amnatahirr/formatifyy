@@ -42,7 +42,7 @@ from typing import Any, Dict, List, Optional
 
 import anthropic
 from dotenv import load_dotenv
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile, Query, Body
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile, Query, Body, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -54,6 +54,26 @@ from supervisor_routes import router as supervisor_router
 from student_routes import router as student_router
 from batcher import create_batches
 from database import get_db, hash_password, init_db, verify_password
+from middleware.org_middleware import (
+    resolve_organization_from_request,
+    resolve_org_id_for_user_action,
+    lookup_organization,
+    public_org_payload,
+)
+from auth_jwt import create_access_token
+
+
+def _resolve_org_for_auth(org_code: str | None, request: Request) -> dict:
+    """Login/signup: prefer explicit org_code body field over headers."""
+    code = (org_code or "").strip().upper()
+    if code:
+        org = lookup_organization(org_code=code)
+        if (org.get("code") or "").upper() != code:
+            raise HTTPException(status_code=404, detail="Organization code not found.")
+        if not org.get("is_active", True):
+            raise HTTPException(status_code=403, detail="Organization is inactive.")
+        return org
+    return resolve_organization_from_request(request)
 
 from dispatcher import dispatch_all
 from models import AnalysisReport, UserLoginRequest, UserSignupRequest, TemplateCreateRequest, TemplateUpdateRequest, ChangePasswordRequest
@@ -106,6 +126,7 @@ from heading_analysis import (
     heading_matches_to_issues,
 )
 from templates import (
+    delete_template as delete_template_record,
     get_all_templates,
     get_template_by_id,
     get_templates_by_university,
@@ -155,6 +176,11 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Multi-tenancy: resolve org (default id=1) + gate FYP routes only
+from middleware.org_middleware import OrganizationMiddleware, get_organization
+
+app.add_middleware(OrganizationMiddleware)
 
 app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 
@@ -247,10 +273,10 @@ async def plagiarism_corpus_status(rebuild: bool = Query(False)):
 # ═══════════════════════════════════════════════════════════════════════════════
 
 @app.post("/api/auth/signup", tags=["Auth"])
-async def signup(payload: UserSignupRequest):
+async def signup(payload: UserSignupRequest, request: Request):
     """
-    Register a new student account.
-    Returns: user profile dict on success.
+    Register a new student account for an organization (org_code in body).
+    Returns profile + JWT access_token.
     """
     if payload.current_semester not in (6, 7):
         raise HTTPException(
@@ -258,41 +284,64 @@ async def signup(payload: UserSignupRequest):
             detail="current_semester must be 6 or 7.",
         )
 
+    org = _resolve_org_for_auth(payload.org_code, request)
+    org_id = int(org["id"])
+    modules = [m.strip() for m in (org.get("modules") or "core").split(",") if m.strip()]
+    allow_self_signup = "fyp" in modules or (org.get("plan") or "").lower() == "university"
+    if not allow_self_signup:
+        raise HTTPException(
+            status_code=403,
+            detail="Self-registration is disabled for this organization. Ask your admin for an invite.",
+        )
+
     conn = get_db()
     cursor = conn.cursor()
 
-    # Check email uniqueness
-    cursor.execute("SELECT id FROM users WHERE email = ?", (payload.email,))
+    cursor.execute(
+        "SELECT id FROM users WHERE LOWER(email) = LOWER(?) AND org_id = ?",
+        (payload.email, org_id),
+    )
     if cursor.fetchone():
         conn.close()
         raise HTTPException(status_code=409, detail="Email is already registered.")
 
-    # Check username uniqueness
-    cursor.execute("SELECT id FROM users WHERE username = ?", (payload.username,))
+    cursor.execute(
+        "SELECT id FROM users WHERE LOWER(username) = LOWER(?) AND org_id = ?",
+        (payload.username, org_id),
+    )
     if cursor.fetchone():
         conn.close()
         raise HTTPException(status_code=409, detail="Username is already taken.")
 
-    # Validate department (admin-managed list)
-    cursor.execute("SELECT id FROM departments WHERE id = ?", (payload.department_id,))
+    cursor.execute(
+        "SELECT id FROM departments WHERE id = ? AND org_id = ?",
+        (payload.department_id, org_id),
+    )
     if not cursor.fetchone():
-        conn.close()
-        raise HTTPException(status_code=400, detail="Invalid department_id.")
+        # fallback if org_id column missing on very old DBs
+        cursor.execute("PRAGMA table_info(departments)")
+        cols = {r[1] for r in cursor.fetchall()}
+        if "org_id" in cols:
+            conn.close()
+            raise HTTPException(status_code=400, detail="Invalid department_id.")
+        cursor.execute("SELECT id FROM departments WHERE id = ?", (payload.department_id,))
+        if not cursor.fetchone():
+            conn.close()
+            raise HTTPException(status_code=400, detail="Invalid department_id.")
 
-    # Validate university
     university_id = payload.university_id or 1
     cursor.execute("SELECT id FROM universities WHERE id = ?", (university_id,))
     if not cursor.fetchone():
-        university_id = 1  # Fall back to default
+        university_id = 1
 
     pw_hash = hash_password(payload.password)
     cursor.execute(
         """
         INSERT INTO users (
             username, email, password_hash, role, university_id,
-            department_id, current_semester
+            department_id, current_semester, org_id
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             payload.username,
@@ -302,15 +351,22 @@ async def signup(payload: UserSignupRequest):
             university_id,
             payload.department_id,
             payload.current_semester,
+            org_id,
         ),
     )
     conn.commit()
     new_id = cursor.lastrowid
-
     cursor.execute("SELECT * FROM users WHERE id = ?", (new_id,))
     user = cursor.fetchone()
     conn.close()
 
+    token = create_access_token(
+        user_id=int(user["id"]),
+        org_id=org_id,
+        role=user["role"],
+        email=user["email"],
+        org_code=org.get("code") or "",
+    )
     return {
         "id": user["id"],
         "username": user["username"],
@@ -319,65 +375,104 @@ async def signup(payload: UserSignupRequest):
         "university_id": user["university_id"],
         "department_id": user["department_id"],
         "current_semester": user["current_semester"],
-        "message": "User registered successfully."
+        "org_id": org_id,
+        "org_code": org.get("code"),
+        "access_token": token,
+        "token_type": "bearer",
+        "message": "User registered successfully.",
     }
 
 
 @app.get("/api/auth/departments", tags=["Auth"])
-async def list_signup_departments():
+async def list_signup_departments(
+    request: Request,
+    org_code: str | None = Query(default=None),
+):
     """
-    Public department list for student signup (no auth).
-    Same admin-managed departments table used elsewhere.
+    Public department list for student signup (org_code query — no JWT yet).
     """
+    org = _resolve_org_for_auth(org_code, request)
+    org_id = int(org["id"])
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute(
-        """
-        SELECT id, name, code
-        FROM departments
-        ORDER BY name ASC
-        """
-    )
+    cursor.execute("PRAGMA table_info(departments)")
+    dept_cols = {row[1] for row in cursor.fetchall()}
+    if "org_id" in dept_cols:
+        cursor.execute(
+            """
+            SELECT id, name, code
+            FROM departments
+            WHERE org_id = ?
+            ORDER BY name ASC
+            """,
+            (org_id,),
+        )
+    else:
+        cursor.execute(
+            """
+            SELECT id, name, code
+            FROM departments
+            ORDER BY name ASC
+            """
+        )
     rows = [dict(row) for row in cursor.fetchall()]
     conn.close()
-    return {"departments": rows, "count": len(rows)}
+    return {"departments": rows, "count": len(rows), "org_code": org.get("code")}
 
 
 @app.post("/api/auth/login", tags=["Auth"])
-async def login(payload: UserLoginRequest):
+async def login(payload: UserLoginRequest, request: Request):
     """
-    Login with email + password.
-    Returns: user profile dict on success, 401 on failure.
+    Login with org_code + email + password.
+    Returns profile + JWT (org_id, user_id, role encoded).
     """
+    org = _resolve_org_for_auth(payload.org_code, request)
+    org_id = int(org["id"])
+
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute("SELECT * FROM users WHERE email = ?", (payload.email,))
+    cursor.execute(
+        "SELECT * FROM users WHERE LOWER(email) = LOWER(?) AND org_id = ?",
+        (payload.email, org_id),
+    )
     user = cursor.fetchone()
     conn.close()
 
     if not user or not verify_password(payload.password, user["password_hash"]):
         raise HTTPException(status_code=401, detail="Invalid email or password.")
 
+    token = create_access_token(
+        user_id=int(user["id"]),
+        org_id=org_id,
+        role=user["role"],
+        email=user["email"],
+        org_code=org.get("code") or "",
+    )
     return {
         "id": user["id"],
         "username": user["username"],
         "email": user["email"],
         "role": user["role"],
         "university_id": user["university_id"],
-        "message": "Login successful."
+        "org_id": org_id,
+        "org_code": org.get("code"),
+        "access_token": token,
+        "token_type": "bearer",
+        "message": "Login successful.",
     }
 
 
 @app.get("/api/auth/me", tags=["Auth"])
-async def get_current_user(user_id: int = Query(...)):
+async def get_current_user(request: Request, user_id: int = Query(...)):
     """
     Validate a restored client session (no JWT in this app — callers pass user_id).
     Returns the same profile shape as login when the user still exists.
     """
+    org_id = int(resolve_organization_from_request(request)["id"])
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute(
-        "SELECT id, username, email, role, university_id FROM users WHERE id = ?",
+        "SELECT id, username, email, role, university_id, org_id FROM users WHERE id = ?",
         (user_id,),
     )
     user = cursor.fetchone()
@@ -386,21 +481,27 @@ async def get_current_user(user_id: int = Query(...)):
     if not user:
         raise HTTPException(status_code=401, detail="Session invalid or user not found.")
 
+    user_org = int(user["org_id"]) if "org_id" in user.keys() and user["org_id"] is not None else 1
+    if user_org != org_id:
+        raise HTTPException(status_code=403, detail="User does not belong to this organization.")
+
     return {
         "id": user["id"],
         "username": user["username"],
         "email": user["email"],
         "role": user["role"],
         "university_id": user["university_id"],
+        "org_id": user_org,
     }
 
 
 @app.post("/api/auth/change-password", tags=["Auth"])
-async def change_password(payload: ChangePasswordRequest):
+async def change_password(payload: ChangePasswordRequest, request: Request):
     """Change password for the logged-in user."""
     if len(payload.new_password.strip()) < 6:
         raise HTTPException(status_code=400, detail="New password must be at least 6 characters.")
 
+    org_id = int(resolve_organization_from_request(request)["id"])
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM users WHERE id = ?", (payload.user_id,))
@@ -408,6 +509,11 @@ async def change_password(payload: ChangePasswordRequest):
     if not user:
         conn.close()
         raise HTTPException(status_code=404, detail="User not found.")
+
+    user_org = int(user["org_id"]) if "org_id" in user.keys() and user["org_id"] is not None else 1
+    if user_org != org_id:
+        conn.close()
+        raise HTTPException(status_code=403, detail="User does not belong to this organization.")
 
     if not verify_password(payload.current_password, user["password_hash"]):
         conn.close()
@@ -440,20 +546,22 @@ async def google_debug_tokens():
 # ═══════════════════════════════════════════════════════════════════════════════
 
 @app.get("/api/templates", tags=["Templates"])
-async def list_all_templates():
-    """Return all formatting templates from the database."""
-    return get_all_templates()
+async def list_all_templates(request: Request):
+    """Return all formatting templates from the database for the current org."""
+    org_id = int(resolve_organization_from_request(request)["id"])
+    return get_all_templates(org_id=org_id)
 
 
 # Alias without /api prefix so existing Flutter calls still work
 @app.get("/templates", tags=["Templates"])
-async def list_templates_alias():
-    return get_all_templates()
+async def list_templates_alias(request: Request):
+    org_id = int(resolve_organization_from_request(request)["id"])
+    return get_all_templates(org_id=org_id)
 
 
 @app.get("/api/templates/user/{user_id}", tags=["Templates"])
 async def list_templates_for_user(user_id: int):
-    """Return templates configured for the user's university."""
+    """Return templates configured for the user's university and org."""
     templates = get_templates_by_user(user_id)
     if templates is None:
         raise HTTPException(status_code=404, detail="User not found.")
@@ -461,15 +569,17 @@ async def list_templates_for_user(user_id: int):
 
 
 @app.get("/api/templates/university/{university_id}", tags=["Templates"])
-async def list_templates_for_university(university_id: int):
-    """Return all templates configured for a specific university."""
-    return get_templates_by_university(university_id)
+async def list_templates_for_university(university_id: int, request: Request):
+    """Return all templates configured for a specific university in this org."""
+    org_id = int(resolve_organization_from_request(request)["id"])
+    return get_templates_by_university(university_id, org_id=org_id)
 
 
 @app.get("/api/templates/{template_id}", tags=["Templates"])
-async def get_template(template_id: int):
-    """Return a single template by ID."""
-    tmpl = get_template_by_id(template_id)
+async def get_template(template_id: int, request: Request):
+    """Return a single template by ID (org-scoped)."""
+    org_id = int(resolve_organization_from_request(request)["id"])
+    tmpl = get_template_by_id(template_id, org_id=org_id)
     if not tmpl:
         raise HTTPException(status_code=404, detail=f"Template {template_id} not found.")
     return tmpl
@@ -482,6 +592,7 @@ async def get_template(template_id: int):
 @app.post("/api/admin/templates", tags=["Admin"])
 async def create_template(
     payload: TemplateCreateRequest,
+    request: Request,
     created_by: int | None = None,
     user_id: int | None = None,
     university_id: int = 1,
@@ -492,6 +603,7 @@ async def create_template(
     Query params: created_by / user_id (admin), university_id, department_id.
     """
     admin_id = created_by or user_id or 1
+    org_id = resolve_org_id_for_user_action(request, admin_id)
     conn = get_db()
     cursor = conn.cursor()
 
@@ -502,18 +614,35 @@ async def create_template(
         raise HTTPException(status_code=404, detail="University not found.")
 
     # Validate admin user
-    cursor.execute("SELECT id, role FROM users WHERE id = ?", (admin_id,))
+    cursor.execute(
+        "SELECT id, role, org_id FROM users WHERE id = ? AND org_id = ?",
+        (admin_id, org_id),
+    )
     admin = cursor.fetchone()
     if not admin:
         conn.close()
         raise HTTPException(status_code=404, detail="Admin user not found.")
 
+    if department_id is not None:
+        cursor.execute(
+            "SELECT id FROM departments WHERE id = ? AND org_id = ?",
+            (department_id, org_id),
+        )
+        if not cursor.fetchone():
+            conn.close()
+            raise HTTPException(
+                status_code=400,
+                detail="Department not found in your organization.",
+            )
+
     formatting_rules = _normalize_template_formatting_rules(payload.formatting_rules)
 
     cursor.execute(
         """
-        INSERT INTO templates (university_id, department_id, name, description, required_sections, formatting_rules, created_by)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO templates
+            (university_id, department_id, name, description, required_sections,
+             formatting_rules, created_by, org_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             university_id,
@@ -523,13 +652,14 @@ async def create_template(
             json.dumps(payload.required_sections),
             json.dumps(formatting_rules),
             admin_id,
+            org_id,
         ),
     )
     conn.commit()
     new_id = cursor.lastrowid
     conn.close()
 
-    tmpl = get_template_by_id(new_id)
+    tmpl = get_template_by_id(new_id, org_id=org_id)
     return {"success": True, "template": tmpl}
 
 
@@ -537,10 +667,12 @@ async def create_template(
 async def edit_template(
     template_id: int,
     payload: TemplateUpdateRequest,
+    request: Request,
     user_id: int = 1,
     department_id: int | None = None,
 ):
     """Admin: update an existing formatting template."""
+    org_id = resolve_org_id_for_user_action(request, user_id)
     updates = payload.model_dump(exclude_unset=True)
     if department_id is not None:
         updates["department_id"] = department_id
@@ -552,7 +684,7 @@ async def edit_template(
             updates["formatting_rules"]
         )
 
-    tmpl = update_template(template_id, updates)
+    tmpl = update_template(template_id, updates, org_id=org_id)
     if not tmpl:
         raise HTTPException(status_code=404, detail="Template not found.")
 
@@ -560,7 +692,7 @@ async def edit_template(
 
 
 @app.delete("/api/admin/templates/{template_id}", tags=["Admin"])
-async def delete_template(template_id: int, user_id: int = 1):
+async def delete_template(template_id: int, request: Request, user_id: int = 1):
     """
     Admin: delete a formatting template by ID.
     Prevents deletion of the 3 built-in templates (id 1, 2, 3).
@@ -571,16 +703,9 @@ async def delete_template(template_id: int, user_id: int = 1):
             detail="Built-in templates cannot be deleted. Add a new template or modify existing ones."
         )
 
-    conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute("SELECT id FROM templates WHERE id = ?", (template_id,))
-    if not cursor.fetchone():
-        conn.close()
+    org_id = resolve_org_id_for_user_action(request, user_id)
+    if not delete_template_record(template_id, org_id=org_id):
         raise HTTPException(status_code=404, detail="Template not found.")
-
-    cursor.execute("DELETE FROM templates WHERE id = ?", (template_id,))
-    conn.commit()
-    conn.close()
 
     return {"success": True, "deleted_id": template_id}
 
@@ -699,6 +824,37 @@ app.include_router(template_extract_router)
 # Frontmatter: cover / project-info detect + generate
 from frontmatter_routes import router as frontmatter_router
 app.include_router(frontmatter_router)
+
+# Super Admin — manage organizations (X-Super-Admin-Key)
+from super_admin_routes import router as super_admin_router
+app.include_router(super_admin_router)
+
+
+@app.get("/api/org/resolve", tags=["Organization"])
+@app.get("/org/resolve", tags=["Organization"])
+async def org_resolve(code: str = Query(..., min_length=1)):
+    """
+    Public login gate: look up org by code.
+    Never returns api_key — clients only need org_code (+ later JWT).
+    """
+    code_clean = code.strip().upper()
+    org = lookup_organization(org_code=code_clean)
+    if (org.get("code") or "").upper() != code_clean:
+        raise HTTPException(status_code=404, detail="Organization code not found.")
+    if not org.get("is_active", True):
+        raise HTTPException(status_code=403, detail="Organization is inactive.")
+    return public_org_payload(org)
+
+
+@app.get("/api/org/info", tags=["Organization"])
+@app.get("/org/info", tags=["Organization"])
+async def org_info(request: Request):
+    """
+    Org profile for feature flags / branding.
+    Prefer Authorization: Bearer <jwt> after login.
+    """
+    org = await get_organization(request)
+    return public_org_payload(org)
 
 
 @app.post("/api/analyze", tags=["Analysis"])
@@ -1269,11 +1425,17 @@ def list_documents(user_id: int):
 
 @app.post("/api/documents/upload", tags=["Documents"])
 async def upload_document(
+    request: Request,
     file: UploadFile = File(...),
     template_id: int = Query(...),
     user_id: int = Query(...),
 ):
     """Upload a document file and record in SQLite."""
+    org_id = resolve_org_id_for_user_action(request, user_id)
+    tmpl = get_template_by_id(template_id, org_id=org_id)
+    if not tmpl:
+        raise HTTPException(status_code=400, detail="Template not found for this organization.")
+
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     stored_filename = f"{timestamp}_{file.filename}"
     file_path = os.path.join(UPLOAD_DIR, stored_filename)
@@ -1303,11 +1465,17 @@ async def upload_document(
 
 @app.post("/api/documents/upload-text", tags=["Documents"])
 async def upload_text(
+    request: Request,
     payload: Dict[str, Any] = Body(...),
     template_id: int = Query(...),
     user_id: int = Query(...),
 ):
     """Save raw pasted text content as a .txt document and record in SQLite."""
+    org_id = resolve_org_id_for_user_action(request, user_id)
+    tmpl = get_template_by_id(template_id, org_id=org_id)
+    if not tmpl:
+        raise HTTPException(status_code=400, detail="Template not found for this organization.")
+
     content = payload.get("content", "")
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     stored_filename = f"{timestamp}_pasted_content.txt"
