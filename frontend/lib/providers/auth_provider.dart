@@ -240,7 +240,7 @@ class AuthProvider extends ChangeNotifier {
     String password, {
     int? universityId,
     required int departmentId,
-    required int currentSemester,
+    int? currentSemester,
     bool rememberMe = true,
   }) async {
     _isLoading = true;
@@ -248,19 +248,24 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
+      final body = <String, dynamic>{
+        "username": username,
+        "email": email,
+        "password": password,
+        "university_id": universityId ?? 1,
+        "department_id": departmentId,
+        "org_code": DevUserConfig.orgCode,
+      };
+      // University orgs require semester 6/7; starter/company omit it.
+      if (currentSemester != null) {
+        body["current_semester"] = currentSemester;
+      }
+
       final response = await http
           .post(
             Uri.parse("${baseUrl}/auth/signup"),
             headers: ApiConfig.getHeaders(json: true),
-            body: jsonEncode({
-              "username": username,
-              "email": email,
-              "password": password,
-              "university_id": universityId ?? 1,
-              "department_id": departmentId,
-              "current_semester": currentSemester,
-              "org_code": DevUserConfig.orgCode,
-            }),
+            body: jsonEncode(body),
           )
           .timeout(
             Duration(seconds: 10),

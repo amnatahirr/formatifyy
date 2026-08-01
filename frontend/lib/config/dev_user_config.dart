@@ -13,6 +13,8 @@ class DevUserConfig {
 
   static String orgName = '';
   static String orgPlan = 'university';
+  /// Org kind from API: `university` | `company`.
+  static String orgType = 'university';
   static String primaryColor = '#7B61FF';
   static int documentsUsed = 0;
   static int documentsLimit = 999999;
@@ -27,6 +29,26 @@ class DevUserConfig {
   static bool get hasCoreModule =>
       modulesCsv.split(',').map((m) => m.trim()).contains('core') ||
       modulesCsv.trim().isEmpty;
+
+  /// University FYP tenants only.
+  ///
+  /// Starter / enterprise / `type=company` are never university.
+  /// Semester + "University email" also require the `fyp` module — current
+  /// semester (6/7) is an FYP field. Tenants labeled university but without
+  /// fyp (legacy create mapping) get company-style signup fields.
+  static bool get isUniversityOrg {
+    final plan = orgPlan.toLowerCase().trim();
+    final type = orgType.toLowerCase().trim();
+    if (plan == 'starter' || plan == 'enterprise') return false;
+    if (type == 'company') return false;
+    if (!hasFypModule) return false;
+    return plan == 'university' || type == 'university' || plan.isEmpty;
+  }
+
+  static bool get requiresSemesterOnSignup => isUniversityOrg;
+
+  static String get signupEmailHint =>
+      isUniversityOrg ? 'University email' : 'Email';
 
   static String get modulesLabel => modulesCsv
       .split(',')
@@ -59,29 +81,32 @@ class DevUserConfig {
   static bool get isDevSession => memberKey.isNotEmpty;
 
   /// Bind tenant from /org/resolve (pre-login) — no api_key.
+  /// Always overwrites plan/type/modules so switching orgs cannot leave
+  /// stale university/FYP flags from the previous tenant.
   static void bindTenant({
     required String code,
     String? name,
     String? plan,
+    String? type,
     List<dynamic>? modules,
     bool? allowSignup,
     String? color,
   }) {
     orgCode = code.trim().toUpperCase();
-    if (name != null && name.trim().isNotEmpty) orgName = name.trim();
-    if (plan != null && plan.trim().isNotEmpty) orgPlan = plan.trim();
+    orgName = (name != null && name.trim().isNotEmpty) ? name.trim() : orgName;
+    orgPlan = (plan != null && plan.trim().isNotEmpty) ? plan.trim() : 'university';
+    orgType = (type != null && type.trim().isNotEmpty) ? type.trim() : 'university';
     if (color != null && color.trim().isNotEmpty) primaryColor = color.trim();
     if (modules != null) {
       modulesCsv = modules
           .map((e) => e.toString().trim())
           .where((e) => e.isNotEmpty)
           .join(',');
-    }
-    if (allowSignup != null) {
-      allowSelfSignup = allowSignup;
     } else {
-      allowSelfSignup = hasFypModule || orgPlan.toLowerCase() == 'university';
+      modulesCsv = 'core';
     }
+    // Self-registration is always available after resolving an org code.
+    allowSelfSignup = allowSignup ?? true;
   }
 
   /// Updates display / module flags from `/org/info` (after JWT login).
@@ -91,6 +116,8 @@ class DevUserConfig {
 
     orgName = (info['org_name'] ?? orgName).toString();
     orgPlan = (info['plan'] ?? orgPlan).toString();
+    final incomingType = (info['type'] ?? '').toString().trim();
+    if (incomingType.isNotEmpty) orgType = incomingType;
     primaryColor = (info['primary_color'] ?? primaryColor).toString();
 
     final mods = info['modules'];
@@ -105,11 +132,10 @@ class DevUserConfig {
       modulesCsv = 'core';
     }
 
-    if (info.containsKey('allow_self_signup')) {
-      allowSelfSignup = info['allow_self_signup'] == true;
-    } else {
-      allowSelfSignup = hasFypModule || orgPlan.toLowerCase() == 'university';
-    }
+    // Self-registration is always available for resolved tenants.
+    allowSelfSignup = info.containsKey('allow_self_signup')
+        ? info['allow_self_signup'] == true
+        : true;
 
     final used = info['documents_used'];
     final limit = info['documents_limit'];

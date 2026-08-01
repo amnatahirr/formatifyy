@@ -143,7 +143,8 @@ class UserSignupRequest(BaseModel):
     password: str
     university_id: Optional[int] = 1
     department_id: int
-    current_semester: int
+    # Required for university plan; optional for starter / enterprise (company).
+    current_semester: Optional[int] = None
     org_code: Optional[str] = None
 
 

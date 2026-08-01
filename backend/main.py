@@ -278,20 +278,34 @@ async def signup(payload: UserSignupRequest, request: Request):
     Register a new student account for an organization (org_code in body).
     Returns profile + JWT access_token.
     """
-    if payload.current_semester not in (6, 7):
-        raise HTTPException(
-            status_code=400,
-            detail="current_semester must be 6 or 7.",
-        )
-
     org = _resolve_org_for_auth(payload.org_code, request)
     org_id = int(org["id"])
-    modules = [m.strip() for m in (org.get("modules") or "core").split(",") if m.strip()]
-    allow_self_signup = "fyp" in modules or (org.get("plan") or "").lower() == "university"
-    if not allow_self_signup:
+    plan = (org.get("plan") or "university").lower()
+    org_type = (org.get("type") or "university").lower()
+    modules = [
+        m.strip()
+        for m in (org.get("modules") or "core").split(",")
+        if m.strip()
+    ]
+    has_fyp = "fyp" in modules
+    # Semester is an FYP field — only university tenants with the fyp module.
+    is_university_org = (
+        has_fyp
+        and org_type != "company"
+        and plan not in ("starter", "enterprise")
+        and (plan == "university" or org_type == "university")
+    )
+    # University FYP signup needs semester 6/7; starter/company skip it.
+    if is_university_org:
+        if payload.current_semester not in (6, 7):
+            raise HTTPException(
+                status_code=400,
+                detail="current_semester must be 6 or 7.",
+            )
+    elif payload.current_semester is not None and payload.current_semester not in (6, 7):
         raise HTTPException(
-            status_code=403,
-            detail="Self-registration is disabled for this organization. Ask your admin for an invite.",
+            status_code=400,
+            detail="current_semester must be 6 or 7 when provided.",
         )
 
     conn = get_db()

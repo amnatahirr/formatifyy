@@ -49,7 +49,6 @@ class _LoginScreenState extends State<LoginScreen> {
   List<SavedLoginAccount> _savedAccounts = const [];
 
   final _orgCodeController = TextEditingController();
-  bool _isSignupMode = false;
   /// false until user continues with a valid organization code
   bool _orgResolved = false;
   bool _resolvingOrg = false;
@@ -469,6 +468,7 @@ class _LoginScreenState extends State<LoginScreen> {
         code: (info['org_code'] ?? code).toString(),
         name: (info['org_name'] ?? '').toString(),
         plan: (info['plan'] ?? '').toString(),
+        type: (info['type'] ?? '').toString(),
         modules: info['modules'] is List ? info['modules'] as List : null,
         allowSignup: info['allow_self_signup'] == true,
         color: (info['primary_color'] ?? '').toString(),
@@ -679,23 +679,11 @@ Widget _buildLoginFields({required bool showCompactBrand}) {
 
         _buildMicrosoftButton(),
 
-        if (_allowSelfSignup) ...[
-          const SizedBox(height: 24),
-          _buildFooterToggle(
-            prefix: "Don't have an account? ",
-            action: 'Sign Up',
-          ),
-        ] else ...[
-          const SizedBox(height: 20),
-          Text(
-            'No self-registration — ask your admin for an invite.',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: 12,
-              color: Colors.white.withOpacity(0.45),
-            ),
-          ),
-        ],
+        const SizedBox(height: 24),
+        _buildFooterToggle(
+          prefix: "Don't have an account? ",
+          action: 'Sign Up',
+        ),
       ],
     ),
   );
@@ -733,7 +721,7 @@ Widget _buildLoginFields({required bool showCompactBrand}) {
         const SizedBox(height: 14),
         _buildTextField(
           controller: _emailController,
-          hint: 'University email',
+          hint: DevUserConfig.signupEmailHint,
           icon: Icons.mail_outline_rounded,
           keyboardType: TextInputType.emailAddress,
         ),
@@ -757,8 +745,10 @@ Widget _buildLoginFields({required bool showCompactBrand}) {
         ),
         const SizedBox(height: 14),
         _buildDepartmentDropdown(),
-        const SizedBox(height: 14),
-        _buildSemesterDropdown(),
+        if (DevUserConfig.requiresSemesterOnSignup) ...[
+          const SizedBox(height: 14),
+          _buildSemesterDropdown(),
+        ],
         const SizedBox(height: 18),
         _buildErrorBanner(),
         _buildPrimaryButton(
@@ -1294,7 +1284,6 @@ Widget _buildTextField({
     return Center(
       child: GestureDetector(
         onTap: () {
-          if (!_allowSelfSignup && !_isSignupMode) return;
           final next = !_isSignupMode;
           setState(() => _isSignupMode = next);
           context.read<AuthProvider>().clearError();
@@ -1377,7 +1366,8 @@ Widget _buildTextField({
       );
       return;
     }
-    if (_selectedSemester == null) {
+    final requiresSemester = DevUserConfig.requiresSemesterOnSignup;
+    if (requiresSemester && _selectedSemester == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Please select your current semester.')),
       );
@@ -1389,7 +1379,7 @@ Widget _buildTextField({
       _emailController.text.trim(),
       _passwordController.text,
       departmentId: _selectedDepartmentId!,
-      currentSemester: _selectedSemester!,
+      currentSemester: requiresSemester ? _selectedSemester : null,
       rememberMe: true,
     );
 

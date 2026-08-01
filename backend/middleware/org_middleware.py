@@ -201,7 +201,7 @@ async def get_organization(request: Request) -> dict[str, Any]:
 def public_org_payload(org: dict[str, Any]) -> dict[str, Any]:
     """Client-safe org fields — never includes api_key."""
     modules = [m.strip() for m in (org.get("modules") or "core").split(",") if m.strip()]
-    allow_self_signup = "fyp" in modules or (org.get("plan") or "").lower() == "university"
+    # Self-registration is available for every org plan (university / starter / enterprise).
     return {
         "org_id": org.get("id"),
         "org_name": org.get("name"),
@@ -211,7 +211,7 @@ def public_org_payload(org: dict[str, Any]) -> dict[str, Any]:
         "modules": modules,
         "has_fyp": "fyp" in modules,
         "has_core": "core" in modules or True,
-        "allow_self_signup": allow_self_signup,
+        "allow_self_signup": True,
         "primary_color": org.get("primary_color") or "#7B61FF",
         "logo_url": org.get("logo_url"),
         "documents_used": org.get("documents_used", 0),

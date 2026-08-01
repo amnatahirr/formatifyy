@@ -115,7 +115,12 @@ class _SuperAdminScreenState extends State<SuperAdminScreen> {
                     ],
                     onChanged: (v) => setLocal(() {
                       plan = v ?? 'university';
-                      if (plan == 'enterprise') hasFyp = false;
+                      // Starter / company orgs are document-formatting tenants — no FYP by default.
+                      if (plan == 'enterprise' || plan == 'starter') {
+                        hasFyp = false;
+                      } else {
+                        hasFyp = true;
+                      }
                     }),
                   ),
                   CheckboxListTile(
@@ -200,7 +205,8 @@ class _SuperAdminScreenState extends State<SuperAdminScreen> {
       final result = await _api.createOrganization({
         'name': nameCtrl.text.trim(),
         'code': codeCtrl.text.trim(),
-        'type': plan == 'enterprise' ? 'company' : 'university',
+        // Only the university plan is a university tenant; starter + enterprise are company.
+        'type': plan == 'university' ? 'university' : 'company',
         'plan': plan,
         'modules': modules,
         'admin_name': adminNameCtrl.text.trim(),
@@ -300,6 +306,61 @@ class _SuperAdminScreenState extends State<SuperAdminScreen> {
     );
   }
 
+  /// Update plan/type so signup UI can distinguish university vs starter/company.
+  Future<bool> _changeOrgPlan(Map<String, dynamic> org) async {
+    final id = org['id'] as int;
+    var plan = (org['plan'] ?? 'university').toString();
+    if (plan != 'university' && plan != 'enterprise' && plan != 'starter') {
+      plan = 'university';
+    }
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setLocal) => AlertDialog(
+          backgroundColor: AdminColors.surface,
+          title: Text('Change plan — ${org['code']}'),
+          content: DropdownButtonFormField<String>(
+            value: plan,
+            decoration: const InputDecoration(labelText: 'Plan'),
+            items: const [
+              DropdownMenuItem(value: 'university', child: Text('university')),
+              DropdownMenuItem(value: 'enterprise', child: Text('enterprise (company)')),
+              DropdownMenuItem(value: 'starter', child: Text('starter')),
+            ],
+            onChanged: (v) => setLocal(() => plan = v ?? 'university'),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Save'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (ok != true) return false;
+
+    final isUniversity = plan == 'university';
+    final modules = isUniversity ? 'core,fyp' : 'core';
+    try {
+      await _api.updateOrganization(id, {
+        'plan': plan,
+        'type': isUniversity ? 'university' : 'company',
+        'modules': modules,
+      });
+      await _refresh();
+      if (mounted) {
+        showAdminSnackBar(context, 'Plan updated to $plan.');
+      }
+      return true;
+    } catch (e) {
+      if (mounted) showAdminSnackBar(context, e.toString(), isError: true);
+      return false;
+    }
+  }
+
   Future<void> _openOrgDetail(Map<String, dynamic> org) async {
     final id = org['id'] as int;
     Map<String, dynamic>? stats;
@@ -344,6 +405,23 @@ class _SuperAdminScreenState extends State<SuperAdminScreen> {
                 ),
               ],
               const SizedBox(height: 20),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AdminColors.primary,
+                    side: BorderSide(color: AdminColors.primary.withOpacity(0.7)),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                  ),
+                  onPressed: () async {
+                    final changed = await _changeOrgPlan(org);
+                    if (changed == true && ctx.mounted) Navigator.pop(ctx);
+                  },
+                  icon: const Icon(Icons.swap_horiz_rounded, size: 18),
+                  label: const Text('Change plan'),
+                ),
+              ),
+              const SizedBox(height: 10),
               if (id == 1)
                 Text(
                   'Default organization (id=1) cannot be deleted.',

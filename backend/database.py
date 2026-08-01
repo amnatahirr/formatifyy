@@ -882,9 +882,53 @@ def _ensure_organizations_schema(cursor) -> None:
     _ensure_users_org_scoped_uniqueness(cursor)
     _ensure_supervisors_org_scoped_uniqueness(cursor)
     _ensure_semester_deadlines_org_scoped(cursor)
+    _repair_mislabelled_company_tenants(cursor)
 
     # Alias: user asked for "groups" / "submissions" — we use fyp_groups / final_submissions
     print("[database] Organizations schema ready (default org_id=1).")
+
+
+def _repair_mislabelled_company_tenants(cursor) -> None:
+    """
+    Older create mapping could save company-style tenants (no `fyp` module)
+    with plan/type still set to `university`. Re-align flags from modules —
+    never by org code — so signup fields stay consistent.
+    """
+    cursor.execute("SELECT id, type, plan, modules FROM organizations")
+    repaired = 0
+    for row in cursor.fetchall():
+        modules = [
+            m.strip().lower()
+            for m in (row["modules"] or "").split(",")
+            if m.strip()
+        ]
+        has_fyp = "fyp" in modules
+        plan = (row["plan"] or "university").strip().lower()
+        org_type = (row["type"] or "university").strip().lower()
+
+        if plan in ("starter", "enterprise"):
+            if org_type != "company":
+                cursor.execute(
+                    "UPDATE organizations SET type = 'company' WHERE id = ?",
+                    (row["id"],),
+                )
+                repaired += 1
+            continue
+
+        # University plan/type but no FYP → company tenant (legacy mis-create).
+        if not has_fyp and plan == "university" and org_type == "university":
+            cursor.execute(
+                """
+                UPDATE organizations
+                SET type = 'company', plan = 'enterprise'
+                WHERE id = ?
+                """,
+                (row["id"],),
+            )
+            repaired += 1
+
+    if repaired:
+        print(f"[database] Repaired {repaired} mislabelled company tenant(s).")
 
 def _ensure_users_org_scoped_uniqueness(cursor) -> None:
     """
