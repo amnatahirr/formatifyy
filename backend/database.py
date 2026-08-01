@@ -890,45 +890,31 @@ def _ensure_organizations_schema(cursor) -> None:
 
 def _repair_mislabelled_company_tenants(cursor) -> None:
     """
-    Older create mapping could save company-style tenants (no `fyp` module)
-    with plan/type still set to `university`. Re-align flags from modules —
-    never by org code — so signup fields stay consistent.
+    Keep type in sync with plan only.
+    Modules (core/fyp) are independent — a university may be core-only, and a
+    company/starter may enable fyp. Never infer plan from modules.
     """
-    cursor.execute("SELECT id, type, plan, modules FROM organizations")
+    cursor.execute("SELECT id, type, plan FROM organizations")
     repaired = 0
     for row in cursor.fetchall():
-        modules = [
-            m.strip().lower()
-            for m in (row["modules"] or "").split(",")
-            if m.strip()
-        ]
-        has_fyp = "fyp" in modules
         plan = (row["plan"] or "university").strip().lower()
         org_type = (row["type"] or "university").strip().lower()
 
-        if plan in ("starter", "enterprise"):
-            if org_type != "company":
-                cursor.execute(
-                    "UPDATE organizations SET type = 'company' WHERE id = ?",
-                    (row["id"],),
-                )
-                repaired += 1
-            continue
-
-        # University plan/type but no FYP → company tenant (legacy mis-create).
-        if not has_fyp and plan == "university" and org_type == "university":
+        if plan in ("starter", "enterprise") and org_type != "company":
             cursor.execute(
-                """
-                UPDATE organizations
-                SET type = 'company', plan = 'enterprise'
-                WHERE id = ?
-                """,
+                "UPDATE organizations SET type = 'company' WHERE id = ?",
+                (row["id"],),
+            )
+            repaired += 1
+        elif plan == "university" and org_type == "company":
+            cursor.execute(
+                "UPDATE organizations SET type = 'university' WHERE id = ?",
                 (row["id"],),
             )
             repaired += 1
 
     if repaired:
-        print(f"[database] Repaired {repaired} mislabelled company tenant(s).")
+        print(f"[database] Repaired {repaired} org type/plan mismatch(es).")
 
 def _ensure_users_org_scoped_uniqueness(cursor) -> None:
     """

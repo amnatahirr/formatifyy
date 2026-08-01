@@ -306,7 +306,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen> {
     );
   }
 
-  /// Update plan/type so signup UI can distinguish university vs starter/company.
+  /// Update plan/type only — never overwrite modules (core/fyp are independent).
   Future<bool> _changeOrgPlan(Map<String, dynamic> org) async {
     final id = org['id'] as int;
     var plan = (org['plan'] ?? 'university').toString();
@@ -342,17 +342,89 @@ class _SuperAdminScreenState extends State<SuperAdminScreen> {
     );
     if (ok != true) return false;
 
-    final isUniversity = plan == 'university';
-    final modules = isUniversity ? 'core,fyp' : 'core';
     try {
       await _api.updateOrganization(id, {
         'plan': plan,
-        'type': isUniversity ? 'university' : 'company',
-        'modules': modules,
+        'type': plan == 'university' ? 'university' : 'company',
       });
       await _refresh();
       if (mounted) {
         showAdminSnackBar(context, 'Plan updated to $plan.');
+      }
+      return true;
+    } catch (e) {
+      if (mounted) showAdminSnackBar(context, e.toString(), isError: true);
+      return false;
+    }
+  }
+
+  /// Edit core/fyp modules independently of plan (company may have FYP, university may be core-only).
+  Future<bool> _changeOrgModules(Map<String, dynamic> org) async {
+    final id = org['id'] as int;
+    final current = <String>{};
+    final rawList = org['modules_list'];
+    if (rawList is List) {
+      current.addAll(rawList.map((e) => e.toString().trim().toLowerCase()));
+    } else {
+      current.addAll(
+        (org['modules'] ?? 'core')
+            .toString()
+            .split(',')
+            .map((e) => e.trim().toLowerCase())
+            .where((e) => e.isNotEmpty),
+      );
+    }
+    var hasCore = current.contains('core') || current.isEmpty;
+    var hasFyp = current.contains('fyp');
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setLocal) => AlertDialog(
+          backgroundColor: AdminColors.surface,
+          title: Text('Edit modules — ${org['code']}'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CheckboxListTile(
+                value: hasCore,
+                onChanged: (v) => setLocal(() => hasCore = v ?? true),
+                title: const Text('core module'),
+                dense: true,
+                contentPadding: EdgeInsets.zero,
+              ),
+              CheckboxListTile(
+                value: hasFyp,
+                onChanged: (v) => setLocal(() => hasFyp = v ?? false),
+                title: const Text('fyp module'),
+                dense: true,
+                contentPadding: EdgeInsets.zero,
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Save'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (ok != true) return false;
+
+    final modules = <String>[
+      if (hasCore) 'core',
+      if (hasFyp) 'fyp',
+    ];
+    if (modules.isEmpty) modules.add('core');
+
+    try {
+      await _api.updateOrganization(id, {'modules': modules});
+      await _refresh();
+      if (mounted) {
+        showAdminSnackBar(context, 'Modules updated: ${modules.join(', ')}.');
       }
       return true;
     } catch (e) {
@@ -386,8 +458,10 @@ class _SuperAdminScreenState extends State<SuperAdminScreen> {
               Text(org['name']?.toString() ?? 'Organization',
                   style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: Colors.white)),
               const SizedBox(height: 6),
-              Text('${org['code']} · ${org['plan']}',
-                  style: TextStyle(color: Colors.white.withOpacity(0.55))),
+              Text(
+                '${org['code']} · ${org['plan']} · ${(org['modules'] ?? 'core')}',
+                style: TextStyle(color: Colors.white.withOpacity(0.55)),
+              ),
               const SizedBox(height: 12),
               Text(
                 'Distribute org code + admin credentials only. API keys stay server-side.',
@@ -419,6 +493,23 @@ class _SuperAdminScreenState extends State<SuperAdminScreen> {
                   },
                   icon: const Icon(Icons.swap_horiz_rounded, size: 18),
                   label: const Text('Change plan'),
+                ),
+              ),
+              const SizedBox(height: 10),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AdminColors.primary,
+                    side: BorderSide(color: AdminColors.primary.withOpacity(0.7)),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                  ),
+                  onPressed: () async {
+                    final changed = await _changeOrgModules(org);
+                    if (changed == true && ctx.mounted) Navigator.pop(ctx);
+                  },
+                  icon: const Icon(Icons.extension_rounded, size: 18),
+                  label: const Text('Edit modules'),
                 ),
               ),
               const SizedBox(height: 10),

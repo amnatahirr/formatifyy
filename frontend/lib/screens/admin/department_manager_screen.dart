@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../config/dev_user_config.dart';
 import '../../models/admin_models.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/admin_api_service.dart';
+import '../../services/super_admin_api_service.dart';
 import '../../widgets/admin/admin_ui.dart';
 
 class DepartmentManagerScreen extends StatefulWidget {
@@ -24,7 +26,23 @@ class _DepartmentManagerScreenState extends State<DepartmentManagerScreen> {
   @override
   void initState() {
     super.initState();
-    _loadDepartments();
+    _bootstrap();
+  }
+
+  Future<void> _bootstrap() async {
+    await _refreshModuleFlags();
+    await _loadDepartments();
+  }
+
+  /// Keep FYP gating in sync with `/org/info` (modules can change in Super Admin).
+  Future<void> _refreshModuleFlags() async {
+    try {
+      final info = await SuperAdminApiService().fetchOrgInfo();
+      DevUserConfig.applyOrgInfo(info);
+      if (mounted) setState(() {});
+    } catch (_) {
+      // Keep existing DevUserConfig flags.
+    }
   }
 
   Future<void> _loadDepartments() async {
@@ -45,11 +63,13 @@ class _DepartmentManagerScreenState extends State<DepartmentManagerScreen> {
   }
 
   Future<void> _openDepartmentSheet({DepartmentSummary? item}) async {
+    final hasFyp = DevUserConfig.hasFypModule;
     final nameController = TextEditingController(text: item?.name ?? '');
     final codeController = TextEditingController(text: item?.code ?? '');
     final minController = TextEditingController(text: '${item?.minMembers ?? 1}');
     final maxController = TextEditingController(text: '${item?.maxMembers ?? 3}');
-    final maxGroupsController = TextEditingController(text: '${item?.maxGroupsPerSupervisor ?? 6}');
+    final maxGroupsController =
+        TextEditingController(text: '${item?.maxGroupsPerSupervisor ?? 6}');
     final formKey = GlobalKey<FormState>();
 
     await showAdminBottomSheet(
@@ -63,53 +83,69 @@ class _DepartmentManagerScreenState extends State<DepartmentManagerScreen> {
             TextFormField(
               controller: nameController,
               decoration: const InputDecoration(labelText: 'Department Name'),
-              validator: (v) => v == null || v.trim().isEmpty ? 'Enter a name' : null,
+              validator: (v) =>
+                  v == null || v.trim().isEmpty ? 'Enter a name' : null,
             ),
             const SizedBox(height: 12),
             TextFormField(
               controller: codeController,
               decoration: const InputDecoration(labelText: 'Code (e.g. CS)'),
-              validator: (v) => v == null || v.trim().isEmpty ? 'Enter a code' : null,
+              validator: (v) =>
+                  v == null || v.trim().isEmpty ? 'Enter a code' : null,
             ),
-            const SizedBox(height: 12),
-            TextFormField(
-              controller: minController,
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(labelText: 'Min Members'),
-              validator: (v) => v == null || int.tryParse(v) == null ? 'Enter a number' : null,
-            ),
-            const SizedBox(height: 12),
-            TextFormField(
-              controller: maxController,
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(labelText: 'Max Members'),
-              validator: (v) => v == null || int.tryParse(v) == null ? 'Enter a number' : null,
-            ),
-            const SizedBox(height: 12),
-            TextFormField(
-              controller: maxGroupsController,
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(labelText: 'Max Groups per Supervisor'),
-              validator: (v) => v == null || int.tryParse(v) == null ? 'Enter a number' : null,
-            ),
+            // FYP-only: group size + supervisor capacity.
+            if (hasFyp) ...[
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: minController,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(labelText: 'Min Members'),
+                validator: (v) =>
+                    v == null || int.tryParse(v) == null ? 'Enter a number' : null,
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: maxController,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(labelText: 'Max Members'),
+                validator: (v) =>
+                    v == null || int.tryParse(v) == null ? 'Enter a number' : null,
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: maxGroupsController,
+                keyboardType: TextInputType.number,
+                decoration:
+                    const InputDecoration(labelText: 'Max Groups per Supervisor'),
+                validator: (v) =>
+                    v == null || int.tryParse(v) == null ? 'Enter a number' : null,
+              ),
+            ],
             const SizedBox(height: 20),
             Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
-                TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Cancel'),
+                ),
                 const SizedBox(width: 8),
                 ElevatedButton(
                   onPressed: () async {
                     if (!formKey.currentState!.validate()) return;
                     final userId = this.context.read<AuthProvider>().userId;
                     if (userId == null) return;
-                    final body = {
+                    final body = <String, dynamic>{
                       'name': nameController.text.trim(),
                       'code': codeController.text.trim().toUpperCase(),
-                      'min_members': int.parse(minController.text.trim()),
-                      'max_members': int.parse(maxController.text.trim()),
-                      'max_groups_per_supervisor': int.parse(maxGroupsController.text.trim()),
                     };
+                    // Omit FYP fields for core-only orgs; backend keeps defaults / existing.
+                    if (hasFyp) {
+                      body['min_members'] = int.parse(minController.text.trim());
+                      body['max_members'] = int.parse(maxController.text.trim());
+                      body['max_groups_per_supervisor'] =
+                          int.parse(maxGroupsController.text.trim());
+                    }
                     try {
                       if (item == null) {
                         await _api.createDepartment(userId, body);
@@ -122,11 +158,17 @@ class _DepartmentManagerScreenState extends State<DepartmentManagerScreen> {
                       if (!mounted) return;
                       showAdminSnackBar(
                         this.context,
-                        item == null ? 'Department created successfully.' : 'Department updated successfully.',
+                        item == null
+                            ? 'Department created successfully.'
+                            : 'Department updated successfully.',
                       );
                     } catch (e) {
                       if (!mounted) return;
-                      showAdminSnackBar(this.context, e.toString(), isError: true);
+                      showAdminSnackBar(
+                        this.context,
+                        e.toString(),
+                        isError: true,
+                      );
                     }
                   },
                   child: const Text('Save'),
@@ -178,6 +220,7 @@ class _DepartmentManagerScreenState extends State<DepartmentManagerScreen> {
                     itemCount: _departments.length,
                     itemBuilder: (context, index) {
                       final item = _departments[index];
+                      final hasFyp = DevUserConfig.hasFypModule;
                       return Padding(
                         padding: const EdgeInsets.only(bottom: 12),
                         child: Container(
@@ -192,23 +235,43 @@ class _DepartmentManagerScreenState extends State<DepartmentManagerScreen> {
                                   color: AdminColors.primary.withOpacity(0.14),
                                   borderRadius: BorderRadius.circular(12),
                                 ),
-                                child: const Icon(Icons.apartment_rounded, color: AdminColors.primary),
+                                child: const Icon(
+                                  Icons.apartment_rounded,
+                                  color: AdminColors.primary,
+                                ),
                               ),
                               const SizedBox(width: 14),
                               Expanded(
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    Text(item.name, style: const TextStyle(fontWeight: FontWeight.w600, color: Colors.white, fontSize: 16)),
-                                    const SizedBox(height: 4),
                                     Text(
-                                      '${item.code} · Members ${item.minMembers}-${item.maxMembers} · Max groups ${item.maxGroupsPerSupervisor}',
-                                      style: TextStyle(color: Colors.white.withOpacity(0.65), fontSize: 13),
+                                      item.name,
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w600,
+                                        color: Colors.white,
+                                        fontSize: 16,
+                                      ),
                                     ),
                                     const SizedBox(height: 4),
                                     Text(
-                                      '${item.supervisorCount} supervisors · ${item.templateCount} templates',
-                                      style: TextStyle(color: Colors.white.withOpacity(0.55), fontSize: 12),
+                                      hasFyp
+                                          ? '${item.code} · Members ${item.minMembers}-${item.maxMembers} · Max groups ${item.maxGroupsPerSupervisor}'
+                                          : item.code,
+                                      style: TextStyle(
+                                        color: Colors.white.withOpacity(0.65),
+                                        fontSize: 13,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      hasFyp
+                                          ? '${item.supervisorCount} supervisors · ${item.templateCount} templates'
+                                          : '${item.templateCount} templates',
+                                      style: TextStyle(
+                                        color: Colors.white.withOpacity(0.55),
+                                        fontSize: 12,
+                                      ),
                                     ),
                                   ],
                                 ),
@@ -221,7 +284,10 @@ class _DepartmentManagerScreenState extends State<DepartmentManagerScreen> {
                               IconButton(
                                 tooltip: 'Delete department',
                                 onPressed: () => _deleteDepartment(item),
-                                icon: const Icon(Icons.delete_outline, color: AdminColors.danger),
+                                icon: const Icon(
+                                  Icons.delete_outline,
+                                  color: AdminColors.danger,
+                                ),
                               ),
                             ],
                           ),
