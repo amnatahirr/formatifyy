@@ -80,7 +80,7 @@ class _FrontmatterAssetsCardState extends State<FrontmatterAssetsCard> {
       final updated = await _api.uploadFrontmatterLogo(userId, result.files.single.path!);
       if (!mounted) return;
       setState(() => _config = updated);
-      _snack('University logo uploaded');
+      _snack('Organization logo uploaded');
     } catch (e) {
       _snack(e.toString(), error: true);
     } finally {
@@ -147,7 +147,7 @@ class _FrontmatterAssetsCardState extends State<FrontmatterAssetsCard> {
     return CommonWidgets.buildCardContainer(
       icon: Icons.image_outlined,
       title: 'Cover Page Assets',
-      subtitle: 'University logo and DOCX templates for cover / project-info pages',
+      subtitle: 'Organization logo and DOCX templates for cover / project-info pages',
       child: _loading
           ? const Padding(
               padding: EdgeInsets.symmetric(vertical: 16),
@@ -171,7 +171,7 @@ class _FrontmatterAssetsCardState extends State<FrontmatterAssetsCard> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'University logo',
+                      'Organization logo',
                       style: TextStyle(fontSize: 12, color: Colors.white.withOpacity(0.7)),
                     ),
                     const SizedBox(height: 8),

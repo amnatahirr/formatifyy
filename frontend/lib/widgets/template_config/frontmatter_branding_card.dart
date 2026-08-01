@@ -134,7 +134,7 @@ class _FrontmatterBrandingCardState extends State<FrontmatterBrandingCard> {
     return CommonWidgets.buildCardContainer(
       icon: Icons.menu_book_rounded,
       title: 'Cover Page Branding',
-      subtitle: 'University name, department and session for auto-generated cover pages',
+      subtitle: 'Organization name, department and session for auto-generated cover pages',
       child: _loading
           ? const Padding(
               padding: EdgeInsets.symmetric(vertical: 16),
@@ -159,14 +159,14 @@ class _FrontmatterBrandingCardState extends State<FrontmatterBrandingCard> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'University name',
+                      'Organization name',
                       style: TextStyle(fontSize: 12, color: Colors.white.withOpacity(0.7)),
                     ),
                     const SizedBox(height: 8),
                     TextField(
                       controller: _universityController,
                       style: const TextStyle(color: Colors.white, fontSize: 13),
-                      decoration: _fieldDecoration('e.g. COMSATS University Islamabad'),
+                      decoration: _fieldDecoration('e.g. organization or university name'),
                     ),
                     const SizedBox(height: 16),
                     CommonWidgets.buildSettingGroup(

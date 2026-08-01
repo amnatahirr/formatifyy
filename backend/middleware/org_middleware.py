@@ -219,7 +219,9 @@ def public_org_payload(org: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-# Admin FYP-only path prefixes (core admin routes stay open)
+# Admin / student FYP-only path prefixes.
+# Cover page branding + assets (`/frontmatter-config`, document frontmatter)
+# are Core formatting features — available to every org (core and/or fyp).
 _FYP_PATH_PREFIXES = (
     "/api/supervisor",
     "/api/student",
@@ -230,8 +232,6 @@ _FYP_PATH_PREFIXES = (
 
 
 def _path_requires_fyp(path: str) -> bool:
-    if "/frontmatter" in path:
-        return True
     for prefix in _FYP_PATH_PREFIXES:
         if path == prefix or path.startswith(prefix + "/") or path.startswith(prefix + "?"):
             return True

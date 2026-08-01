@@ -9,7 +9,8 @@ FYP_FEATURES = [
     "group_management",  # fyp_groups
     "milestone_tracking",  # group milestones
     "submission_flow",  # final_submissions
-    "cover_page_generation",  # frontmatter_routes
+    # Cover / project-info pages are Core formatting (admin frontmatter-config)
+    # and are available to every org — not listed here.
     "meeting_notes",  # meeting notes
     "advisor_assignment",  # choose supervisor flow
 ]
