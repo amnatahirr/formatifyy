@@ -129,6 +129,23 @@ def _numbering_depth(prefix: Optional[str]) -> Optional[int]:
     return min(4, max(1, prefix.count(".") + 1))
 
 
+def _is_zero_based_prefix(prefix: Optional[str]) -> bool:
+    """True for broken prefixes like '0', '0.1', '0.1.2' (should not drive level)."""
+    if not prefix:
+        return False
+    return str(prefix).split(".", 1)[0] == "0"
+
+
+def _reliable_numbering_depth(prefix: Optional[str]) -> Optional[int]:
+    """
+    Numbering depth for level assignment.
+    Ignores zero-based prefixes (0.1 Abstract) which are document bugs, not H2.
+    """
+    if _is_zero_based_prefix(prefix):
+        return None
+    return _numbering_depth(prefix)
+
+
 def _level_label(level: int) -> str:
     return f"h{max(1, min(4, level))}"
 
@@ -710,7 +727,7 @@ def _infer_levels_from_sequence(
             continue
 
         block = blocks[idx]
-        depth = _numbering_depth(block.numbering_prefix)
+        depth = _reliable_numbering_depth(block.numbering_prefix)
         if depth is not None:
             row["level"] = _level_label(depth)
             current = depth
@@ -875,8 +892,16 @@ def analyze_headings(
                     claude_level = max(1, min(4, int(claude.get("level") or 1)))
                 except (TypeError, ValueError):
                     claude_level = 1
-                level_label = _level_label(claude_level)
-                source = "claude_only"  # may promote to matched in Pass A
+                # Prefer reliable numbering (1 / 1.1). Ignore broken 0.x prefixes.
+                # Empty outline: trust Claude structural level over any numbering.
+                depth = _reliable_numbering_depth(block.numbering_prefix)
+                if not outline:
+                    level_label = _level_label(claude_level)
+                else:
+                    level_label = _level_label(depth if depth is not None else claude_level)
+                # Empty template outline → structural inference (auto-apply styles).
+                # Otherwise seed as claude_only until Pass A matches a section.
+                source = "inferred" if not outline else "claude_only"
                 heading_kind = "standard"
             else:
                 # Deterministic recovery for strong headings Claude missed
@@ -886,12 +911,15 @@ def analyze_headings(
                     det_conf = rule_conf
                     source = "inferred"
                     heading_kind = "standard"
-                    depth = _numbering_depth(block.numbering_prefix)
+                    depth = _reliable_numbering_depth(block.numbering_prefix)
                     style_level = _is_heading_style(block.style_name)
                     if depth is not None:
                         level_label = _level_label(depth)
                     elif style_level is not None:
                         level_label = _level_label(style_level)
+                    elif not outline:
+                        # No sections defined — treat orphan numbered 0.x as H1
+                        level_label = _level_label(1)
                 else:
                     det_conf = round(1.0 - rule_conf, 3) if rule_hit else round(rule_conf, 3)
         else:
@@ -901,12 +929,14 @@ def analyze_headings(
             else:
                 source = "inferred"
                 heading_kind = "standard"
-                depth = _numbering_depth(block.numbering_prefix)
+                depth = _reliable_numbering_depth(block.numbering_prefix)
                 style_level = _is_heading_style(block.style_name)
                 if depth is not None:
                     level_label = _level_label(depth)
                 elif style_level is not None:
                     level_label = _level_label(style_level)
+                elif not outline:
+                    level_label = _level_label(1)
 
         row: Dict[str, Any] = {
             "block_id": block.block_id,
@@ -964,8 +994,8 @@ def analyze_headings(
             continue
         if results[idx].get("level"):
             continue
-        depth = _numbering_depth(blocks[idx].numbering_prefix)
-        if depth is not None:
+        depth = _reliable_numbering_depth(blocks[idx].numbering_prefix)
+        if depth is not None and outline:
             results[idx]["level"] = _level_label(depth)
             if not results[idx].get("source"):
                 results[idx]["source"] = "inferred"
@@ -977,18 +1007,48 @@ def analyze_headings(
     _infer_levels_from_sequence(heading_indices, blocks, results)
 
     # Finalize sources + apply user Keep/Discard for Claude-only extras
+    outline_empty = len(outline) == 0
+
     for idx in heading_indices:
         row = results[idx]
         if not row.get("is_heading"):
             continue
 
+        # Prefer reliable numbering when not template-matched.
+        # Empty outline: keep Claude/structural level — do not overwrite with 0.x.
+        if row.get("source") != "matched" and not outline_empty:
+            depth = _reliable_numbering_depth(blocks[idx].numbering_prefix)
+            if depth is not None:
+                row["level"] = _level_label(depth)
+
         if not row.get("source"):
             if row.get("matched_template_heading"):
                 row["source"] = "matched"
+            elif outline_empty:
+                # No required_sections — structural detection is the source of truth
+                row["source"] = "inferred"
             elif row.get("detected_by_claude"):
                 row["source"] = "claude_only"
             else:
                 row["source"] = "inferred"
+
+        pid = blocks[idx].paragraph_id or ""
+        decision = decisions.get(str(pid)) or decisions.get(str(row.get("block_id")))
+
+        # Template has no sections: auto-keep detected headings so styles apply
+        # without a Keep/Discard gate (Claude extras only matter when a template
+        # outline exists to compare against).
+        if outline_empty:
+            if row.get("source") in ("claude_only", "inferred", None):
+                row["source"] = "inferred"
+            row["user_decision"] = (
+                decision if decision in ("keep", "discard") else "keep"
+            )
+            if decision == "discard":
+                row["is_heading"] = False
+                row["fix_needed"] = False
+                row["fix_status"] = "discarded_by_user"
+            continue
 
         # Claude detections that never matched the template stay claude_only
         # so the user can Keep/Discard — even if Pass B also inferred them.
@@ -998,9 +1058,6 @@ def analyze_headings(
             and row.get("source") != "matched"
         ):
             row["source"] = "claude_only"
-
-        pid = blocks[idx].paragraph_id or ""
-        decision = decisions.get(str(pid)) or decisions.get(str(row.get("block_id")))
 
         if row.get("source") == "claude_only":
             if decision in ("keep", "discard"):

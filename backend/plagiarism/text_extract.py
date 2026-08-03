@@ -61,12 +61,9 @@ def _extract_docx(path: Path) -> str:
 
 
 def _extract_pdf(path: Path) -> str:
-    import fitz  # PyMuPDF
+    from pdf_io import extract_pdf_plain_text
 
-    parts: List[str] = []
-    with fitz.open(str(path)) as pdf:
-        for page in pdf:
-            text = (page.get_text("text") or "").strip()
-            if text:
-                parts.append(text)
-    return "\n".join(parts).strip()
+    text = extract_pdf_plain_text(str(path))
+    if not text:
+        raise ValueError(f"No extractable text in PDF: {path.name}")
+    return text

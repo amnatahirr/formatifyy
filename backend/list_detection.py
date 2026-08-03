@@ -137,6 +137,20 @@ def _is_heading_like(
     if _OBJECTIVE_INFINITIVE_RE.match(stripped) or _INFINITIVE_RE.match(stripped):
         return False
 
+    # Single-level numbered module/list rows are list body, not headings.
+    # Keep hierarchical "3.2. Title" and short "1. Introduction" as headings.
+    if re.match(r"^\d+\.\s+\S", stripped) and not re.match(r"^\d+\.\d+", stripped):
+        wc = _word_count(stripped)
+        if ":" in stripped and wc >= 6:
+            return False
+        if wc > 8:
+            return False
+        # Short titles: "1. Introduction" / "2. Background"
+        if wc <= 6 and ":" not in stripped:
+            body = re.sub(r"^\d+\.\s+", "", stripped).strip()
+            if body and not body.endswith((".", "?", "!")):
+                return True
+
     # Hierarchical / ordered section titles
     if _SECTION_HEADING_RE.match(stripped):
         return True

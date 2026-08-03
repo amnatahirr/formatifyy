@@ -56,8 +56,29 @@ class DevUserConfig {
       .where((m) => m.isNotEmpty)
       .join(', ');
 
+  /// UI label for a backend role — core-only orgs show `student` as Member.
+  static String displayRoleLabel(String? role) {
+    final r = (role ?? '').trim().toLowerCase();
+    if (r.isEmpty) return 'User';
+    if (!hasFypModule && r == 'student') return 'Member';
+    return r[0].toUpperCase() + r.substring(1);
+  }
+
   /// Super Admin master key (must match backend SUPER_ADMIN_KEY / .env).
   static String superAdminKey = 'super_secret_master_key_here';
+
+  /// Clears tenant display flags so the next org cannot inherit FYP UI.
+  static void clearTenant() {
+    orgCode = '';
+    orgName = '';
+    orgPlan = 'university';
+    orgType = 'university';
+    primaryColor = '#7B61FF';
+    documentsUsed = 0;
+    documentsLimit = 999999;
+    allowSelfSignup = true;
+    modulesCsv = 'core';
+  }
 
   static void initialize(String key) {
     memberKey = key;

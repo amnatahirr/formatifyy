@@ -137,19 +137,7 @@ class _SemesterDeadlinesScreenState extends State<SemesterDeadlinesScreen> {
               );
 
     if (widget.embedded) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(24, 8, 24, 0),
-            child: AdminPageHeader(
-              title: 'Semester Deadlines',
-              subtitle: 'Semester 6 and 7 submission cutoffs',
-            ),
-          ),
-          Expanded(child: body),
-        ],
-      );
+      return body;
     }
 
     return Scaffold(

@@ -109,6 +109,10 @@ class _HeadingNumberTracker:
 
     def next_number(self, level: int) -> str:
         level = max(1, min(self._MAX_LEVEL, level))
+        # Never emit 0.x — if a subsection appears before any chapter, start at 1.
+        for idx in range(level - 1):
+            if self._counters[idx] == 0:
+                self._counters[idx] = 1
         self._counters[level - 1] += 1
         for idx in range(level, self._MAX_LEVEL):
             self._counters[idx] = 0
@@ -457,6 +461,8 @@ def _reformat_docx(
 
     prev_was_heading = False
     number_tracker = _HeadingNumberTracker() if numbering_style == "decimal" else None
+    # Even when decimal numbering is off, rewrite broken 0.x prefixes (e.g. "0.1 Abstract").
+    zero_fix_tracker: Optional[_HeadingNumberTracker] = None
 
     # ── Apply page margins (skip when cover/info present — preserve their sections) ──
     margins = styles["margins"]
@@ -501,14 +507,20 @@ def _reformat_docx(
                 if cleaned != text and cleaned:
                     _set_paragraph_text_preserve_style(para, cleaned)
                     text = cleaned
-            elif (
-                number_tracker is not None
-                and not _is_meta_list_section_title(text)
-            ):
-                number = number_tracker.next_number(level)
-                desired = _format_numbered_heading(text, number)
-                if text != desired:
-                    _set_paragraph_text_preserve_style(para, desired)
+            elif not _is_meta_list_section_title(text):
+                prefix_match = re.match(r"^(\d+(?:\.\d+)*)\.?\s+", text)
+                prefix = prefix_match.group(1) if prefix_match else None
+                zero_based = bool(prefix and str(prefix).split(".", 1)[0] == "0")
+                tracker = number_tracker
+                if tracker is None and zero_based:
+                    if zero_fix_tracker is None:
+                        zero_fix_tracker = _HeadingNumberTracker()
+                    tracker = zero_fix_tracker
+                if tracker is not None:
+                    number = tracker.next_number(level)
+                    desired = _format_numbered_heading(text, number)
+                    if text != desired:
+                        _set_paragraph_text_preserve_style(para, desired)
             _apply_word_heading(doc, para, level, spec, ALIGN_MAP)
         else:
             spec = dict(styles["body"])
@@ -534,7 +546,12 @@ def _create_formatted_docx(
     report: AnalysisReport,
     rules_input: str | Dict[str, Any],
 ) -> str:
-    """Create a new DOCX from a non-DOCX source (PDF/TXT)."""
+    """Create a new DOCX from a non-DOCX source (PDF/TXT).
+
+    PDF path preserves tables and images in reading order (not text-only).
+    """
+    from io import BytesIO
+
     from docx import Document
     from docx.shared import Pt, Inches
     from docx.enum.text import WD_ALIGN_PARAGRAPH
@@ -549,7 +566,6 @@ def _create_formatted_docx(
     styles = parse_template_styles(rules_input)
     doc = Document()
 
-    # Apply page margins
     margins = styles["margins"]
     for section in doc.sections:
         section.top_margin = Inches(margins["top"])
@@ -557,42 +573,185 @@ def _create_formatted_docx(
         section.left_margin = Inches(margins["left"])
         section.right_margin = Inches(margins["right"])
 
-    # Read source text
+    usable_width_in = max(
+        4.0,
+        8.27 - float(margins.get("left", 1.0)) - float(margins.get("right", 1.0)),
+    )
+
     ext = os.path.splitext(input_path)[1].lower()
     if ext == ".txt":
-        with open(input_path, "r", encoding="utf-8", errors="replace") as f:
-            lines = f.readlines()
-    elif ext == ".pdf":
-        import fitz
-        pdf = fitz.open(input_path)
-        lines = []
-        for page in pdf:
-            lines.extend(page.get_text().split("\n"))
-        pdf.close()
-    else:
-        lines = []
+        from pdf_io import PdfFlowBlock
 
-    for line in lines:
-        text = line.strip()
+        blocks = [
+            PdfFlowBlock(kind="paragraph", page_number=1, top=float(i), text=ln.strip())
+            for i, ln in enumerate(open(input_path, "r", encoding="utf-8", errors="replace"))
+            if ln.strip()
+        ]
+    elif ext == ".pdf":
+        from pdf_io import extract_pdf_flow_blocks
+
+        blocks = extract_pdf_flow_blocks(input_path)
+    else:
+        blocks = []
+
+    prev_was_heading = False
+    from pdf_io import looks_like_heading_line
+
+    n_para = n_table = n_image = 0
+
+    for block in blocks:
+        if block.kind == "table" and block.table:
+            rows = block.table
+            n_rows = len(rows)
+            n_cols = max(len(r) for r in rows) if rows else 0
+            if n_rows < 1 or n_cols < 1:
+                continue
+            table = doc.add_table(rows=n_rows, cols=n_cols)
+            try:
+                table.style = "Table Grid"
+            except Exception:
+                pass
+            for r_idx, row in enumerate(rows):
+                for c_idx in range(n_cols):
+                    cell_text = row[c_idx] if c_idx < len(row) else ""
+                    cell = table.rows[r_idx].cells[c_idx]
+                    cell.text = cell_text
+                    for para in cell.paragraphs:
+                        for run in para.runs:
+                            run.font.name = styles["body"].get("font", "Times New Roman")
+                            try:
+                                run.font.size = Pt(float(styles["body"].get("size", 11)))
+                            except Exception:
+                                pass
+            # Spacer after table
+            if getattr(block, "caption", None):
+                cap = doc.add_paragraph()
+                cap.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                run = cap.add_run(block.caption)
+                run.italic = True
+                try:
+                    run.font.name = styles["body"].get("font", "Times New Roman")
+                    run.font.size = Pt(10)
+                except Exception:
+                    pass
+            else:
+                doc.add_paragraph()
+            n_table += 1
+            prev_was_heading = False
+            continue
+
+        if block.kind == "image" and block.image_bytes:
+            try:
+                para = doc.add_paragraph()
+                para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                run = para.add_run()
+                width_in = usable_width_in * 0.85
+                if block.width_pt and block.width_pt > 0:
+                    width_in = min(usable_width_in * 0.92, max(1.5, block.width_pt / 72.0))
+                run.add_picture(BytesIO(block.image_bytes), width=Inches(width_in))
+                # Caption must sit immediately below the image
+                caption_text = (getattr(block, "caption", None) or "").strip()
+                if caption_text:
+                    cap = doc.add_paragraph()
+                    cap.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                    try:
+                        cap.style = doc.styles["Caption"]
+                    except Exception:
+                        pass
+                    cr = cap.add_run(caption_text)
+                    cr.italic = True
+                    try:
+                        cr.font.name = styles["body"].get("font", "Times New Roman")
+                        cr.font.size = Pt(10)
+                    except Exception:
+                        pass
+                n_image += 1
+                prev_was_heading = False
+            except Exception as exc:
+                print(f"[reformatter] skip embedding image: {exc}")
+            continue
+
+        text = (block.text or "").strip()
         if not text:
             continue
 
         word_count = len(text.split())
         ends_sentence = text.endswith((".", "?", "!"))
-
-        if word_count <= 10 and text.isupper():
-            spec = styles["heading1"]
+        heading_level = 0
+        is_list = bool(getattr(block, "is_list_item", False))
+        from pdf_io import (
+            looks_like_bullet_marker_line,
+            looks_like_caption_line,
+            strip_list_marker,
+        )
+        if looks_like_caption_line(text):
+            # Orphan caption (no image bound) — still center it
             para = doc.add_paragraph()
+            para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            run = para.add_run(text)
+            run.italic = True
+            n_para += 1
+            prev_was_heading = False
+            continue
+        # PDF→DOCX: only auto-bullet EXPLICIT markers. Label:colon rows stay
+        # Normal so the formatting agent can confirm true lists.
+        if is_list and not looks_like_bullet_marker_line(text):
+            is_list = False
+        if not is_list:
+            is_list = looks_like_bullet_marker_line(text)
+
+        if is_list:
+            body_text = strip_list_marker(text) or text
+            para = doc.add_paragraph()
+            para.add_run(body_text)
+            try:
+                para.style = doc.styles["List Bullet"]
+            except Exception:
+                try:
+                    para.style = "List Bullet"
+                except Exception:
+                    pass
+            # Soft body font on list items
+            spec = dict(styles["body"])
+            spec["first_line_indent"] = 0
+            _apply_style(para, spec, ALIGN_MAP)
+            n_para += 1
+            prev_was_heading = False
+            continue
+
+        if looks_like_heading_line(text) or (word_count <= 10 and text.isupper()):
+            if text.isupper() or re.match(
+                r"(?i)^(abstract|introduction|conclusion|references|methodology)\b",
+                text,
+            ):
+                heading_level = 1
+                spec = styles["heading1"]
+            else:
+                heading_level = 2
+                spec = styles.get("heading2", styles["heading1"])
         elif word_count <= 10 and text.istitle() and not ends_sentence:
-            spec = styles["heading2"]
-            para = doc.add_paragraph()
+            heading_level = 2
+            spec = styles.get("heading2", styles["heading1"])
         else:
-            spec = styles["body"]
-            para = doc.add_paragraph()
+            spec = dict(styles["body"])
+            if prev_was_heading:
+                spec["first_line_indent"] = 0
 
-        run = para.add_run(text)
+        para = doc.add_paragraph()
+        para.add_run(text)
         _apply_style(para, spec, ALIGN_MAP)
+        if heading_level:
+            try:
+                force_heading_style(para, doc, heading_level)
+            except Exception:
+                pass
+        prev_was_heading = heading_level > 0
+        n_para += 1
 
+    print(
+        f"[reformatter] PDF→DOCX: {n_para} paragraphs, "
+        f"{n_table} tables, {n_image} images"
+    )
     doc.save(output_path)
     return output_path
 

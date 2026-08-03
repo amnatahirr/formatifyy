@@ -2,6 +2,7 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../config/dev_user_config.dart';
 import '../../models/admin_models.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/admin_api_service.dart';
@@ -87,19 +88,18 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
 
     final children = <Widget>[
       if (widget.embedded) ...[
-        AdminPageHeader(
-          title: 'Analytics',
-          subtitle: 'Live metrics from your Formatify backend',
-          trailing: IconButton(
+        Align(
+          alignment: Alignment.centerRight,
+          child: IconButton(
             tooltip: 'Refresh',
             onPressed: _loadAnalytics,
             icon: const Icon(Icons.refresh_rounded),
           ),
         ),
-        const SizedBox(height: 20),
+        const SizedBox(height: 8),
       ],
       adminResponsiveGrid(
-        itemCount: 4,
+        itemCount: DevUserConfig.hasFypModule ? 4 : 3,
         itemBuilder: (context, index) {
           final cards = [
             AdminStatCard(
@@ -119,12 +119,13 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
               icon: Icons.trending_up_rounded,
               accent: AdminColors.warning,
             ),
-            AdminStatCard(
-              title: 'Students',
-              value: '${analytics.totalStudents}',
-              icon: Icons.people_alt_outlined,
-              accent: AdminColors.accent,
-            ),
+            if (DevUserConfig.hasFypModule)
+              AdminStatCard(
+                title: 'Students',
+                value: '${analytics.totalStudents}',
+                icon: Icons.people_alt_outlined,
+                accent: AdminColors.accent,
+              ),
           ];
           return cards[index];
         },

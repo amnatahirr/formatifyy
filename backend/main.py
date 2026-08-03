@@ -8,7 +8,13 @@ Base URL served:   http://localhost:8000
     POST /api/auth/login       → login and return user profile
     GET  /api/auth/me          → validate restored session by user_id
     GET  /api/auth/departments → public department list for signup
-    GET  /api/auth/google/debug/tokens   → mock Google auth debug stub
+    GET  /api/auth/google/authorize      → start Google Drive OAuth
+    GET  /api/auth/google/callback       → OAuth redirect handler
+    GET  /api/auth/google/status         → poll OAuth completion
+    GET  /api/auth/google/debug/tokens   → check stored Drive tokens
+    GET  /api/uploads/google-drive/files → list Drive files
+    POST /api/uploads/google-drive/import
+    POST /api/uploads/download-from-google-drive
 
   Templates (public):
     GET  /api/templates                         → all templates (global)
@@ -115,6 +121,7 @@ from content_fixer import (
     apply_heading_fix,
     apply_template_reformat,
     demote_heading_to_body,
+    renumber_heading_prefixes,
     _is_instruction_suggestion,
 )
 from heading_analysis import (
@@ -543,17 +550,7 @@ async def change_password(payload: ChangePasswordRequest, request: Request):
     return {"success": True, "message": "Password updated successfully."}
 
 
-@app.get("/api/auth/google/debug/tokens", tags=["Auth"])
-async def google_debug_tokens():
-    """
-    Stub endpoint — returns mock Google OAuth token status for debug builds.
-    The Flutter frontend calls this to detect Google Auth availability.
-    """
-    return {
-        "google_auth_available": False,
-        "message": "Google OAuth is not configured on this server.",
-        "fallback": "email_password"
-    }
+# Google Drive token debug lives on google_drive_routes (auth_router).
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -753,9 +750,7 @@ async def _run_analysis(
     # ── Step 1: Ingest ────────────────────────────────────────────────────────
     try:
         if saved_path:
-            norm_filename = filename
-            if not os.path.splitext(norm_filename)[1]:
-                norm_filename = os.path.basename(saved_path)
+            norm_filename = _filename_for_parse(saved_path, filename)
             doc_model = parse_file(saved_path, norm_filename)
         else:
             doc_model = parse_text(text or "", title="pasted_text.txt")
@@ -843,6 +838,12 @@ app.include_router(frontmatter_router)
 # Super Admin — manage organizations (X-Super-Admin-Key)
 from super_admin_routes import router as super_admin_router
 app.include_router(super_admin_router)
+
+# Google Drive OAuth + import (auth + uploads)
+from services.google_drive_routes import auth_router as google_auth_router
+from services.google_drive_routes import uploads_router as google_uploads_router
+app.include_router(google_auth_router)
+app.include_router(google_uploads_router)
 
 
 @app.get("/api/org/resolve", tags=["Organization"])
@@ -955,6 +956,30 @@ def _working_copy_path(document_id: int) -> str:
     return os.path.join(UPLOAD_DIR, "working", f"doc_{document_id}_working.docx")
 
 
+_FIXABLE_SOURCE_EXTS = {".docx", ".pdf", ".txt"}
+
+
+def _source_ext(path: str) -> str:
+    return os.path.splitext(str(path or ""))[1].lower()
+
+
+def _is_fixable_source(path: str) -> bool:
+    """True when we can build a DOCX working copy (DOCX / PDF / TXT)."""
+    return _source_ext(path) in _FIXABLE_SOURCE_EXTS
+
+
+def _filename_for_parse(path: str, display_name: Optional[str] = None) -> str:
+    """
+    Stem from the user-facing name, extension from the real file on disk.
+    Prevents parse_file from treating a .docx working copy as PDF because
+    documents.filename still ends in .pdf.
+    """
+    ext = _source_ext(path) or ".docx"
+    stem = os.path.splitext(display_name or os.path.basename(path) or "document")[0]
+    stem = stem.strip() or "document"
+    return f"{stem}{ext}"
+
+
 def _heading_decisions_path(document_id: int) -> str:
     return os.path.join(UPLOAD_DIR, "working", f"doc_{document_id}_heading_decisions.json")
 
@@ -1002,16 +1027,26 @@ def _ensure_formatted_working_copy(
     """
     Return the working DOCX path, creating it from the original upload if needed.
 
+    Accepts DOCX, PDF, and TXT uploads. PDF/TXT are converted into a DOCX
+    working copy (same path as DOCX uploads) so apply-all / heading / bullet
+    fixes can run.
+
     Rebuilds when missing, when force_rebuild=True, or when the original upload
     is newer than the working copy (so Analysis sees the latest upload, not a
     stale pre-fixed working file).
     """
-    if not str(doc["file_path"]).endswith(".docx"):
-        raise HTTPException(status_code=400, detail="Working fixes require a DOCX document.")
+    original = str(doc["file_path"] or "")
+    if not _is_fixable_source(original):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Working fixes require a DOCX, PDF, or TXT document "
+                f"(got {_source_ext(original) or 'unknown'})."
+            ),
+        )
 
     working_copy = _working_copy_path(doc["id"])
     os.makedirs(os.path.dirname(working_copy), exist_ok=True)
-    original = doc["file_path"]
 
     needs_rebuild = force_rebuild or not os.path.exists(working_copy)
     if (
@@ -1045,6 +1080,10 @@ def _ensure_formatted_working_copy(
             report,
             tmpl["formatting_rules"],
             tmpl.get("required_sections", []),
+        )
+        print(
+            f"[working_copy] built doc={doc['id']} "
+            f"from {_source_ext(original)} → docx"
         )
         try:
             from frontmatter_apply import clear_frontmatter_marker, ensure_frontmatter_pages
@@ -1080,9 +1119,7 @@ def _commit_working_document(document_id: int, working_copy: str, doc: Any) -> D
 
     document_blocks: List[Dict[str, Any]] = []
     try:
-        norm_filename = doc["filename"]
-        if not os.path.splitext(norm_filename)[1]:
-            norm_filename = os.path.basename(working_copy)
+        norm_filename = _filename_for_parse(working_copy, doc["filename"])
         doc_model = parse_file(working_copy, norm_filename)
         image_paths = save_document_images(doc_model, document_id, UPLOAD_DIR)
         document_blocks = build_document_blocks(doc_model, image_paths)
@@ -1486,19 +1523,66 @@ async def upload_text(
     user_id: int = Query(...),
 ):
     """Save raw pasted text content as a .txt document and record in SQLite."""
+    return await _save_pasted_text_document(
+        request=request,
+        payload=payload,
+        template_id=template_id,
+        user_id=user_id,
+    )
+
+
+@app.post("/api/documents/create-report", tags=["Documents"])
+async def create_report_from_paste(
+    request: Request,
+    payload: Dict[str, Any] = Body(...),
+    user_id: int = Query(...),
+    template_id: Optional[int] = Query(None),
+):
+    """
+    Alias used by New Report → Paste Content.
+    Same behavior as upload-text; template_id may come from query or JSON body.
+    """
+    resolved_template = template_id
+    if resolved_template is None:
+        raw = payload.get("template_id")
+        try:
+            resolved_template = int(raw) if raw is not None else None
+        except (TypeError, ValueError):
+            resolved_template = None
+    if not resolved_template:
+        raise HTTPException(status_code=400, detail="template_id is required.")
+    return await _save_pasted_text_document(
+        request=request,
+        payload=payload,
+        template_id=int(resolved_template),
+        user_id=user_id,
+    )
+
+
+async def _save_pasted_text_document(
+    *,
+    request: Request,
+    payload: Dict[str, Any],
+    template_id: int,
+    user_id: int,
+) -> Dict[str, Any]:
     org_id = resolve_org_id_for_user_action(request, user_id)
     tmpl = get_template_by_id(template_id, org_id=org_id)
     if not tmpl:
         raise HTTPException(status_code=400, detail="Template not found for this organization.")
 
-    content = payload.get("content", "")
+    content = str(payload.get("content") or "")
+    if not content.strip():
+        raise HTTPException(status_code=400, detail="Paste some content before creating a report.")
+
+    display_name = str(payload.get("title") or "").strip() or "Pasted Content"
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     stored_filename = f"{timestamp}_pasted_content.txt"
     file_path = os.path.join(UPLOAD_DIR, stored_filename)
-    
+
     with open(file_path, "w", encoding="utf-8") as f:
         f.write(content)
-        
+
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute(
@@ -1506,16 +1590,16 @@ async def upload_text(
         INSERT INTO documents (user_id, template_id, filename, file_path, status)
         VALUES (?, ?, ?, ?, ?)
         """,
-        (user_id, template_id, "Pasted Content", file_path, "pending")
+        (user_id, template_id, display_name, file_path, "pending"),
     )
     conn.commit()
     doc_id = cursor.lastrowid
     conn.close()
-    
+
     return {
         "document_id": doc_id,
-        "filename": "Pasted Content",
-        "status": "pending"
+        "filename": display_name,
+        "status": "pending",
     }
 
 
@@ -1639,9 +1723,7 @@ async def _run_analysis_freeform(
 
     try:
         if saved_path:
-            norm_filename = filename
-            if not os.path.splitext(norm_filename)[1]:
-                norm_filename = os.path.basename(saved_path)
+            norm_filename = _filename_for_parse(saved_path, filename)
             doc_model = parse_file(saved_path, norm_filename)
         else:
             doc_model = parse_text(text or "", title="pasted_text.txt")
@@ -1756,9 +1838,7 @@ async def analyze_document_freeform_endpoint(document_id: int, user_id: int = Qu
     document_blocks: List[Dict[str, Any]] = []
     image_paths: Dict[str, str] = {}
     try:
-        norm_filename = doc["filename"]
-        if not os.path.splitext(norm_filename)[1]:
-            norm_filename = os.path.basename(file_path)
+        norm_filename = _filename_for_parse(file_path, doc["filename"])
         doc_model = parse_file(file_path, norm_filename)
         image_paths = save_document_images(doc_model, document_id, UPLOAD_DIR)
         document_blocks = build_document_blocks(doc_model, image_paths)
@@ -1864,9 +1944,10 @@ async def analyze_document_endpoint(document_id: int, user_id: int = Query(...))
         pass
 
     tmpl = get_template_by_id(doc["template_id"])
-    if tmpl and str(doc["file_path"]).endswith(".docx"):
+    if tmpl and _is_fixable_source(doc["file_path"]):
         # Always rebuild from the upload on Analyze so Tables / style issues
         # reflect the source document, not a previously fixed working copy.
+        # PDF/TXT are converted to a DOCX working copy (same as DOCX path).
         file_path = _ensure_formatted_working_copy(doc, tmpl, force_rebuild=True)
     else:
         working_copy = _working_copy_path(document_id)
@@ -1877,7 +1958,7 @@ async def analyze_document_endpoint(document_id: int, user_id: int = Query(...))
         template_id=str(doc["template_id"]),
         saved_path=file_path,
         text=None,
-        filename=doc["filename"],
+        filename=_filename_for_parse(file_path, doc["filename"]),
         job_id=job_id
     )
     
@@ -1898,9 +1979,7 @@ async def analyze_document_endpoint(document_id: int, user_id: int = Query(...))
     document_blocks: List[Dict[str, Any]] = []
     image_paths: Dict[str, str] = {}
     try:
-        norm_filename = doc["filename"]
-        if not os.path.splitext(norm_filename)[1]:
-            norm_filename = os.path.basename(file_path)
+        norm_filename = _filename_for_parse(file_path, doc["filename"])
         doc_model = parse_file(file_path, norm_filename)
         image_paths = save_document_images(doc_model, document_id, UPLOAD_DIR)
         document_blocks = build_document_blocks(doc_model, image_paths)
@@ -2111,7 +2190,7 @@ async def heading_decision_endpoint(
             result["message"] = f"Decision saved, but style apply failed: {exc}"
     elif decision == "discard":
         tmpl = get_template_by_id(doc["template_id"])
-        if tmpl and str(doc["file_path"]).endswith(".docx"):
+        if tmpl and _is_fixable_source(doc["file_path"]):
             try:
                 working_copy = _ensure_formatted_working_copy(doc, tmpl)
                 ok, msg = demote_heading_to_body(working_copy, pid)
@@ -2690,12 +2769,15 @@ async def apply_all_fixes(
                 working_copy,
                 fix.get("paragraph_id", ""),
                 int(fix.get("heading_level", 1) or 1),
+                renumber=False,
             )
             if ok:
                 text_result["applied"] += 1
             else:
                 text_result["skipped"] += 1
                 text_result["errors"].append(msg)
+        if heading_fixes:
+            renumber_heading_prefixes(working_copy)
 
         # 2) Grammar/text fixes
         if text_fixes:
@@ -2704,12 +2786,23 @@ async def apply_all_fixes(
             text_result["skipped"] += tr.get("skipped", 0)
             text_result["errors"].extend(tr.get("errors") or [])
 
-        # 3) Deterministic list detection — apply ALL groups so every
-        #    "To develop…" item is bulleted, not just a partial subset.
+        # 3) Deterministic list detection — apply high-confidence groups
+        #    (infinitives / markers / trigger lines) so "To develop…" lists
+        #    are covered. Ambiguous Label:colon groups only apply when the
+        #    formatting agent confirmed them in the payload fixes.
         try:
             from docx import Document as DocxDoc
             from docx.oxml.ns import qn
             from list_detection import detect_list_groups, groups_needing_numpr
+
+            _SAFE_APPLY_DETECTIONS = {
+                "infinitive",
+                "gerund",
+                "trigger_line",
+                "trigger_follower",
+                "marker",
+                "bullet_marker",
+            }
 
             docx = DocxDoc(working_copy)
             blocks = []
@@ -2733,7 +2826,13 @@ async def apply_all_fixes(
                     "paragraph_id": f"p{idx}",
                 })
             groups = groups_needing_numpr(detect_list_groups(blocks))
-            all_indices = sorted({i for g in groups for i in g.indices} | set(bullet_fix_indices))
+            safe_indices = {
+                i
+                for g in groups
+                if (g.detection or "").lower() in _SAFE_APPLY_DETECTIONS
+                for i in g.indices
+            }
+            all_indices = sorted(safe_indices | set(bullet_fix_indices))
             if all_indices:
                 applied, skipped = apply_section_bullets_to_file(working_copy, all_indices)
                 bullet_result = {
@@ -2911,8 +3010,8 @@ async def replace_image(
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
 
-    if not doc["file_path"].endswith(".docx"):
-        raise HTTPException(status_code=400, detail="Image replacement is only supported for DOCX files.")
+    if not _is_fixable_source(doc["file_path"]):
+        raise HTTPException(status_code=400, detail="Image replacement is only supported for DOCX/PDF/TXT files.")
 
     img_dir = os.path.join(UPLOAD_DIR, "images", f"doc_{document_id}")
     os.makedirs(img_dir, exist_ok=True)
@@ -3004,7 +3103,7 @@ async def replace_image(
         try:
             from parser import parse_file
             from issue_utils import save_document_images
-            doc_model = parse_file(working_copy, doc["filename"])
+            doc_model = parse_file(working_copy, _filename_for_parse(working_copy, doc["filename"]))
             save_document_images(doc_model, document_id, UPLOAD_DIR)
         except Exception as img_exc:
             print(f"[replace-image] preview refresh warning: {img_exc}")
@@ -3066,10 +3165,10 @@ async def remove_image(
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
 
-    if not doc["file_path"].endswith(".docx"):
+    if not _is_fixable_source(doc["file_path"]):
         raise HTTPException(
             status_code=400,
-            detail="Image removal is only supported for DOCX files.",
+            detail="Image removal is only supported for DOCX/PDF/TXT files.",
         )
 
     tmpl = get_template_by_id(doc["template_id"])

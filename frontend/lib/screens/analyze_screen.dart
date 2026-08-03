@@ -2050,6 +2050,7 @@ import '../theme/app_theme.dart';
 import '../providers/auth_provider.dart';
 import '../config/api_config.dart';
 import '../widgets/app_sidebar.dart';
+import '../widgets/analyze_progress_panel.dart';
 import '../widgets/export_dialog.dart';
 import '../widgets/freeform_analyze_dialogs.dart';
 import '../providers/document_provider.dart';
@@ -2240,6 +2241,10 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
   bool _isApplyingFix = false;
   bool _isFixApplied = false;
   bool _isDownloading = false;
+  /// True briefly after analyze HTTP succeeds so the progress UI can show Finalizing.
+  bool _analysisComplete = false;
+  /// Bumped on each analyze run so the progress panel resets its stages.
+  int _analyzeProgressGen = 0;
 
   final Set<int> _expandedSections = {};
   final Set<String> _fixingStyleIssues = {};
@@ -2327,11 +2332,29 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
     _tabController = TabController(length: 9, vsync: this);
     _tabController.addListener(_onAnalysisTabChanged);
     _baseUrl = ApiConfig.getBaseUrl();
-    _analysisFuture = _fetchAnalysis();
+    _analysisFuture = _runAnalysisWithProgress();
     // Preload table issues so the Tables tab badge has a real count.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _loadTables();
     });
+  }
+
+  /// Runs analysis while the staged progress panel advances through named steps.
+  Future<Map<String, dynamic>> _runAnalysisWithProgress() async {
+    _analysisComplete = false;
+    _analyzeProgressGen++;
+    try {
+      final data = await _fetchAnalysis();
+      if (mounted) {
+        setState(() => _analysisComplete = true);
+        // Let the user see "Finalizing" before swapping to results.
+        await Future.delayed(const Duration(milliseconds: 500));
+      }
+      return data;
+    } catch (_) {
+      if (mounted) setState(() => _analysisComplete = false);
+      rethrow;
+    }
   }
 
   void _onAnalysisTabChanged() {
@@ -4241,19 +4264,17 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
     );
   }
 
-  Widget _buildLoading() => Center(
-    child: Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        CircularProgressIndicator(color: _blue),
-        SizedBox(height: 16),
-        Text(
-          'Running Layer 1 → 2 → 3 analysis…',
-          style: TextStyle(color: _textSec),
-        ),
-      ],
-    ),
-  );
+  Widget _buildLoading() => AnalyzeProgressPanel(
+        key: ValueKey('analyze_progress_$_analyzeProgressGen'),
+        documentName: widget.documentName,
+        accent: _blue,
+        textPrimary: _textPri,
+        textSecondary: _textSec,
+        surface: _surface,
+        border: _border,
+        track: _surface2,
+        isComplete: _analysisComplete,
+      );
 
   Widget _buildError(String msg) => Center(
     child: Column(
@@ -4272,7 +4293,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
         const SizedBox(height: 16),
         ElevatedButton(
           onPressed: () => setState(() {
-            _analysisFuture = _fetchAnalysis();
+            _analysisFuture = _runAnalysisWithProgress();
           }),
           child: const Text('Retry'),
         ),

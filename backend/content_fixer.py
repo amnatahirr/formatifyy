@@ -188,10 +188,67 @@ def apply_text_fix(
     return False, "Could not locate original text in paragraph."
 
 
+_HEADING_NUM_PREFIX_RE = re.compile(r"^(\d+(?:\.\d+)*)\.?\s+")
+_HEADING_STYLE_RE = re.compile(r"(?i)^heading\s*([1-4])$")
+
+
+def _set_paragraph_text(para, text: str) -> None:
+    """Replace paragraph visible text while keeping the first run if present."""
+    if para.runs:
+        para.runs[0].text = text
+        for run in para.runs[1:]:
+            run.text = ""
+    else:
+        para.text = text
+
+
+def renumber_heading_prefixes(file_path: str) -> int:
+    """
+    Rewrite numeric prefixes on Heading 1–4 paragraphs to a clean outline:
+    1. … / 1.1 … / 1.1.1 … / 2. …
+    Strips broken prefixes like 0.1 so Abstract becomes 1. Abstract.
+    """
+    if not file_path.endswith(".docx") or not os.path.exists(file_path):
+        return 0
+
+    from docx import Document as DocxDoc
+
+    doc = DocxDoc(file_path)
+    counters = [0, 0, 0, 0]
+    changed = 0
+
+    for para in doc.paragraphs:
+        style_name = (para.style.name or "").strip() if para.style else ""
+        match = _HEADING_STYLE_RE.match(style_name)
+        if not match:
+            continue
+
+        level = int(match.group(1))
+        counters[level - 1] += 1
+        for i in range(level, 4):
+            counters[i] = 0
+
+        prefix = ".".join(str(counters[i]) for i in range(level)) + "."
+        raw = (para.text or "").strip()
+        if not raw:
+            continue
+        body = _HEADING_NUM_PREFIX_RE.sub("", raw).strip() or raw
+        new_text = f"{prefix} {body}"
+        if new_text != raw:
+            _set_paragraph_text(para, new_text)
+            changed += 1
+
+    if changed:
+        doc.save(file_path)
+    return changed
+
+
 def apply_heading_fix(
     file_path: str,
     paragraph_id: str,
     heading_level: int = 1,
+    *,
+    renumber: bool = True,
 ) -> Tuple[bool, str]:
     """Apply Word built-in Heading N style to a paragraph."""
     if not file_path.endswith(".docx"):
@@ -224,12 +281,7 @@ def apply_heading_fix(
         p_pr.remove(num_pr)
     cleaned = re.sub(r"^\s*[•*○■▪\-–—→»·]\s+", "", para.text or "")
     if cleaned.strip() and cleaned != (para.text or ""):
-        if para.runs:
-            para.runs[0].text = cleaned.strip()
-            for run in para.runs[1:]:
-                run.text = ""
-        else:
-            para.text = cleaned.strip()
+        _set_paragraph_text(para, cleaned.strip())
 
     # Template font reinforcement without breaking the Word style link
     for run in para.runs:
@@ -249,6 +301,8 @@ def apply_heading_fix(
     pf.left_indent = None
 
     doc.save(file_path)
+    if renumber:
+        renumber_heading_prefixes(file_path)
     return True, f"Applied {style_name}."
 
 
@@ -294,6 +348,7 @@ def apply_all_text_fixes(
     skipped = 0
     errors: List[str] = []
 
+    heading_applied = False
     for fix in fixes:
         fix_type = fix.get("fix_type", "text")
         if fix_type == "heading":
@@ -301,7 +356,10 @@ def apply_all_text_fixes(
                 file_path,
                 fix.get("paragraph_id", ""),
                 int(fix.get("heading_level", 1) or 1),
+                renumber=False,
             )
+            if ok:
+                heading_applied = True
         else:
             ok, msg = apply_text_fix(
                 file_path,
@@ -314,6 +372,9 @@ def apply_all_text_fixes(
         else:
             skipped += 1
             errors.append(msg)
+
+    if heading_applied:
+        renumber_heading_prefixes(file_path)
 
     return {"applied": applied, "skipped": skipped, "errors": errors}
 

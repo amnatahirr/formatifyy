@@ -372,16 +372,15 @@ class _DeadlinesScreenState extends State<DeadlinesScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                AdminPageHeader(
-                  title: 'Deadlines',
-                  subtitle: 'Set and track department submission dates',
-                  trailing: ElevatedButton.icon(
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: ElevatedButton.icon(
                     onPressed: () => _openDeadlineSheet(),
                     icon: const Icon(Icons.add),
                     label: const Text('Add Deadline'),
                   ),
                 ),
-                const SizedBox(height: 20),
+                const SizedBox(height: 16),
                 Expanded(child: _buildList()),
               ],
             ),

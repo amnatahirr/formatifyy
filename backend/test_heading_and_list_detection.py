@@ -245,6 +245,80 @@ def test_claude_extra_discard_hides_heading():
     assert results[0]["is_heading"] is False
 
 
+def test_empty_template_zero_prefix_uses_claude_level():
+    """No required_sections: '0.1 Abstract' must be H1 when Claude says so (not H2)."""
+    empty = {"required_sections": []}
+    blocks = [
+        _block(0, "0.1. Abstract", numbering_prefix="0.1"),
+        _block(1, "The offered project automates report formatting for students."),
+        _block(2, "0.1.1 Admin Panel", numbering_prefix="0.1.1"),
+        _block(3, "Admin panel details continue in this paragraph with enough words."),
+    ]
+    claude = [
+        {"paragraph_id": "p0", "level": 1, "confidence": 0.95},
+        {"paragraph_id": "p2", "level": 2, "confidence": 0.9},
+    ]
+    results = analyze_headings(blocks, empty, claude_candidates=claude)
+    abstract = results[0]
+    assert abstract["is_heading"] is True
+    assert abstract["level"] == "h1", f"expected h1, got {abstract['level']}"
+    assert abstract["source"] == "inferred"
+    assert abstract["user_decision"] == "keep"
+    sub = results[2]
+    assert sub["is_heading"] is True
+    assert sub["level"] == "h2", f"expected h2, got {sub['level']}"
+    assert sub["user_decision"] == "keep"
+
+
+def test_empty_template_zero_prefix_without_claude():
+    """Reformatter path (no Claude): Abstract with 0.1 still becomes H1."""
+    empty = {"required_sections": []}
+    blocks = [
+        _block(0, "0.1. Abstract", numbering_prefix="0.1"),
+        _block(1, "The offered project automates report formatting for students carefully."),
+    ]
+    results = analyze_headings(blocks, empty)
+    assert results[0]["is_heading"] is True
+    assert results[0]["level"] == "h1", f"expected h1, got {results[0]['level']}"
+    assert results[0]["user_decision"] == "keep"
+
+
+def test_number_tracker_never_starts_at_zero():
+    from reformatter import _HeadingNumberTracker
+
+    t = _HeadingNumberTracker()
+    # First heading wrongly treated as H2 must still start at 1.1, not 0.1
+    assert t.next_number(2) == "1.1"
+    assert t.next_number(1) == "2"
+    assert t.next_number(2) == "2.1"
+
+
+def test_renumber_heading_prefixes_strips_zero():
+    import tempfile
+    from docx import Document as DocxDoc
+    from content_fixer import renumber_heading_prefixes
+
+    doc = DocxDoc()
+    p0 = doc.add_paragraph("0.1. Abstract")
+    p0.style = doc.styles["Heading 1"]
+    p1 = doc.add_paragraph("0.1.1 Scope")
+    p1.style = doc.styles["Heading 2"]
+    p2 = doc.add_paragraph("Introduction body text.")
+    with tempfile.NamedTemporaryFile(suffix=".docx", delete=False) as tmp:
+        path = tmp.name
+    doc.save(path)
+    try:
+        n = renumber_heading_prefixes(path)
+        assert n >= 1
+        out = DocxDoc(path)
+        assert out.paragraphs[0].text.startswith("1."), out.paragraphs[0].text
+        assert "Abstract" in out.paragraphs[0].text
+        assert out.paragraphs[1].text.startswith("1.1."), out.paragraphs[1].text
+        assert "Scope" in out.paragraphs[1].text
+    finally:
+        os.unlink(path)
+
+
 if __name__ == "__main__":
     tests = [
         test_soft_match_problem_to_problem_statement,
@@ -259,6 +333,10 @@ if __name__ == "__main__":
         test_all_infinitives_one_group,
         test_claude_first_matched_and_extra,
         test_claude_extra_discard_hides_heading,
+        test_empty_template_zero_prefix_uses_claude_level,
+        test_empty_template_zero_prefix_without_claude,
+        test_number_tracker_never_starts_at_zero,
+        test_renumber_heading_prefixes_strips_zero,
     ]
 
     failed = 0

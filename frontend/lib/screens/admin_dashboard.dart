@@ -70,7 +70,12 @@ class _AdminDashboardState extends State<AdminDashboard> {
       requiresFyp: true,
     ),
     _AdminNavItem(id: 6, label: 'Users', icon: Icons.people_rounded),
-    _AdminNavItem(id: 7, label: 'Universities', icon: Icons.school_rounded),
+    _AdminNavItem(
+      id: 7,
+      label: 'Universities',
+      icon: Icons.school_rounded,
+      requiresFyp: true,
+    ),
     _AdminNavItem(id: 8, label: 'Analytics', icon: Icons.bar_chart_rounded),
     _AdminNavItem(id: 9, label: 'Verify Files', icon: Icons.fact_check_rounded),
     _AdminNavItem(id: 10, label: 'Settings', icon: Icons.settings_rounded),
@@ -112,6 +117,41 @@ class _AdminDashboardState extends State<AdminDashboard> {
       if (item.id == _selectedId) return item.label;
     }
     return 'Admin';
+  }
+
+  String get _selectedSubtitle {
+    switch (_selectedId) {
+      case 0:
+        return DevUserConfig.hasFypModule
+            ? 'Live metrics and organization overview'
+            : 'Live metrics for your organization';
+      case 1:
+        return 'Create and manage departments';
+      case 2:
+        return 'Manage supervisors by department';
+      case 3:
+        return 'Department templates and formatting rules';
+      case 4:
+        return 'Department submission deadlines';
+      case 5:
+        return 'Semester 6 and 7 submission cutoffs';
+      case 6:
+        return DevUserConfig.hasFypModule
+            ? 'Accounts, supervisors, and students'
+            : 'Organization members and admins';
+      case 7:
+        return 'Registered institutions';
+      case 8:
+        return 'Usage and compliance trends';
+      case 9:
+        return 'Upload a file and verify against a template';
+      case 10:
+        return 'System configuration';
+      default:
+        return DevUserConfig.hasFypModule
+            ? 'Modules: ${DevUserConfig.modulesLabel}'
+            : 'Core module · document formatting';
+    }
   }
 
   @override
@@ -328,9 +368,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                 style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w700, color: Colors.white),
               ),
               Text(
-                DevUserConfig.hasFypModule
-                    ? 'Modules: ${DevUserConfig.modulesLabel}'
-                    : 'Core plan · FYP module not enabled',
+                _selectedSubtitle,
                 style: TextStyle(fontSize: 12, color: Colors.white.withOpacity(0.55)),
               ),
             ],

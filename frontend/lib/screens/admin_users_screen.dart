@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../config/dev_user_config.dart';
 import '../providers/auth_provider.dart';
 import '../services/admin_api_service.dart';
 import '../widgets/admin/admin_ui.dart';
@@ -51,6 +52,13 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
     }
   }
 
+  List<String> get _roleFilters {
+    if (DevUserConfig.hasFypModule) {
+      return const ['All', 'Supervisors', 'Students', 'Admins'];
+    }
+    return const ['All', 'Members', 'Admins'];
+  }
+
   List<Map<String, dynamic>> get _roleFiltered {
     final query = _searchQuery.trim().toLowerCase();
     return _allUsers.where((u) {
@@ -58,6 +66,7 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
       final matchesRole = _roleFilter == 'All' ||
           (_roleFilter == 'Supervisors' && role == 'supervisor') ||
           (_roleFilter == 'Students' && role == 'student') ||
+          (_roleFilter == 'Members' && role == 'student') ||
           (_roleFilter == 'Admins' && role == 'admin');
       if (!matchesRole) return false;
       if (query.isEmpty) return true;
@@ -74,9 +83,17 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
     if (_currentPage < 1) _currentPage = 1;
 
     final start = (_currentPage - 1) * _itemsPerPage;
-    final end = (start + _itemsPerPage) > filtered.length ? filtered.length : (start + _itemsPerPage);
+    final end = (start + _itemsPerPage) > filtered.length
+        ? filtered.length
+        : (start + _itemsPerPage);
     _pagedUsers = start < filtered.length ? filtered.sublist(start, end) : [];
     setState(() {});
+  }
+
+  String _roleLabel(String role) {
+    final r = role.toLowerCase();
+    if (!DevUserConfig.hasFypModule && r == 'student') return 'member';
+    return role;
   }
 
   Color _roleColor(String role) {
@@ -99,7 +116,9 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
       case 'supervisor':
         return Icons.supervisor_account_outlined;
       case 'student':
-        return Icons.school_outlined;
+        return DevUserConfig.hasFypModule
+            ? Icons.school_outlined
+            : Icons.person_outline;
       default:
         return Icons.person_outline;
     }
@@ -109,17 +128,13 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
   Widget build(BuildContext context) {
     final filtered = _roleFiltered;
     final totalPages = (filtered.length / _itemsPerPage).ceil();
+    final hasFyp = DevUserConfig.hasFypModule;
 
     return AdminPage(
       scrollable: false,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const AdminPageHeader(
-            title: 'Users',
-            subtitle: 'All accounts — filter by supervisors and students',
-          ),
-          const SizedBox(height: 16),
           Row(
             children: [
               Expanded(
@@ -129,7 +144,9 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
                   decoration: InputDecoration(
                     hintText: 'Search by username or email',
                     prefixIcon: const Icon(Icons.search),
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
                   ),
                   onChanged: (value) {
                     _searchQuery = value;
@@ -149,7 +166,7 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
           const SizedBox(height: 14),
           Wrap(
             spacing: 8,
-            children: ['All', 'Supervisors', 'Students', 'Admins'].map((label) {
+            children: _roleFilters.map((label) {
               final selected = _roleFilter == label;
               return ChoiceChip(
                 label: Text(label),
@@ -171,10 +188,15 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
                 : _error != null
                     ? AdminErrorView(message: _error!, onRetry: _loadUsers)
                     : _pagedUsers.isEmpty
-                        ? AdminEmptyView(message: 'No users match this filter.', onAction: _loadUsers, actionLabel: 'Refresh')
+                        ? AdminEmptyView(
+                            message: 'No users match this filter.',
+                            onAction: _loadUsers,
+                            actionLabel: 'Refresh',
+                          )
                         : ListView.separated(
                             itemCount: _pagedUsers.length,
-                            separatorBuilder: (_, __) => const SizedBox(height: 10),
+                            separatorBuilder: (_, __) =>
+                                const SizedBox(height: 10),
                             itemBuilder: (context, index) {
                               final u = _pagedUsers[index];
                               final role = (u['role'] ?? 'user').toString();
@@ -195,7 +217,8 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
                                     const SizedBox(width: 12),
                                     Expanded(
                                       child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
                                         children: [
                                           Text(
                                             (u['username'] ?? '').toString(),
@@ -206,27 +229,43 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
                                           ),
                                           Text(
                                             (u['email'] ?? '').toString(),
-                                            style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 12),
+                                            style: TextStyle(
+                                              color:
+                                                  Colors.white.withOpacity(0.7),
+                                              fontSize: 12,
+                                            ),
                                           ),
                                         ],
                                       ),
                                     ),
                                     Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 10,
+                                        vertical: 6,
+                                      ),
                                       decoration: BoxDecoration(
                                         color: color.withOpacity(0.15),
                                         borderRadius: BorderRadius.circular(20),
                                       ),
                                       child: Text(
-                                        role,
-                                        style: TextStyle(color: color, fontWeight: FontWeight.w600, fontSize: 12),
+                                        _roleLabel(role),
+                                        style: TextStyle(
+                                          color: color,
+                                          fontWeight: FontWeight.w600,
+                                          fontSize: 12,
+                                        ),
                                       ),
                                     ),
-                                    const SizedBox(width: 12),
-                                    Text(
-                                      (u['university_name'] ?? 'N/A').toString(),
-                                      style: TextStyle(color: Colors.white.withOpacity(0.7)),
-                                    ),
+                                    if (hasFyp) ...[
+                                      const SizedBox(width: 12),
+                                      Text(
+                                        (u['university_name'] ?? 'N/A')
+                                            .toString(),
+                                        style: TextStyle(
+                                          color: Colors.white.withOpacity(0.7),
+                                        ),
+                                      ),
+                                    ],
                                   ],
                                 ),
                               );
@@ -248,7 +287,10 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
                         : null,
                     child: const Text('Prev'),
                   ),
-                  Text('$_currentPage / $totalPages', style: TextStyle(color: Colors.white.withOpacity(0.7))),
+                  Text(
+                    '$_currentPage / $totalPages',
+                    style: TextStyle(color: Colors.white.withOpacity(0.7)),
+                  ),
                   TextButton(
                     onPressed: _currentPage < totalPages
                         ? () {

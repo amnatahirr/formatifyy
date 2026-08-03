@@ -364,6 +364,7 @@ class AuthProvider extends ChangeNotifier {
     _hasGoogleDrive = false;
     _googleDriveEmail = null;
     _devBootstrap = false;
+    DevUserConfig.clearTenant();
     await _clearPersistedSession();
     notifyListeners();
   }

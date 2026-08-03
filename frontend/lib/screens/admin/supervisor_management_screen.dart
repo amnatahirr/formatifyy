@@ -83,17 +83,7 @@ class _SupervisorManagementScreenState extends State<SupervisorManagementScreen>
       return AdminPage(
         scrollable: false,
         onRefresh: _loadDepartments,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const AdminPageHeader(
-              title: 'Supervisors',
-              subtitle: 'Choose a department to add, edit, or delete supervisors',
-            ),
-            const SizedBox(height: 20),
-            Expanded(child: _buildList()),
-          ],
-        ),
+        child: _buildList(),
       );
     }
 

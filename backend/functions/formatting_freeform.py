@@ -78,13 +78,30 @@ async def check_formatting_freeform(
         list_groups_to_issues,
     )
 
+    _SAFE = {
+        "infinitive",
+        "gerund",
+        "trigger_line",
+        "trigger_follower",
+        "marker",
+        "bullet_marker",
+    }
     list_groups = detect_list_groups(batch.paragraphs)
+    confirmed = [g for g in list_groups if (g.detection or "").lower() in _SAFE]
+    candidates = [g for g in list_groups if (g.detection or "").lower() not in _SAFE]
     deterministic_list_issues = list_groups_to_issues(
-        list_groups, issue_prefix="list_prepass_freeform"
+        confirmed, issue_prefix="list_prepass_freeform"
     )
-    list_hints = build_list_hint_payload(list_groups)
+    list_hints = build_list_hint_payload(confirmed)
+    candidate_hints = build_list_hint_payload(candidates)
+    for h in candidate_hints:
+        h["confidence"] = "candidate_only"
+        h["instruction"] = (
+            "CANDIDATE only — confirm list_formatting only for true parallel "
+            "feature/objective lists; ignore ordinary Label: prose."
+        )
     preconfirmed_pids = {
-        pid for g in list_groups for pid in g.paragraph_ids
+        pid for g in confirmed for pid in g.paragraph_ids
     }
 
     paragraphs_payload = [
@@ -102,7 +119,10 @@ async def check_formatting_freeform(
     list_hint_block = (
         json.dumps(list_hints, indent=2)
         if list_hints
-        else "[]  (no deterministic list groups in this batch)"
+        else "[]  (no high-confidence list groups in this batch)"
+    )
+    candidate_hint_block = (
+        json.dumps(candidate_hints, indent=2) if candidate_hints else "[]"
     )
 
     prompt = f"""You are a strict academic document formatting auditor. There is NO organization
@@ -111,11 +131,13 @@ template. Apply only general academic formatting guidelines.
 DOCUMENT PARAGRAPHS:
 {json.dumps(paragraphs_payload, indent=2)}
 
-DETERMINISTIC LIST PRE-PASS (authoritative — do NOT second-guess these):
+HIGH-CONFIDENCE LIST PRE-PASS (authoritative — do NOT reject these):
 {list_hint_block}
-Paragraphs marked "preconfirmed_list_item": true are already confirmed list
-members. For those, only emit list_formatting if useful for the UI — do not
-argue they are body text.
+Paragraphs marked "preconfirmed_list_item": true are confirmed list members.
+
+AMBIGUOUS LIST CANDIDATES (confirm or reject):
+{candidate_hint_block}
+Ignore false-positive Label: architecture/module prose unless it is a true parallel list.
 
 GUIDELINES (authoritative for this run):
 1. NEVER rewrite, summarize, or replace paragraph content. Only identify structural issues.
@@ -126,11 +148,13 @@ GUIDELINES (authoritative for this run):
 6. Citation-pattern issues (mixed author-year vs numbered styles, inconsistent citation
    formatting) must ALWAYS go into suggested_manual_notes — never into issues[].
 7. Every issue MUST reference an existing paragraph_id from the input.
-8. For heading_style issues, include heading_level (1-4).
+8. For heading_style issues, include heading_level (1-4). Be CONSERVATIVE: only true short
+   section titles with wrong style — never list items, Label: rows, captions, or long prose.
 9. Only emit auto-applicable fix hints using the allowed fix_action values listed below.
    If a finding cannot be expressed as an allowed fix_action, put it in suggested_manual_notes
    instead (or set auto_applicable=false).
 10. Do NOT use issue types section_order or missing_section — there is no template section list.
+11. Prefer fewer accurate issues over many false heading/bullet changes.
 
 ALLOWED issue type values: heading_style, font, spacing, alignment, margin, list_formatting
 

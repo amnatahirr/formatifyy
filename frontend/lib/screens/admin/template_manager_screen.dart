@@ -81,17 +81,7 @@ class _TemplateManagerScreenState extends State<TemplateManagerScreen> {
       return AdminPage(
         scrollable: false,
         onRefresh: _loadDepartments,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const AdminPageHeader(
-              title: 'Template Manager',
-              subtitle: 'Choose a department, then create or edit templates',
-            ),
-            const SizedBox(height: 20),
-            Expanded(child: _buildList()),
-          ],
-        ),
+        child: _buildList(),
       );
     }
 

@@ -49,11 +49,6 @@ class _AdminUniversitiesScreenState extends State<AdminUniversitiesScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const AdminPageHeader(
-            title: 'Universities',
-            subtitle: 'Registered institutions and active student accounts',
-          ),
-          const SizedBox(height: 24),
           if (_loading)
             const AdminLoadingView()
           else if (_error != null)

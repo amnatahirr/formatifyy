@@ -1429,6 +1429,7 @@ import '../providers/document_provider.dart';
 import '../providers/fyp_provider.dart';
 import '../providers/template_provider.dart';
 import '../config/api_config.dart';
+import '../config/dev_user_config.dart';
 import 'analyze_screen.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../theme/app_theme.dart';
@@ -1467,6 +1468,8 @@ class _NewReportScreenState extends State<NewReportScreen> {
   @override
   void initState() {
     super.initState();
+    _titleController.addListener(_onPasteFieldsChanged);
+    _contentController.addListener(_onPasteFieldsChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _loadTemplatesAndDocuments();
     });
@@ -1475,10 +1478,29 @@ class _NewReportScreenState extends State<NewReportScreen> {
     }
   }
 
+  void _onPasteFieldsChanged() {
+    if (mounted) setState(() {});
+  }
+
   void _loadTemplatesAndDocuments() {
     Future.microtask(() async {
       if (!mounted) return;
       final auth = context.read<AuthProvider>();
+      if (auth.hasGoogleDrive) {
+        setState(() {
+          _isGoogleDriveConnected = true;
+          _googleEmail = auth.googleDriveEmail ?? '';
+        });
+      } else if (auth.userId != null) {
+        await auth.checkGoogleDriveStatus();
+        if (!mounted) return;
+        if (auth.hasGoogleDrive) {
+          setState(() {
+            _isGoogleDriveConnected = true;
+            _googleEmail = auth.googleDriveEmail ?? '';
+          });
+        }
+      }
       if (auth.userId != null) {
         context.read<TemplateProvider>().fetchUserTemplates(auth.userId!);
         context.read<DocumentProvider>().fetchDocuments(auth.userId!);
@@ -1588,9 +1610,11 @@ class _NewReportScreenState extends State<NewReportScreen> {
     int userId,
   ) async {
     try {
+      // Same endpoint as DocumentProvider.uploadPastedContent (+ create-report alias).
       final response = await http.post(
         Uri.parse(
-          '${ApiConfig.getBaseUrl()}/documents/create-report?user_id=$userId&template_id=$templateId',
+          '${ApiConfig.getBaseUrl()}/documents/upload-text'
+          '?template_id=$templateId&user_id=$userId',
         ),
         headers: ApiConfig.getHeaders(json: true),
         body: jsonEncode({
@@ -1604,7 +1628,7 @@ class _NewReportScreenState extends State<NewReportScreen> {
         final data = jsonDecode(response.body);
         return {
           'document_id': data['document_id'],
-          'filename': data['filename'],
+          'filename': data['filename'] ?? title,
         };
       } else {
         debugPrint('[v0] Create report failed: ${response.body}');
@@ -1862,15 +1886,20 @@ class _NewReportScreenState extends State<NewReportScreen> {
 
       final response = await http.get(
         Uri.parse(
-          'http://localhost:8000/api/uploads/google-drive/files?user_id=$userId',
+          '${ApiConfig.getBaseUrl()}/uploads/google-drive/files?user_id=$userId',
         ),
+        headers: ApiConfig.getHeaders(),
       );
 
       if (response.statusCode != 200) {
-        final errorData = jsonDecode(response.body);
-        _showError(
-          'Failed to fetch files: ${errorData['detail'] ?? 'Unknown error'}',
-        );
+        String detail = 'Unknown error';
+        try {
+          final errorData = jsonDecode(response.body);
+          detail = '${errorData['detail'] ?? response.body}';
+        } catch (_) {
+          detail = response.body.isNotEmpty ? response.body : 'HTTP ${response.statusCode}';
+        }
+        _showError('Failed to fetch files: $detail');
         return;
       }
 
@@ -1909,9 +1938,7 @@ class _NewReportScreenState extends State<NewReportScreen> {
                 ),
                 const SizedBox(height: 16),
                 Expanded(
-                  child: _isFetchingDriveFiles
-                      ? const Center(child: CircularProgressIndicator())
-                      : _driveFiles.isEmpty
+                  child: _driveFiles.isEmpty
                       ? Center(
                           child: Text(
                             'No files found',
@@ -1967,7 +1994,7 @@ class _NewReportScreenState extends State<NewReportScreen> {
     } catch (e) {
       _showError('Error fetching files: $e');
     } finally {
-      setState(() => _isFetchingDriveFiles = false);
+      if (mounted) setState(() => _isFetchingDriveFiles = false);
     }
   }
 
@@ -1994,39 +2021,64 @@ class _NewReportScreenState extends State<NewReportScreen> {
 
     try {
       setState(() => _isProcessing = true);
+      final capturedTemplateId = _selectedTemplate!['id'];
+      final capturedTemplateName =
+          _selectedTemplate!['name'] ?? 'Unknown Template';
+
       final response = await http.post(
         Uri.parse(
-          'http://localhost:8000/api/uploads/download-from-google-drive?user_id=$userId&file_id=$fileId&filename=$filename&template_id=${_selectedTemplate!['id']}',
+          '${ApiConfig.getBaseUrl()}/uploads/download-from-google-drive'
+          '?user_id=$userId'
+          '&file_id=$fileId'
+          '&filename=${Uri.encodeComponent(filename)}'
+          '&template_id=$capturedTemplateId',
         ),
+        headers: ApiConfig.getHeaders(),
       );
 
       if (response.statusCode == 200) {
-        _showSuccess('File imported successfully!');
         final data = jsonDecode(response.body);
         final docId = data['document_id'] as int?;
         final importedName =
             (data['filename'] as String?) ?? filename;
+        _showSuccess('File imported successfully!');
         if (docId != null) {
           context.read<DocumentProvider>().markReadyForSupervisorSubmit(
             documentId: docId,
             filename: importedName,
             title: importedName,
           );
-        }
-        final auth = context.read<AuthProvider>();
-        if (auth.userId != null) {
-          context.read<DocumentProvider>().fetchDocuments(auth.userId!);
+          context.read<DocumentProvider>().fetchDocuments(userId);
+          if (mounted) {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => AnalyzeScreen(
+                  documentId: docId,
+                  documentName: importedName,
+                  templateId: capturedTemplateId,
+                  templateName: capturedTemplateName,
+                ),
+              ),
+            );
+          }
         }
       } else {
-        final data = jsonDecode(response.body);
-        _showError(
-          'Failed to import file: ${data['detail'] ?? 'Unknown error'}',
-        );
+        String detail = 'Unknown error';
+        try {
+          final data = jsonDecode(response.body);
+          detail = '${data['detail'] ?? response.body}';
+        } catch (_) {
+          detail = response.body.isNotEmpty
+              ? response.body
+              : 'HTTP ${response.statusCode}';
+        }
+        _showError('Failed to import file: $detail');
       }
     } catch (e) {
       _showError('Error: $e');
     } finally {
-      setState(() => _isProcessing = false);
+      if (mounted) setState(() => _isProcessing = false);
     }
   }
 
@@ -2046,6 +2098,8 @@ void _showSuccess(String message) {
 
   @override
   void dispose() {
+    _titleController.removeListener(_onPasteFieldsChanged);
+    _contentController.removeListener(_onPasteFieldsChanged);
     _titleController.dispose();
     _contentController.dispose();
     super.dispose();
@@ -2055,9 +2109,11 @@ void _showSuccess(String message) {
   Widget build(BuildContext context) {
     final fyp = context.watch<FypProvider>();
     final docs = context.watch<DocumentProvider>();
-    final showSubmit = fyp.fypGroupId != null &&
+    final hasFyp = DevUserConfig.hasFypModule;
+    final showSubmit = hasFyp &&
+        fyp.fypGroupId != null &&
         docs.pendingSubmitDocumentId != null;
-    final isResubmit = docs.resubmitPriorSubmissionId != null;
+    final isResubmit = hasFyp && docs.resubmitPriorSubmissionId != null;
 
     final body = SingleChildScrollView(
         padding: const EdgeInsets.all(32),

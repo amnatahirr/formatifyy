@@ -312,15 +312,314 @@ def delete_organization(org_id: int, _: None = Depends(_require_super_admin)):
     conn = get_db()
     cursor = conn.cursor()
     try:
-        cursor.execute("SELECT id FROM organizations WHERE id = ?", (org_id,))
-        if not cursor.fetchone():
+        cursor.execute("SELECT id, code FROM organizations WHERE id = ?", (org_id,))
+        row = cursor.fetchone()
+        if not row:
             raise HTTPException(status_code=404, detail="Organization not found.")
-        cursor.execute("DELETE FROM organization_modules WHERE org_id = ?", (org_id,))
+
+        summary = _purge_organization_data(cursor, org_id)
         cursor.execute("DELETE FROM organizations WHERE id = ?", (org_id,))
         conn.commit()
-        return {"success": True, "deleted_id": org_id}
+        return {
+            "success": True,
+            "deleted_id": org_id,
+            "org_code": row["code"],
+            "purged": summary,
+        }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        conn.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to delete organization and related data: {exc}",
+        ) from exc
     finally:
         conn.close()
+
+
+def _table_exists(cursor, table: str) -> bool:
+    cursor.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name = ?",
+        (table,),
+    )
+    return cursor.fetchone() is not None
+
+
+def _table_has_column(cursor, table: str, column: str) -> bool:
+    if not _table_exists(cursor, table):
+        return False
+    cursor.execute(f"PRAGMA table_info({table})")
+    return column in {row[1] for row in cursor.fetchall()}
+
+
+def _safe_ids(cursor, sql: str, params: tuple) -> list[int]:
+    try:
+        cursor.execute(sql, params)
+        return [int(r[0]) for r in cursor.fetchall() if r[0] is not None]
+    except Exception:
+        return []
+
+
+def _safe_delete(cursor, sql: str, params: tuple = ()) -> int:
+    try:
+        cursor.execute(sql, params)
+        return int(cursor.rowcount or 0)
+    except Exception:
+        return 0
+
+
+def _purge_organization_data(cursor, org_id: int) -> dict[str, int]:
+    """
+    Hard-delete every tenant-owned row for this org (users, docs, FYP,
+    templates, collaboration, settings). Call before deleting organizations.
+    """
+    summary: dict[str, int] = {}
+
+    user_ids = _safe_ids(cursor, "SELECT id FROM users WHERE org_id = ?", (org_id,))
+    user_emails = []
+    if user_ids:
+        uph = ",".join("?" * len(user_ids))
+        try:
+            cursor.execute(
+                f"SELECT LOWER(email) FROM users WHERE id IN ({uph})",
+                tuple(user_ids),
+            )
+            user_emails = [str(r[0]) for r in cursor.fetchall() if r[0]]
+        except Exception:
+            user_emails = []
+
+    group_ids = (
+        _safe_ids(cursor, "SELECT id FROM fyp_groups WHERE org_id = ?", (org_id,))
+        if _table_has_column(cursor, "fyp_groups", "org_id")
+        else []
+    )
+
+    doc_ids: list[int] = []
+    if _table_has_column(cursor, "documents", "org_id"):
+        doc_ids.extend(
+            _safe_ids(cursor, "SELECT id FROM documents WHERE org_id = ?", (org_id,))
+        )
+    if user_ids:
+        uph = ",".join("?" * len(user_ids))
+        doc_ids.extend(
+            _safe_ids(
+                cursor,
+                f"SELECT id FROM documents WHERE user_id IN ({uph})",
+                tuple(user_ids),
+            )
+        )
+    doc_ids = list(dict.fromkeys(doc_ids))
+
+    project_ids: list[int] = []
+    if _table_has_column(cursor, "collaboration_projects", "org_id"):
+        project_ids.extend(
+            _safe_ids(
+                cursor,
+                "SELECT id FROM collaboration_projects WHERE org_id = ?",
+                (org_id,),
+            )
+        )
+    if user_ids and _table_exists(cursor, "collaboration_projects"):
+        uph = ",".join("?" * len(user_ids))
+        project_ids.extend(
+            _safe_ids(
+                cursor,
+                f"SELECT id FROM collaboration_projects WHERE created_by IN ({uph})",
+                tuple(user_ids),
+            )
+        )
+    project_ids = list(dict.fromkeys(project_ids))
+
+    # ── Collaboration ──────────────────────────────────────────────────────
+    if project_ids:
+        pph = ",".join("?" * len(project_ids))
+        ppt = tuple(project_ids)
+        merge_ids = _safe_ids(
+            cursor,
+            f"SELECT id FROM project_merges WHERE project_id IN ({pph})",
+            ppt,
+        )
+        if merge_ids:
+            mph = ",".join("?" * len(merge_ids))
+            summary["merge_conflicts"] = _safe_delete(
+                cursor,
+                f"DELETE FROM merge_conflicts WHERE merge_id IN ({mph})",
+                tuple(merge_ids),
+            )
+        for table in (
+            "project_merges",
+            "section_commits",
+            "section_images",
+            "project_sections",
+            "project_members",
+            "project_member_documents",
+        ):
+            summary[table] = _safe_delete(
+                cursor, f"DELETE FROM {table} WHERE project_id IN ({pph})", ppt
+            )
+        summary["collaboration_projects"] = _safe_delete(
+            cursor,
+            f"DELETE FROM collaboration_projects WHERE id IN ({pph})",
+            ppt,
+        )
+
+    # ── Upload documents (main documents table) ────────────────────────────
+    if doc_ids:
+        dph = ",".join("?" * len(doc_ids))
+        dpt = tuple(doc_ids)
+        summary["image_analysis"] = _safe_delete(
+            cursor, f"DELETE FROM image_analysis WHERE document_id IN ({dph})", dpt
+        )
+        summary["project_member_documents"] = summary.get(
+            "project_member_documents", 0
+        ) + _safe_delete(
+            cursor,
+            f"DELETE FROM project_member_documents WHERE document_id IN ({dph})",
+            dpt,
+        )
+        if _table_has_column(cursor, "final_submissions", "source_document_id"):
+            summary["final_submissions"] = _safe_delete(
+                cursor,
+                f"DELETE FROM final_submissions WHERE source_document_id IN ({dph})",
+                dpt,
+            )
+        if _table_has_column(cursor, "group_documents", "source_document_id"):
+            # Clean review paragraphs/comments for group docs linked to these uploads
+            gd_ids = _safe_ids(
+                cursor,
+                f"SELECT id FROM group_documents WHERE source_document_id IN ({dph})",
+                dpt,
+            )
+            if gd_ids:
+                gdh = ",".join("?" * len(gd_ids))
+                gdt = tuple(gd_ids)
+                para_ids = _safe_ids(
+                    cursor,
+                    f"SELECT id FROM document_paragraphs WHERE document_id IN ({gdh})",
+                    gdt,
+                )
+                if para_ids:
+                    pah = ",".join("?" * len(para_ids))
+                    summary["document_comments"] = _safe_delete(
+                        cursor,
+                        f"DELETE FROM document_comments WHERE paragraph_id IN ({pah})",
+                        tuple(para_ids),
+                    )
+                summary["document_paragraphs"] = _safe_delete(
+                    cursor,
+                    f"DELETE FROM document_paragraphs WHERE document_id IN ({gdh})",
+                    gdt,
+                )
+                summary["document_comments"] = summary.get("document_comments", 0) + _safe_delete(
+                    cursor,
+                    f"DELETE FROM document_comments WHERE document_id IN ({gdh})",
+                    gdt,
+                )
+                summary["group_documents"] = _safe_delete(
+                    cursor,
+                    f"DELETE FROM group_documents WHERE id IN ({gdh})",
+                    gdt,
+                )
+        summary["documents"] = _safe_delete(
+            cursor, f"DELETE FROM documents WHERE id IN ({dph})", dpt
+        )
+
+    # ── FYP groups + children ──────────────────────────────────────────────
+    if group_ids:
+        gph = ",".join("?" * len(group_ids))
+        gpt = tuple(group_ids)
+        gd_ids = _safe_ids(
+            cursor,
+            f"SELECT id FROM group_documents WHERE group_id IN ({gph})",
+            gpt,
+        )
+        if gd_ids:
+            gdh = ",".join("?" * len(gd_ids))
+            gdt = tuple(gd_ids)
+            para_ids = _safe_ids(
+                cursor,
+                f"SELECT id FROM document_paragraphs WHERE document_id IN ({gdh})",
+                gdt,
+            )
+            if para_ids:
+                pah = ",".join("?" * len(para_ids))
+                summary["document_comments"] = summary.get("document_comments", 0) + _safe_delete(
+                    cursor,
+                    f"DELETE FROM document_comments WHERE paragraph_id IN ({pah})",
+                    tuple(para_ids),
+                )
+            summary["document_paragraphs"] = summary.get("document_paragraphs", 0) + _safe_delete(
+                cursor,
+                f"DELETE FROM document_paragraphs WHERE document_id IN ({gdh})",
+                gdt,
+            )
+            summary["document_comments"] = summary.get("document_comments", 0) + _safe_delete(
+                cursor,
+                f"DELETE FROM document_comments WHERE document_id IN ({gdh})",
+                gdt,
+            )
+
+        for table, col in (
+            ("group_documents", "group_id"),
+            ("group_replies", "group_id"),
+            ("group_milestones", "group_id"),
+            ("meeting_notes", "group_id"),
+            ("remarks", "group_id"),
+            ("final_submissions", "group_id"),
+            ("assignment_requests", "fyp_group_id"),
+        ):
+            summary[table] = summary.get(table, 0) + _safe_delete(
+                cursor, f"DELETE FROM {table} WHERE {col} IN ({gph})", gpt
+            )
+
+    # ── Notifications (by user_id or email) ────────────────────────────────
+    if user_ids:
+        uph = ",".join("?" * len(user_ids))
+        summary["notifications"] = _safe_delete(
+            cursor,
+            f"DELETE FROM notifications WHERE user_id IN ({uph})",
+            tuple(user_ids),
+        )
+    if user_emails and _table_has_column(cursor, "notifications", "recipient_email"):
+        eph = ",".join("?" * len(user_emails))
+        summary["notifications"] = summary.get("notifications", 0) + _safe_delete(
+            cursor,
+            f"DELETE FROM notifications WHERE LOWER(recipient_email) IN ({eph})",
+            tuple(user_emails),
+        )
+
+    # ── Direct org_id tables (catch-all) ────────────────────────────────────
+    for table in (
+        "organization_modules",
+        "assignment_requests",
+        "final_submissions",
+        "meeting_notes",
+        "fyp_groups",
+        "deadlines",
+        "semester_deadlines",
+        "supervisors",
+        "templates",
+        "departments",
+        "documents",
+        "collaboration_projects",
+        "users",
+    ):
+        if _table_has_column(cursor, table, "org_id"):
+            summary[table] = summary.get(table, 0) + _safe_delete(
+                cursor, f"DELETE FROM {table} WHERE org_id = ?", (org_id,)
+            )
+
+    # Per-org admin settings: org:{id}:*
+    if _table_exists(cursor, "admin_settings"):
+        summary["admin_settings"] = _safe_delete(
+            cursor,
+            "DELETE FROM admin_settings WHERE key LIKE ?",
+            (f"org:{org_id}:%",),
+        )
+
+    # Keep only non-zero counts for response clarity
+    return {k: v for k, v in summary.items() if v}
 
 
 @router.get("/organizations/{org_id}/stats")

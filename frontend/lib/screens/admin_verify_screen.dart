@@ -136,11 +136,6 @@ class _AdminVerifyScreenState extends State<AdminVerifyScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const AdminPageHeader(
-            title: 'Verify Document with Template',
-            subtitle: 'Upload a file, choose a template, and run full verification as admin',
-          ),
-          const SizedBox(height: 24),
           AdminSectionCard(
             title: 'Verification',
             child: Column(

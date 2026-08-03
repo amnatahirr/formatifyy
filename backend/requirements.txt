@@ -5,6 +5,8 @@ python-multipart==0.0.6
 anthropic==0.39.0
 python-docx==0.8.11
 PyMuPDF==1.24.4
+pypdf>=4.0.0
+pdfplumber>=0.10.0
 Pillow>=10.2.0
 aiofiles==23.2.1
 pydantic==2.5.0
@@ -24,3 +26,6 @@ datasketch>=1.6.0
 faiss-cpu>=1.7.4
 requests>=2.31.0
 PyJWT>=2.8.0
+google-api-python-client>=2.108.0
+google-auth-httplib2>=0.2.0
+google-auth-oauthlib>=1.2.0

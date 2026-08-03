@@ -163,6 +163,16 @@ the same time — missing Heading 2+ violations is a critical failure."""
 # Main check
 # --------------------------------------------------------------------------
 
+_SAFE_LIST_DETECTIONS = frozenset({
+    "infinitive",
+    "gerund",
+    "trigger_line",
+    "trigger_follower",
+    "marker",
+    "bullet_marker",
+})
+
+
 async def check_formatting(
     client: anthropic.AsyncAnthropic,
     batch: Batch,
@@ -171,9 +181,9 @@ async def check_formatting(
     """
     Compare batch paragraphs against the template rules.
 
-    List detection is done deterministically FIRST (label:colon, parallel
-    infinitive/gerund/marker runs, trigger lines). The LLM only confirms /
-    assigns list level — it does not decide whether something is a list.
+    High-confidence list patterns (infinitives / markers / trigger lines) are
+    seeded deterministically. Ambiguous "Label: description" groups are sent to
+    the LLM as candidates — the agent must confirm before they become issues.
 
     `template` should ideally be the full structured template dict returned
     by templates.get_template_by_id() / get_all_templates() (i.e. containing
@@ -194,19 +204,40 @@ async def check_formatting(
     )
 
     list_groups = detect_list_groups(batch.paragraphs)
+    confirmed_groups = [
+        g for g in list_groups
+        if (g.detection or "").lower() in _SAFE_LIST_DETECTIONS
+    ]
+    candidate_groups = [
+        g for g in list_groups
+        if (g.detection or "").lower() not in _SAFE_LIST_DETECTIONS
+    ]
+
+    # Only auto-seed high-confidence list patterns; Label:colon etc. need agent confirm
     deterministic_list_issues = list_groups_to_issues(
-        list_groups, issue_prefix="list_prepass"
+        confirmed_groups, issue_prefix="list_prepass"
     )
-    list_hints = build_list_hint_payload(list_groups)
+    list_hints = build_list_hint_payload(confirmed_groups)
+    candidate_hints = build_list_hint_payload(candidate_groups)
+    # Soften candidate hint instructions for the agent
+    for h in candidate_hints:
+        h["confidence"] = "candidate_only"
+        h["instruction"] = (
+            "CANDIDATE only (often false positive on PDF/architecture prose). "
+            "Confirm as list_formatting ONLY if these are true parallel feature/"
+            "objective items under a list intent. Otherwise IGNORE — do not bullet "
+            "ordinary 'Label: explanation' body sentences."
+        )
+
     preconfirmed_pids = {
         pid
-        for g in list_groups
+        for g in confirmed_groups
         for pid in g.paragraph_ids
     }
     if list_groups:
         print(
-            f"[formatting] list pre-pass: {len(list_groups)} group(s), "
-            f"{len(preconfirmed_pids)} paragraphs confirmed as list items"
+            f"[formatting] list pre-pass: {len(confirmed_groups)} confirmed, "
+            f"{len(candidate_groups)} candidate group(s)"
         )
 
     paragraphs_payload = [
@@ -225,7 +256,12 @@ async def check_formatting(
     list_hint_block = (
         json.dumps(list_hints, indent=2)
         if list_hints
-        else "[]  (no deterministic list groups in this batch)"
+        else "[]  (no high-confidence list groups in this batch)"
+    )
+    candidate_hint_block = (
+        json.dumps(candidate_hints, indent=2)
+        if candidate_hints
+        else "[]"
     )
 
     prompt = f"""You are a strict academic document formatting auditor. Compare each paragraph against the template specification below.
@@ -236,12 +272,17 @@ TEMPLATE SPECIFICATION (authoritative — every rule must be enforced):
 DOCUMENT PARAGRAPHS (from the student's file):
 {json.dumps(paragraphs_payload, indent=2)}
 
-DETERMINISTIC LIST PRE-PASS (authoritative — do NOT second-guess these):
+HIGH-CONFIDENCE LIST PRE-PASS (authoritative — do NOT reject these):
 {list_hint_block}
-Paragraphs marked "preconfirmed_list_item": true are already confirmed list
-members. For those, only emit list_formatting if useful for the UI — do not
-argue they are body text. Focus your own list discovery on OTHER paragraphs
-not covered by the pre-pass.
+Paragraphs marked "preconfirmed_list_item": true are confirmed list members
+(infinitives / explicit markers / trigger-line followers). Keep them as list_formatting.
+
+AMBIGUOUS LIST CANDIDATES (agent must confirm or reject):
+{candidate_hint_block}
+These are often FALSE POSITIVES on PDF-converted text and architecture/module
+descriptions like "Frontend (App): Students use…" or "Database (PostgreSQL): It holds…".
+Only emit list_formatting for a candidate group if it is clearly a parallel bullet
+list of features/objectives. Otherwise IGNORE — leave as Normal body text.
 
 AUDIT RULES:
 1. You must NEVER rewrite, summarize, or replace paragraph content. Only identify structural issues. The original text is sacred.
@@ -249,14 +290,18 @@ AUDIT RULES:
 3. Section titles MUST use Word style "Heading 1/2/3/4" — NOT just bold Normal text.
 4. Every issue MUST reference an existing paragraph_id from the input.
 5. For heading_style issues, you MUST include heading_level (1-4) — this is required, never omit it.
-6. CHECK EVERY HEADING LEVEL INDEPENDENTLY. A paragraph that functions as a subsection title (short, standalone, distinct from surrounding body text, introduces a topic followed by body paragraphs) must be checked against its level's rule EVEN IF its exact text is not in the required-sections list. Do not limit heading_style checks to Heading 1 only. Structurally obvious labels under a numbered heading (e.g. "Specific Objectives" under "2.6.1 Main Goal") are Heading 3 candidates.
-7. Use the "heading_context" field of each paragraph to understand its position in the document hierarchy (e.g. a paragraph whose heading_context shows it sits under "1. Introduction" as a subsection is a Heading 2 candidate).
-8. CHECK FOR CONTENT THAT SHOULD BE A BULLETED/NUMBERED LIST but is currently written as plain running paragraphs. Prefer confirming the deterministic pre-pass. Additionally look for:
-   - A repeating "Label: description" or "Bold Term — explanation" pattern.
-   - Parallel infinitive items ("To develop…", "To build…", "To implement…") or gerunds after a trigger line ending in "are:" / "include:" / "as follows:".
-   - Manual markers (-, *, •, a), i), 1.).
-   When you detect this pattern, flag EACH paragraph in that group individually with type "list_formatting" — note sibling paragraph_ids in "reason".
-   Do NOT flag a single standalone descriptive paragraph as needing bullets — only flag when there is a real repeating parallel-item pattern across 2+ consecutive paragraphs.
+6. HEADINGS — BE CONSERVATIVE:
+   - Emit heading_style ONLY when the paragraph is a true short section title AND its Word style is wrong.
+   - Do NOT emit heading_style for: list items, "Label: description" rows, "To …" objectives, Figure/Table captions, or long body sentences.
+   - Do NOT change a heading that is already the correct Heading 1–4 style.
+   - Do NOT invent extra headings just to "improve" structure.
+7. Use "heading_context" to understand hierarchy, but never promote list/body lines into headings.
+8. LISTS — BE CONSERVATIVE:
+   - Prefer confirming the high-confidence pre-pass.
+   - For ambiguous candidates, confirm only true parallel lists (2+ consecutive sibling items with the same pattern).
+   - Do NOT flag a single standalone descriptive paragraph as needing bullets.
+   - Do NOT bullet architecture/prose paragraphs that merely contain a colon.
+9. Prefer FEWER accurate issues over many false positives. False heading changes and false bullets are critical failures.
 
 For each violation return:
 - "paragraph_id": exact paragraph_id from input (required)

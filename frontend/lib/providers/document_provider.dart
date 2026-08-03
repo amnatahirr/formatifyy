@@ -428,7 +428,10 @@ class DocumentProvider extends ChangeNotifier {
   Future<List<Map<String, dynamic>>> listGoogleDriveFiles(int userId) async {
     try {
       final url = '${ApiConfig.getBaseUrl()}/uploads/google-drive/files?user_id=$userId';
-      final response = await http.get(Uri.parse(url));
+      final response = await http.get(
+        Uri.parse(url),
+        headers: ApiConfig.getHeaders(),
+      );
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
@@ -454,7 +457,10 @@ class DocumentProvider extends ChangeNotifier {
     try {
       final url =
           '${ApiConfig.getBaseUrl()}/uploads/google-drive/import?user_id=$userId&file_id=$fileId&template_id=$templateId';
-      final response = await http.post(Uri.parse(url));
+      final response = await http.post(
+        Uri.parse(url),
+        headers: ApiConfig.getHeaders(),
+      );
 
       if (response.statusCode == 200) {
         await fetchDocuments(userId);
@@ -588,8 +594,10 @@ if (contentDisposition != null && contentDisposition.contains('filename=')) {
   }) async {
     try {
       final response = await http.post(
-        Uri.parse("$baseUrl/create-report?user_id=$userId"),
-        headers: {"Content-Type": "application/json"},
+        Uri.parse(
+          "$baseUrl/upload-text?template_id=$templateId&user_id=$userId",
+        ),
+        headers: ApiConfig.getHeaders(json: true),
         body: jsonEncode({
           "title": title,
           "content": content,

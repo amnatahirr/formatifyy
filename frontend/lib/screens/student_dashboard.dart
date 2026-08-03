@@ -9,6 +9,7 @@ import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:open_file_plus/open_file_plus.dart';
+import '../config/dev_user_config.dart';
 import '../providers/auth_provider.dart';
 import '../providers/document_provider.dart';
 import '../providers/template_provider.dart';
@@ -46,12 +47,21 @@ class _MobileNavItem {
   const _MobileNavItem(this.tabIndex, this.icon, this.label);
 }
 
-const List<_MobileNavItem> _kMobileNavItems = [
+const List<_MobileNavItem> _kMobileNavItemsCore = [
+  _MobileNavItem(0, Icons.dashboard_outlined, 'Dashboard'),
+  _MobileNavItem(kNotificationsTabIndex, Icons.notifications_outlined, 'Notifications'),
+  _MobileNavItem(2, Icons.folder_outlined, 'Reports'),
+];
+
+const List<_MobileNavItem> _kMobileNavItemsFyp = [
   _MobileNavItem(0, Icons.dashboard_outlined, 'Dashboard'),
   _MobileNavItem(8, Icons.checklist_outlined, 'Milestones'),
   _MobileNavItem(kNotificationsTabIndex, Icons.notifications_outlined, 'Notifications'),
   _MobileNavItem(2, Icons.folder_outlined, 'Reports'),
 ];
+
+List<_MobileNavItem> get _mobileNavItems =>
+    DevUserConfig.hasFypModule ? _kMobileNavItemsFyp : _kMobileNavItemsCore;
 
 class StudentDashboard extends StatefulWidget {
   final int initialIndex;
@@ -100,7 +110,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
         context.read<DocumentProvider>().fetchDocuments(auth.userId!);
         context.read<CollaborationProvider>().fetchProjects();
         final email = (auth.userEmail ?? auth.email ?? '').trim();
-        if (email.isNotEmpty) {
+        if (DevUserConfig.hasFypModule && email.isNotEmpty) {
           context.read<FypProvider>().fetchAssignmentStatus(
                 userId: auth.userId!,
                 email: email,
@@ -156,7 +166,8 @@ class _StudentDashboardState extends State<StudentDashboard> {
   }
 
   Widget _buildMobileBottomNav() {
-    final selectedNav = _kMobileNavItems.indexWhere(
+    final items = _mobileNavItems;
+    final selectedNav = items.indexWhere(
       (item) => item.tabIndex == _selectedIndex,
     );
 
@@ -173,10 +184,10 @@ class _StudentDashboardState extends State<StudentDashboard> {
           height: 64,
           child: Row(
             children: [
-              for (var i = 0; i < _kMobileNavItems.length; i++)
+              for (var i = 0; i < items.length; i++)
                 Expanded(
                   child: _buildMobileNavButton(
-                    item: _kMobileNavItems[i],
+                    item: items[i],
                     selected: selectedNav == i,
                   ),
                 ),
@@ -305,43 +316,45 @@ class _StudentDashboardState extends State<StudentDashboard> {
                   Icons.layers,
                   'Templates',
                 ),
-                Consumer<FypProvider>(
-                  builder: (context, fyp, _) {
-                    if (!fyp.canChooseSupervisor) {
-                      return const SizedBox.shrink();
-                    }
-                    return _buildSidebarItem(
-                      6,
-                      Icons.school_outlined,
-                      'Choose Supervisor',
-                    );
-                  },
-                ),
-                _buildSidebarItem(
-                  7,
-                  Icons.badge_outlined,
-                  'My Supervisor',
-                ),
-                _buildSidebarItem(
-                  8,
-                  Icons.checklist_outlined,
-                  'Milestones',
-                ),
-                _buildSidebarItem(
-                  9,
-                  Icons.sticky_note_2_outlined,
-                  'Meeting Notes',
-                ),
-                _buildSidebarItem(
-                  10,
-                  Icons.policy_outlined,
-                  'Plagiarism Report',
-                ),
-                _buildSidebarItem(
-                  11,
-                  Icons.track_changes_outlined,
-                  'Status Tracker',
-                ),
+                if (DevUserConfig.hasFypModule) ...[
+                  Consumer<FypProvider>(
+                    builder: (context, fyp, _) {
+                      if (!fyp.canChooseSupervisor) {
+                        return const SizedBox.shrink();
+                      }
+                      return _buildSidebarItem(
+                        6,
+                        Icons.school_outlined,
+                        'Choose Supervisor',
+                      );
+                    },
+                  ),
+                  _buildSidebarItem(
+                    7,
+                    Icons.badge_outlined,
+                    'My Supervisor',
+                  ),
+                  _buildSidebarItem(
+                    8,
+                    Icons.checklist_outlined,
+                    'Milestones',
+                  ),
+                  _buildSidebarItem(
+                    9,
+                    Icons.sticky_note_2_outlined,
+                    'Meeting Notes',
+                  ),
+                  _buildSidebarItem(
+                    10,
+                    Icons.policy_outlined,
+                    'Plagiarism Report',
+                  ),
+                  _buildSidebarItem(
+                    11,
+                    Icons.track_changes_outlined,
+                    'Status Tracker',
+                  ),
+                ],
                 _buildSidebarItem(
                   12,
                   Icons.settings,
@@ -396,7 +409,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
                           ),
                         ),
                         Text(
-                          'Student',
+                          DevUserConfig.displayRoleLabel(auth.userRole),
                           style: TextStyle(
                             fontSize: 11,
                             color: _p.textSecondary,
@@ -513,6 +526,11 @@ class _StudentDashboardState extends State<StudentDashboard> {
       'Updates from your supervisor and FYP workflow',
     ];
 
+    // Soften university/FYP wording for core-only orgs.
+    if (!DevUserConfig.hasFypModule) {
+      descriptions[5] = 'Choose from pre-built report templates';
+      descriptions[13] = 'Updates and account notifications';
+    }
     final showingProject = _activeProjectId != null;
     final projectName = context.watch<CollaborationProvider>().currentProject?['name'] as String?;
     final title = showingProject
@@ -672,88 +690,110 @@ class _StudentDashboardState extends State<StudentDashboard> {
         });
         return _buildTemplatesPage();
       case 6:
-        // After choosing (pending/accepted), leave this screen permanently.
-        if (context.watch<FypProvider>().hasChosenSupervisor) {
+      case 7:
+      case 8:
+      case 9:
+      case 10:
+      case 11:
+        if (!DevUserConfig.hasFypModule) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (!mounted) return;
-            if (_selectedIndex == 6) {
+            if (_selectedIndex >= 6 && _selectedIndex <= 11) {
               setState(() {
-                _selectedIndex = 7;
+                _selectedIndex = 0;
                 _activeProjectId = null;
               });
             }
           });
-          return MySupervisorScreen(
-            onChooseSupervisor: () => setState(() {
-              _selectedIndex = 6;
-              _activeProjectId = null;
-            }),
-          );
+          return _buildDashboardContent();
         }
-        return SupervisorSelectionScreen(
-          onRequestSubmitted: () => setState(() {
-            _selectedIndex = 7;
-            _activeProjectId = null;
-          }),
-        );
-      case 7:
-        return MySupervisorScreen(
-          onChooseSupervisor: context.watch<FypProvider>().canChooseSupervisor
-              ? () => setState(() {
-                    _selectedIndex = 6;
+        switch (_selectedIndex) {
+          case 6:
+            // After choosing (pending/accepted), leave this screen permanently.
+            if (context.watch<FypProvider>().hasChosenSupervisor) {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (!mounted) return;
+                if (_selectedIndex == 6) {
+                  setState(() {
+                    _selectedIndex = 7;
                     _activeProjectId = null;
-                  })
-              : null,
-        );
-      case 8:
-        return FypMilestonesScreen(
-          onChooseSupervisor: context.watch<FypProvider>().canChooseSupervisor
-              ? () => setState(() {
-                    _selectedIndex = 6;
-                    _activeProjectId = null;
-                  })
-              : null,
-          onOpenMySupervisor: () => setState(() {
-            _selectedIndex = 7;
-            _activeProjectId = null;
-          }),
-        );
-      case 9:
-        return const StudentMeetingNotesScreen();
-      case 10:
-        return PlagiarismReportScreen(
-          onChooseSupervisor: context.watch<FypProvider>().canChooseSupervisor
-              ? () => setState(() {
-                    _selectedIndex = 6;
-                    _activeProjectId = null;
-                  })
-              : null,
-          onOpenMySupervisor: () => setState(() {
-            _selectedIndex = 7;
-            _activeProjectId = null;
-          }),
-          onOpenNewReport: () => setState(() {
-            _selectedIndex = 1;
-            _activeProjectId = null;
-          }),
-        );
-      case 11:
-        return StatusTrackerScreen(
-          onChooseSupervisor: context.watch<FypProvider>().canChooseSupervisor
-              ? () => setState(() {
-                    _selectedIndex = 6;
-                    _activeProjectId = null;
-                  })
-              : null,
-          onOpenMySupervisor: () => setState(() {
-            _selectedIndex = 7;
-            _activeProjectId = null;
-          }),
-          onUploadNewVersion: () => setState(() {
-            _selectedIndex = 1;
-            _activeProjectId = null;
-          }),
-        );
+                  });
+                }
+              });
+              return MySupervisorScreen(
+                onChooseSupervisor: () => setState(() {
+                  _selectedIndex = 6;
+                  _activeProjectId = null;
+                }),
+              );
+            }
+            return SupervisorSelectionScreen(
+              onRequestSubmitted: () => setState(() {
+                _selectedIndex = 7;
+                _activeProjectId = null;
+              }),
+            );
+          case 7:
+            return MySupervisorScreen(
+              onChooseSupervisor: context.watch<FypProvider>().canChooseSupervisor
+                  ? () => setState(() {
+                        _selectedIndex = 6;
+                        _activeProjectId = null;
+                      })
+                  : null,
+            );
+          case 8:
+            return FypMilestonesScreen(
+              onChooseSupervisor: context.watch<FypProvider>().canChooseSupervisor
+                  ? () => setState(() {
+                        _selectedIndex = 6;
+                        _activeProjectId = null;
+                      })
+                  : null,
+              onOpenMySupervisor: () => setState(() {
+                _selectedIndex = 7;
+                _activeProjectId = null;
+              }),
+            );
+          case 9:
+            return const StudentMeetingNotesScreen();
+          case 10:
+            return PlagiarismReportScreen(
+              onChooseSupervisor: context.watch<FypProvider>().canChooseSupervisor
+                  ? () => setState(() {
+                        _selectedIndex = 6;
+                        _activeProjectId = null;
+                      })
+                  : null,
+              onOpenMySupervisor: () => setState(() {
+                _selectedIndex = 7;
+                _activeProjectId = null;
+              }),
+              onOpenNewReport: () => setState(() {
+                _selectedIndex = 1;
+                _activeProjectId = null;
+              }),
+            );
+          case 11:
+            return StatusTrackerScreen(
+              onChooseSupervisor: context.watch<FypProvider>().canChooseSupervisor
+                  ? () => setState(() {
+                        _selectedIndex = 6;
+                        _activeProjectId = null;
+                      })
+                  : null,
+              onOpenMySupervisor: () => setState(() {
+                _selectedIndex = 7;
+                _activeProjectId = null;
+              }),
+              onUploadNewVersion: () => setState(() {
+                _selectedIndex = 1;
+                _activeProjectId = null;
+              }),
+            );
+          default:
+            return const SizedBox.shrink();
+        }
       case 12:
         return _buildSettingsPage();
       case kNotificationsTabIndex:
@@ -777,13 +817,17 @@ class _StudentDashboardState extends State<StudentDashboard> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               if (compact) ...[
-                const MobileStatusSummaryCard(),
-                SizedBox(height: 16),
+                if (DevUserConfig.hasFypModule) ...[
+                  const MobileStatusSummaryCard(),
+                  SizedBox(height: 16),
+                ],
                 _buildSendFromPhoneCard(),
                 SizedBox(height: 20),
               ] else ...[
-                const DesktopSemesterDeadlineCard(),
-                SizedBox(height: 20),
+                if (DevUserConfig.hasFypModule) ...[
+                  const DesktopSemesterDeadlineCard(),
+                  SizedBox(height: 20),
+                ],
               ],
               _buildStatsRow(compact: compact, totalReports: totalReports, draftCount: draftCount, completedCount: completedCount),
               SizedBox(height: 28),
@@ -1198,7 +1242,9 @@ class _StudentDashboardState extends State<StudentDashboard> {
     final tools = [
       (
         'Auto Format',
-        'Format to academic standards',
+        DevUserConfig.hasFypModule
+            ? 'Format to academic standards'
+            : 'Format to your org template',
         Icons.auto_awesome,
         _p.accent,
       ),
@@ -2055,28 +2101,30 @@ class _StudentDashboardState extends State<StudentDashboard> {
                                   // Action Buttons
                                   Row(
                                     children: [
-                                      Expanded(
-                                        child: ElevatedButton.icon(
-                                          onPressed: () => _sendReportToSupervisor(doc),
-                                          icon: Icon(Icons.send_rounded, size: 14),
-                                          label: Text(
-                                            'Send to Supervisor',
-                                            style: TextStyle(
-                                              fontSize: 11,
-                                              fontWeight: FontWeight.w600,
+                                      if (DevUserConfig.hasFypModule) ...[
+                                        Expanded(
+                                          child: ElevatedButton.icon(
+                                            onPressed: () => _sendReportToSupervisor(doc),
+                                            icon: Icon(Icons.send_rounded, size: 14),
+                                            label: Text(
+                                              'Send to Supervisor',
+                                              style: TextStyle(
+                                                fontSize: 11,
+                                                fontWeight: FontWeight.w600,
+                                              ),
                                             ),
-                                          ),
-                                          style: ElevatedButton.styleFrom(
-                                            backgroundColor: Color(0xFF10B981),
-                                            foregroundColor: Colors.white,
-                                            padding: EdgeInsets.symmetric(vertical: 8),
-                                            shape: RoundedRectangleBorder(
-                                              borderRadius: BorderRadius.circular(6),
+                                            style: ElevatedButton.styleFrom(
+                                              backgroundColor: Color(0xFF10B981),
+                                              foregroundColor: Colors.white,
+                                              padding: EdgeInsets.symmetric(vertical: 8),
+                                              shape: RoundedRectangleBorder(
+                                                borderRadius: BorderRadius.circular(6),
+                                              ),
                                             ),
                                           ),
                                         ),
-                                      ),
-                                      SizedBox(width: 6),
+                                        SizedBox(width: 6),
+                                      ],
                                       Expanded(
                                         child: OutlinedButton.icon(
                                           onPressed: () => _handleDownload(doc),
@@ -2502,26 +2550,27 @@ class _StudentDashboardState extends State<StudentDashboard> {
             ),
           ),
           SizedBox(height: 12),
-          SizedBox(
-            width: double.infinity,
-            height: 42,
-            child: ElevatedButton.icon(
-              onPressed: () => _sendReportToSupervisor(doc),
-              icon: Icon(Icons.send_rounded, size: 16),
-              label: Text(
-                'Send to Supervisor',
-                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
-              ),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Color(0xFF10B981),
-                foregroundColor: Colors.white,
-                elevation: 0,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10),
+          if (DevUserConfig.hasFypModule)
+            SizedBox(
+              width: double.infinity,
+              height: 42,
+              child: ElevatedButton.icon(
+                onPressed: () => _sendReportToSupervisor(doc),
+                icon: Icon(Icons.send_rounded, size: 16),
+                label: Text(
+                  'Send to Supervisor',
+                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Color(0xFF10B981),
+                  foregroundColor: Colors.white,
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
                 ),
               ),
             ),
-          ),
           SizedBox(height: 8),
           SizedBox(
             width: double.infinity,
@@ -3268,7 +3317,9 @@ class _StudentDashboardState extends State<StudentDashboard> {
               ),
               SizedBox(height: 8),
               Text(
-                'Loaded from your university database',
+                DevUserConfig.hasFypModule
+                    ? 'Loaded from your university database'
+                    : 'Templates configured for your organization',
                 style: TextStyle(
                   fontSize: 13,
                   color: _p.textSecondary,
@@ -3360,7 +3411,9 @@ class _StudentDashboardState extends State<StudentDashboard> {
                       ),
                       SizedBox(height: 16),
                       Text(
-                        'Can\'t find your university template?',
+                        DevUserConfig.hasFypModule
+                            ? 'Can\'t find your university template?'
+                            : 'Need a custom template?',
                         style: TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.w600,
@@ -3439,7 +3492,10 @@ class _StudentDashboardState extends State<StudentDashboard> {
                     SizedBox(height: 12),
                     _buildSettingsItem('Email', auth.email ?? 'N/A'),
                     SizedBox(height: 12),
-                    _buildSettingsItem('Account Type', 'Student'),
+                    _buildSettingsItem(
+                      'Account Type',
+                      DevUserConfig.displayRoleLabel(auth.userRole),
+                    ),
                   ],
                 ),
               ),
@@ -5156,9 +5212,7 @@ class SettingsPanel extends StatelessWidget {
                       _buildSettingField(
                         context,
                         'Role',
-                        auth.userRole != null
-                            ? auth.userRole![0].toUpperCase() + auth.userRole!.substring(1)
-                            : 'Unknown',
+                        DevUserConfig.displayRoleLabel(auth.userRole),
                         Icons.shield,
                       ),
                     ],

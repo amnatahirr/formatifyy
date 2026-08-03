@@ -105,11 +105,6 @@ class _AdminOverviewScreenState extends State<AdminOverviewScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const AdminPageHeader(
-            title: 'Dashboard Overview',
-            subtitle: 'Live metrics and shortcuts for university administration',
-          ),
-          const SizedBox(height: 18),
           AdminSectionCard(
             title: 'Organization Info',
             child: Column(
@@ -147,12 +142,20 @@ class _AdminOverviewScreenState extends State<AdminOverviewScreen> {
                     value: '${overview.stats.totalSupervisors}',
                     icon: Icons.supervisor_account_rounded,
                   ),
-                AdminStatCard(
-                  title: 'Total Students',
-                  value: '${overview.stats.totalStudents}',
-                  icon: Icons.people_alt_rounded,
-                  accent: AdminColors.accent,
-                ),
+                if (DevUserConfig.hasFypModule)
+                  AdminStatCard(
+                    title: 'Total Students',
+                    value: '${overview.stats.totalStudents}',
+                    icon: Icons.people_alt_rounded,
+                    accent: AdminColors.accent,
+                  )
+                else
+                  AdminStatCard(
+                    title: 'Total Users',
+                    value: '${overview.stats.totalStudents}',
+                    icon: Icons.people_alt_rounded,
+                    accent: AdminColors.accent,
+                  ),
                 AdminStatCard(
                   title: 'Active Projects',
                   value: '${overview.stats.totalActiveProjects}',

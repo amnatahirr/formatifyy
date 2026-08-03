@@ -251,6 +251,33 @@ def init_db():
     if "is_freeform" not in document_columns:
         cursor.execute("ALTER TABLE documents ADD COLUMN is_freeform INTEGER DEFAULT 0")
 
+    # 4c. Google Drive OAuth tokens + sync status
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS google_drive_tokens (
+            user_id INTEGER PRIMARY KEY,
+            access_token TEXT NOT NULL,
+            refresh_token TEXT,
+            token_expiry TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        )
+    """)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS file_sync_status (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            document_id INTEGER NOT NULL,
+            user_id INTEGER NOT NULL,
+            source TEXT,
+            sync_status TEXT,
+            google_drive_id TEXT,
+            last_synced TIMESTAMP,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (document_id) REFERENCES documents(id),
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        )
+    """)
+
     # 5. Create Image Analysis table
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS image_analysis (

@@ -303,16 +303,15 @@ class _DepartmentManagerScreenState extends State<DepartmentManagerScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          AdminPageHeader(
-            title: 'Department Manager',
-            subtitle: 'Create and manage academic departments',
-            trailing: ElevatedButton.icon(
+          Align(
+            alignment: Alignment.centerRight,
+            child: ElevatedButton.icon(
               onPressed: () => _openDepartmentSheet(),
               icon: const Icon(Icons.add),
               label: const Text('Add Department'),
             ),
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 16),
           Expanded(child: list),
         ],
       ),

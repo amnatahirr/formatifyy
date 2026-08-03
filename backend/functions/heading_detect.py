@@ -77,11 +77,45 @@ async def detect_headings_with_claude(
         return []
 
     section_names = _template_section_names(template)
+    has_outline = bool(section_names)
     outline_hint = (
         json.dumps(section_names, indent=2)
-        if section_names
-        else "[]  (no required_sections provided — detect headings structurally)"
+        if has_outline
+        else "[]  (EMPTY — no required_sections; YOU must decide Heading 1 vs 2 vs 3 by document structure)"
     )
+
+    if has_outline:
+        level_rules = """5. Assign heading_level 1-4 from STRUCTURE + reliable numbering:
+   - "1." / "2." / "Chapter 1" → level 1
+   - "1.1" / "2.3" → level 2
+   - "1.1.1" → level 3
+   Prefer numbering depth when it starts at 1 (not 0).
+6. Prefer structural reality over the template list. If a real heading is missing from the template, still include it.
+7. NEVER mark these as headings (even if short or Title Case):
+   - Bullet / numbered list items ("• …", "- …", "1. Feature: description", "a) …")
+   - "Label: long description" feature/module rows (e.g. "Admin Panel: It allows…", "Frontend (App): Students use…")
+   - Parallel objectives starting with "To develop/build/implement…"
+   - Figure/Table captions ("Figure 1: …", "Table 2: …")
+   - Full sentences of body prose (multiple clauses, ends with period, > ~12 words)
+8. Be CONSERVATIVE. If unsure whether something is a heading or a list/body line, OMIT it from headings."""
+    else:
+        level_rules = """5. THIS TEMPLATE HAS NO SECTIONS DEFINED. You MUST invent the outline:
+   Decide heading_level from ROLE in the document, NOT from broken numbers like "0.1".
+   - Level 1 = major sections / chapters (Abstract, Introduction, Literature Review,
+     Methodology, Results, Discussion, Conclusion, References, Appendices, etc.)
+   - Level 2 = subsections under a major section (e.g. under Introduction: Problem Statement,
+     Objectives, Scope)
+   - Level 3 = sub-subsections under a level-2 heading
+   Correct conceptual numbering is 1, then 1.1 / 1.2, then 2, 2.1 — NEVER start at 0.1.
+   If text says "0.1. Abstract" or "0.1 Abstract", still assign heading_level 1 (Abstract is major).
+   If text says "0.1.1 Something" under Abstract, assign level 2 (first subsection), not level 3 from digits.
+6. Ignore zero-based prefixes ("0", "0.1", "0.1.2") when choosing level — treat them as typos.
+7. Prefer title meaning + order: first major title → level 1; following nested titles → level 2/3.
+8. NEVER mark these as headings:
+   - Bullet / numbered list items, "To …" objectives, Figure/Table captions
+   - "Label: description" feature rows (Admin Panel / Backend / Database / Module lines)
+   - Long body sentences
+9. Be CONSERVATIVE. When unsure, OMIT — false headings are worse than a missed one."""
 
     all_candidates: List[Dict[str, Any]] = []
     seen_pids: set[str] = set()
@@ -89,21 +123,21 @@ async def detect_headings_with_claude(
     for start in range(0, len(payload), _BATCH_SIZE):
         chunk = payload[start : start + _BATCH_SIZE]
         prompt = f"""You are an expert academic document structure analyzer.
-Identify EVERY paragraph that is a section or subsection HEADING (title), not body text.
+Identify ONLY paragraphs that are true section / subsection HEADINGS (titles), not body or list text.
 
-TEMPLATE SECTION NAMES (hints only — also detect real headings not on this list):
+TEMPLATE SECTION NAMES:
 {outline_hint}
 
 PARAGRAPHS:
 {json.dumps(chunk, indent=2)}
 
 RULES:
-1. A heading is a short standalone title that introduces a section or subsection.
-2. Include numbered headings (e.g. "1. Introduction", "2.3 Methods") and unnumbered label-like headings (e.g. "Specific Objectives").
-3. Do NOT mark body sentences, captions (Figure/Table…), bullet/list items, or objective lines starting with "To …" as headings.
+1. A heading is a short standalone TITLE that names a section (usually ≤ 10 words, not a full sentence).
+2. Include real numbered headings (e.g. "1. Introduction", "2.3 Methods") and short unnumbered section labels (e.g. "Specific Objectives", "Abstract").
+3. Do NOT mark body sentences, captions (Figure/Table…), bullet/list items, "Label: description" rows, or objective lines starting with "To …" as headings.
 4. Do NOT invent paragraphs — only use paragraph_id values from the input.
-5. Assign heading_level 1-4 (1 = top-level chapter, 2 = subsection, etc.).
-6. Prefer structural reality over the template list. If a real heading is missing from the template, still include it.
+5. Do NOT "fix" or rewrite numbering in the output — only report paragraph_id + heading_level.
+{level_rules}
 
 Return ONLY valid JSON:
 {{"headings": [

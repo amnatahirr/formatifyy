@@ -202,80 +202,75 @@ def _parse_docx(file_path: str, filename: str) -> DocumentModel:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# PDF PARSER  (PyMuPDF / fitz)
+# PDF PARSER  (PyMuPDF when available, pypdf fallback)
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def _parse_pdf(file_path: str, filename: str) -> DocumentModel:
-    import fitz  # PyMuPDF
+    from pdf_io import extract_pdf, merge_pdf_lines_to_paragraphs, looks_like_heading_line
 
-    pdf = fitz.open(file_path)
+    result = extract_pdf(file_path)
     paragraphs: List[ParagraphBlock] = []
     images: List[ImageBlock] = []
     heading_context = ""
     para_counter = 0
     img_counter = 0
 
-    for page_num in range(len(pdf)):
-        page = pdf[page_num]
-        page_number = page_num + 1
+    # Merge visual wrap lines into real paragraphs (same as PDF→DOCX path).
+    raw_lines: List[str] = []
+    line_page: List[int] = []
+    for page in result.pages:
+        if raw_lines:
+            raw_lines.append("")
+            line_page.append(page.page_number)
+        for text, _, _ in page.lines:
+            if text.strip():
+                raw_lines.append(text)
+                line_page.append(page.page_number)
 
-        # ── Extract text blocks ──────────────────────────────────────────────
-        blocks = page.get_text("dict", flags=fitz.TEXT_PRESERVE_WHITESPACE)["blocks"]
-        for block in blocks:
-            if block["type"] == 0:  # text block
-                for line in block.get("lines", []):
-                    spans = line.get("spans", [])
-                    if not spans:
-                        continue
-                    text = "".join(s["text"] for s in spans).strip()
-                    if not text:
-                        continue
-                    # Use font size of the first span to guess style
-                    font_size = spans[0].get("size", 12)
-                    is_bold = "bold" in spans[0].get("font", "").lower()
-                    style = _guess_style_from_font(text, font_size, is_bold)
-                    if style.startswith("Heading"):
-                        heading_context = text
-                    prefix, _ = _extract_numbering_prefix(text)
+    merged = merge_pdf_lines_to_paragraphs(raw_lines)
+    # Approximate page number: use first page that contributed (fallback 1)
+    page_guess = result.pages[0].page_number if result.pages else 1
+    for text in merged:
+        is_head = looks_like_heading_line(text)
+        style = "Heading 1" if is_head else _guess_style_from_font(text, 12.0, False)
+        if is_head or style.startswith("Heading"):
+            heading_context = text
+            style = style if style.startswith("Heading") else "Heading 1"
+        prefix, _ = _extract_numbering_prefix(text)
+        paragraphs.append(
+            ParagraphBlock(
+                paragraph_id=f"p{para_counter}",
+                page_number=page_guess,
+                heading_context=heading_context,
+                style=style,
+                text=text,
+                font_size=16.0 if style.startswith("Heading") else 12.0,
+                bold=style.startswith("Heading"),
+                style_name=style,
+                numbering_prefix=prefix,
+            )
+        )
+        para_counter += 1
 
-                    paragraphs.append(
-                        ParagraphBlock(
-                            paragraph_id=f"p{para_counter}",
-                            page_number=page_number,
-                            heading_context=heading_context,
-                            style=style,
-                            text=text,
-                            font_size=font_size,
-                            bold=is_bold,
-                            style_name=style,
-                            numbering_prefix=prefix,
-                        )
-                    )
-                    para_counter += 1
-
-        # ── Extract images ───────────────────────────────────────────────────
-        for img_info in page.get_images(full=True):
-            xref = img_info[0]
-            try:
-                base_image = pdf.extract_image(xref)
-                img_bytes = base_image["image"]
-                b64 = base64.b64encode(img_bytes).decode("utf-8")
-                images.append(
-                    ImageBlock(
-                        image_id=f"img{img_counter}",
-                        page_number=page_number,
-                        base64=b64,
-                        caption="",
-                    )
+    for page in result.pages:
+        for b64 in page.images_b64:
+            images.append(
+                ImageBlock(
+                    image_id=f"img{img_counter}",
+                    page_number=page.page_number,
+                    base64=b64,
+                    caption="",
                 )
-                img_counter += 1
-            except Exception:
-                continue
+            )
+            img_counter += 1
 
-    pdf.close()
+    print(
+        f"[parser] PDF via {result.backend}: "
+        f"{len(paragraphs)} paras (merged), {len(images)} images"
+    )
     return DocumentModel(
         filename=filename,
-        total_pages=len(pdf) if len(pdf) > 0 else 1,
+        total_pages=result.total_pages,
         paragraphs=paragraphs,
         images=images,
     )

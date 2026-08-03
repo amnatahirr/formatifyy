@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../config/dev_user_config.dart';
 import '../models/admin_models.dart';
 import '../providers/auth_provider.dart';
 import '../services/admin_api_service.dart';
@@ -67,17 +68,18 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          AdminPageHeader(
-            title: 'Settings',
-            subtitle: 'System configuration loaded from the backend',
-            trailing: _saving
-                ? const Padding(
-                    padding: EdgeInsets.only(top: 8),
-                    child: SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2)),
-                  )
-                : null,
-          ),
-          const SizedBox(height: 24),
+          if (_saving)
+            const Padding(
+              padding: EdgeInsets.only(bottom: 16),
+              child: Align(
+                alignment: Alignment.centerRight,
+                child: SizedBox(
+                  width: 22,
+                  height: 22,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              ),
+            ),
           if (_loading)
             const AdminLoadingView()
           else if (_error != null)
@@ -135,7 +137,9 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
                       children: [
                         _toggleRow(
                           'Maintenance Mode',
-                          'Disable access for students',
+                          DevUserConfig.hasFypModule
+                              ? 'Disable access for students'
+                              : 'Disable access for members',
                           _settings!.maintenanceMode,
                           (value) => _saveSettings(_settings!.copyWith(maintenanceMode: value)),
                         ),
