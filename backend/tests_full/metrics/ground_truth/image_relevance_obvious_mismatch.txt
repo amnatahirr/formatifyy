@@ -1,0 +1,1 @@
+Shard rebalancing redistributes primary keys across replica sets after capacity alarms trigger automated migrations.

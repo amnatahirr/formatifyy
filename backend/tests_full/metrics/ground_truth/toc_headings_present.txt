@@ -1,0 +1,15 @@
+Introduction
+
+Opening section for TOC eligibility tests.
+
+Methodology
+
+Approach section for TOC eligibility tests.
+
+Results
+
+Findings section for TOC eligibility tests.
+
+Conclusion
+
+Closing section for TOC eligibility tests.

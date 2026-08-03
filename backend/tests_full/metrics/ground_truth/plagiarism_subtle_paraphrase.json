@@ -1,0 +1,14 @@
+{
+  "feature": "plagiarism",
+  "fixture": "plagiarism_subtle_paraphrase.txt",
+  "difficulty": "subtle",
+  "ci_min_f1": 0.0,
+  "description": "Heavy paraphrase of source — word_jaccard should often stay below 0.85 (recall gap)",
+  "hardness_notes": "HARD: synonym rewrite; bag-of-words overlap drops",
+  "source_passage": "Quantum entanglement allows particles to share state information instantaneously across distance in laboratory conditions under controlled noise.",
+  "flag_threshold": 0.85,
+  "expect_flagged": true,
+  "expected_issues": [
+    {"type": "plagiarism", "keywords": ["entanglement", "particles"], "location_hint": "particles"}
+  ]
+}

@@ -1,0 +1,11 @@
+Introduction
+
+Opening material for a complete document.
+
+Methodology
+
+Approach material for a complete document.
+
+Conclusion
+
+Closing material for a complete document.

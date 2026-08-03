@@ -1,0 +1,14 @@
+{
+  "feature": "plagiarism",
+  "fixture": "plagiarism_confused_citation.txt",
+  "difficulty": "confused",
+  "ci_min_f1": 0.0,
+  "description": "Quoted passage with citation — easy to confuse plagiarism vs legitimate quote",
+  "hardness_notes": "CONFUSED: high overlap but quoted; word_jaccard still flags — expected plagiarism type (detector cannot see quotes)",
+  "source_passage": "Quantum entanglement allows particles to share state information instantaneously across distance in laboratory conditions under controlled noise.",
+  "flag_threshold": 0.85,
+  "expect_flagged": true,
+  "expected_issues": [
+    {"type": "plagiarism", "keywords": ["entanglement"], "location_hint": "entanglement"}
+  ]
+}

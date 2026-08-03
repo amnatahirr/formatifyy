@@ -1,0 +1,11 @@
+Introduction
+
+Distributed systems research spans many decades of iterative refinement.
+
+Methodology
+
+Early prototypes focused on correctness proofs before performance tuning began in earnest.
+
+Conclusion
+
+The narrative remains continuous without enumerated steps or bullet markers.

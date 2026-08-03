@@ -1,0 +1,7 @@
+Introduction
+
+Minimal TOC opening paragraph with enough words for a body block.
+
+Conclusion
+
+Minimal TOC closing paragraph with enough words for a body block.

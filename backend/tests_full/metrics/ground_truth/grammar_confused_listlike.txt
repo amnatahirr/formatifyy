@@ -1,0 +1,11 @@
+Introduction
+
+The pipeline must recieve the following inputs during warmup:
+
+- Sensor calibration offsets for each node.
+- Network latency budgets for regional links.
+- Storage quotas for temporary artifacts.
+
+Conclusion
+
+Warmup completes once all three inputs are validated.

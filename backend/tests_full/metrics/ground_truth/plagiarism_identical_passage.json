@@ -1,0 +1,14 @@
+{
+  "feature": "plagiarism",
+  "fixture": "plagiarism_identical_passage.txt",
+  "difficulty": "obvious",
+  "ci_min_f1": 0.7,
+  "description": "Near-verbatim copy of source_passage — production corpus detector (temp corpus)",
+  "hardness_notes": "EASY: seeded corpus contains source_passage; detect_plagiarism_sync should flag",
+  "source_passage": "Quantum entanglement allows particles to share state information instantaneously across distance in laboratory conditions under controlled noise.",
+  "flag_threshold": 0.70,
+  "expect_flagged": true,
+  "expected_issues": [
+    {"type": "plagiarism", "keywords": ["entanglement"]}
+  ]
+}

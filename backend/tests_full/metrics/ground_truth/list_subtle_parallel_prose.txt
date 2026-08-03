@@ -1,0 +1,13 @@
+Introduction
+
+The evaluation protocol relies on three complementary procedures.
+
+We measure latency under a saturated request mix.
+
+We measure error rates after injecting controlled faults.
+
+We measure recovery time following a regional outage.
+
+Conclusion
+
+These procedures form the basis of our reliability score.

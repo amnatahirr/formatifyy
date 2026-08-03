@@ -1,0 +1,12 @@
+{
+  "feature": "image_relevance",
+  "fixture": "image_relevance_clean_match.txt",
+  "difficulty": "clean",
+  "ci_min_f1": 0.0,
+  "description": "Caption and context both about confusion matrices — production CLIP on synthetic PNG",
+  "hardness_notes": "CLEAN: keyword overlap via caption. Gate relaxed — CLIP on rendered-text PNGs is fragile vs real photos.",
+  "image_caption": "Confusion matrix for classification accuracy on the validation set",
+  "surrounding_text": "Figure 3 presents the confusion matrix summarizing classification accuracy across validation folds.",
+  "relevance_threshold": 0.15,
+  "expected_issues": []
+}

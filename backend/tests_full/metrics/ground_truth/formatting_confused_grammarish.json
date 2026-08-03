@@ -1,0 +1,13 @@
+{
+  "feature": "formatting",
+  "fixture": "formatting_confused_grammarish.txt",
+  "difficulty": "confused",
+  "ci_min_f1": 0.5,
+  "description": "Has typos but the formatting issue is missing Methodology — must emit missing_section not spelling",
+  "hardness_notes": "CONFUSED: typos present; expected type is missing_section only",
+  "required_sections": ["Introduction", "Methodology", "Conclusion"],
+  "forbidden_types": ["spelling", "grammar"],
+  "expected_issues": [
+    {"type": "missing_section", "keywords": ["Methodology"], "location_hint": "Methodology"}
+  ]
+}

@@ -1,0 +1,11 @@
+Introduction
+
+This study examines how adaptive caching improves response latency in distributed services.
+
+Methodology
+
+We measured end-to-end latency across three regional clusters under a fixed request mix.
+
+Conclusion
+
+The results indicate a consistent reduction in the ninety-fifth percentile latency.

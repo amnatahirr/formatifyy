@@ -1,0 +1,13 @@
+Introduction
+
+The system requires the following capabilities:
+
+- Collect sensor readings from each node.
+
+- Aggregate readings into a time series.
+
+- Visualize anomalies for the operator.
+
+Conclusion
+
+These capabilities enable reliable monitoring.

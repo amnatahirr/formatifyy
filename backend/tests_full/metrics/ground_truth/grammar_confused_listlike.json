@@ -1,0 +1,12 @@
+{
+  "feature": "grammar",
+  "fixture": "grammar_confused_listlike.txt",
+  "difficulty": "confused",
+  "ci_min_f1": 0.0,
+  "description": "Looks like a list (dashes) but the real issue is a misspelling inside items — classification test",
+  "hardness_notes": "CONFUSED: dash lines tempt list_detection; expected grammar type only (production never emits spelling)",
+  "expected_issues": [
+    {"type": "grammar", "keywords": ["recieve"], "location_hint": "recieve"}
+  ],
+  "forbidden_types": ["list_group", "missing_section"]
+}

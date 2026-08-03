@@ -1,0 +1,14 @@
+{
+  "feature": "image_relevance",
+  "fixture": "image_relevance_subtle_network_polysemy.txt",
+  "difficulty": "subtle",
+  "ci_min_f1": 0.0,
+  "description": "Shared word 'network' but different domains (neural net vs computer network)",
+  "hardness_notes": "HARD: CLIP may or may not flag — tests borderline. Synthetic PNG.",
+  "image_caption": "Diagram of a deep neural network with convolution layers",
+  "surrounding_text": "The campus network switches were upgraded to reduce packet loss during peak lecture streaming.",
+  "relevance_threshold": 0.15,
+  "expected_issues": [
+    {"type": "irrelevant_image", "keywords": ["neural"], "location_hint": "img0"}
+  ]
+}

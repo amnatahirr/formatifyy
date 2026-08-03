@@ -1,0 +1,9 @@
+{
+  "feature": "grammar",
+  "fixture": "grammar_clean_prose.txt",
+  "difficulty": "clean",
+  "ci_min_f1": 0.0,
+  "description": "Polished academic prose with ZERO planted errors — tests precision (no FPs). LLM may still over-flag.",
+  "hardness_notes": "CLEAN: well-formed sentences; any flag is a false positive. Gate relaxed because real LLM is not deterministic.",
+  "expected_issues": []
+}

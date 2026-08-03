@@ -1,0 +1,13 @@
+{
+  "feature": "list_detection",
+  "fixture": "list_parallel_items.txt",
+  "difficulty": "obvious",
+  "ci_min_f1": 0.7,
+  "description": "Trigger line + 3 dash items — detect_list_groups should find a group",
+  "hardness_notes": "EASY: explicit '- ' bullets (detector may use marker or trigger_line signal)",
+  "expected_list_groups": 1,
+  "expected_min_items": 3,
+  "expected_issues": [
+    {"type": "list_group", "keywords": ["marker", "trigger_line", "group size"]}
+  ]
+}

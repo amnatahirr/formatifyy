@@ -1,0 +1,12 @@
+{
+  "feature": "list_detection",
+  "fixture": "list_subtle_parallel_prose.txt",
+  "difficulty": "subtle",
+  "ci_min_f1": 0.0,
+  "description": "Parallel sentences without bullets/dashes — may be missed by trigger/bullet detectors",
+  "hardness_notes": "HARD: 'We measure X. We measure Y. We measure Z.' — no dash markers",
+  "expected_list_groups": 1,
+  "expected_issues": [
+    {"type": "list_group", "keywords": ["measure"], "location_hint": "measure"}
+  ]
+}

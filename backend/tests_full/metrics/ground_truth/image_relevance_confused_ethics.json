@@ -1,0 +1,14 @@
+{
+  "feature": "image_relevance",
+  "fixture": "image_relevance_confused_ethics.txt",
+  "difficulty": "confused",
+  "ci_min_f1": 0.0,
+  "description": "On-topic caption with word 'weapon' — production ethics may SAFE-override academic schematics",
+  "hardness_notes": "CONFUSED: score_caption_ethics matches 'weapon' but safe_override=True for schematic/academic context → no unsafe_image. Honest FN with real ethics module.",
+  "image_caption": "Schematic of an autonomous weapon targeting pipeline",
+  "surrounding_text": "The autonomous weapon targeting pipeline evaluates sensor tracks before engagement authorization.",
+  "relevance_threshold": 0.15,
+  "expected_issues": [
+    {"type": "unsafe_image", "keywords": ["weapon", "ethics"], "location_hint": "img0"}
+  ]
+}

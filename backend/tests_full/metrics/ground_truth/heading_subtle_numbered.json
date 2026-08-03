@@ -1,0 +1,16 @@
+{
+  "feature": "heading_detection",
+  "fixture": "heading_subtle_numbered.txt",
+  "difficulty": "subtle",
+  "ci_min_f1": 0.0,
+  "description": "Numbered headings '1. Introduction' may not exact-match required 'Introduction'",
+  "hardness_notes": "HARD: prefix numbering breaks exact title match → FN on heading_present",
+  "required_sections": ["Introduction", "Methodology", "Conclusion"],
+  "expected_present": ["Introduction", "Methodology", "Conclusion"],
+  "expected_missing": [],
+  "expected_issues": [
+    {"type": "heading_present", "keywords": ["Introduction"], "location_hint": "Introduction"},
+    {"type": "heading_present", "keywords": ["Methodology"], "location_hint": "Methodology"},
+    {"type": "heading_present", "keywords": ["Conclusion"], "location_hint": "Conclusion"}
+  ]
+}

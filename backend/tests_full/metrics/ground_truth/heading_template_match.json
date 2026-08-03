@@ -1,0 +1,16 @@
+{
+  "feature": "heading_detection",
+  "fixture": "heading_template_match.txt",
+  "difficulty": "obvious",
+  "ci_min_f1": 0.7,
+  "description": "Related Work missing; Introduction and Conclusion present",
+  "hardness_notes": "EASY: exact title presence/absence",
+  "required_sections": ["Introduction", "Related Work", "Conclusion"],
+  "expected_present": ["Introduction", "Conclusion"],
+  "expected_missing": ["Related Work"],
+  "expected_issues": [
+    {"type": "heading_present", "keywords": ["Introduction"], "location_hint": "Introduction"},
+    {"type": "heading_present", "keywords": ["Conclusion"], "location_hint": "Conclusion"},
+    {"type": "missing_section", "keywords": ["Related Work"], "location_hint": "Related Work"}
+  ]
+}

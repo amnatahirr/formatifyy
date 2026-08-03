@@ -1,0 +1,1 @@
+The campus network switches were upgraded to reduce packet loss during peak lecture streaming.

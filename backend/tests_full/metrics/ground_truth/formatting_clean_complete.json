@@ -1,0 +1,10 @@
+{
+  "feature": "formatting",
+  "fixture": "formatting_clean_complete.txt",
+  "difficulty": "clean",
+  "ci_min_f1": 1.0,
+  "description": "All required sections present with exact titles",
+  "hardness_notes": "CLEAN: Introduction/Methodology/Conclusion present",
+  "required_sections": ["Introduction", "Methodology", "Conclusion"],
+  "expected_issues": []
+}

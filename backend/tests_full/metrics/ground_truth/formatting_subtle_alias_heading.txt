@@ -1,0 +1,11 @@
+Introduction
+
+Background for the alias-heading fixture.
+
+Methodology
+
+Approach details for the alias-heading fixture.
+
+Final Remarks
+
+This closes the document without using the exact required title.

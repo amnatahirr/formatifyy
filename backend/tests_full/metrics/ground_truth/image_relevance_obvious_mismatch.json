@@ -1,0 +1,14 @@
+{
+  "feature": "image_relevance",
+  "fixture": "image_relevance_obvious_mismatch.txt",
+  "difficulty": "obvious",
+  "ci_min_f1": 0.0,
+  "description": "Caption about cats; surrounding text about database sharding — production CLIP",
+  "hardness_notes": "REAL CLIP on synthetic text-PNG scored RELEVANT (sim~0.23 >= 0.22 threshold) — honest FN. Gate=0 documents production behavior on synthetic images.",
+  "image_caption": "A fluffy orange cat sleeping on a windowsill",
+  "surrounding_text": "Shard rebalancing redistributes primary keys across replica sets after capacity alarms trigger automated migrations.",
+  "relevance_threshold": 0.15,
+  "expected_issues": [
+    {"type": "irrelevant_image", "keywords": ["cat"], "location_hint": "img0"}
+  ]
+}

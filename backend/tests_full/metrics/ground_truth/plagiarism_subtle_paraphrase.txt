@@ -1,0 +1,7 @@
+Introduction
+
+Linked quantum particles can exchange correlated properties almost immediately even when far apart, provided the experimental environment keeps interference tightly managed.
+
+Conclusion
+
+Further theoretical work remains open.

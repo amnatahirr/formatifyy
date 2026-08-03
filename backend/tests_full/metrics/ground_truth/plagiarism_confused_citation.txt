@@ -1,0 +1,7 @@
+Introduction
+
+As noted by prior work: "Quantum entanglement allows particles to share state information instantaneously across distance in laboratory conditions under controlled noise." (Smith, 2020).
+
+Conclusion
+
+We build on that observation in later chapters.

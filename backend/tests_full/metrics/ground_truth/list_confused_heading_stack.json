@@ -1,0 +1,11 @@
+{
+  "feature": "list_detection",
+  "fixture": "list_confused_heading_stack.txt",
+  "difficulty": "confused",
+  "ci_min_f1": 0.0,
+  "description": "Short heading-like lines stacked — easy to confuse with list items vs headings",
+  "hardness_notes": "CONFUSED: short Title Case lines; expected list_group OR zero — we expect NO list_group (they are headings)",
+  "expected_list_groups": 0,
+  "expected_issues": [],
+  "forbidden_types": ["list_group"]
+}

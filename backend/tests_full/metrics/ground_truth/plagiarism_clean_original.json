@@ -1,0 +1,12 @@
+{
+  "feature": "plagiarism",
+  "fixture": "plagiarism_clean_original.txt",
+  "difficulty": "clean",
+  "ci_min_f1": 1.0,
+  "description": "Unrelated original prose vs source_passage — must NOT flag",
+  "hardness_notes": "CLEAN: different topic entirely",
+  "source_passage": "Quantum entanglement allows particles to share state information instantaneously across distance in laboratory conditions under controlled noise.",
+  "flag_threshold": 0.85,
+  "expect_flagged": false,
+  "expected_issues": []
+}

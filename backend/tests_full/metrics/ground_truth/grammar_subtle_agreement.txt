@@ -1,0 +1,11 @@
+Introduction
+
+The cluster of servers are configured to handle failover during peak traffic.
+
+Methodology
+
+Each of the samples were collected under controlled laboratory conditions before analysis.
+
+Conclusion
+
+Overall throughput improved after the change.

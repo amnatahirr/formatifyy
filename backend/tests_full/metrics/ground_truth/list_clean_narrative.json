@@ -1,0 +1,10 @@
+{
+  "feature": "list_detection",
+  "fixture": "list_clean_narrative.txt",
+  "difficulty": "clean",
+  "ci_min_f1": 1.0,
+  "description": "Narrative paragraphs that must NOT be detected as lists",
+  "hardness_notes": "CLEAN: varied sentence openings; any list_group is FP",
+  "expected_list_groups": 0,
+  "expected_issues": []
+}

@@ -1,0 +1,12 @@
+{
+  "feature": "grammar",
+  "fixture": "grammar_subtle_agreement.txt",
+  "difficulty": "subtle",
+  "ci_min_f1": 0.0,
+  "description": "Intervening-phrase subject-verb agreement — naive probe should MISS these (recall test)",
+  "hardness_notes": "HARD: 'The cluster of servers are' / 'Each of the samples were' — no obvious typo tokens",
+  "expected_issues": [
+    {"type": "grammar", "keywords": ["cluster of servers are"], "location_hint": "servers are"},
+    {"type": "grammar", "keywords": ["each of the samples were"], "location_hint": "samples were"}
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "feature": "grammar",
+  "fixture": "grammar_planted_errors.txt",
+  "difficulty": "obvious",
+  "ci_min_f1": 0.5,
+  "description": "Obvious misspellings + crude SV errors — production check_grammar (LLM)",
+  "hardness_notes": "EASY: dictionary typos (sentense, mispelled) and 'he go' / 'experiment were'. Production always emits type=grammar.",
+  "expected_issues": [
+    {"type": "grammar", "keywords": ["sentense"], "location_hint": "sentense"},
+    {"type": "grammar", "keywords": ["mispelled"], "location_hint": "mispelled"},
+    {"type": "grammar", "keywords": ["he go"], "location_hint": "he go"},
+    {"type": "grammar", "keywords": ["experiment were"], "location_hint": "experiment were"}
+  ]
+}

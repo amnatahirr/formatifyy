@@ -1,0 +1,11 @@
+1. Introduction
+
+Numbered heading fixture opening.
+
+2. Methodology
+
+Numbered heading fixture approach.
+
+3. Conclusion
+
+Numbered heading fixture closing.

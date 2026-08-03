@@ -1,0 +1,12 @@
+{
+  "feature": "formatting",
+  "fixture": "formatting_missing_sections.txt",
+  "difficulty": "obvious",
+  "ci_min_f1": 0.7,
+  "description": "Conclusion heading entirely absent",
+  "hardness_notes": "EASY: required Conclusion missing from heading set",
+  "required_sections": ["Introduction", "Methodology", "Conclusion"],
+  "expected_issues": [
+    {"type": "missing_section", "keywords": ["Conclusion"], "location_hint": "Conclusion"}
+  ]
+}

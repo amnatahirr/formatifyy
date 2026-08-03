@@ -1,0 +1,15 @@
+{
+  "feature": "toc_structure",
+  "fixture": "toc_confused_body_caps.txt",
+  "difficulty": "confused",
+  "ci_min_f1": 0.0,
+  "description": "ALL-CAPS body sentence looks like a heading — classification trap",
+  "hardness_notes": "CONFUSED: 'ALL RESULTS WERE VALIDATED TWICE.' may be classified as Heading 1",
+  "required_sections": ["Introduction", "Conclusion"],
+  "expected_present": ["Introduction", "Conclusion"],
+  "expected_missing": [],
+  "expected_issues": [
+    {"type": "heading_present", "keywords": ["Introduction"], "location_hint": "Introduction"},
+    {"type": "heading_present", "keywords": ["Conclusion"], "location_hint": "Conclusion"}
+  ]
+}

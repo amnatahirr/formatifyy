@@ -1,0 +1,1 @@
+Figure 3 presents the confusion matrix summarizing classification accuracy across validation folds.

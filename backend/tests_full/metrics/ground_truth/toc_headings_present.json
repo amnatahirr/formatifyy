@@ -1,0 +1,19 @@
+{
+  "feature": "toc_structure",
+  "fixture": "toc_headings_present.txt",
+  "difficulty": "obvious",
+  "ci_min_f1": 0.7,
+  "description": "Four clear H1 titles eligible for TOC",
+  "hardness_notes": "EASY",
+  "required_sections": ["Introduction", "Methodology", "Results", "Conclusion"],
+  "expected_present": ["Introduction", "Methodology", "Results", "Conclusion"],
+  "expected_missing": [],
+  "expected_heading_titles": ["Introduction", "Methodology", "Results", "Conclusion"],
+  "expected_heading_count_min": 3,
+  "expected_issues": [
+    {"type": "heading_present", "keywords": ["Introduction"], "location_hint": "Introduction"},
+    {"type": "heading_present", "keywords": ["Methodology"], "location_hint": "Methodology"},
+    {"type": "heading_present", "keywords": ["Results"], "location_hint": "Results"},
+    {"type": "heading_present", "keywords": ["Conclusion"], "location_hint": "Conclusion"}
+  ]
+}

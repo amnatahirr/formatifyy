@@ -1,0 +1,12 @@
+{
+  "feature": "formatting",
+  "fixture": "formatting_subtle_alias_heading.txt",
+  "difficulty": "subtle",
+  "ci_min_f1": 0.0,
+  "description": "Uses 'Final Remarks' instead of required 'Conclusion' — exact-match section checker should FN or flag missing",
+  "hardness_notes": "HARD: semantic alias of Conclusion; exact title matcher will report missing_section (recall of alias is 0 for exact matcher)",
+  "required_sections": ["Introduction", "Methodology", "Conclusion"],
+  "expected_issues": [
+    {"type": "missing_section", "keywords": ["Conclusion"], "location_hint": "Conclusion"}
+  ]
+}

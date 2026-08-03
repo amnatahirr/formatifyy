@@ -1,0 +1,12 @@
+{
+  "feature": "heading_detection",
+  "fixture": "heading_clean_all_present.txt",
+  "difficulty": "clean",
+  "ci_min_f1": 1.0,
+  "description": "All required headings present exactly",
+  "hardness_notes": "CLEAN",
+  "required_sections": ["Introduction", "Methodology", "Conclusion"],
+  "expected_present": ["Introduction", "Methodology", "Conclusion"],
+  "expected_missing": [],
+  "expected_issues": []
+}
