@@ -1,10 +1,16 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:file_picker/file_picker.dart';
 import '../providers/upload_provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/template_provider.dart';
+import '../providers/document_provider.dart';
 import '../widgets/google_drive_browser_widget.dart';
+import '../widgets/admin/admin_ui.dart';
+import '../widgets/freeform_analyze_dialogs.dart';
+import 'analyze_screen.dart';
 
 class MultiUploadScreen extends StatefulWidget {
   const MultiUploadScreen({Key? key}) : super(key: key);
@@ -114,6 +120,22 @@ class _MultiUploadScreenState extends State<MultiUploadScreen> {
               });
             },
           ),
+          if (!auth.isStudent) ...[
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: uploads.isUploading ? null : () => _analyzeWithoutTemplate(auth),
+                icon: const Icon(Icons.auto_awesome, size: 18),
+                label: const Text('Analyze without template'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AdminColors.primary,
+                  side: BorderSide(color: AdminColors.primary.withOpacity(0.7)),
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                ),
+              ),
+            ),
+          ],
           const SizedBox(height: 24),
 
           // Upload Button
@@ -357,7 +379,50 @@ class _MultiUploadScreenState extends State<MultiUploadScreen> {
     );
   }
 
-  
+  Future<void> _analyzeWithoutTemplate(AuthProvider auth) async {
+    if (auth.isStudent) return;
+    final confirmed = await confirmAnalyzeWithoutTemplate(context);
+    if (!confirmed || !mounted) return;
+
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: const ['pdf', 'docx', 'txt'],
+    );
+    if (result == null ||
+        result.files.isEmpty ||
+        result.files.first.path == null) {
+      return;
+    }
+
+    final docs = context.read<DocumentProvider>();
+    final response = await docs.uploadDocumentFreeform(
+      File(result.files.first.path!),
+      auth.userId!,
+    );
+    if (!mounted) return;
+    if (response == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(docs.errorMessage ?? 'Freeform upload failed'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => AnalyzeScreen(
+          documentId: response['document_id'] as int,
+          documentName: (response['filename'] ?? 'Document').toString(),
+          templateId: 0,
+          templateName: 'AI general analysis — no template applied',
+          freeformAnalysis: true,
+        ),
+      ),
+    );
+  }
 
   // ============ MY UPLOADS TAB ============
   Widget _buildMyUploadsTab(AuthProvider auth, UploadProvider uploads) {

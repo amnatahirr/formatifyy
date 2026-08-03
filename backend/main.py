@@ -75,7 +75,7 @@ def _resolve_org_for_auth(org_code: str | None, request: Request) -> dict:
         return org
     return resolve_organization_from_request(request)
 
-from dispatcher import dispatch_all
+from dispatcher import dispatch_all, dispatch_freeform
 from models import AnalysisReport, UserLoginRequest, UserSignupRequest, TemplateCreateRequest, TemplateUpdateRequest, ChangePasswordRequest
 from parser import parse_file, parse_text
 from reformatter import reformat_document, convert_docx_to_pdf
@@ -128,6 +128,7 @@ from heading_analysis import (
 from templates import (
     delete_template as delete_template_record,
     get_all_templates,
+    get_freeform_placeholder_template_id,
     get_template_by_id,
     get_templates_by_university,
     get_templates_by_user,
@@ -1518,6 +1519,298 @@ async def upload_text(
     }
 
 
+def _require_non_student_for_freeform(user_id: int) -> None:
+    """
+    Block student (and any non-admin/non-supervisor) from freeform routes.
+    Mirrors AuthProvider.isStudent / allows only roles that see the UI button:
+    admin and supervisor. Same DB role lookup pattern as admin_routes._require_admin.
+    """
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT role FROM users WHERE id = ?", (user_id,))
+    row = cursor.fetchone()
+    conn.close()
+    if not row:
+        raise HTTPException(status_code=404, detail="User not found.")
+    role = (row["role"] or "").strip().lower()
+    if role not in ("admin", "supervisor"):
+        raise HTTPException(
+            status_code=403,
+            detail="Freeform analysis is not available for student accounts.",
+        )
+
+
+@app.post("/api/documents/upload-freeform", tags=["Documents"])
+async def upload_document_freeform(
+    request: Request,
+    file: UploadFile = File(...),
+    user_id: int = Query(...),
+):
+    """
+    Upload a document for template-free (AI general) analysis.
+    Does not require a real org template — uses an internal placeholder id
+    plus is_freeform=1 so the normal analyze path is not used.
+    Students are blocked (403) — same role gate as AuthProvider.isStudent.
+    """
+    _require_non_student_for_freeform(user_id)
+    resolve_org_id_for_user_action(request, user_id)
+    placeholder_id = get_freeform_placeholder_template_id()
+
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    stored_filename = f"{timestamp}_{file.filename}"
+    file_path = os.path.join(UPLOAD_DIR, stored_filename)
+
+    with open(file_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        INSERT INTO documents (user_id, template_id, filename, file_path, status, is_freeform)
+        VALUES (?, ?, ?, ?, ?, 1)
+        """,
+        (user_id, placeholder_id, file.filename, file_path, "pending"),
+    )
+    conn.commit()
+    doc_id = cursor.lastrowid
+    conn.close()
+
+    return {
+        "document_id": doc_id,
+        "filename": file.filename,
+        "status": "pending",
+        "is_freeform": True,
+    }
+
+
+@app.post("/api/documents/upload-text-freeform", tags=["Documents"])
+async def upload_text_freeform(
+    request: Request,
+    payload: Dict[str, Any] = Body(...),
+    user_id: int = Query(...),
+):
+    """Save pasted text for template-free analysis. Students blocked (403)."""
+    _require_non_student_for_freeform(user_id)
+    resolve_org_id_for_user_action(request, user_id)
+    placeholder_id = get_freeform_placeholder_template_id()
+
+    content = payload.get("content", "")
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    stored_filename = f"{timestamp}_pasted_content_freeform.txt"
+    file_path = os.path.join(UPLOAD_DIR, stored_filename)
+
+    with open(file_path, "w", encoding="utf-8") as f:
+        f.write(content)
+
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        INSERT INTO documents (user_id, template_id, filename, file_path, status, is_freeform)
+        VALUES (?, ?, ?, ?, ?, 1)
+        """,
+        (user_id, placeholder_id, "Pasted Content", file_path, "pending"),
+    )
+    conn.commit()
+    doc_id = cursor.lastrowid
+    conn.close()
+
+    return {
+        "document_id": doc_id,
+        "filename": "Pasted Content",
+        "status": "pending",
+        "is_freeform": True,
+    }
+
+
+async def _run_analysis_freeform(
+    saved_path: Optional[str],
+    text: Optional[str],
+    filename: str,
+    job_id: str,
+) -> Dict[str, Any]:
+    """Template-free analysis: parse → batch → dispatch_freeform → aggregate."""
+    if not ANTHROPIC_API_KEY and not GEMINI_API_KEY:
+        raise HTTPException(
+            status_code=500,
+            detail="Neither ANTHROPIC_API_KEY nor GEMINI_API_KEY is configured. Set one in backend/.env.",
+        )
+
+    try:
+        if saved_path:
+            norm_filename = filename
+            if not os.path.splitext(norm_filename)[1]:
+                norm_filename = os.path.basename(saved_path)
+            doc_model = parse_file(saved_path, norm_filename)
+        else:
+            doc_model = parse_text(text or "", title="pasted_text.txt")
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Failed to parse document: {exc}")
+
+    try:
+        from review_blocks import strip_frontmatter_from_document
+        doc_model = strip_frontmatter_from_document(doc_model)
+    except Exception as exc:
+        print(f"[analysis-freeform] frontmatter skip failed (non-fatal): {exc}")
+
+    batches = create_batches(doc_model)
+
+    if GEMINI_API_KEY:
+        from gemini_adapter import GeminiClientAdapter
+        client = GeminiClientAdapter(api_key=GEMINI_API_KEY)
+    else:
+        client = anthropic.AsyncAnthropic(api_key=ANTHROPIC_API_KEY)
+
+    from plagiarism.pipeline import check_document_against_fyp_corpus
+
+    dispatch_task = asyncio.create_task(dispatch_freeform(client, batches))
+    corpus_task = asyncio.create_task(
+        check_document_against_fyp_corpus(doc_model, document_id=job_id)
+    )
+    raw_issues, corpus_issues = await asyncio.gather(dispatch_task, corpus_task)
+    if corpus_issues:
+        raw_issues.extend(corpus_issues)
+
+    # Pull freeform metadata off issue payloads before aggregate
+    suggested_fixes: List[Dict[str, Any]] = []
+    manual_notes: List[Dict[str, Any]] = []
+    freeform_summary = ""
+    for iss in raw_issues:
+        if not isinstance(iss, dict):
+            continue
+        fixes = iss.pop("_suggested_fixes", None)
+        notes = iss.pop("_suggested_manual_notes", None)
+        summary = iss.pop("_freeform_summary", None)
+        if fixes:
+            suggested_fixes.extend(fixes)
+        if notes:
+            manual_notes.extend(notes)
+        if summary:
+            freeform_summary = str(summary)
+
+    report = aggregate(raw_issues, doc_model, total_batches=len(batches))
+    response = report.model_dump()
+    response["job_id"] = job_id
+    response["is_freeform"] = True
+    response["analysis_mode"] = "ai_general"
+    response["suggested_fixes"] = suggested_fixes
+    response["suggested_manual_notes"] = manual_notes
+    response["freeform_summary"] = freeform_summary
+    # Do not silently reformat on analyze — export is a separate confirmed step.
+    response["output_path"] = ""
+    return response
+
+
+@app.get("/api/documents/analyze-freeform/{document_id}", tags=["Documents"])
+async def analyze_document_freeform_endpoint(document_id: int, user_id: int = Query(...)):
+    """
+    Analyze a freeform (no-template) document.
+    Owner check + non-student role gate (403 for students).
+    """
+    _require_non_student_for_freeform(user_id)
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT * FROM documents WHERE id = ? AND user_id = ?",
+        (document_id, user_id),
+    )
+    doc = cursor.fetchone()
+    conn.close()
+
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    is_freeform = False
+    try:
+        is_freeform = bool(doc["is_freeform"])
+    except (KeyError, IndexError, TypeError):
+        is_freeform = False
+    if not is_freeform:
+        raise HTTPException(
+            status_code=400,
+            detail="Document was not uploaded for freeform analysis. Use /documents/analyze/{id}.",
+        )
+
+    working_copy = _working_copy_path(document_id)
+    file_path = working_copy if os.path.exists(working_copy) else doc["file_path"]
+
+    job_id = str(document_id)
+    report_dict = await _run_analysis_freeform(
+        saved_path=file_path,
+        text=None,
+        filename=doc["filename"],
+        job_id=job_id,
+    )
+
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute(
+        "UPDATE documents SET status = 'completed', updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+        (document_id,),
+    )
+    conn.commit()
+    conn.close()
+
+    doc_model = None
+    document_blocks: List[Dict[str, Any]] = []
+    image_paths: Dict[str, str] = {}
+    try:
+        norm_filename = doc["filename"]
+        if not os.path.splitext(norm_filename)[1]:
+            norm_filename = os.path.basename(file_path)
+        doc_model = parse_file(file_path, norm_filename)
+        image_paths = save_document_images(doc_model, document_id, UPLOAD_DIR)
+        document_blocks = build_document_blocks(doc_model, image_paths)
+    except Exception as exc:
+        print(f"[analyze-freeform] block build error (non-fatal): {exc}")
+
+    raw_issues = report_dict.get("issues", [])
+    normalized_issues = normalize_issues(raw_issues, image_paths)
+    stats = report_dict.get("stats", {})
+
+    content_issues = []
+    style_issues = []
+    for issue in normalized_issues:
+        func = (issue.get("function") or "").lower()
+        if func in ("grammar", "para_relevance", "plagiarism"):
+            content_issues.append(issue)
+        elif func == "formatting":
+            style_issues.append(issue)
+
+    major_count = len([i for i in normalized_issues if (i.get("severity") or "").lower() == "major"])
+    minor_count = len([i for i in normalized_issues if (i.get("severity") or "").lower() == "minor"])
+
+    score = stats.get("avg_formatting_compliance", 100.0)
+    if score is None:
+        score = 100.0
+
+    paragraphs = [b["text"] for b in document_blocks if b.get("type") != "image" and b.get("text")]
+
+    return {
+        "document_id": document_id,
+        "filename": doc["filename"],
+        "status": "completed",
+        "is_freeform": True,
+        "analysis_mode": "ai_general",
+        "label": "AI general analysis — no template applied",
+        "score": score,
+        "stats": stats,
+        "issues": normalized_issues,
+        "content_issues": content_issues,
+        "style_issues": style_issues,
+        "major_count": major_count,
+        "minor_count": minor_count,
+        "document_blocks": document_blocks,
+        "paragraphs": paragraphs,
+        "suggested_fixes": report_dict.get("suggested_fixes", []),
+        "suggested_manual_notes": report_dict.get("suggested_manual_notes", []),
+        "freeform_summary": report_dict.get("freeform_summary", ""),
+        "template_heading_matches": [],  # skipped for freeform
+        "structure": {"score": score},
+    }
+
+
 @app.delete("/api/documents/{document_id}", tags=["Documents"])
 def delete_document(document_id: int, user_id: int = Query(...)):
     """Delete a document record and its physical files."""
@@ -1528,21 +1821,21 @@ def delete_document(document_id: int, user_id: int = Query(...)):
     if not doc:
         conn.close()
         raise HTTPException(status_code=404, detail="Document not found")
-        
+
     file_path = doc["file_path"]
     if file_path and os.path.exists(file_path):
         try:
             os.remove(file_path)
         except Exception:
             pass
-            
+
     working_copy = os.path.join(UPLOAD_DIR, "working", f"doc_{document_id}_working.docx")
     if os.path.exists(working_copy):
         try:
             os.remove(working_copy)
         except Exception:
             pass
-            
+
     cursor.execute("DELETE FROM documents WHERE id = ?", (document_id,))
     conn.commit()
     conn.close()
@@ -1560,6 +1853,15 @@ async def analyze_document_endpoint(document_id: int, user_id: int = Query(...))
     
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
+
+    try:
+        if bool(doc["is_freeform"]):
+            raise HTTPException(
+                status_code=400,
+                detail="This document uses freeform analysis. Call /documents/analyze-freeform/{id}.",
+            )
+    except (KeyError, IndexError, TypeError):
+        pass
 
     tmpl = get_template_by_id(doc["template_id"])
     if tmpl and str(doc["file_path"]).endswith(".docx"):

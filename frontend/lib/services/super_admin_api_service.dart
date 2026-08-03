@@ -64,6 +64,14 @@ class SuperAdminApiService {
     );
   }
 
+  Future<List<Map<String, dynamic>>> listAdmins() async {
+    final data = await _request('GET', '/super-admin/admins');
+    final map = Map<String, dynamic>.from(data as Map);
+    return List<Map<String, dynamic>>.from(
+      (map['admins'] as List? ?? const []).map((e) => Map<String, dynamic>.from(e as Map)),
+    );
+  }
+
   Future<Map<String, dynamic>> createOrganization(Map<String, dynamic> body) async {
     final data = await _request('POST', '/super-admin/organizations', body: body);
     return Map<String, dynamic>.from(data as Map);

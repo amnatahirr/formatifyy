@@ -300,6 +300,61 @@ class DocumentProvider extends ChangeNotifier {
     }
   }
 
+  /// Template-free upload. Returns `{document_id, filename}` or null.
+  Future<Map<String, dynamic>?> uploadDocumentFreeform(File file, int userId) async {
+    try {
+      var request = http.MultipartRequest(
+        "POST",
+        Uri.parse("$baseUrl/upload-freeform?user_id=$userId"),
+      );
+      request.headers.addAll(ApiConfig.getHeaders());
+      request.files.add(await http.MultipartFile.fromPath("file", file.path));
+      var response = await request.send();
+      final responseBody = await response.stream.bytesToString();
+      if (response.statusCode == 200) {
+        final data = jsonDecode(responseBody) as Map<String, dynamic>;
+        await fetchDocuments(userId);
+        return {
+          'document_id': data['document_id'],
+          'filename': data['filename'] ?? file.path.split(RegExp(r'[\\/]')).last,
+          'is_freeform': true,
+        };
+      }
+      _errorMessage = "Freeform upload failed: $responseBody";
+      return null;
+    } catch (e) {
+      _errorMessage = "Freeform upload error: $e";
+      return null;
+    }
+  }
+
+  Future<Map<String, dynamic>?> uploadPastedContentFreeform(
+    String content,
+    int userId,
+  ) async {
+    try {
+      final response = await http.post(
+        Uri.parse("$baseUrl/upload-text-freeform?user_id=$userId"),
+        headers: ApiConfig.getHeaders(json: true),
+        body: jsonEncode({"content": content}),
+      );
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        await fetchDocuments(userId);
+        return {
+          'document_id': data['document_id'],
+          'filename': data['filename'] ?? 'Pasted Content',
+          'is_freeform': true,
+        };
+      }
+      _errorMessage = "Freeform upload failed: ${response.body}";
+      return null;
+    } catch (e) {
+      _errorMessage = "Freeform upload error: $e";
+      return null;
+    }
+  }
+
   Future<bool> uploadPastedContent(
     String content,
     int templateId,

@@ -68,6 +68,48 @@ def list_organizations(_: None = Depends(_require_super_admin)):
         conn.close()
 
 
+@router.get("/admins")
+def list_admins(_: None = Depends(_require_super_admin)):
+    """
+    All org-level admin users across every organization.
+    Role filter: users.role = 'admin' only
+    (other roles in the schema are 'student' and 'supervisor').
+    """
+    conn = get_db()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            """
+            SELECT
+                u.username AS name,
+                u.email AS email,
+                u.role AS role,
+                u.org_id AS org_id,
+                o.name AS org_name,
+                o.code AS org_code
+            FROM users u
+            JOIN organizations o ON o.id = u.org_id
+            WHERE LOWER(u.role) = 'admin'
+            ORDER BY o.name ASC, u.username ASC
+            """
+        )
+        rows = []
+        for r in cursor.fetchall():
+            rows.append(
+                {
+                    "name": r["name"] or "",
+                    "email": r["email"] or "",
+                    "role": r["role"] or "admin",
+                    "org_id": int(r["org_id"]) if r["org_id"] is not None else None,
+                    "org_name": r["org_name"] or "",
+                    "org_code": r["org_code"] or "",
+                }
+            )
+        return {"admins": rows, "count": len(rows)}
+    finally:
+        conn.close()
+
+
 @router.post("/organizations")
 def create_organization(
     payload: dict[str, Any] = Body(default_factory=dict),

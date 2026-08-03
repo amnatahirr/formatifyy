@@ -248,6 +248,8 @@ def init_db():
         cursor.execute("ALTER TABLE documents ADD COLUMN signature_path TEXT")
     if "frontmatter_detection" not in document_columns:
         cursor.execute("ALTER TABLE documents ADD COLUMN frontmatter_detection TEXT")
+    if "is_freeform" not in document_columns:
+        cursor.execute("ALTER TABLE documents ADD COLUMN is_freeform INTEGER DEFAULT 0")
 
     # 5. Create Image Analysis table
     cursor.execute("""
@@ -667,6 +669,53 @@ def init_db():
         ],
     )
     conn.commit()
+
+    # System placeholder so freeform docs satisfy template_id NOT NULL.
+    # Hidden from template pickers (filtered by name).
+    cursor.execute(
+        "SELECT id FROM templates WHERE name = ?",
+        ("__freeform_placeholder__",),
+    )
+    if not cursor.fetchone():
+        cursor.execute(
+            """
+            INSERT INTO templates
+                (university_id, name, description, required_sections, formatting_rules, created_by, org_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                1,
+                "__freeform_placeholder__",
+                "Internal placeholder for analyze-without-template documents",
+                "[]",
+                json.dumps(
+                    {
+                        "body_font": "Times New Roman",
+                        "body_size": 12,
+                        "body_line_spacing": 2.0,
+                        "heading1_font": "Times New Roman",
+                        "heading1_size": 16,
+                        "heading1_bold": True,
+                        "heading2_font": "Times New Roman",
+                        "heading2_size": 14,
+                        "heading2_bold": True,
+                        "heading3_font": "Times New Roman",
+                        "heading3_size": 12,
+                        "heading3_bold": True,
+                        "margin_top": 1.0,
+                        "margin_bottom": 1.0,
+                        "margin_left": 1.0,
+                        "margin_right": 1.0,
+                        "spacing_unit": "inch",
+                        "heading_numbering_style": "none",
+                    }
+                ),
+                1,
+                1,
+            ),
+        )
+        conn.commit()
+        print("[database] Seeded __freeform_placeholder__ template.")
 
     # D. Seed default departments
     cursor.execute("SELECT COUNT(*) FROM departments")

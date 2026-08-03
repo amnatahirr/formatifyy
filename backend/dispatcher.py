@@ -16,6 +16,7 @@ import anthropic
 from models import Batch
 from functions.grammar import check_grammar
 from functions.formatting import check_formatting
+from functions.formatting_freeform import check_formatting_freeform
 from functions.image_relevance import check_images_combined
 from functions.para_relevance import check_para_relevance
 from functions.plagiarism import check_plagiarism, llm_pattern_plagiarism_enabled
@@ -68,6 +69,41 @@ async def dispatch_all(
         if isinstance(result, list):
             all_issues.extend(result)
 
+    return all_issues
+
+
+async def dispatch_freeform(
+    client: anthropic.AsyncAnthropic,
+    batches: List[Batch],
+) -> List[Dict[str, Any]]:
+    """
+    Template-free analysis path.
+
+    Runs: freeform formatting + grammar + images + para_relevance.
+    Does NOT run template formatting, section-order/missing-section, or
+    LLM plagiarism-pattern checks (corpus plagiarism is handled in main).
+    """
+    tasks: List[asyncio.Task] = []
+    for batch in batches:
+        tasks.append(asyncio.ensure_future(_safe_call(check_grammar, client, batch)))
+        tasks.append(
+            asyncio.ensure_future(_safe_call(check_formatting_freeform, client, batch))
+        )
+        tasks.append(
+            asyncio.ensure_future(_safe_call(check_images_combined, client, batch))
+        )
+        tasks.append(
+            asyncio.ensure_future(_safe_call(check_para_relevance, client, batch))
+        )
+
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+    all_issues: List[Dict[str, Any]] = []
+    for result in results:
+        if isinstance(result, Exception):
+            print(f"[dispatcher] freeform function raised: {result}")
+            continue
+        if isinstance(result, list):
+            all_issues.extend(result)
     return all_issues
 
 

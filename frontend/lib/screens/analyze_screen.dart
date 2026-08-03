@@ -2051,6 +2051,7 @@ import '../providers/auth_provider.dart';
 import '../config/api_config.dart';
 import '../widgets/app_sidebar.dart';
 import '../widgets/export_dialog.dart';
+import '../widgets/freeform_analyze_dialogs.dart';
 import '../providers/document_provider.dart';
 import 'package:frontend/providers/qr_service.dart';
 import '../widgets/image_issue_card_enhanced.dart';
@@ -2214,6 +2215,8 @@ class AnalyzeScreen extends StatefulWidget {
   final String documentName;
   final int templateId;
   final String templateName;
+  /// When true, uses /documents/analyze-freeform and AI-guided export UI.
+  final bool freeformAnalysis;
 
   const AnalyzeScreen({
     Key? key,
@@ -2221,6 +2224,7 @@ class AnalyzeScreen extends StatefulWidget {
     required this.documentName,
     required this.templateId,
     required this.templateName,
+    this.freeformAnalysis = false,
   }) : super(key: key);
 
   @override
@@ -2244,6 +2248,10 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
   // instantly without triggering a full re-analysis.
   List<dynamic> _styleIssues = [];
   bool _styleIssuesInitialized = false;
+
+  /// Freeform path: suggested auto-apply fixes + manual notes from analyze-freeform.
+  List<Map<String, dynamic>> _freeformSuggestedFixes = [];
+  List<Map<String, dynamic>> _freeformManualNotes = [];
 
   // Document review preview state
   List<Map<String, dynamic>> _previewBlocks = [];
@@ -3054,10 +3062,11 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
     // Reset so _buildBody re-seeds _styleIssues from fresh server data
     _styleIssuesInitialized = false;
     final auth = context.read<AuthProvider>();
+    final path = widget.freeformAnalysis
+        ? '$_baseUrl/documents/analyze-freeform/${widget.documentId}'
+        : '$_baseUrl/documents/analyze/${widget.documentId}';
     final resp = await http.get(
-      Uri.parse(
-        '$_baseUrl/documents/analyze/${widget.documentId}?user_id=${auth.userId}',
-      ),
+      Uri.parse('$path?user_id=${auth.userId}'),
       headers: ApiConfig.getHeaders(),
     );
     if (resp.statusCode != 200) {
@@ -3070,6 +3079,18 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
     debugPrint(
       '[AnalyzeScreen] table_issues    : ${(data["table_issues"] as List?)?.length}',
     );
+    if (widget.freeformAnalysis) {
+      _freeformSuggestedFixes = List<Map<String, dynamic>>.from(
+        ((data['suggested_fixes'] as List?) ?? const []).map(
+          (e) => Map<String, dynamic>.from(e as Map),
+        ),
+      );
+      _freeformManualNotes = List<Map<String, dynamic>>.from(
+        ((data['suggested_manual_notes'] as List?) ?? const []).map(
+          (e) => Map<String, dynamic>.from(e as Map),
+        ),
+      );
+    }
     // Persist slim report on DocumentProvider for final_submissions (no recompute).
     try {
       context.read<DocumentProvider>().cacheAnalysisReport(
@@ -4027,6 +4048,10 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
   }
 
   void _handleDownload(Map<String, dynamic> doc) {
+    if (widget.freeformAnalysis) {
+      _handleFreeformExportPreview();
+      return;
+    }
     showDialog(
       context: context,
       builder:
@@ -4094,6 +4119,26 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
             ),
           ),
     );
+  }
+
+  /// Checkpoint: show pre-export summary only — does NOT write the file yet.
+  Future<void> _handleFreeformExportPreview() async {
+    final applied = _freeformSuggestedFixes
+        .where((f) => f['auto_applicable'] == true)
+        .toList();
+    final confirmed = await showFreeformExportSummaryDialog(
+      context,
+      appliedFixes: applied,
+      manualNotes: _freeformManualNotes,
+    );
+    if (!mounted) return;
+    if (confirmed) {
+      // Export write intentionally not wired yet — awaiting checkpoint approval.
+      _showSnack(
+        'Export confirmed in UI — file write not wired yet (checkpoint).',
+        _yellow,
+      );
+    }
   }
 
   // ── Build ─────────────────────────────────────────────────────────────────
@@ -4168,14 +4213,23 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
           ),
           const Spacer(),
           Text(
-            'Template: ${widget.templateName}',
-            style: TextStyle(color: _textSec, fontSize: 12),
+            widget.freeformAnalysis
+                ? widget.templateName
+                : 'Template: ${widget.templateName}',
+            style: TextStyle(
+              color: widget.freeformAnalysis ? _purple : _textSec,
+              fontSize: 12,
+              fontWeight:
+                  widget.freeformAnalysis ? FontWeight.w600 : FontWeight.w400,
+            ),
           ),
           const SizedBox(width: 20),
           ElevatedButton.icon(
             onPressed: () => _handleDownload({'id': widget.documentId}),
             icon: const Icon(Icons.download, size: 16),
-            label: const Text('Export'),
+            label: Text(
+              widget.freeformAnalysis ? 'Export (AI-guided)' : 'Export',
+            ),
             style: ElevatedButton.styleFrom(
               backgroundColor: _green,
               foregroundColor: Colors.white,

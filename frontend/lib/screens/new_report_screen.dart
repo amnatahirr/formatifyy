@@ -1432,6 +1432,8 @@ import '../config/api_config.dart';
 import 'analyze_screen.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../theme/app_theme.dart';
+import '../widgets/admin/admin_ui.dart';
+import '../widgets/freeform_analyze_dialogs.dart';
 
 class NewReportScreen extends StatefulWidget {
   final Map<String, dynamic>? selectedTemplate;
@@ -1703,6 +1705,71 @@ class _NewReportScreenState extends State<NewReportScreen> {
     } catch (e) {
       debugPrint('[v0] Upload error: $e');
       return null;
+    }
+  }
+
+  /// Non-student: analyze without org template (after confirmation).
+  Future<void> _analyzeWithoutTemplate() async {
+    final auth = context.read<AuthProvider>();
+    if (auth.isStudent) return;
+
+    final confirmed = await confirmAnalyzeWithoutTemplate(context);
+    if (!confirmed || !mounted) return;
+
+    // Prefer selected file; else pasted content; else prompt to pick a file.
+    if (_selectedFile == null &&
+        _contentController.text.trim().isEmpty &&
+        _selectedUploadOption == 1) {
+      await _selectFile();
+    }
+
+    setState(() => _isProcessing = true);
+    try {
+      Map<String, dynamic>? response;
+      final docs = context.read<DocumentProvider>();
+
+      if (_selectedFile != null) {
+        response = await docs.uploadDocumentFreeform(_selectedFile!, auth.userId!);
+      } else if (_contentController.text.trim().isNotEmpty) {
+        response = await docs.uploadPastedContentFreeform(
+          _contentController.text,
+          auth.userId!,
+        );
+      } else {
+        _showError('Select a file or paste content first');
+        return;
+      }
+
+      if (response == null) {
+        _showError(docs.errorMessage ?? 'Freeform upload failed');
+        return;
+      }
+
+      final docId = response['document_id'] as int;
+      final filename = (response['filename'] ?? 'Document').toString();
+      docs.markReadyForSupervisorSubmit(
+        documentId: docId,
+        filename: filename,
+        title: filename,
+      );
+
+      if (!mounted) return;
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => AnalyzeScreen(
+            documentId: docId,
+            documentName: filename,
+            templateId: 0,
+            templateName: 'AI general analysis — no template applied',
+            freeformAnalysis: true,
+          ),
+        ),
+      );
+    } catch (e) {
+      _showError('Error: $e');
+    } finally {
+      if (mounted) setState(() => _isProcessing = false);
     }
   }
 
@@ -3087,6 +3154,22 @@ Future<void> _handleUploadFromPhone(int userId) async {
               );
             },
           ),
+          if (!context.watch<AuthProvider>().isStudent) ...[
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: _isProcessing ? null : _analyzeWithoutTemplate,
+                icon: const Icon(Icons.auto_awesome, size: 18),
+                label: const Text('Analyze without template'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AdminColors.primary,
+                  side: BorderSide(color: AdminColors.primary.withOpacity(0.7)),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );

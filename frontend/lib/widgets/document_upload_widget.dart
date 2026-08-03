@@ -7,6 +7,9 @@ import '../providers/document_provider.dart';
 import '../providers/template_provider.dart';
 import '../providers/auth_provider.dart';
 import './style_preview_widget.dart';
+import './admin/admin_ui.dart';
+import './freeform_analyze_dialogs.dart';
+import '../screens/analyze_screen.dart';
 
 class DocumentUploadWidget extends StatefulWidget {
   const DocumentUploadWidget({Key? key}) : super(key: key);
@@ -137,6 +140,23 @@ class _DocumentUploadWidgetState extends State<DocumentUploadWidget> {
               },
             ),
           ),
+
+          if (!context.watch<AuthProvider>().isStudent) ...[
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: _isUploading ? null : _analyzeWithoutTemplate,
+                icon: const Icon(Icons.auto_awesome, size: 18),
+                label: const Text('Analyze without template'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AdminColors.primary,
+                  side: BorderSide(color: AdminColors.primary.withOpacity(0.7)),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                ),
+              ),
+            ),
+          ],
 
           const SizedBox(height: 24),
 
@@ -489,5 +509,63 @@ class _DocumentUploadWidgetState extends State<DocumentUploadWidget> {
         _selectedTemplate = null;
       });
     }
+  }
+
+  Future<void> _analyzeWithoutTemplate() async {
+    final auth = context.read<AuthProvider>();
+    if (auth.isStudent) return;
+    final confirmed = await confirmAnalyzeWithoutTemplate(context);
+    if (!confirmed || !mounted) return;
+
+    if (_isUploadMode && _selectedFile == null) {
+      await _selectFile();
+      if (_selectedFile == null) return;
+    }
+    if (!_isUploadMode && _pasteController.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Paste content first'), backgroundColor: Colors.red),
+      );
+      return;
+    }
+
+    setState(() => _isUploading = true);
+    final docs = context.read<DocumentProvider>();
+    Map<String, dynamic>? response;
+    try {
+      if (_isUploadMode) {
+        response = await docs.uploadDocumentFreeform(_selectedFile!, auth.userId!);
+      } else {
+        response = await docs.uploadPastedContentFreeform(
+          _pasteController.text,
+          auth.userId!,
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isUploading = false);
+    }
+
+    if (!mounted) return;
+    if (response == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(docs.errorMessage ?? 'Freeform upload failed'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => AnalyzeScreen(
+          documentId: response!['document_id'] as int,
+          documentName: (response['filename'] ?? 'Document').toString(),
+          templateId: 0,
+          templateName: 'AI general analysis — no template applied',
+          freeformAnalysis: true,
+        ),
+      ),
+    );
   }
 }

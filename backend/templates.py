@@ -140,7 +140,36 @@ def get_all_templates(org_id: int | None = None) -> List[Dict[str, Any]]:
         cursor.execute("SELECT * FROM templates ORDER BY created_at DESC")
     rows = cursor.fetchall()
     conn.close()
-    return [_row_to_template(r) for r in rows]
+    return [
+        t
+        for t in (_row_to_template(r) for r in rows)
+        if t.get("name") != "__freeform_placeholder__"
+    ]
+
+
+def get_freeform_placeholder_template_id() -> int:
+    """Id of the internal freeform placeholder template (creates if missing)."""
+    conn = get_db()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "SELECT id FROM templates WHERE name = ? LIMIT 1",
+            ("__freeform_placeholder__",),
+        )
+        row = cursor.fetchone()
+        if row:
+            return int(row["id"])
+        cursor.execute(
+            """
+            INSERT INTO templates
+                (university_id, name, description, required_sections, formatting_rules, created_by, org_id)
+            VALUES (1, '__freeform_placeholder__', 'Internal freeform placeholder', '[]', '{}', 1, 1)
+            """
+        )
+        conn.commit()
+        return int(cursor.lastrowid)
+    finally:
+        conn.close()
 
 
 def get_templates_by_university(
@@ -166,7 +195,11 @@ def get_templates_by_university(
         )
     rows = cursor.fetchall()
     conn.close()
-    return [_row_to_template(r) for r in rows]
+    return [
+        t
+        for t in (_row_to_template(r) for r in rows)
+        if t.get("name") != "__freeform_placeholder__"
+    ]
 
 
 def get_templates_by_user(user_id: int) -> List[Dict[str, Any]]:

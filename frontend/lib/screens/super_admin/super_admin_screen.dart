@@ -5,6 +5,18 @@ import '../../config/dev_user_config.dart';
 import '../../services/super_admin_api_service.dart';
 import '../../widgets/admin/admin_ui.dart';
 
+class _SuperAdminNavItem {
+  final int id;
+  final String label;
+  final IconData icon;
+
+  const _SuperAdminNavItem({
+    required this.id,
+    required this.label,
+    required this.icon,
+  });
+}
+
 /// Platform Super Admin — manage organizations (multi-tenancy).
 /// Access with [DevUserConfig.superAdminKey] matching backend SUPER_ADMIN_KEY.
 class SuperAdminScreen extends StatefulWidget {
@@ -18,11 +30,30 @@ class _SuperAdminScreenState extends State<SuperAdminScreen> {
   final SuperAdminApiService _api = SuperAdminApiService();
   final _keyController = TextEditingController(text: DevUserConfig.superAdminKey);
 
+  static const _navItems = <_SuperAdminNavItem>[
+    _SuperAdminNavItem(id: 0, label: 'Overview', icon: Icons.dashboard_outlined),
+    _SuperAdminNavItem(id: 1, label: 'Organizations', icon: Icons.apartment_outlined),
+    _SuperAdminNavItem(id: 2, label: 'Admins', icon: Icons.people_outline),
+    _SuperAdminNavItem(id: 3, label: 'Billing', icon: Icons.receipt_long_outlined),
+    _SuperAdminNavItem(id: 4, label: 'Activity', icon: Icons.history),
+    _SuperAdminNavItem(id: 5, label: 'Settings', icon: Icons.settings_outlined),
+  ];
+
+  int _selectedId = 1; // Organizations — existing screen
   List<Map<String, dynamic>> _orgs = const [];
+  List<Map<String, dynamic>> _admins = const [];
   Map<String, dynamic>? _platformStats;
   bool _unlocked = false;
   bool _loading = false;
   String? _error;
+  String _orgSearch = '';
+
+  String get _selectedLabel {
+    for (final item in _navItems) {
+      if (item.id == _selectedId) return item.label;
+    }
+    return 'Super Admin';
+  }
 
   @override
   void dispose() {
@@ -39,10 +70,12 @@ class _SuperAdminScreenState extends State<SuperAdminScreen> {
     try {
       final orgs = await _api.listOrganizations();
       final stats = await _api.platformStats();
+      final admins = await _api.listAdmins();
       if (!mounted) return;
       setState(() {
         _orgs = orgs;
         _platformStats = stats;
+        _admins = admins;
         _unlocked = true;
       });
     } catch (e) {
@@ -57,10 +90,12 @@ class _SuperAdminScreenState extends State<SuperAdminScreen> {
     try {
       final orgs = await _api.listOrganizations();
       final stats = await _api.platformStats();
+      final admins = await _api.listAdmins();
       if (!mounted) return;
       setState(() {
         _orgs = orgs;
         _platformStats = stats;
+        _admins = admins;
         _error = null;
       });
     } catch (e) {
@@ -581,24 +616,467 @@ class _SuperAdminScreenState extends State<SuperAdminScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (!_unlocked) {
+      return Scaffold(
+        backgroundColor: AdminColors.background,
+        appBar: AppBar(
+          backgroundColor: AdminColors.surface,
+          title: const Text('Super Admin'),
+        ),
+        body: _buildGate(),
+      );
+    }
+
     return Scaffold(
       backgroundColor: AdminColors.background,
-      appBar: AppBar(
-        backgroundColor: AdminColors.surface,
-        title: const Text('Super Admin'),
-        actions: [
-          if (_unlocked)
-            IconButton(onPressed: _loading ? null : _refresh, icon: const Icon(Icons.refresh_rounded)),
+      body: Row(
+        children: [
+          _buildSidebar(),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _buildTopBar(),
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.all(26),
+                    child: _buildContent(),
+                  ),
+                ),
+              ],
+            ),
+          ),
         ],
       ),
-      floatingActionButton: _unlocked
-          ? FloatingActionButton.extended(
+    );
+  }
+
+  Widget _buildSidebar() {
+    return Container(
+      width: 224,
+      padding: const EdgeInsets.symmetric(vertical: 22, horizontal: 14),
+      decoration: BoxDecoration(
+        color: AdminColors.surface,
+        border: Border(right: BorderSide(color: AdminColors.border)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            child: Row(
+              children: [
+                Container(
+                  width: 26,
+                  height: 26,
+                  decoration: BoxDecoration(
+                    color: AdminColors.primary,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(Icons.shield_outlined, size: 14, color: Colors.white),
+                ),
+                const SizedBox(width: 9),
+                const Text(
+                  'Super Admin',
+                  style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14.5),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 26),
+          ..._navItems.map(_buildNavItem),
+          const Spacer(),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+            decoration: BoxDecoration(
+              border: Border(top: BorderSide(color: AdminColors.border.withOpacity(0.55))),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 6,
+                  height: 6,
+                  decoration: const BoxDecoration(color: AdminColors.success, shape: BoxShape.circle),
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  'Platform operational',
+                  style: TextStyle(fontSize: 11, color: Colors.white.withOpacity(0.4)),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildNavItem(_SuperAdminNavItem item) {
+    final isSelected = _selectedId == item.id;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 2),
+      child: Material(
+        color: isSelected ? AdminColors.primary.withOpacity(0.14) : Colors.transparent,
+        borderRadius: BorderRadius.circular(9),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(9),
+          onTap: () => setState(() => _selectedId = item.id),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+            child: Row(
+              children: [
+                Icon(
+                  item.icon,
+                  size: 16,
+                  color: isSelected ? AdminColors.primary : Colors.white.withOpacity(0.35),
+                ),
+                const SizedBox(width: 10),
+                Text(
+                  item.label,
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: isSelected ? Colors.white : Colors.white.withOpacity(0.55),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTopBar() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 26, vertical: 16),
+      decoration: BoxDecoration(
+        color: AdminColors.surface,
+        border: Border(bottom: BorderSide(color: AdminColors.border)),
+      ),
+      child: Row(
+        children: [
+          Text(
+            _selectedLabel,
+            style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600, color: Colors.white),
+          ),
+          const Spacer(),
+          if (_selectedId == 1) ...[
+            SizedBox(
+              width: 220,
+              height: 36,
+              child: TextField(
+                style: const TextStyle(color: Colors.white, fontSize: 13),
+                onChanged: (v) => setState(() => _orgSearch = v),
+                decoration: InputDecoration(
+                  hintText: 'Search organizations',
+                  hintStyle: TextStyle(color: Colors.white.withOpacity(0.35), fontSize: 13),
+                  prefixIcon: Icon(Icons.search, size: 16, color: Colors.white.withOpacity(0.35)),
+                  filled: true,
+                  fillColor: AdminColors.card,
+                  contentPadding: const EdgeInsets.symmetric(vertical: 0),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(9),
+                    borderSide: const BorderSide(color: AdminColors.border),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(9),
+                    borderSide: const BorderSide(color: AdminColors.primary),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 10),
+          ],
+          if (_selectedId == 0 || _selectedId == 1 || _selectedId == 2)
+            IconButton(
+              onPressed: _loading ? null : _refresh,
+              icon: Icon(Icons.refresh, size: 18, color: Colors.white.withOpacity(0.55)),
+              tooltip: 'Refresh',
+            ),
+          if (_selectedId == 1) ...[
+            const SizedBox(width: 8),
+            ElevatedButton.icon(
               onPressed: _showCreateDialog,
-              icon: const Icon(Icons.add),
+              icon: const Icon(Icons.add, size: 16),
               label: const Text('Add Organization'),
-            )
-          : null,
-      body: !_unlocked ? _buildGate() : _buildList(),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AdminColors.primary,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(9)),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              ),
+            ),
+          ],
+          IconButton(
+            onPressed: () => Navigator.of(context).maybePop(),
+            icon: Icon(Icons.arrow_back_rounded, size: 18, color: Colors.white.withOpacity(0.55)),
+            tooltip: 'Back',
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildContent() {
+    switch (_selectedId) {
+      case 0:
+        return _buildOverview();
+      case 1:
+        return _buildOrganizationsList();
+      case 2:
+        return _buildAdminsList();
+      case 3:
+        return _buildBillingPlaceholder();
+      case 4:
+        return _buildActivityPlaceholder();
+      case 5:
+        return _buildSettingsPlaceholder();
+      default:
+        return const SizedBox();
+    }
+  }
+
+  Widget _buildOverview() {
+    final stats = _platformStats;
+    if (_loading && stats == null) {
+      return const Center(child: CircularProgressIndicator(color: AdminColors.primary));
+    }
+    if (stats == null) {
+      return AdminErrorView(
+        message: _error ?? 'Platform stats unavailable.',
+        onRetry: _refresh,
+      );
+    }
+
+    final totalOrgs = stats['total_orgs'] ?? 0;
+    final activeOrgs = stats['active_orgs'] ?? 0;
+    final totalDocs = stats['total_documents'] ?? 0;
+
+    return RefreshIndicator(
+      onRefresh: _refresh,
+      child: SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final wide = constraints.maxWidth >= 900;
+                final cards = [
+                  _SaCompactStat(
+                    icon: Icons.apartment_outlined,
+                    label: 'Organizations',
+                    value: '$totalOrgs',
+                    sub: '$activeOrgs active',
+                    accent: AdminColors.primary,
+                  ),
+                  _SaCompactStat(
+                    icon: Icons.check_circle_outline,
+                    label: 'Active',
+                    value: '$activeOrgs',
+                    sub: 'across platform',
+                    accent: AdminColors.success,
+                  ),
+                  _SaCompactStat(
+                    icon: Icons.description_outlined,
+                    label: 'Documents',
+                    value: '$totalDocs',
+                    sub: 'across platform',
+                    accent: AdminColors.warning,
+                  ),
+                ];
+                if (wide) {
+                  return Row(
+                    children: [
+                      for (var i = 0; i < cards.length; i++) ...[
+                        if (i > 0) const SizedBox(width: 14),
+                        Expanded(child: cards[i]),
+                      ],
+                    ],
+                  );
+                }
+                return Column(
+                  children: [
+                    for (var i = 0; i < cards.length; i++) ...[
+                      if (i > 0) const SizedBox(height: 14),
+                      cards[i],
+                    ],
+                  ],
+                );
+              },
+            ),
+            const SizedBox(height: 14),
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final stacked = constraints.maxWidth < 900;
+                final growth = _saPanel(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Organization growth',
+                        style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600, color: Colors.white),
+                      ),
+                      const SizedBox(height: 18),
+                      // MOCK DATA — replace with real historical org counts when available.
+                      const SuperAdminMockGrowthChart(
+                        counts: _mockGrowthCounts,
+                        labels: _mockGrowthLabels,
+                      ),
+                    ],
+                  ),
+                );
+
+                // Same mock entries as the Activity screen (excerpt of first 4).
+                final activity = _saPanel(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Recent activity',
+                        style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600, color: Colors.white),
+                      ),
+                      const SizedBox(height: 16),
+                      ..._mockActivity.take(4).map((a) {
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 14),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Container(
+                                margin: const EdgeInsets.only(top: 6),
+                                width: 6,
+                                height: 6,
+                                decoration: const BoxDecoration(
+                                  color: AdminColors.primary,
+                                  shape: BoxShape.circle,
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      a.text,
+                                      style: const TextStyle(
+                                        fontSize: 12.5,
+                                        color: Colors.white,
+                                        height: 1.4,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      a.time,
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: Colors.white.withOpacity(0.35),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      }),
+                    ],
+                  ),
+                );
+                if (stacked) {
+                  return Column(children: [growth, const SizedBox(height: 14), activity]);
+                }
+                return Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(flex: 2, child: growth),
+                    const SizedBox(width: 14),
+                    Expanded(child: activity),
+                  ],
+                );
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAdminsList() {
+    if (_loading && _admins.isEmpty) {
+      return const Center(child: CircularProgressIndicator(color: AdminColors.primary));
+    }
+    if (_error != null && _admins.isEmpty) {
+      return AdminErrorView(message: _error!, onRetry: _refresh);
+    }
+
+    if (_admins.isEmpty) {
+      return RefreshIndicator(
+        onRefresh: _refresh,
+        child: ListView(
+          children: const [
+            SizedBox(height: 80),
+            AdminEmptyView(message: 'No organization admins yet.'),
+          ],
+        ),
+      );
+    }
+
+    return RefreshIndicator(
+      onRefresh: _refresh,
+      child: ListView(
+        children: [
+          _saPanel(
+            padding: EdgeInsets.zero,
+            child: Column(
+              children: [
+                _saRowHeader(const ['NAME', 'EMAIL', 'ORG', 'ROLE']),
+                ..._admins.map((admin) {
+                  final name = admin['name']?.toString() ?? '';
+                  final email = admin['email']?.toString() ?? '';
+                  final role = admin['role']?.toString() ?? 'admin';
+                  final orgName = admin['org_name']?.toString() ?? '';
+                  final orgCode = admin['org_code']?.toString() ?? '';
+                  final orgLabel = orgCode.isEmpty ? orgName : orgCode;
+                  return _saDataRow([
+                    Row(
+                      children: [
+                        Icon(Icons.person_outline, size: 13, color: Colors.white.withOpacity(0.35)),
+                        const SizedBox(width: 8),
+                        Flexible(
+                          child: Text(
+                            name.isEmpty ? '—' : name,
+                            style: const TextStyle(fontSize: 13, color: Colors.white),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                    Text(
+                      email.isEmpty ? '—' : email,
+                      style: TextStyle(fontSize: 12.5, color: Colors.white.withOpacity(0.55)),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    Text(
+                      orgLabel.isEmpty ? '—' : orgLabel,
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        color: Colors.white.withOpacity(0.55),
+                        fontFamily: 'monospace',
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: _SaPill.accent(role),
+                    ),
+                  ]);
+                }),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -647,85 +1125,714 @@ class _SuperAdminScreenState extends State<SuperAdminScreen> {
     );
   }
 
-  Widget _buildList() {
+  Widget _buildOrganizationsList() {
     final stats = _platformStats;
+    final query = _orgSearch.trim().toLowerCase();
+    final filtered = query.isEmpty
+        ? _orgs
+        : _orgs.where((org) {
+            final name = (org['name'] ?? '').toString().toLowerCase();
+            final code = (org['code'] ?? '').toString().toLowerCase();
+            return name.contains(query) || code.contains(query);
+          }).toList();
+
     return RefreshIndicator(
       onRefresh: _refresh,
       child: ListView(
-        padding: const EdgeInsets.all(20),
         children: [
-          if (stats != null)
-            AdminSectionCard(
-              title: 'Platform',
+          if (stats != null) ...[
+            _saPanel(
               child: Text(
                 'Orgs ${stats['total_orgs']} · Active ${stats['active_orgs']} · '
-                'Docs ${stats['total_documents']} · Est. \$${stats['revenue_estimate_usd']}/mo',
-                style: TextStyle(color: Colors.white.withOpacity(0.85), height: 1.4),
+                'Docs ${stats['total_documents']}',
+                style: TextStyle(color: Colors.white.withOpacity(0.85), height: 1.4, fontSize: 13),
               ),
             ),
-          const SizedBox(height: 16),
+            const SizedBox(height: 14),
+          ],
           if (_loading && _orgs.isEmpty)
-            const Center(child: CircularProgressIndicator(color: AdminColors.primary))
+            const Padding(
+              padding: EdgeInsets.only(top: 48),
+              child: Center(child: CircularProgressIndicator(color: AdminColors.primary)),
+            )
           else if (_orgs.isEmpty)
             const AdminEmptyView(message: 'No organizations yet.')
+          else if (filtered.isEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 48),
+              child: Center(
+                child: Text(
+                  'No organizations match "$_orgSearch".',
+                  style: TextStyle(color: Colors.white.withOpacity(0.4)),
+                ),
+              ),
+            )
           else
-            ..._orgs.map((org) {
+            ...filtered.map((org) {
               final active = org['is_active'] == true;
-              final modules = (org['modules'] ?? '').toString();
+              final used = int.tryParse('${org['documents_used']}') ?? 0;
+              final limit = int.tryParse('${org['documents_limit']}') ?? 0;
+              final plan = (org['plan'] ?? '').toString();
+              final modules = _modulesForOrg(org);
+              final planLabel = plan.isEmpty
+                  ? '—'
+                  : '${plan[0].toUpperCase()}${plan.substring(1)}';
+
               return Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: InkWell(
-                  onTap: () => _openOrgDetail(org),
-                  borderRadius: BorderRadius.circular(14),
-                  child: Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: adminCardDecoration(),
+                padding: const EdgeInsets.only(bottom: 10),
+                child: _saPanel(
+                  padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+                  child: Row(
+                    children: [
+                      _SaQuotaRing(used: used, limit: limit),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: InkWell(
+                          onTap: () => _openOrgDetail(org),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Flexible(
+                                    child: Text(
+                                      org['name']?.toString() ?? '',
+                                      style: const TextStyle(
+                                        fontSize: 14.5,
+                                        fontWeight: FontWeight.w600,
+                                        color: Colors.white,
+                                      ),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Icon(Icons.chevron_right, size: 15, color: Colors.white.withOpacity(0.35)),
+                                ],
+                              ),
+                              const SizedBox(height: 6),
+                              Wrap(
+                                spacing: 8,
+                                runSpacing: 6,
+                                crossAxisAlignment: WrapCrossAlignment.center,
+                                children: [
+                                  Text(
+                                    org['code']?.toString() ?? '',
+                                    style: TextStyle(
+                                      fontSize: 11.5,
+                                      color: Colors.white.withOpacity(0.55),
+                                      fontFamily: 'monospace',
+                                    ),
+                                  ),
+                                  _SaPill.accent(planLabel),
+                                  ...modules.map((m) => _SaPill(m)),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Text(
+                            'Docs $used/$limit',
+                            style: TextStyle(
+                              fontSize: 11.5,
+                              color: Colors.white.withOpacity(0.4),
+                              fontFamily: 'monospace',
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(width: 16),
+                      Switch(
+                        value: active,
+                        activeColor: AdminColors.primary,
+                        onChanged: (_) async {
+                          try {
+                            await _api.toggleOrganization(org['id'] as int);
+                            await _refresh();
+                          } catch (e) {
+                            if (mounted) showAdminSnackBar(context, e.toString(), isError: true);
+                          }
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }),
+        ],
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // MOCK DATA — replace when real endpoint / pricing fields exist.
+  // Billing prices are invented; org rows come from the real `_orgs` list.
+  // Activity entries are static fake audit lines (no API).
+  // Settings catalog prices are invented; module/plan keys are real.
+  // ---------------------------------------------------------------------------
+
+  static const _mockPlanPricesUsd = <String, int>{
+    'enterprise': 99,
+    'university': 150,
+    'starter': 48,
+  };
+
+  static const _mockPlanLabels = <String, String>{
+    'enterprise': 'Enterprise (Company)',
+    'university': 'University',
+    'starter': 'Starter',
+  };
+
+  static const _mockModuleCatalog = <({String key, String label, int price, String desc})>[
+    (key: 'core', label: 'Core Module', price: 99, desc: 'Base platform access, document workflows, reporting.'),
+    (key: 'fyp', label: 'FYP Module', price: 51, desc: 'Final-year project tracking, supervisor allocation, defenses.'),
+  ];
+
+  static const _mockActivity = <({String text, String time, String kind})>[
+    (text: 'Fast was created on plan university', time: '27 May, 09:14', kind: 'org'),
+    (text: 'Tkxel was reactivated after suspension', time: '22 May, 17:02', kind: 'toggle'),
+    (text: 'Admin invite sent to sara.malik@tkxel.com', time: '18 Apr, 11:40', kind: 'admin'),
+    (text: 'fyp module enabled for COMSATS University Islamabad', time: '3 Mar, 14:21', kind: 'module'),
+    (text: 'DEVSINC was created on plan enterprise', time: '2 Mar, 08:55', kind: 'org'),
+  ];
+
+  // MOCK DATA — replace with real historical org counts when available.
+  // Used by Overview growth chart (Jan–Jun).
+  static const _mockGrowthCounts = [1, 1, 2, 2, 3, 4];
+  static const _mockGrowthLabels = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'];
+
+  int _mockMonthlyPriceForPlan(String plan) {
+    final key = plan.trim().toLowerCase();
+    return _mockPlanPricesUsd[key] ?? 99;
+  }
+
+  Widget _buildBillingPlaceholder() {
+    // MOCK DATA — replace when real monthly_price_usd (or plan catalog) exists.
+    final planKeys = ['university', 'enterprise', 'starter'];
+    final total = _orgs.fold<int>(
+      0,
+      (sum, org) => sum + _mockMonthlyPriceForPlan((org['plan'] ?? '').toString()),
+    );
+
+    return SingleChildScrollView(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              for (final key in planKeys) ...[
+                Expanded(
+                  child: _saPanel(
+                    child: Builder(
+                      builder: (_) {
+                        final planOrgs = _orgs
+                            .where((o) => (o['plan'] ?? '').toString().toLowerCase() == key)
+                            .toList();
+                        final planTotal = planOrgs.fold<int>(
+                          0,
+                          (s, o) => s + _mockMonthlyPriceForPlan(key),
+                        );
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              _mockPlanLabels[key] ?? key,
+                              style: TextStyle(fontSize: 12, color: Colors.white.withOpacity(0.55)),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              '\$$planTotal/mo',
+                              style: const TextStyle(
+                                fontSize: 22,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.white,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              '${planOrgs.length} organizations',
+                              style: TextStyle(fontSize: 11.5, color: Colors.white.withOpacity(0.35)),
+                            ),
+                          ],
+                        );
+                      },
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 14),
+              ],
+              Expanded(
+                child: Container(
+                  padding: const EdgeInsets.all(18),
+                  decoration: BoxDecoration(
+                    color: AdminColors.primary.withOpacity(0.12),
+                    border: Border.all(color: AdminColors.primary),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Platform total',
+                        style: TextStyle(fontSize: 12, color: AdminColors.primary.withOpacity(0.9)),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        '\$$total/mo',
+                        style: const TextStyle(
+                          fontSize: 22,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'estimated recurring',
+                        style: TextStyle(fontSize: 11.5, color: AdminColors.primary.withOpacity(0.75)),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          _saPanel(
+            padding: EdgeInsets.zero,
+            child: Column(
+              children: [
+                _saRowHeader(const ['ORGANIZATION', 'PLAN', 'MODULES', 'MONTHLY']),
+                if (_orgs.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.all(18),
+                    child: Text(
+                      'No organizations yet.',
+                      style: TextStyle(fontSize: 12.5, color: Colors.white.withOpacity(0.4)),
+                    ),
+                  )
+                else
+                  ..._orgs.map((org) {
+                    final plan = (org['plan'] ?? '').toString().toLowerCase();
+                    final modules = _modulesForOrg(org);
+                    final price = _mockMonthlyPriceForPlan(plan);
+                    return _saDataRow([
+                      Text(
+                        org['name']?.toString() ?? '—',
+                        style: const TextStyle(fontSize: 13, color: Colors.white),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      Text(
+                        plan.isEmpty ? '—' : plan,
+                        style: TextStyle(fontSize: 12.5, color: Colors.white.withOpacity(0.55)),
+                      ),
+                      Wrap(
+                        spacing: 5,
+                        runSpacing: 4,
+                        children: modules.map((m) => _SaPill(m)).toList(),
+                      ),
+                      Text(
+                        '\$$price',
+                        style: const TextStyle(
+                          fontSize: 13,
+                          color: Colors.white,
+                          fontFamily: 'monospace',
+                        ),
+                      ),
+                    ]);
+                  }),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildActivityPlaceholder() {
+    // MOCK DATA — replace when GET /super-admin/activity exists.
+    const icons = <String, IconData>{
+      'org': Icons.apartment_outlined,
+      'toggle': Icons.block,
+      'admin': Icons.vpn_key_outlined,
+      'module': Icons.settings_outlined,
+    };
+
+    return _saPanel(
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      child: Column(
+        children: _mockActivity.map((a) {
+          return Padding(
+            padding: const EdgeInsets.symmetric(vertical: 16),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: 32,
+                  height: 32,
+                  decoration: BoxDecoration(
+                    color: AdminColors.card,
+                    borderRadius: BorderRadius.circular(9),
+                  ),
+                  child: Icon(
+                    icons[a.kind] ?? Icons.history,
+                    size: 14,
+                    color: Colors.white.withOpacity(0.45),
+                  ),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(a.text, style: const TextStyle(fontSize: 13, color: Colors.white)),
+                      const SizedBox(height: 3),
+                      Text(
+                        a.time,
+                        style: TextStyle(fontSize: 11.5, color: Colors.white.withOpacity(0.35)),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
+
+  Widget _buildSettingsPlaceholder() {
+    // MOCK DATA — replace when server-backed module/plan catalogs exist.
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          child: _saPanel(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Module catalog',
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.white),
+                ),
+                const SizedBox(height: 14),
+                ..._mockModuleCatalog.map((e) {
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 10),
                     child: Row(
                       children: [
                         Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
+                              Text(e.label, style: const TextStyle(fontSize: 13, color: Colors.white)),
                               Text(
-                                org['name']?.toString() ?? '',
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.w700,
-                                  fontSize: 15,
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                '${org['code']} · ${org['plan']} · $modules',
-                                style: TextStyle(color: Colors.white.withOpacity(0.55), fontSize: 12),
-                              ),
-                              const SizedBox(height: 6),
-                              Text(
-                                'Docs ${org['documents_used']}/${org['documents_limit']}',
-                                style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 12),
+                                e.desc,
+                                style: TextStyle(fontSize: 11, color: Colors.white.withOpacity(0.35)),
                               ),
                             ],
                           ),
                         ),
-                        Switch(
-                          value: active,
-                          activeColor: AdminColors.primary,
-                          onChanged: (_) async {
-                            try {
-                              await _api.toggleOrganization(org['id'] as int);
-                              await _refresh();
-                            } catch (e) {
-                              if (mounted) showAdminSnackBar(context, e.toString(), isError: true);
-                            }
-                          },
+                        Text(
+                          '\$${e.price}/mo',
+                          style: TextStyle(
+                            fontSize: 12.5,
+                            color: Colors.white.withOpacity(0.55),
+                            fontFamily: 'monospace',
+                          ),
                         ),
                       ],
                     ),
+                  );
+                }),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(width: 14),
+        Expanded(
+          child: _saPanel(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Plans',
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.white),
+                ),
+                const SizedBox(height: 14),
+                ..._mockPlanLabels.entries.map((p) {
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(p.value, style: const TextStyle(fontSize: 13, color: Colors.white)),
+                        ),
+                        Text(
+                          '\$${_mockPlanPricesUsd[p.key]}/mo',
+                          style: TextStyle(
+                            fontSize: 12.5,
+                            color: Colors.white.withOpacity(0.55),
+                            fontFamily: 'monospace',
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Icon(Icons.chevron_right, size: 14, color: Colors.white.withOpacity(0.35)),
+                      ],
+                    ),
+                  );
+                }),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  List<String> _modulesForOrg(Map<String, dynamic> org) {
+    final list = org['modules_list'];
+    if (list is List && list.isNotEmpty) {
+      return list.map((e) => e.toString()).where((e) => e.isNotEmpty).toList();
+    }
+    return (org['modules'] ?? 'core')
+        .toString()
+        .split(',')
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty)
+        .toList();
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Local Super Admin chrome helpers (AdminColors only — no RefColors).
+// ---------------------------------------------------------------------------
+
+Widget _saPanel({required Widget child, EdgeInsets? padding}) => Container(
+      padding: padding ?? const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: AdminColors.surface,
+        border: Border.all(color: AdminColors.border),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: child,
+    );
+
+Widget _saRowHeader(List<String> cols) => Container(
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+      decoration: const BoxDecoration(
+        border: Border(bottom: BorderSide(color: AdminColors.border)),
+      ),
+      child: Row(
+        children: cols
+            .map(
+              (c) => Expanded(
+                child: Text(
+                  c,
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: Colors.white.withOpacity(0.35),
+                    fontFamily: 'monospace',
                   ),
                 ),
-              );
-            }),
+              ),
+            )
+            .toList(),
+      ),
+    );
+
+Widget _saDataRow(List<Widget> cells) => Container(
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 13),
+      decoration: BoxDecoration(
+        border: Border(bottom: BorderSide(color: AdminColors.border.withOpacity(0.55))),
+      ),
+      child: Row(children: cells.map((c) => Expanded(child: c)).toList()),
+    );
+
+class _SaPill extends StatelessWidget {
+  final String text;
+  final Color? bg;
+  final Color? fg;
+  final Color? bd;
+
+  const _SaPill(this.text, {this.bg, this.fg, this.bd});
+
+  factory _SaPill.accent(String text) => _SaPill(
+        text,
+        bg: AdminColors.primary.withOpacity(0.14),
+        fg: const Color(0xFFA5B4FC),
+        bd: AdminColors.primary,
+      );
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: bg ?? AdminColors.card,
+        border: Border.all(color: (bd ?? AdminColors.border).withOpacity(0.4)),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(
+          fontSize: 11.5,
+          color: fg ?? Colors.white.withOpacity(0.55),
+          fontFamily: 'monospace',
+        ),
+      ),
+    );
+  }
+}
+
+class _SaCompactStat extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String value;
+  final String? sub;
+  final Color accent;
+
+  const _SaCompactStat({
+    required this.icon,
+    required this.label,
+    required this.value,
+    this.sub,
+    required this.accent,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return _saPanel(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 28,
+                height: 28,
+                decoration: BoxDecoration(
+                  color: accent.withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(icon, size: 15, color: accent),
+              ),
+              const SizedBox(width: 8),
+              Text(label, style: TextStyle(fontSize: 12.5, color: Colors.white.withOpacity(0.55))),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Text(
+            value,
+            style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w600, color: Colors.white),
+          ),
+          if (sub != null) ...[
+            const SizedBox(height: 4),
+            Text(sub!, style: TextStyle(fontSize: 11.5, color: Colors.white.withOpacity(0.35))),
+          ],
         ],
+      ),
+    );
+  }
+}
+
+class _SaQuotaRing extends StatelessWidget {
+  final int used;
+  final int limit;
+  final double size;
+
+  const _SaQuotaRing({required this.used, required this.limit, this.size = 40});
+
+  @override
+  Widget build(BuildContext context) {
+    final pct = limit <= 0 ? 0.0 : (used / limit).clamp(0.0, 1.0);
+    return SizedBox(
+      width: size,
+      height: size,
+      child: CustomPaint(painter: _SaRingPainter(pct)),
+    );
+  }
+}
+
+class _SaRingPainter extends CustomPainter {
+  final double pct;
+  _SaRingPainter(this.pct);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = size.center(Offset.zero);
+    final radius = (size.width - 6) / 2;
+    final track = Paint()
+      ..color = AdminColors.card
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 3.5;
+    final fill = Paint()
+      ..color = pct > 0.8 ? AdminColors.warning : AdminColors.primary
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 3.5
+      ..strokeCap = StrokeCap.round;
+    canvas.drawCircle(center, radius, track);
+    canvas.drawArc(Rect.fromCircle(center: center, radius: radius), -1.5708, 6.2832 * pct, false, fill);
+  }
+
+  @override
+  bool shouldRepaint(covariant _SaRingPainter old) => old.pct != pct;
+}
+
+/// MOCK DATA chart — used by Super Admin Overview.
+/// Replace counts/labels with real historical org series when available.
+class SuperAdminMockGrowthChart extends StatelessWidget {
+  final List<int> counts;
+  final List<String> labels;
+
+  const SuperAdminMockGrowthChart({
+    super.key,
+    required this.counts,
+    required this.labels,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    assert(counts.length == labels.length && counts.isNotEmpty);
+    final maxG = counts.reduce((a, b) => a > b ? a : b);
+    return SizedBox(
+      key: const Key('sa_mock_growth_chart'),
+      height: 110,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: List.generate(counts.length, (i) {
+          final isLast = i == counts.length - 1;
+          final barHeight = (counts[i] / maxG) * 78 + 8;
+          return Expanded(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 5),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  Container(
+                    key: Key('sa_mock_growth_bar_$i'),
+                    height: barHeight,
+                    decoration: BoxDecoration(
+                      color: isLast ? AdminColors.primary : AdminColors.card,
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    labels[i],
+                    style: TextStyle(
+                      fontSize: 10.5,
+                      color: Colors.white.withOpacity(0.35),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }),
       ),
     );
   }
