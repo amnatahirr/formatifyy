@@ -11,9 +11,15 @@ import base64
 import io
 import os
 import re
-from typing import List, Tuple
+from typing import Dict, List, Tuple
 
 from models import DocumentModel, ParagraphBlock, ImageBlock
+
+# Soft page-budget constants — aligned with docx_fields.estimate_body_page_numbers
+# so analysis batching and TOC page estimates stay in the same ballpark.
+_CHARS_PER_PAGE = 2100
+_IMAGE_CHARS = 900
+_MIN_PARA_CHARS = 50
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -83,10 +89,134 @@ def parse_text(text: str, title: str = "pasted_text.txt") -> DocumentModel:
 # DOCX PARSER
 # ═══════════════════════════════════════════════════════════════════════════════
 
+def _para_has_hard_page_break(para_el) -> bool:
+    """True when the paragraph contains an explicit Word page break."""
+    try:
+        from docx.oxml.ns import qn
+
+        for br in para_el.findall(".//" + qn("w:br")):
+            if br.get(qn("w:type")) == "page":
+                return True
+    except Exception:
+        pass
+    return False
+
+
+def _para_has_last_rendered_page_break(para_el) -> bool:
+    """True when Word recorded a soft page start on this paragraph."""
+    try:
+        from docx.oxml.ns import qn
+
+        return bool(para_el.findall(".//" + qn("w:lastRenderedPageBreak")))
+    except Exception:
+        return False
+
+
+def _para_has_section_break(para_el) -> bool:
+    """True when the paragraph carries a section property (often a page boundary)."""
+    try:
+        from docx.oxml.ns import qn
+
+        return bool(para_el.findall(".//" + qn("w:sectPr")))
+    except Exception:
+        return False
+
+
+def _para_has_embedded_image(para_el, rel_images: dict) -> bool:
+    r_ns = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+    blip_ns = "http://schemas.openxmlformats.org/drawingml/2006/main"
+    for blip in para_el.iter(f"{{{blip_ns}}}blip"):
+        embed = blip.get(f"{{{r_ns}}}embed")
+        if embed and embed in rel_images:
+            return True
+    return False
+
+
+def _estimate_docx_page_map(doc, rel_images: dict) -> Tuple[Dict[int, int], dict]:
+    """
+    Assign a 1-based page number to every paragraph index in ``doc.paragraphs``.
+
+    Strategy (offline, no Word/LibreOffice required):
+      1. Honor hard ``w:br type=page`` and section breaks (end current page).
+      2. If Word saved ``w:lastRenderedPageBreak`` markers, use those as soft
+         page starts (most accurate for docs opened/saved in Word).
+      3. Otherwise fall back to a character/image budget (~2100 chars/page),
+         matching ``docx_fields.estimate_body_page_numbers``.
+
+    Returns (page_by_para_idx, stats).
+    """
+    paras = list(doc.paragraphs)
+    # Trust Word's lastRenderedPageBreak only when enough markers exist.
+    # A single stray marker is common and would otherwise disable the char budget.
+    rendered_marker_count = sum(
+        1 for p in paras if _para_has_last_rendered_page_break(p._element)
+    )
+    use_rendered = rendered_marker_count >= 3
+
+    page = 1
+    chars_on_page = 0
+    page_by_idx: Dict[int, int] = {}
+    hard_breaks = 0
+    rendered_breaks = 0
+    soft_breaks = 0
+    # When Word left many rendered markers, still cap runaway pages.
+    soft_limit = (_CHARS_PER_PAGE * 2) if use_rendered else _CHARS_PER_PAGE
+
+    for para_idx, para in enumerate(paras):
+        el = para._element
+
+        # Word soft page starts appear at the beginning of the new page's para.
+        if use_rendered and _para_has_last_rendered_page_break(el) and chars_on_page > 0:
+            page += 1
+            chars_on_page = 0
+            rendered_breaks += 1
+
+        page_by_idx[para_idx] = page
+
+        text = (para.text or "").strip()
+        has_image = _para_has_embedded_image(el, rel_images)
+        if text or has_image:
+            if text:
+                chars_on_page += max(_MIN_PARA_CHARS, len(text))
+            if has_image:
+                chars_on_page += _IMAGE_CHARS
+
+        # Hard / section breaks end the current page AFTER this paragraph.
+        # Skip document-final sectPr on an empty trailing paragraph — that is
+        # Word's section settings, not a real content page boundary.
+        is_hard = _para_has_hard_page_break(el)
+        is_sect = _para_has_section_break(el)
+        is_trailing_sect = (
+            is_sect
+            and not is_hard
+            and not text
+            and not has_image
+            and para_idx == len(paras) - 1
+        )
+        if (is_hard or is_sect) and not is_trailing_sect:
+            page += 1
+            chars_on_page = 0
+            hard_breaks += 1
+            continue
+
+        if chars_on_page >= soft_limit:
+            page += 1
+            chars_on_page = 0
+            soft_breaks += 1
+
+    total_pages = max(page_by_idx.values()) if page_by_idx else 1
+    stats = {
+        "total_pages": total_pages,
+        "hard_breaks": hard_breaks,
+        "rendered_breaks": rendered_breaks,
+        "soft_breaks": soft_breaks,
+        "used_rendered": use_rendered,
+    }
+    return page_by_idx, stats
+
+
 def _parse_docx(file_path: str, filename: str) -> DocumentModel:
     from docx import Document as DocxDocument
-    from lxml import etree
-    from PIL import Image as PILImage
 
     doc = DocxDocument(file_path)
     paragraphs: List[ParagraphBlock] = []
@@ -101,27 +231,21 @@ def _parse_docx(file_path: str, filename: str) -> DocumentModel:
             except Exception:
                 continue
 
-    # ── Estimate page breaks ─────────────────────────────────────────────────
-    # python-docx does not expose page numbers directly; we track explicit
-    # page-break elements as a best-effort heuristic.
-    page = 1
+    # ── Estimate page numbers (hard breaks + Word markers + char budget) ─────
+    page_by_idx, page_stats = _estimate_docx_page_map(doc, rel_images)
+    print(
+        f"[parser] DOCX page estimate: pages={page_stats['total_pages']} "
+        f"hard={page_stats['hard_breaks']} rendered={page_stats['rendered_breaks']} "
+        f"soft={page_stats['soft_breaks']} used_rendered={page_stats['used_rendered']}"
+    )
+
     heading_context = ""
     img_counter = 0
+    r_ns = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+    blip_ns = "http://schemas.openxmlformats.org/drawingml/2006/main"
 
     for para_idx, para in enumerate(doc.paragraphs):
-        # Detect explicit page breaks in the XML
-        xml_str = etree.tostring(para._element, encoding="unicode")
-        page_breaks = xml_str.count('w:br') and 'w:type="page"' in xml_str
-        if page_breaks:
-            page += 1
-
-        # Detect section page breaks
-        sect_pr = para._element.findall(
-            ".//{http://schemas.openxmlformats.org/wordprocessingml/2006/main}sectPr"
-        )
-        if sect_pr:
-            page += 1
-
+        page = page_by_idx.get(para_idx, 1)
         text = para.text.strip()
         style_name = (para.style.name or "Normal") if para.style else "Normal"
         font_size, is_bold = _extract_run_format(para)
@@ -139,8 +263,6 @@ def _parse_docx(file_path: str, filename: str) -> DocumentModel:
         )
 
         # ── Check for embedded images ────────────────────────────────────────
-        r_ns = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
-        blip_ns = "http://schemas.openxmlformats.org/drawingml/2006/main"
         for blip in para._element.iter(f"{{{blip_ns}}}blip"):
             embed = blip.get(f"{{{r_ns}}}embed")
             if embed and embed in rel_images:
@@ -169,11 +291,7 @@ def _parse_docx(file_path: str, filename: str) -> DocumentModel:
 
         # Always keep paragraphs that contain images, even if text is empty,
         # so image paragraph_id anchors resolve during analysis.
-        has_image = any(
-            True
-            for blip in para._element.iter(f"{{{blip_ns}}}blip")
-            if blip.get(f"{{{r_ns}}}embed") in rel_images
-        )
+        has_image = _para_has_embedded_image(para._element, rel_images)
 
         if text or has_image:
             paragraphs.append(
@@ -192,7 +310,9 @@ def _parse_docx(file_path: str, filename: str) -> DocumentModel:
                 )
             )
 
-    total_pages = page if paragraphs else 1
+    total_pages = page_stats["total_pages"] if paragraphs else 1
+    if paragraphs:
+        total_pages = max(total_pages, max(p.page_number for p in paragraphs))
     return DocumentModel(
         filename=filename,
         total_pages=total_pages,
@@ -206,7 +326,11 @@ def _parse_docx(file_path: str, filename: str) -> DocumentModel:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def _parse_pdf(file_path: str, filename: str) -> DocumentModel:
-    from pdf_io import extract_pdf, merge_pdf_lines_to_paragraphs, looks_like_heading_line
+    from pdf_io import (
+        extract_pdf,
+        merge_pdf_lines_to_paragraphs_with_pages,
+        looks_like_heading_line,
+    )
 
     result = extract_pdf(file_path)
     paragraphs: List[ParagraphBlock] = []
@@ -215,7 +339,8 @@ def _parse_pdf(file_path: str, filename: str) -> DocumentModel:
     para_counter = 0
     img_counter = 0
 
-    # Merge visual wrap lines into real paragraphs (same as PDF→DOCX path).
+    # Merge visual wrap lines into real paragraphs (same as PDF→DOCX path),
+    # preserving the source page of each merged paragraph for batching.
     raw_lines: List[str] = []
     line_page: List[int] = []
     for page in result.pages:
@@ -227,10 +352,8 @@ def _parse_pdf(file_path: str, filename: str) -> DocumentModel:
                 raw_lines.append(text)
                 line_page.append(page.page_number)
 
-    merged = merge_pdf_lines_to_paragraphs(raw_lines)
-    # Approximate page number: use first page that contributed (fallback 1)
-    page_guess = result.pages[0].page_number if result.pages else 1
-    for text in merged:
+    merged = merge_pdf_lines_to_paragraphs_with_pages(raw_lines, line_page)
+    for text, page_num in merged:
         is_head = looks_like_heading_line(text)
         style = "Heading 1" if is_head else _guess_style_from_font(text, 12.0, False)
         if is_head or style.startswith("Heading"):
@@ -240,7 +363,7 @@ def _parse_pdf(file_path: str, filename: str) -> DocumentModel:
         paragraphs.append(
             ParagraphBlock(
                 paragraph_id=f"p{para_counter}",
-                page_number=page_guess,
+                page_number=int(page_num) if page_num else 1,
                 heading_context=heading_context,
                 style=style,
                 text=text,
@@ -264,9 +387,12 @@ def _parse_pdf(file_path: str, filename: str) -> DocumentModel:
             )
             img_counter += 1
 
+    para_pages = {p.page_number for p in paragraphs}
     print(
         f"[parser] PDF via {result.backend}: "
-        f"{len(paragraphs)} paras (merged), {len(images)} images"
+        f"{len(paragraphs)} paras (merged), {len(images)} images, "
+        f"pages={result.total_pages}, para_page_span={min(para_pages) if para_pages else 0}-"
+        f"{max(para_pages) if para_pages else 0}"
     )
     return DocumentModel(
         filename=filename,

@@ -182,39 +182,53 @@ def strip_list_marker(text: str) -> str:
     return _LIST_MARKER_ONLY_RE.sub("", t, count=1).strip() if _LIST_MARKER_ONLY_RE.match(t) else t
 
 
-def merge_pdf_lines_to_paragraphs(lines: Sequence[str]) -> List[str]:
+def merge_pdf_lines_to_paragraphs_with_pages(
+    lines: Sequence[str],
+    line_pages: Sequence[int] | None = None,
+) -> List[Tuple[str, int]]:
     """
-    Rebuild real paragraphs from PDF visual wrap lines.
+    Rebuild real paragraphs from PDF visual wrap lines, with a page number
+    for each merged paragraph (from the first contributing source line).
 
     Without this, each ~80-char wrap becomes a Word paragraph and template
     first-line indent makes the page look like a broken two-column layout.
     """
-    paragraphs: List[str] = []
+    if line_pages is None:
+        pages_src: List[int] = [1] * len(lines)
+    else:
+        pages_src = list(line_pages)
+        if len(pages_src) < len(lines):
+            pages_src.extend([pages_src[-1] if pages_src else 1] * (len(lines) - len(pages_src)))
+
+    paragraphs: List[Tuple[str, int]] = []
     buf: List[str] = []
+    buf_page = 1
 
     def flush() -> None:
-        nonlocal buf
+        nonlocal buf, buf_page
         if not buf:
             return
         text = " ".join(buf)
         text = re.sub(r"\s+", " ", text).strip()
         if text:
-            paragraphs.append(text)
+            paragraphs.append((text, buf_page))
         buf = []
 
-    for raw in lines:
+    for idx, raw in enumerate(lines):
         line = (raw or "").strip()
+        page_num = int(pages_src[idx]) if idx < len(pages_src) else 1
         if not line:
             flush()
             continue
 
         if looks_like_heading_line(line) or looks_like_caption_line(line) or looks_like_list_item_line(line):
             flush()
-            paragraphs.append(line)
+            paragraphs.append((line, page_num))
             continue
 
         if not buf:
             buf = [line]
+            buf_page = page_num
             continue
 
         prev = buf[-1]
@@ -222,11 +236,12 @@ def merge_pdf_lines_to_paragraphs(lines: Sequence[str]) -> List[str]:
         prev_ended = prev.endswith((".", "?", "!"))
         if prev_ended and not starts_lower and looks_like_heading_line(line):
             flush()
-            paragraphs.append(line)
+            paragraphs.append((line, page_num))
             continue
         if prev_ended and line[:1].isupper() and len(line.split()) > 8:
             flush()
             buf = [line]
+            buf_page = page_num
             continue
 
         # Hyphenated wrap: "format-" + "ting" → "formatting"
@@ -237,6 +252,16 @@ def merge_pdf_lines_to_paragraphs(lines: Sequence[str]) -> List[str]:
 
     flush()
     return paragraphs
+
+
+def merge_pdf_lines_to_paragraphs(lines: Sequence[str]) -> List[str]:
+    """
+    Rebuild real paragraphs from PDF visual wrap lines.
+
+    Without this, each ~80-char wrap becomes a Word paragraph and template
+    first-line indent makes the page look like a broken two-column layout.
+    """
+    return [text for text, _ in merge_pdf_lines_to_paragraphs_with_pages(lines)]
 
 
 def pdf_to_text_lines(file_path: str) -> List[str]:
