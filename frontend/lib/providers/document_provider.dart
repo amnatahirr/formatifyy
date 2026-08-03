@@ -515,77 +515,273 @@ class DocumentProvider extends ChangeNotifier {
 // -----------------------------
 // Fixed: Formatted Document Download with user_id
 // -----------------------------
-Future<bool> downloadFormattedDocument(
-  int documentId,
-  int userId, {  // Add userId parameter
-  String format = 'docx',
-  bool applyBullets = true,
-  bool autoDetectBullets = true,
-}) async {
-  try {
-    // FIXED: Added user_id to the URL and bullet parameters
-    final url = Uri.parse(
-      "$exportUrl/$documentId?user_id=$userId&format=$format"
-      "&apply_bullets=$applyBullets&auto_detect_bullets=$autoDetectBullets"
-    );
-    
-    debugPrint('[v0] Downloading formatted document from: $url'); // For debugging
-    
-    final response = await http.get(url);
-
-    if (response.statusCode == 200) {
-      String fileName = "formatted_document_$documentId.$format";
-      
-     // With this — always trust the format the user selected:
-final contentDisposition = response.headers['content-disposition'];
-if (contentDisposition != null && contentDisposition.contains('filename=')) {
-  final parts = contentDisposition.split('filename=');
-  if (parts.length > 1) {
-    final serverFileName = parts[1].replaceAll('"', '').trim();
-    // Use server name but force the correct extension
-    final baseName = serverFileName.contains('.')
-        ? serverFileName.substring(0, serverFileName.lastIndexOf('.'))
-        : serverFileName;
-    fileName = '$baseName.$format';
+  Future<Directory> _downloadDirectory() async {
+    if (Platform.isAndroid) {
+      final downloads = Directory('/storage/emulated/0/Download');
+      if (await downloads.exists()) return downloads;
+      return await getDownloadsDirectory() ??
+          await getApplicationDocumentsDirectory();
+    }
+    if (Platform.isIOS) {
+      return await getApplicationDocumentsDirectory();
+    }
+    return await getDownloadsDirectory() ??
+        await getApplicationDocumentsDirectory();
   }
-}
 
-      // Prefer public Downloads on Android phones; otherwise app documents.
-      Directory directory;
-      if (Platform.isAndroid) {
-        final downloads = Directory('/storage/emulated/0/Download');
-        directory = await downloads.exists()
-            ? downloads
-            : (await getDownloadsDirectory() ??
-                await getApplicationDocumentsDirectory());
-      } else if (Platform.isIOS) {
-        directory = await getApplicationDocumentsDirectory();
-      } else {
-        directory = await getDownloadsDirectory() ??
-            await getApplicationDocumentsDirectory();
+  String _fileNameFromResponse(
+    http.Response response, {
+    required String fallback,
+    String? forceExtension,
+  }) {
+    String fileName = fallback;
+    final contentDisposition = response.headers['content-disposition'];
+    if (contentDisposition != null && contentDisposition.contains('filename=')) {
+      final parts = contentDisposition.split('filename=');
+      if (parts.length > 1) {
+        var serverFileName = parts[1].replaceAll('"', '').trim();
+        // content-disposition may be: filename=foo.docx; filename*=UTF-8''...
+        if (serverFileName.contains(';')) {
+          serverFileName = serverFileName.split(';').first.trim();
+        }
+        if (serverFileName.isNotEmpty) {
+          fileName = serverFileName;
+        }
       }
-      final file = File('${directory.path}/$fileName');
-      
-      // Write file
-      await file.writeAsBytes(response.bodyBytes);
+    }
+    if (forceExtension != null && forceExtension.isNotEmpty) {
+      final ext = forceExtension.startsWith('.')
+          ? forceExtension
+          : '.$forceExtension';
+      final baseName = fileName.contains('.')
+          ? fileName.substring(0, fileName.lastIndexOf('.'))
+          : fileName;
+      fileName = '$baseName$ext';
+    }
+    return fileName;
+  }
 
-      debugPrint('[v0] File saved to: ${file.path}');
+  /// Split ``report.docx`` → (``report``, ``.docx``).
+  (String stem, String ext) _splitFileName(String fileName) {
+    final dot = fileName.lastIndexOf('.');
+    if (dot <= 0 || dot == fileName.length - 1) {
+      return (fileName, '');
+    }
+    return (fileName.substring(0, dot), fileName.substring(dot));
+  }
 
+  /// True when Windows (or another OS) has the file open / locked.
+  bool _isFileLockedError(Object e) {
+    final msg = e.toString().toLowerCase();
+    return msg.contains('being used by another process') ||
+        msg.contains('errno = 32') ||
+        msg.contains('errno: 32') ||
+        msg.contains('pathaccessexception') ||
+        msg.contains('sharing violation') ||
+        msg.contains('cannot open file') ||
+        msg.contains('access is denied');
+  }
+
+  /// Write bytes, retrying with ``name (1).ext``, ``name (2).ext``, … if the
+  /// preferred path is locked (e.g. Word still has the previous download open).
+  Future<File> _writeBytesAvoidingLocks(
+    Directory directory,
+    String preferredName,
+    List<int> bytes,
+  ) async {
+    final (stem, ext) = _splitFileName(preferredName);
+    Object? lastError;
+
+    Future<File?> tryWrite(String name) async {
+      final file = File('${directory.path}${Platform.pathSeparator}$name');
+      try {
+        await file.writeAsBytes(bytes, flush: true);
+        return file;
+      } catch (e) {
+        lastError = e;
+        if (!_isFileLockedError(e)) rethrow;
+        debugPrint('[v0] Download path locked, trying another name: $name → $e');
+        return null;
+      }
+    }
+
+    final first = await tryWrite(preferredName);
+    if (first != null) return first;
+
+    for (var i = 1; i <= 30; i++) {
+      final alt = await tryWrite('$stem ($i)$ext');
+      if (alt != null) return alt;
+    }
+
+    // Last resort: timestamped name
+    final stamp = DateTime.now().millisecondsSinceEpoch;
+    final stamped = await tryWrite('${stem}_$stamp$ext');
+    if (stamped != null) return stamped;
+
+    throw lastError ??
+        Exception('Could not save download — file may be open in another app.');
+  }
+
+  Future<bool> _writeDownloadResponse(
+    http.Response response, {
+    required String fallbackName,
+    String? forceExtension,
+  }) async {
+    if (response.statusCode != 200) {
+      _errorMessage = "Download failed: ${response.body}";
+      return false;
+    }
+    final fileName = _fileNameFromResponse(
+      response,
+      fallback: fallbackName,
+      forceExtension: forceExtension,
+    );
+    final directory = await _downloadDirectory();
+    try {
+      final file = await _writeBytesAvoidingLocks(
+        directory,
+        fileName,
+        response.bodyBytes,
+      );
       _lastDownloadedPath = file.path;
       _errorMessage = null;
       notifyListeners();
+      debugPrint('[v0] File saved to: ${file.path}');
       return true;
-    } else {
-      _errorMessage = "Formatted download failed: ${response.body}";
-      debugPrint('[v0] Download failed with status ${response.statusCode}: ${response.body}');
+    } catch (e) {
+      _errorMessage =
+          'Could not save the file. Close it in Word (or another app) and try again.';
+      debugPrint('[v0] Download write failed: $e');
       return false;
     }
-  } catch (e) {
-    _errorMessage = "Formatted download error: $e";
-    debugPrint('[v0] Download error: $e');
-    return false;
   }
-}
+
+  Future<bool> downloadFormattedDocument(
+    int documentId,
+    int userId, {
+    String format = 'docx',
+    bool applyBullets = true,
+    bool autoDetectBullets = true,
+  }) async {
+    try {
+      final url = Uri.parse(
+        "$exportUrl/$documentId?user_id=$userId&format=$format"
+        "&apply_bullets=$applyBullets&auto_detect_bullets=$autoDetectBullets",
+      );
+
+      debugPrint('[v0] Downloading formatted document from: $url');
+      final response = await http.get(url);
+      return await _writeDownloadResponse(
+        response,
+        fallbackName: "formatted_document_$documentId.$format",
+        forceExtension: format,
+      );
+    } catch (e) {
+      _errorMessage = "Formatted download error: $e";
+      debugPrint('[v0] Download error: $e');
+      return false;
+    }
+  }
+
+  /// Persist the current formatted working document into My Reports.
+  Future<bool> saveFormattedDocument(int documentId, int userId) async {
+    try {
+      final url = Uri.parse(
+        "$baseUrl/$documentId/save-formatted?user_id=$userId",
+      );
+      debugPrint('[v0] Saving formatted document: $url');
+      final response = await http.post(
+        url,
+        headers: ApiConfig.getHeaders(json: true),
+      );
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        // Reflect immediately in My Reports without a full refetch race.
+        final idx = _documents.indexWhere((d) => d['id'] == documentId);
+        if (idx >= 0) {
+          _documents[idx] = {
+            ..._documents[idx],
+            'has_formatted': true,
+          };
+        }
+        _errorMessage = null;
+        notifyListeners();
+        // Refresh list so status / timestamps stay accurate.
+        await fetchDocuments(userId);
+        debugPrint('[v0] Formatted document saved: $data');
+        return true;
+      }
+      try {
+        final body = json.decode(response.body);
+        _errorMessage = body is Map && body['detail'] != null
+            ? body['detail'].toString()
+            : "Save formatted failed: ${response.body}";
+      } catch (_) {
+        _errorMessage = "Save formatted failed: ${response.body}";
+      }
+      debugPrint('[v0] Save formatted failed: $_errorMessage');
+      return false;
+    } catch (e) {
+      _errorMessage = "Save formatted error: $e";
+      debugPrint('[v0] Save formatted error: $e');
+      return false;
+    }
+  }
+
+  /// Download the original uploaded (unformatted) file.
+  Future<bool> downloadOriginalDocument(int documentId, int userId) async {
+    try {
+      final url = Uri.parse(
+        "$baseUrl/$documentId/download-original?user_id=$userId",
+      );
+      debugPrint('[v0] Downloading original document from: $url');
+      final response = await http.get(url);
+      return await _writeDownloadResponse(
+        response,
+        fallbackName: "original_document_$documentId",
+      );
+    } catch (e) {
+      _errorMessage = "Original download error: $e";
+      debugPrint('[v0] Original download error: $e');
+      return false;
+    }
+  }
+
+  /// Download a previously saved formatted document from My Reports.
+  Future<bool> downloadSavedFormattedDocument(
+    int documentId,
+    int userId, {
+    String format = 'docx',
+  }) async {
+    try {
+      final url = Uri.parse(
+        "$baseUrl/$documentId/download-formatted?user_id=$userId&format=$format",
+      );
+      debugPrint('[v0] Downloading saved formatted document from: $url');
+      final response = await http.get(url);
+      if (response.statusCode == 404) {
+        try {
+          final body = json.decode(response.body);
+          _errorMessage = body is Map && body['detail'] != null
+              ? body['detail'].toString()
+              : 'No saved formatted document yet.';
+        } catch (_) {
+          _errorMessage =
+              'No saved formatted document yet. Save it from Analysis first.';
+        }
+        return false;
+      }
+      return await _writeDownloadResponse(
+        response,
+        fallbackName: "formatted_document_$documentId.$format",
+        forceExtension: format,
+      );
+    } catch (e) {
+      _errorMessage = "Saved formatted download error: $e";
+      debugPrint('[v0] Saved formatted download error: $e');
+      return false;
+    }
+  }
   Future<bool> createReportFromText({
     required String title,
     required String content,

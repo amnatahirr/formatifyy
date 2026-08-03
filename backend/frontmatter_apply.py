@@ -7,6 +7,7 @@ the admin-uploaded templates without requiring a separate Flutter generate step.
 
 from __future__ import annotations
 
+import io
 import json
 import os
 from typing import Any, Dict, Optional
@@ -14,8 +15,14 @@ from typing import Any, Dict, Optional
 from database import get_db
 from frontmatter_data import build_frontmatter_context
 from frontmatter_detector import detect_frontmatter_heuristic
-from frontmatter_generator import generate_frontmatter_docx, scaffold_templates
-from models import DetectionResult
+from frontmatter_generator import (
+    generate_frontmatter_docx,
+    refresh_leading_cover_from_template,
+    render_cover_page,
+    resolve_ask_fields_in_docx_path,
+    scaffold_templates,
+)
+from models import DetectionResult, FrontmatterContext
 
 UPLOAD_DIR = "uploads"
 OUTPUT_DIR = "outputs"
@@ -48,6 +55,38 @@ def _write_marker(document_id: int, payload: Dict[str, Any]) -> None:
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
         json.dump(payload, f)
+
+
+def _document_starts_with_admin_cover(docx_path: str) -> bool:
+    """
+    True when the leading page matches the admin cover template.
+
+    Used to recover working copies whose marker lost ``generated_cover`` but
+    still begin with the Formatify-prepended cover (so we can refresh it).
+    """
+    try:
+        from docx import Document
+
+        cover = Document(io.BytesIO(render_cover_page(FrontmatterContext())))
+        cover_lines = [
+            (p.text or "").strip()
+            for p in cover.paragraphs
+            if (p.text or "").strip()
+        ]
+        # Skip the title line — older builds may have overwritten it.
+        probes = [ln for ln in cover_lines[1:6] if len(ln) >= 8]
+        if len(probes) < 2:
+            return False
+        doc = Document(docx_path)
+        doc_lines = [
+            (p.text or "").strip()
+            for p in doc.paragraphs[:25]
+            if (p.text or "").strip()
+        ]
+        hits = sum(1 for ln in probes if any(ln == d or ln in d or d in ln for d in doc_lines))
+        return hits >= 2
+    except Exception:
+        return False
 
 
 def _save_detection(document_id: int, result: DetectionResult, extra: Optional[Dict[str, Any]] = None) -> None:
@@ -99,6 +138,15 @@ def ensure_frontmatter_pages(document_id: int, docx_path: str) -> Dict[str, Any]
 
     marker = _marker_path(document_id)
     already_marked = os.path.exists(marker)
+    marker_payload: Dict[str, Any] = {}
+    if already_marked:
+        try:
+            with open(marker, "r", encoding="utf-8") as f:
+                loaded = json.load(f)
+            if isinstance(loaded, dict):
+                marker_payload = loaded
+        except Exception:
+            marker_payload = {}
 
     if not already_marked:
         try:
@@ -150,8 +198,32 @@ def ensure_frontmatter_pages(document_id: int, docx_path: str) -> Dict[str, Any]
                     "project_title": getattr(ctx, "project_title", "") or "",
                 }
             )
+            marker_payload = {
+                "applied": True,
+                "generated_cover": insert_cover,
+                "generated_info": insert_info,
+            }
         else:
             status["reason"] = "cover and info already present"
+
+    # If Formatify prepended the admin cover, refresh it from the current
+    # admin template on every export/save so it stays exact (and so older
+    # working copies that had project-title / member injection are repaired).
+    generated_cover = bool(
+        status.get("generated_cover")
+        or marker_payload.get("generated_cover")
+        or _document_starts_with_admin_cover(docx_path)
+    )
+    if generated_cover:
+        try:
+            if refresh_leading_cover_from_template(docx_path):
+                status["cover_refreshed"] = True
+                status["applied"] = True
+                status["generated_cover"] = True
+                marker_payload["generated_cover"] = True
+        except Exception as exc:
+            print(f"[frontmatter_apply] cover refresh skipped: {exc}")
+            status["cover_refresh_error"] = str(exc)
 
     # Always normalize order: Cover/Info → TOC/LOF/LOT → Body
     try:
@@ -160,6 +232,22 @@ def ensure_frontmatter_pages(document_id: int, docx_path: str) -> Dict[str, Any]
     except Exception as exc:
         print(f"[frontmatter_apply] order fix skipped: {exc}")
         status["order_fix_error"] = str(exc)
+
+    # Collapse leftover ASK/FILLIN codes without injecting project context.
+    # When Formatify owns the cover, also drop leftover RESULT placeholders so
+    # static branding (e.g. FORMATIFY) matches the admin template preview.
+    try:
+        ask_count = resolve_ask_fields_in_docx_path(
+            docx_path,
+            ctx=None,
+            keep_result=not bool(status.get("generated_cover")),
+        )
+        status["ask_fields_resolved"] = ask_count
+        if ask_count:
+            status["applied"] = True
+    except Exception as exc:
+        print(f"[frontmatter_apply] ASK field resolve skipped: {exc}")
+        status["ask_fields_error"] = str(exc)
 
     try:
         from frontmatter_detector import detect_frontmatter_heuristic as _detect
@@ -177,8 +265,14 @@ def ensure_frontmatter_pages(document_id: int, docx_path: str) -> Dict[str, Any]
             document_id,
             {
                 "applied": True,
-                "generated_cover": status.get("generated_cover", False),
-                "generated_info": status.get("generated_info", False),
+                "generated_cover": bool(
+                    status.get("generated_cover")
+                    or marker_payload.get("generated_cover")
+                ),
+                "generated_info": bool(
+                    status.get("generated_info")
+                    or marker_payload.get("generated_info")
+                ),
             },
         )
         # Keep working/export synced after order fix

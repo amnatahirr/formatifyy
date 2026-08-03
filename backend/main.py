@@ -1018,6 +1018,81 @@ def _export_copy_path(document_id: int) -> str:
     return os.path.join(OUTPUT_DIR, f"export_{document_id}.docx")
 
 
+def _saved_formatted_path(document_id: int) -> str:
+    """Durable on-disk path for a student-saved formatted DOCX (My Reports)."""
+    return os.path.join(UPLOAD_DIR, "formatted", f"doc_{document_id}_formatted.docx")
+
+
+def _prepare_formatted_docx(doc: Any, document_id: int) -> str:
+    """
+    Build / refresh the export DOCX from the working copy (same source Export uses).
+
+    Returns the path to ``outputs/export_{id}.docx``. Does not mutate the original
+    upload at ``documents.file_path``.
+    """
+    working_copy = _working_copy_path(document_id)
+    output_path = _export_copy_path(document_id)
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+    tmpl = None
+    try:
+        tmpl = get_template_by_id(doc["template_id"])
+    except Exception:
+        tmpl = None
+
+    if os.path.exists(working_copy):
+        shutil.copy2(working_copy, output_path)
+    elif tmpl and _is_fixable_source(doc["file_path"]):
+        report = AnalysisReport(issues=[], stats={})
+        reformat_document(
+            doc["file_path"],
+            output_path,
+            report,
+            tmpl["formatting_rules"],
+            tmpl.get("required_sections", []),
+        )
+        os.makedirs(os.path.dirname(working_copy), exist_ok=True)
+        shutil.copy2(output_path, working_copy)
+    else:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "No formatted document is available yet. "
+                "Run Analysis first, then try again."
+            ),
+        )
+
+    # Prepend admin cover / project-info templates when those pages are missing
+    try:
+        from frontmatter_apply import ensure_frontmatter_pages
+        fm = ensure_frontmatter_pages(document_id, working_copy)
+        if fm.get("applied"):
+            shutil.copy2(working_copy, output_path)
+            print(f"[formatted] frontmatter applied for doc {document_id}: {fm}")
+    except Exception as exc:
+        print(f"[formatted] frontmatter apply error (non-fatal): {exc}")
+
+    if not os.path.exists(output_path):
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to prepare the formatted document.",
+        )
+    return output_path
+
+
+def _guess_media_type(filename: str) -> str:
+    ext = os.path.splitext(filename or "")[1].lower()
+    if ext == ".pdf":
+        return "application/pdf"
+    if ext == ".txt":
+        return "text/plain"
+    if ext == ".docx":
+        return "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    if ext == ".doc":
+        return "application/msword"
+    return "application/octet-stream"
+
+
 def _ensure_formatted_working_copy(
     doc: Any,
     tmpl: Dict[str, Any],
@@ -1446,7 +1521,7 @@ def list_documents(user_id: int):
     cursor.execute(
         """
         SELECT d.id, d.filename, d.status, d.created_at, d.template_id,
-               d.file_path, t.name as template_name
+               d.file_path, d.formatted_file_path, t.name as template_name
         FROM documents d
         LEFT JOIN templates t ON d.template_id = t.id
         WHERE d.user_id = ?
@@ -1462,6 +1537,9 @@ def list_documents(user_id: int):
         file_size = 0.0
         if r["file_path"] and os.path.exists(r["file_path"]):
             file_size = os.path.getsize(r["file_path"]) / 1024.0
+
+        formatted_path = r["formatted_file_path"] if "formatted_file_path" in r.keys() else None
+        has_formatted = bool(formatted_path and os.path.exists(str(formatted_path)))
             
         result.append({
             "id": r["id"],
@@ -1470,7 +1548,8 @@ def list_documents(user_id: int):
             "created_at": r["created_at"],
             "template_id": r["template_id"],
             "template_name": r["template_name"] or "None",
-            "file_size": round(file_size, 2)
+            "file_size": round(file_size, 2),
+            "has_formatted": has_formatted,
         })
     return result
 
@@ -1896,7 +1975,10 @@ def delete_document(document_id: int, user_id: int = Query(...)):
     """Delete a document record and its physical files."""
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute("SELECT file_path FROM documents WHERE id = ? AND user_id = ?", (document_id, user_id))
+    cursor.execute(
+        "SELECT file_path, formatted_file_path FROM documents WHERE id = ? AND user_id = ?",
+        (document_id, user_id),
+    )
     doc = cursor.fetchone()
     if not doc:
         conn.close()
@@ -1915,6 +1997,22 @@ def delete_document(document_id: int, user_id: int = Query(...)):
             os.remove(working_copy)
         except Exception:
             pass
+
+    formatted_path = None
+    try:
+        formatted_path = doc["formatted_file_path"]
+    except (KeyError, IndexError, TypeError):
+        formatted_path = None
+    for path in (
+        formatted_path,
+        _saved_formatted_path(document_id),
+        _export_copy_path(document_id),
+    ):
+        if path and os.path.exists(str(path)):
+            try:
+                os.remove(str(path))
+            except Exception:
+                pass
 
     cursor.execute("DELETE FROM documents WHERE id = ?", (document_id,))
     conn.commit()
@@ -2501,40 +2599,12 @@ def export_formatted_document(
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
 
+    # Template still required for cold rebuild when no working copy exists yet.
     tmpl = get_template_by_id(doc["template_id"])
-    if not tmpl:
+    if not tmpl and not os.path.exists(_working_copy_path(document_id)):
         raise HTTPException(status_code=400, detail="Document has no valid template assigned.")
 
-    working_copy = _working_copy_path(document_id)
-    output_path = _export_copy_path(document_id)
-
-    if os.path.exists(working_copy):
-        shutil.copy2(working_copy, output_path)
-    else:
-        report = AnalysisReport(issues=[], stats={})
-        reformat_document(
-            doc["file_path"],
-            output_path,
-            report,
-            tmpl["formatting_rules"],
-            tmpl.get("required_sections", []),
-        )
-        # Seed working copy so subsequent fixes/export stay consistent
-        os.makedirs(os.path.dirname(working_copy), exist_ok=True)
-        shutil.copy2(output_path, working_copy)
-
-    # Prepend admin cover / project-info templates when those pages are missing
-    try:
-        from frontmatter_apply import ensure_frontmatter_pages
-        fm = ensure_frontmatter_pages(document_id, working_copy)
-        if fm.get("applied"):
-            shutil.copy2(working_copy, output_path)
-            print(f"[export] frontmatter applied for doc {document_id}: {fm}")
-        else:
-            print(f"[export] frontmatter skipped for doc {document_id}: {fm.get('reason')}")
-    except Exception as exc:
-        print(f"[export] frontmatter apply error (non-fatal): {exc}")
-
+    output_path = _prepare_formatted_docx(doc, document_id)
     base_name = f"formatted_{os.path.splitext(doc['filename'] or 'document')[0]}"
 
     if export_format == "pdf":
@@ -2554,6 +2624,151 @@ def export_formatted_document(
     return FileResponse(
         path=output_path,
         filename=download_name,
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    )
+
+
+@app.post("/api/documents/{document_id}/save-formatted", tags=["Documents"])
+def save_formatted_document(document_id: int, user_id: int = Query(...)):
+    """
+    Persist the current formatted working document for My Reports.
+
+    Copies the same DOCX that Export would download into a durable
+    ``uploads/formatted/`` path and stores it on the document row.
+    The original upload (``file_path``) is never overwritten.
+    """
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT * FROM documents WHERE id = ? AND user_id = ?",
+        (document_id, user_id),
+    )
+    doc = cursor.fetchone()
+    if not doc:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    export_path = _prepare_formatted_docx(doc, document_id)
+    saved_path = _saved_formatted_path(document_id)
+    os.makedirs(os.path.dirname(saved_path), exist_ok=True)
+    shutil.copy2(export_path, saved_path)
+
+    cursor.execute(
+        """
+        UPDATE documents
+        SET formatted_file_path = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE id = ? AND user_id = ?
+        """,
+        (saved_path, document_id, user_id),
+    )
+    conn.commit()
+    conn.close()
+
+    stem = os.path.splitext(doc["filename"] or "document")[0]
+    print(f"[save-formatted] doc={document_id} saved -> {saved_path}")
+    return {
+        "success": True,
+        "document_id": document_id,
+        "has_formatted": True,
+        "formatted_filename": f"formatted_{stem}.docx",
+        "message": "Formatted document saved. Open My Reports to access Unformatted and Formatted versions.",
+    }
+
+
+@app.get("/api/documents/{document_id}/download-original", tags=["Documents"])
+def download_original_document(document_id: int, user_id: int = Query(...)):
+    """Download the student's original (unformatted) uploaded file."""
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT filename, file_path FROM documents WHERE id = ? AND user_id = ?",
+        (document_id, user_id),
+    )
+    doc = cursor.fetchone()
+    conn.close()
+
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    file_path = doc["file_path"]
+    if not file_path or not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="Original file is missing on the server.")
+
+    download_name = doc["filename"] or os.path.basename(file_path) or "document"
+    return FileResponse(
+        path=file_path,
+        filename=download_name,
+        media_type=_guess_media_type(download_name),
+    )
+
+
+@app.get("/api/documents/{document_id}/download-formatted", tags=["Documents"])
+def download_saved_formatted_document(
+    document_id: int,
+    user_id: int = Query(...),
+    format: str = Query(default="docx"),
+):
+    """
+    Download a previously saved formatted document from My Reports.
+
+    Requires ``POST /save-formatted`` first. Does not fall back to a live
+    reformat — that keeps Unformatted vs Formatted clearly distinct.
+    """
+    export_format = (format or "docx").strip().lower()
+    if export_format not in {"docx", "pdf"}:
+        raise HTTPException(status_code=400, detail="format must be 'docx' or 'pdf'")
+
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT filename, formatted_file_path FROM documents WHERE id = ? AND user_id = ?",
+        (document_id, user_id),
+    )
+    doc = cursor.fetchone()
+    conn.close()
+
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    formatted_path = None
+    try:
+        formatted_path = doc["formatted_file_path"]
+    except (KeyError, IndexError, TypeError):
+        formatted_path = None
+
+    if not formatted_path or not os.path.exists(str(formatted_path)):
+        # Fall back to the conventional saved path if the column is empty but file exists
+        fallback = _saved_formatted_path(document_id)
+        if os.path.exists(fallback):
+            formatted_path = fallback
+        else:
+            raise HTTPException(
+                status_code=404,
+                detail=(
+                    "No saved formatted document yet. "
+                    "Open Analysis and tap Save Formatted Document first."
+                ),
+            )
+
+    stem = os.path.splitext(doc["filename"] or "document")[0]
+    base_name = f"formatted_{stem}"
+
+    if export_format == "pdf":
+        pdf_path = convert_docx_to_pdf(str(formatted_path))
+        if not pdf_path or not os.path.exists(pdf_path):
+            raise HTTPException(
+                status_code=500,
+                detail="Could not convert document to PDF. Try Word (.docx) instead.",
+            )
+        return FileResponse(
+            path=pdf_path,
+            filename=f"{base_name}.pdf",
+            media_type="application/pdf",
+        )
+
+    return FileResponse(
+        path=str(formatted_path),
+        filename=f"{base_name}.docx",
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     )
 

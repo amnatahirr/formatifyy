@@ -2241,6 +2241,8 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
   bool _isApplyingFix = false;
   bool _isFixApplied = false;
   bool _isDownloading = false;
+  bool _isSavingFormatted = false;
+  bool _formattedSaved = false;
   /// True briefly after analyze HTTP succeeds so the progress UI can show Finalizing.
   bool _analysisComplete = false;
   /// Bumped on each analyze run so the progress panel resets its stages.
@@ -2333,9 +2335,15 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
     _tabController.addListener(_onAnalysisTabChanged);
     _baseUrl = ApiConfig.getBaseUrl();
     _analysisFuture = _runAnalysisWithProgress();
-    // Preload table issues so the Tables tab badge has a real count.
+    // Preload tables + restore "already saved" state from My Reports list.
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _loadTables();
+      if (!mounted) return;
+      _loadTables();
+      final docs = context.read<DocumentProvider>().documents;
+      final match = docs.where((d) => d['id'] == widget.documentId);
+      if (match.isNotEmpty && match.first['has_formatted'] == true) {
+        setState(() => _formattedSaved = true);
+      }
     });
   }
 
@@ -4049,6 +4057,42 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
     }
   }
 
+  Future<void> _saveFormattedDocument() async {
+    if (_isSavingFormatted) return;
+    final auth = context.read<AuthProvider>();
+    final userId = auth.userId;
+    if (userId == null) {
+      _showSnack('Please sign in again to save.', _red);
+      return;
+    }
+
+    setState(() { _isSavingFormatted = true; });
+    try {
+      final docProvider = context.read<DocumentProvider>();
+      final success = await docProvider.saveFormattedDocument(
+        widget.documentId,
+        userId,
+      );
+      if (!mounted) return;
+      if (success) {
+        setState(() { _formattedSaved = true; });
+        _showSnack(
+          'Formatted document saved to My Reports. Open the report card to access Unformatted and Formatted versions.',
+          _green,
+        );
+      } else {
+        _showSnack(
+          docProvider.errorMessage ?? 'Could not save formatted document.',
+          _red,
+        );
+      }
+    } catch (e) {
+      if (mounted) _showSnack('Save error: $e', _red);
+    } finally {
+      if (mounted) setState(() { _isSavingFormatted = false; });
+    }
+  }
+
   void _handleSidebarSelection(int index) {
     setState(() { _selectedSidebarIndex = index; });
     switch (index) {
@@ -4077,70 +4121,56 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
     }
     showDialog(
       context: context,
-      builder:
-          (_) => Dialog(
-            insetPadding: const EdgeInsets.all(20),
-            child: ConstrainedBox(
-              constraints: BoxConstraints(
-                maxHeight: MediaQuery.of(context).size.height * 0.85,
-                maxWidth: 500,
-              ),
-              child: SingleChildScrollView(
-                child: ExportDialog(
-                  onExport: (
-                    format, {
-                    bool applyBullets = true,
-                    bool autoDetect = true,
-                  }) async {
-                    final docProvider = context.read<DocumentProvider>();
-                    final authProvider = Provider.of<AuthProvider>(
-                      context,
-                      listen: false,
-                    );
-                    final success = await docProvider.downloadFormattedDocument(
-                      doc['id'],
-                      authProvider.userId!,
-                      format: format,
-                      applyBullets: applyBullets,
-                      autoDetectBullets: autoDetect,
-                    );
-                    if (mounted) {
-                      _showSnack(
-                        success ? 'Downloaded as $format!' : 'Download failed',
-                        success ? _green : _red,
-                      );
-                    }
-                  },
-                  onQRCode: () async {
-                    try {
-                      final result = await QRService.generateQr(doc['id']);
-                      final qrBase64 = result['qr_base64'];
-                      if (qrBase64 == null || qrBase64.isEmpty)
-                        throw "QR data missing";
-                      if (!mounted) return;
-                      showDialog(
-                        context: context,
-                        useRootNavigator: true,
-                        builder:
-                            (_) => Dialog(
-                              child: Padding(
-                                padding: const EdgeInsets.all(20),
-                                child: Image.memory(
-                                  base64Decode(qrBase64),
-                                  width: 250,
-                                  height: 250,
-                                ),
-                              ),
-                            ),
-                      );
-                    } catch (e) {
-                      _showSnack('Failed to generate QR: $e', _red);
-                    }
-                  },
+      builder: (_) => ExportDialog(
+        onExport: (
+          format, {
+          bool applyBullets = true,
+          bool autoDetect = true,
+        }) async {
+          final docProvider = context.read<DocumentProvider>();
+          final authProvider = Provider.of<AuthProvider>(
+            context,
+            listen: false,
+          );
+          final success = await docProvider.downloadFormattedDocument(
+            doc['id'],
+            authProvider.userId!,
+            format: format,
+            applyBullets: applyBullets,
+            autoDetectBullets: autoDetect,
+          );
+          if (mounted) {
+            _showSnack(
+              success ? 'Downloaded as $format!' : 'Download failed',
+              success ? _green : _red,
+            );
+          }
+        },
+        onQRCode: () async {
+          try {
+            final result = await QRService.generateQr(doc['id']);
+            final qrBase64 = result['qr_base64'];
+            if (qrBase64 == null || qrBase64.isEmpty) throw "QR data missing";
+            if (!mounted) return;
+            showDialog(
+              context: context,
+              useRootNavigator: true,
+              builder: (_) => Dialog(
+                child: Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: Image.memory(
+                    base64Decode(qrBase64),
+                    width: 250,
+                    height: 250,
+                  ),
                 ),
               ),
-            ),
-          ),
+            );
+          } catch (e) {
+            _showSnack('Failed to generate QR: $e', _red);
+          }
+        },
+      ),
     );
   }
 
@@ -4246,7 +4276,37 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
                   widget.freeformAnalysis ? FontWeight.w600 : FontWeight.w400,
             ),
           ),
-          const SizedBox(width: 20),
+          const SizedBox(width: 12),
+          if (!widget.freeformAnalysis) ...[
+            OutlinedButton.icon(
+              onPressed: _isSavingFormatted ? null : _saveFormattedDocument,
+              icon: _isSavingFormatted
+                  ? const SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : Icon(
+                      _formattedSaved
+                          ? Icons.check_circle_outline
+                          : Icons.save_outlined,
+                      size: 16,
+                    ),
+              label: Text(
+                _isSavingFormatted
+                    ? 'Saving...'
+                    : (_formattedSaved
+                        ? 'Saved to My Reports'
+                        : 'Save Formatted Document'),
+              ),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: _green,
+                side: BorderSide(color: _green),
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              ),
+            ),
+            const SizedBox(width: 10),
+          ],
           ElevatedButton.icon(
             onPressed: () => _handleDownload({'id': widget.documentId}),
             icon: const Icon(Icons.download, size: 16),
@@ -8702,33 +8762,69 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
           ),
           const SizedBox(width: 12),
           _isFixApplied
-              ? ElevatedButton.icon(
-                onPressed: _isDownloading ? null : _downloadDirectly,
-                icon:
-                    _isDownloading
-                        ? const SizedBox(
-                          width: 14,
-                          height: 14,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
-                          ),
-                        )
-                        : const Icon(Icons.download, size: 16),
-                label: Text(
-                  _isDownloading
-                      ? 'Downloading...'
-                      : 'Download Formatted Document',
-                ),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: _green,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 20,
-                    vertical: 12,
-                  ),
-                ),
-              )
+              ? Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    OutlinedButton.icon(
+                      onPressed:
+                          _isSavingFormatted ? null : _saveFormattedDocument,
+                      icon: _isSavingFormatted
+                          ? const SizedBox(
+                              width: 14,
+                              height: 14,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : Icon(
+                              _formattedSaved
+                                  ? Icons.check_circle_outline
+                                  : Icons.save_outlined,
+                              size: 16,
+                            ),
+                      label: Text(
+                        _isSavingFormatted
+                            ? 'Saving...'
+                            : (_formattedSaved
+                                ? 'Saved'
+                                : 'Save Formatted Document'),
+                      ),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: _green,
+                        side: BorderSide(color: _green),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 12,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    ElevatedButton.icon(
+                      onPressed: _isDownloading ? null : _downloadDirectly,
+                      icon: _isDownloading
+                          ? const SizedBox(
+                              width: 14,
+                              height: 14,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                          : const Icon(Icons.download, size: 16),
+                      label: Text(
+                        _isDownloading
+                            ? 'Downloading...'
+                            : 'Download Formatted Document',
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: _green,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 20,
+                          vertical: 12,
+                        ),
+                      ),
+                    ),
+                  ],
+                )
               : ElevatedButton.icon(
                 onPressed: _isApplyingFix ? null : _applyAllFixesAndStyles,
                 icon:

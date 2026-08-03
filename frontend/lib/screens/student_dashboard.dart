@@ -2000,7 +2000,8 @@ class _StudentDashboardState extends State<StudentDashboard> {
                     crossAxisCount: 3,
                     crossAxisSpacing: 24,
                     mainAxisSpacing: 24,
-                    childAspectRatio: 0.85,
+                    // Taller cards so Unformatted / Formatted actions fit cleanly.
+                    childAspectRatio: 0.72,
                   ),
                   itemCount: paginatedDocs.length,
                   itemBuilder: (context, index) {
@@ -2097,51 +2098,79 @@ class _StudentDashboardState extends State<StudentDashboard> {
                                       color: _p.textSecondary,
                                     ),
                                   ),
+                                  if (doc['has_formatted'] == true) ...[
+                                    SizedBox(height: 6),
+                                    Container(
+                                      padding: EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                      decoration: BoxDecoration(
+                                        color: Color(0xFF10B981).withOpacity(0.12),
+                                        borderRadius: BorderRadius.circular(6),
+                                      ),
+                                      child: Text(
+                                        'Formatted + Unformatted available',
+                                        style: TextStyle(
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.w600,
+                                          color: Color(0xFF059669),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
                                   Spacer(),
-                                  // Action Buttons
+                                  // Version access + actions
                                   Row(
                                     children: [
-                                      if (DevUserConfig.hasFypModule) ...[
-                                        Expanded(
-                                          child: ElevatedButton.icon(
-                                            onPressed: () => _sendReportToSupervisor(doc),
-                                            icon: Icon(Icons.send_rounded, size: 14),
-                                            label: Text(
-                                              'Send to Supervisor',
-                                              style: TextStyle(
-                                                fontSize: 11,
-                                                fontWeight: FontWeight.w600,
-                                              ),
-                                            ),
-                                            style: ElevatedButton.styleFrom(
-                                              backgroundColor: Color(0xFF10B981),
-                                              foregroundColor: Colors.white,
-                                              padding: EdgeInsets.symmetric(vertical: 8),
-                                              shape: RoundedRectangleBorder(
-                                                borderRadius: BorderRadius.circular(6),
-                                              ),
-                                            ),
-                                          ),
-                                        ),
-                                        SizedBox(width: 6),
-                                      ],
                                       Expanded(
-                                        child: OutlinedButton.icon(
-                                          onPressed: () => _handleDownload(doc),
-                                          icon: Icon(Icons.download, size: 14),
-                                          label: Text(
-                                            'Download',
-                                            style: TextStyle(
-                                              fontSize: 11,
-                                              fontWeight: FontWeight.w600,
-                                            ),
+                                        child: OutlinedButton(
+                                          onPressed: () => _handleDownloadVersion(
+                                            doc,
+                                            version: 'unformatted',
                                           ),
                                           style: OutlinedButton.styleFrom(
-                                            foregroundColor: _p.accent,
-                                            side: BorderSide(color: _p.accent),
+                                            foregroundColor: _p.textPrimary,
+                                            side: BorderSide(color: _p.border),
                                             padding: EdgeInsets.symmetric(vertical: 8),
                                             shape: RoundedRectangleBorder(
                                               borderRadius: BorderRadius.circular(6),
+                                            ),
+                                          ),
+                                          child: Text(
+                                            'Unformatted',
+                                            style: TextStyle(
+                                              fontSize: 10,
+                                              fontWeight: FontWeight.w700,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                      SizedBox(width: 6),
+                                      Expanded(
+                                        child: OutlinedButton(
+                                          onPressed: doc['has_formatted'] == true
+                                              ? () => _handleDownloadVersion(
+                                                    doc,
+                                                    version: 'formatted',
+                                                  )
+                                              : () => _showFormattedMissingHint(),
+                                          style: OutlinedButton.styleFrom(
+                                            foregroundColor: doc['has_formatted'] == true
+                                                ? _p.accent
+                                                : _p.textMuted,
+                                            side: BorderSide(
+                                              color: doc['has_formatted'] == true
+                                                  ? _p.accent
+                                                  : _p.border,
+                                            ),
+                                            padding: EdgeInsets.symmetric(vertical: 8),
+                                            shape: RoundedRectangleBorder(
+                                              borderRadius: BorderRadius.circular(6),
+                                            ),
+                                          ),
+                                          child: Text(
+                                            'Formatted',
+                                            style: TextStyle(
+                                              fontSize: 10,
+                                              fontWeight: FontWeight.w700,
                                             ),
                                           ),
                                         ),
@@ -2155,12 +2184,15 @@ class _StudentDashboardState extends State<StudentDashboard> {
                                             _showPreview(doc);
                                           } else if (value == 'edit') {
                                             _showEditDialog(doc, auth.userId!);
+                                          } else if (value == 'send' &&
+                                              DevUserConfig.hasFypModule) {
+                                            _sendReportToSupervisor(doc);
                                           } else if (value == 'delete') {
                                             _handleDelete(doc);
                                           }
                                         },
-                                        itemBuilder: (context) => const [
-                                          PopupMenuItem(
+                                        itemBuilder: (context) => [
+                                          const PopupMenuItem(
                                             value: 'analyze',
                                             child: Row(
                                               children: [
@@ -2170,7 +2202,18 @@ class _StudentDashboardState extends State<StudentDashboard> {
                                               ],
                                             ),
                                           ),
-                                          PopupMenuItem(
+                                          if (DevUserConfig.hasFypModule)
+                                            const PopupMenuItem(
+                                              value: 'send',
+                                              child: Row(
+                                                children: [
+                                                  Icon(Icons.send_rounded, size: 16, color: Color(0xFF10B981)),
+                                                  SizedBox(width: 8),
+                                                  Text('Send to Supervisor'),
+                                                ],
+                                              ),
+                                            ),
+                                          const PopupMenuItem(
                                             value: 'preview',
                                             child: Row(
                                               children: [
@@ -2180,7 +2223,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
                                               ],
                                             ),
                                           ),
-                                          PopupMenuItem(
+                                          const PopupMenuItem(
                                             value: 'edit',
                                             child: Row(
                                               children: [
@@ -2190,7 +2233,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
                                               ],
                                             ),
                                           ),
-                                          PopupMenuItem(
+                                          const PopupMenuItem(
                                             value: 'delete',
                                             child: Row(
                                               children: [
@@ -2550,6 +2593,26 @@ class _StudentDashboardState extends State<StudentDashboard> {
             ),
           ),
           SizedBox(height: 12),
+          if (doc['has_formatted'] == true)
+            Padding(
+              padding: EdgeInsets.only(bottom: 10),
+              child: Container(
+                width: double.infinity,
+                padding: EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: Color(0xFF10B981).withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  'Formatted + Unformatted available',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF059669),
+                  ),
+                ),
+              ),
+            ),
           if (DevUserConfig.hasFypModule)
             SizedBox(
               width: double.infinity,
@@ -2571,25 +2634,63 @@ class _StudentDashboardState extends State<StudentDashboard> {
                 ),
               ),
             ),
-          SizedBox(height: 8),
-          SizedBox(
-            width: double.infinity,
-            height: 40,
-            child: OutlinedButton.icon(
-              onPressed: () => _handleDownload(doc),
-              icon: Icon(Icons.download_rounded, size: 18),
-              label: Text(
-                'Download',
-                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
-              ),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: _p.accent,
-                side: BorderSide(color: _p.accent),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10),
+          if (DevUserConfig.hasFypModule) SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: SizedBox(
+                  height: 40,
+                  child: OutlinedButton(
+                    onPressed: () => _handleDownloadVersion(
+                      doc,
+                      version: 'unformatted',
+                    ),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: _p.textPrimary,
+                      side: BorderSide(color: _p.border),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                    child: Text(
+                      'Unformatted',
+                      style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12),
+                    ),
+                  ),
                 ),
               ),
-            ),
+              SizedBox(width: 8),
+              Expanded(
+                child: SizedBox(
+                  height: 40,
+                  child: OutlinedButton(
+                    onPressed: doc['has_formatted'] == true
+                        ? () => _handleDownloadVersion(
+                              doc,
+                              version: 'formatted',
+                            )
+                        : () => _showFormattedMissingHint(),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: doc['has_formatted'] == true
+                          ? _p.accent
+                          : _p.textMuted,
+                      side: BorderSide(
+                        color: doc['has_formatted'] == true
+                            ? _p.accent
+                            : _p.border,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                    child: Text(
+                      'Formatted',
+                      style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12),
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -4217,97 +4318,193 @@ class _StudentDashboardState extends State<StudentDashboard> {
     }
   }
 
-void _handleDownload(Map<String, dynamic> doc) {
-  // Mobile Reports: only PDF / Word → save to phone files.
-  if (isCompact(context)) {
-    _showMobileDownloadSheet(doc);
-    return;
+  void _showFormattedMissingHint() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          'No formatted version yet. Open Analyze, apply fixes, then tap Save Formatted Document.',
+        ),
+        backgroundColor: _p.accent,
+      ),
+    );
   }
 
-  showDialog(
-    context: context,
-    builder: (dialogContext) => ExportDialog(
-      onExport: (format, {bool applyBullets = true, bool autoDetect = true}) async {
-        final docProvider = context.read<DocumentProvider>();
-         final authProvider = Provider.of<AuthProvider>(context, listen: false);
-            final userId = authProvider.userId;
-        try {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Downloading document as $format...'),
-              backgroundColor: _p.accent,
-            ),
-          );
+  /// Access Unformatted (original upload) or Formatted (saved) from My Reports.
+  void _handleDownloadVersion(
+    Map<String, dynamic> doc, {
+    required String version,
+  }) {
+    final isFormatted = version == 'formatted';
+    if (isFormatted && doc['has_formatted'] != true) {
+      _showFormattedMissingHint();
+      return;
+    }
 
-          final success = await docProvider.downloadFormattedDocument(
-            doc['id'],
-            userId!,
-            format: format,
-            applyBullets: applyBullets,
-            autoDetectBullets: autoDetect,
-          );
+    if (!isFormatted) {
+      _downloadOriginalReport(doc);
+      return;
+    }
 
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(success
-                    ? 'Document downloaded as $format successfully!'
-                    : 'Download failed: ${docProvider.errorMessage}'),
-                backgroundColor: success ? Colors.green : Colors.red,
-              ),
-            );
-          }
-        } catch (e) {
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text('Error: $e'),
-                backgroundColor: Colors.red,
-              ),
-            );
-          }
-        }
-      },
-
-    onQRCode: () async {
-  try {
-    final result = await QRService.generateQr(doc['id']);
-
-    final qrBase64 = result['qr_base64'];
-    if (qrBase64 == null || qrBase64.isEmpty) throw "QR data missing";
-
-    if (!mounted) return;
+    // Formatted: let user pick PDF / Word (same as before).
+    if (isCompact(context)) {
+      _showMobileDownloadSheet(doc, savedFormattedOnly: true);
+      return;
+    }
 
     showDialog(
       context: context,
-      useRootNavigator: true,
-      builder: (_) => Dialog(
-        child: Container(
-          padding: EdgeInsets.all(20),
-          child: Image.memory(
-            base64Decode(qrBase64),
-            width: 250,
-            height: 250,
-            errorBuilder: (_, __, ___) => Text('Failed to load QR'),
-          ),
-        ),
+      builder: (dialogContext) => ExportDialog(
+        onExport: (format, {bool applyBullets = true, bool autoDetect = true}) async {
+          final docProvider = context.read<DocumentProvider>();
+          final authProvider = Provider.of<AuthProvider>(context, listen: false);
+          final userId = authProvider.userId;
+          try {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Downloading formatted document as $format...'),
+                backgroundColor: _p.accent,
+              ),
+            );
+
+            final success = await docProvider.downloadSavedFormattedDocument(
+              doc['id'],
+              userId!,
+              format: format,
+            );
+
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(
+                    success
+                        ? 'Formatted document downloaded as $format!'
+                        : 'Download failed: ${docProvider.errorMessage}',
+                  ),
+                  backgroundColor: success ? Colors.green : Colors.red,
+                ),
+              );
+            }
+          } catch (e) {
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('Error: $e'),
+                  backgroundColor: Colors.red,
+                ),
+              );
+            }
+          }
+        },
+        onQRCode: () async {
+          try {
+            final result = await QRService.generateQr(doc['id']);
+            final qrBase64 = result['qr_base64'];
+            if (qrBase64 == null || qrBase64.isEmpty) throw "QR data missing";
+            if (!mounted) return;
+            showDialog(
+              context: context,
+              useRootNavigator: true,
+              builder: (_) => Dialog(
+                child: Container(
+                  padding: EdgeInsets.all(20),
+                  child: Image.memory(
+                    base64Decode(qrBase64),
+                    width: 250,
+                    height: 250,
+                    errorBuilder: (_, __, ___) => Text('Failed to load QR'),
+                  ),
+                ),
+              ),
+            );
+          } catch (e) {
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text("Failed to generate QR: $e")),
+              );
+            }
+          }
+        },
       ),
     );
-  } catch (e) {
-    if (mounted) {
+  }
+
+  Future<void> _downloadOriginalReport(Map<String, dynamic> doc) async {
+    final docProvider = context.read<DocumentProvider>();
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final userId = authProvider.userId;
+    if (userId == null) return;
+
+    if (isCompact(context)) {
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => Center(
+          child: CircularProgressIndicator(color: _p.accent),
+        ),
+      );
+    } else {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Failed to generate QR: $e")),
+        SnackBar(
+          content: Text('Downloading unformatted report...'),
+          backgroundColor: _p.accent,
+        ),
+      );
+    }
+
+    final success = await docProvider.downloadOriginalDocument(doc['id'], userId);
+    if (!mounted) return;
+
+    if (isCompact(context)) {
+      Navigator.of(context, rootNavigator: true).pop();
+    }
+
+    final path = docProvider.lastDownloadedPath;
+    if (!success || path == null || path.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Download failed: ${docProvider.errorMessage ?? 'Unknown error'}',
+          ),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    final where = Platform.isAndroid ? 'Downloads' : 'Files';
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Unformatted report saved to $where'),
+        backgroundColor: Color(0xFF10B981),
+        action: isCompact(context)
+            ? SnackBarAction(
+                label: 'Open',
+                textColor: Colors.white,
+                onPressed: () => OpenFile.open(path),
+              )
+            : null,
+      ),
+    );
+
+    if (isCompact(context) && Platform.isIOS) {
+      await SharePlus.instance.share(
+        ShareParams(
+          files: [XFile(path)],
+          subject: path.split(Platform.pathSeparator).last,
+        ),
       );
     }
   }
-},
 
+  /// Kept for any remaining call sites that still expect a single Download action.
+  void _handleDownload(Map<String, dynamic> doc) {
+    _handleDownloadVersion(doc, version: 'formatted');
+  }
 
-    ),
-  );
-}
-
-  void _showMobileDownloadSheet(Map<String, dynamic> doc) {
+  void _showMobileDownloadSheet(
+    Map<String, dynamic> doc, {
+    bool savedFormattedOnly = false,
+  }) {
     showModalBottomSheet<void>(
       context: context,
       backgroundColor: _p.surface,
@@ -4334,7 +4531,7 @@ void _handleDownload(Map<String, dynamic> doc) {
                 ),
                 SizedBox(height: 16),
                 Text(
-                  'Download as',
+                  savedFormattedOnly ? 'Download formatted as' : 'Download as',
                   style: TextStyle(
                     color: _p.textPrimary,
                     fontSize: 18,
@@ -4357,7 +4554,11 @@ void _handleDownload(Map<String, dynamic> doc) {
                   subtitle: 'Best for viewing and sharing',
                   onTap: () {
                     Navigator.pop(sheetContext);
-                    _downloadToPhone(doc, 'pdf');
+                    _downloadToPhone(
+                      doc,
+                      'pdf',
+                      useSavedFormatted: savedFormattedOnly,
+                    );
                   },
                 ),
                 SizedBox(height: 10),
@@ -4368,7 +4569,11 @@ void _handleDownload(Map<String, dynamic> doc) {
                   subtitle: 'Editable .docx document',
                   onTap: () {
                     Navigator.pop(sheetContext);
-                    _downloadToPhone(doc, 'docx');
+                    _downloadToPhone(
+                      doc,
+                      'docx',
+                      useSavedFormatted: savedFormattedOnly,
+                    );
                   },
                 ),
               ],
@@ -4445,7 +4650,11 @@ void _handleDownload(Map<String, dynamic> doc) {
     );
   }
 
-  Future<void> _downloadToPhone(Map<String, dynamic> doc, String format) async {
+  Future<void> _downloadToPhone(
+    Map<String, dynamic> doc,
+    String format, {
+    bool useSavedFormatted = false,
+  }) async {
     final docProvider = context.read<DocumentProvider>();
     final userId = context.read<AuthProvider>().userId;
     if (userId == null) {
@@ -4468,11 +4677,17 @@ void _handleDownload(Map<String, dynamic> doc) {
     );
 
     try {
-      final success = await docProvider.downloadFormattedDocument(
-        doc['id'] as int,
-        userId,
-        format: format,
-      );
+      final success = useSavedFormatted
+          ? await docProvider.downloadSavedFormattedDocument(
+              doc['id'] as int,
+              userId,
+              format: format,
+            )
+          : await docProvider.downloadFormattedDocument(
+              doc['id'] as int,
+              userId,
+              format: format,
+            );
       if (!mounted) return;
       Navigator.of(context, rootNavigator: true).pop(); // close loading
 

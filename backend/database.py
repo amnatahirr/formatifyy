@@ -250,6 +250,8 @@ def init_db():
         cursor.execute("ALTER TABLE documents ADD COLUMN frontmatter_detection TEXT")
     if "is_freeform" not in document_columns:
         cursor.execute("ALTER TABLE documents ADD COLUMN is_freeform INTEGER DEFAULT 0")
+    if "formatted_file_path" not in document_columns:
+        cursor.execute("ALTER TABLE documents ADD COLUMN formatted_file_path TEXT")
 
     # 4c. Google Drive OAuth tokens + sync status
     cursor.execute("""
