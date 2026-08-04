@@ -6,13 +6,23 @@ Protected by X-Super-Admin-Key header (SUPER_ADMIN_KEY env / .env).
 
 from __future__ import annotations
 
+import logging
+import os
 import secrets
+import smtplib
+from email.message import EmailMessage
+from pathlib import Path
 from typing import Annotated, Any, Optional
 
+from dotenv import load_dotenv
 from fastapi import APIRouter, Body, Depends, Header, HTTPException, Query
 
 from database import get_db, hash_password
 from middleware.org_middleware import get_super_admin_key
+
+load_dotenv(Path(__file__).resolve().parent / ".env")
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/super-admin", tags=["Super Admin"])
 
@@ -23,6 +33,80 @@ def _require_super_admin(
     expected = get_super_admin_key()
     if not x_super_admin_key or x_super_admin_key.strip() != expected:
         raise HTTPException(status_code=401, detail="Invalid or missing X-Super-Admin-Key.")
+
+
+def _send_org_admin_credentials_email(
+    *,
+    admin_name: str,
+    admin_email: str,
+    admin_password: str,
+    org_name: str,
+    org_code: str,
+) -> dict[str, Any]:
+    """Email org admin login credentials (org code, email, password) via SMTP."""
+    display_name = (admin_name or "").strip() or admin_email.split("@")[0]
+    subject = f"Your Formatify Admin Account — {org_name}"
+    body = (
+        f"Hello {display_name},\n\n"
+        f"A Formatify organization admin account has been created for you.\n\n"
+        f"Organization: {org_name}\n"
+        f"Organization code: {org_code}\n"
+        f"Login email: {admin_email}\n"
+        f"Password: {admin_password}\n\n"
+        "How to sign in:\n"
+        "1. Open Formatify\n"
+        f"2. Enter organization code: {org_code}\n"
+        "3. Sign in with the email and password above\n"
+        "4. Change your password after first login if prompted\n\n"
+        "Keep this email private — it contains your login credentials.\n\n"
+        "— Formatify\n"
+    )
+
+    smtp_host = os.getenv("SMTP_HOST", "").strip()
+    smtp_port = int(os.getenv("SMTP_PORT", "587") or 587)
+    smtp_user = os.getenv("SMTP_USER", "").strip()
+    smtp_password = os.getenv("SMTP_PASSWORD", "").strip()
+    smtp_from = os.getenv("SMTP_FROM", smtp_user or "noreply@formatify.local").strip()
+
+    if not smtp_host or not smtp_user or not smtp_password:
+        logger.warning(
+            "SMTP not configured — org admin credentials for %s (org %s) were not emailed.",
+            admin_email,
+            org_code,
+        )
+        return {
+            "sent": False,
+            "simulated": True,
+            "message": (
+                "SMTP is not configured on the server. Credentials were not emailed; "
+                "share them with the admin manually."
+            ),
+        }
+
+    try:
+        message = EmailMessage()
+        message["Subject"] = subject
+        message["From"] = smtp_from
+        message["To"] = admin_email
+        message.set_content(body)
+
+        with smtplib.SMTP(smtp_host, smtp_port, timeout=20) as server:
+            server.starttls()
+            server.login(smtp_user, smtp_password)
+            server.send_message(message)
+        logger.info("Org admin credentials emailed to %s for org %s", admin_email, org_code)
+        return {
+            "sent": True,
+            "simulated": False,
+            "message": f"Login credentials emailed to {admin_email}.",
+        }
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("Failed to email org admin credentials to %s", admin_email)
+        return {
+            "sent": False,
+            "simulated": False,
+            "message": f"Could not email credentials: {exc}",
+        }
 
 
 def _org_dict(row) -> dict[str, Any]:
@@ -190,16 +274,37 @@ def create_organization(
         conn.commit()
         cursor.execute("SELECT * FROM organizations WHERE id = ?", (org_id,))
         org = _org_dict(cursor.fetchone())
+
+        email_result = None
+        if admin_payload:
+            email_result = _send_org_admin_credentials_email(
+                admin_name=admin_name,
+                admin_email=admin_email,
+                admin_password=admin_password,
+                org_name=name,
+                org_code=code,
+            )
+            admin_payload["credentials_email"] = email_result
+
+        if admin_payload and email_result and email_result.get("sent"):
+            message = (
+                "Organization created. Login email and password were sent to the admin."
+            )
+        elif admin_payload:
+            message = (
+                "Organization and admin created, but credentials email failed. "
+                "Share org code + password with the admin manually."
+            )
+        else:
+            message = "Organization created. Add an admin later or use signup."
+
         return {
             "success": True,
             "organization": org,
             "org_code": org.get("code"),
             "admin": admin_payload,
-            "message": (
-                "Organization and admin created. Share org_code + admin credentials only."
-                if admin_payload
-                else "Organization created. Add an admin later or use signup."
-            ),
+            "credentials_email": email_result,
+            "message": message,
         }
     except HTTPException:
         conn.rollback()

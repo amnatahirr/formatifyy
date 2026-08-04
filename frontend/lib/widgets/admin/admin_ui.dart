@@ -102,6 +102,45 @@ class AdminSubPage extends StatelessWidget {
     final content = onRefresh == null
         ? child
         : RefreshIndicator(onRefresh: onRefresh!, child: child);
+    final compact = isCompact(context);
+
+    if (compact) {
+      return Scaffold(
+        backgroundColor: AdminColors.background,
+        floatingActionButton: floatingActionButton,
+        appBar: AppBar(
+          backgroundColor: AdminColors.surface,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back_rounded),
+            onPressed: () => _handleBack(context),
+          ),
+          title: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.white,
+                ),
+              ),
+              if (subtitle != null)
+                Text(
+                  subtitle!,
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: Colors.white.withOpacity(0.55),
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+            ],
+          ),
+        ),
+        body: content,
+      );
+    }
 
     return Scaffold(
       backgroundColor: AdminColors.background,
@@ -112,7 +151,9 @@ class AdminSubPage extends StatelessWidget {
             width: 220,
             decoration: BoxDecoration(
               color: AdminColors.surface,
-              border: Border(right: BorderSide(color: AdminColors.border.withOpacity(0.55))),
+              border: Border(
+                right: BorderSide(color: AdminColors.border.withOpacity(0.55)),
+              ),
             ),
             child: SafeArea(
               child: Column(
@@ -128,7 +169,11 @@ class AdminSubPage extends StatelessWidget {
                             color: AdminColors.primary.withOpacity(0.2),
                             borderRadius: BorderRadius.circular(8),
                           ),
-                          child: const Icon(Icons.shield_rounded, color: AdminColors.primary, size: 18),
+                          child: const Icon(
+                            Icons.shield_rounded,
+                            color: AdminColors.primary,
+                            size: 18,
+                          ),
                         ),
                         const SizedBox(width: 10),
                         Expanded(
@@ -137,11 +182,18 @@ class AdminSubPage extends StatelessWidget {
                             children: [
                               const Text(
                                 'Admin Panel',
-                                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Colors.white),
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w700,
+                                  color: Colors.white,
+                                ),
                               ),
                               Text(
                                 'FORMATIFY',
-                                style: TextStyle(fontSize: 10, color: Colors.white.withOpacity(0.5)),
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  color: Colors.white.withOpacity(0.5),
+                                ),
                               ),
                             ],
                           ),
@@ -157,20 +209,33 @@ class AdminSubPage extends StatelessWidget {
                       borderRadius: BorderRadius.circular(10),
                       child: Container(
                         width: double.infinity,
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 12,
+                        ),
                         decoration: BoxDecoration(
                           color: AdminColors.primary.withOpacity(0.12),
                           borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: AdminColors.primary.withOpacity(0.3)),
+                          border: Border.all(
+                            color: AdminColors.primary.withOpacity(0.3),
+                          ),
                         ),
                         child: Row(
                           children: [
-                            Icon(Icons.arrow_back_rounded, size: 18, color: Colors.white.withOpacity(0.85)),
+                            Icon(
+                              Icons.arrow_back_rounded,
+                              size: 18,
+                              color: Colors.white.withOpacity(0.85),
+                            ),
                             const SizedBox(width: 10),
                             Expanded(
                               child: Text(
                                 'Back',
-                                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.white.withOpacity(0.9)),
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.white.withOpacity(0.9),
+                                ),
                               ),
                             ),
                           ],
@@ -182,15 +247,24 @@ class AdminSubPage extends StatelessWidget {
                     padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
                     child: Container(
                       width: double.infinity,
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 12,
+                      ),
                       decoration: BoxDecoration(
                         color: AdminColors.primary.withOpacity(0.16),
                         borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: AdminColors.primary.withOpacity(0.35)),
+                        border: Border.all(
+                          color: AdminColors.primary.withOpacity(0.35),
+                        ),
                       ),
                       child: Text(
                         title,
-                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AdminColors.primary),
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: AdminColors.primary,
+                        ),
                       ),
                     ),
                   ),
@@ -199,7 +273,10 @@ class AdminSubPage extends StatelessWidget {
                     padding: const EdgeInsets.all(16),
                     child: Text(
                       'Live backend data',
-                      style: TextStyle(fontSize: 11, color: Colors.white.withOpacity(0.45)),
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Colors.white.withOpacity(0.45),
+                      ),
                     ),
                   ),
                 ],
@@ -215,18 +292,32 @@ class AdminSubPage extends StatelessWidget {
                   padding: const EdgeInsets.fromLTRB(28, 22, 28, 18),
                   decoration: BoxDecoration(
                     color: AdminColors.surface,
-                    border: Border(bottom: BorderSide(color: AdminColors.border.withOpacity(0.7))),
+                    border: Border(
+                      bottom: BorderSide(
+                        color: AdminColors.border.withOpacity(0.7),
+                      ),
+                    ),
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
                         title,
-                        style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w700, color: Colors.white),
+                        style: const TextStyle(
+                          fontSize: 24,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.white,
+                        ),
                       ),
                       if (subtitle != null) ...[
                         const SizedBox(height: 4),
-                        Text(subtitle!, style: TextStyle(color: Colors.white.withOpacity(0.65), fontSize: 13)),
+                        Text(
+                          subtitle!,
+                          style: TextStyle(
+                            color: Colors.white.withOpacity(0.65),
+                            fontSize: 13,
+                          ),
+                        ),
                       ],
                     ],
                   ),
@@ -305,27 +396,47 @@ class AdminStatCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final color = accent ?? AdminColors.primary;
+    final compact = isCompact(context);
     return Container(
-      padding: const EdgeInsets.all(20),
+      width: double.infinity,
+      padding: EdgeInsets.all(compact ? 14 : 20),
       decoration: adminCardDecoration(),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisSize: MainAxisSize.min,
         children: [
           Container(
-            padding: const EdgeInsets.all(10),
+            padding: EdgeInsets.all(compact ? 8 : 10),
             decoration: BoxDecoration(
               color: color.withOpacity(0.14),
               borderRadius: BorderRadius.circular(10),
             ),
-            child: Icon(icon, color: color, size: 22),
+            child: Icon(icon, color: color, size: compact ? 18 : 22),
           ),
-          const SizedBox(height: 18),
+          SizedBox(height: compact ? 10 : 18),
           Text(
             value,
-            style: const TextStyle(fontSize: 30, fontWeight: FontWeight.w700, color: Colors.white),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: compact ? 24 : 30,
+              fontWeight: FontWeight.w700,
+              color: Colors.white,
+              height: 1.1,
+            ),
           ),
-          const SizedBox(height: 6),
-          Text(title, style: TextStyle(fontSize: 13, color: Colors.white.withOpacity(0.65))),
+          SizedBox(height: compact ? 4 : 6),
+          Text(
+            title,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: compact ? 12 : 13,
+              color: Colors.white.withOpacity(0.65),
+              height: 1.2,
+            ),
+          ),
         ],
       ),
     );
@@ -348,21 +459,35 @@ class AdminActionTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final compact = isCompact(context);
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(14),
       child: Container(
-        width: 220,
-        padding: const EdgeInsets.all(18),
+        width: compact ? double.infinity : 220,
+        padding: EdgeInsets.all(compact ? 14 : 18),
         decoration: adminCardDecoration(),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(icon, color: AdminColors.primary),
-            const SizedBox(height: 14),
-            Text(title, style: const TextStyle(fontWeight: FontWeight.w600, color: Colors.white, fontSize: 15)),
+            Icon(icon, color: AdminColors.primary, size: compact ? 22 : 24),
+            SizedBox(height: compact ? 10 : 14),
+            Text(
+              title,
+              style: TextStyle(
+                fontWeight: FontWeight.w600,
+                color: Colors.white,
+                fontSize: compact ? 14 : 15,
+              ),
+            ),
             const SizedBox(height: 6),
-            Text(subtitle, style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 12)),
+            Text(
+              subtitle,
+              style: TextStyle(
+                color: Colors.white.withOpacity(0.6),
+                fontSize: compact ? 11.5 : 12,
+              ),
+            ),
           ],
         ),
       ),
@@ -789,9 +914,10 @@ Widget adminResponsiveGrid({
               ? 3
               : width >= 620
                   ? 2
-                  : 2;
-      // Phone: 2-column compact tiles; avoid fixed aspect that clips tall cards.
-      final aspect = width < 620 ? 2.35 : (columns == 1 ? 2.8 : 1.45);
+                  : 1;
+      // Mobile: fixed row height so padding + icon + value + title fit.
+      // Wide layouts: aspect ratio keeps cards squat in multi-column grids.
+      final useFixedExtent = width < 620;
       return GridView.builder(
         shrinkWrap: true,
         physics: const NeverScrollableScrollPhysics(),
@@ -799,7 +925,8 @@ Widget adminResponsiveGrid({
           crossAxisCount: columns.clamp(1, 4),
           crossAxisSpacing: width < 620 ? 10 : 18,
           mainAxisSpacing: width < 620 ? 10 : 18,
-          childAspectRatio: aspect,
+          mainAxisExtent: useFixedExtent ? 132 : null,
+          childAspectRatio: useFixedExtent ? 1 : (columns == 1 ? 2.8 : 1.45),
         ),
         itemCount: itemCount,
         itemBuilder: itemBuilder,

@@ -16,17 +16,20 @@ import '../screens/admin_users_screen.dart';
 import '../screens/admin_verify_screen.dart';
 import '../services/super_admin_api_service.dart';
 import '../utils/logout_confirm.dart';
+import '../utils/responsive.dart';
 import '../widgets/admin/admin_ui.dart';
 
 class _AdminNavItem {
   final int id;
   final String label;
+  final String shortLabel;
   final IconData icon;
   final bool requiresFyp;
 
   const _AdminNavItem({
     required this.id,
     required this.label,
+    required this.shortLabel,
     required this.icon,
     this.requiresFyp = false,
   });
@@ -40,50 +43,102 @@ class AdminDashboard extends StatefulWidget {
 }
 
 class _AdminDashboardState extends State<AdminDashboard> {
+  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   int _selectedId = 0;
   bool _orgLoaded = false;
 
   static const _allItems = <_AdminNavItem>[
-    _AdminNavItem(id: 0, label: 'Overview', icon: Icons.dashboard_rounded),
+    _AdminNavItem(
+      id: 0,
+      label: 'Overview',
+      shortLabel: 'Home',
+      icon: Icons.dashboard_rounded,
+    ),
     _AdminNavItem(
       id: 1,
       label: 'Department Manager',
+      shortLabel: 'Depts',
       icon: Icons.apartment_rounded,
     ),
     _AdminNavItem(
       id: 2,
       label: 'Supervisors',
+      shortLabel: 'Supers',
       icon: Icons.supervisor_account_rounded,
       requiresFyp: true,
     ),
-    _AdminNavItem(id: 3, label: 'Template Manager', icon: Icons.layers_rounded),
+    _AdminNavItem(
+      id: 3,
+      label: 'Template Manager',
+      shortLabel: 'Templates',
+      icon: Icons.layers_rounded,
+    ),
     _AdminNavItem(
       id: 4,
       label: 'Deadlines',
+      shortLabel: 'Dates',
       icon: Icons.event_note_rounded,
       requiresFyp: true,
     ),
     _AdminNavItem(
       id: 5,
       label: 'Semester Deadlines',
+      shortLabel: 'Sem',
       icon: Icons.event_available_rounded,
       requiresFyp: true,
     ),
-    _AdminNavItem(id: 6, label: 'Users', icon: Icons.people_rounded),
+    _AdminNavItem(
+      id: 6,
+      label: 'Users',
+      shortLabel: 'Users',
+      icon: Icons.people_rounded,
+    ),
     _AdminNavItem(
       id: 7,
       label: 'Universities',
+      shortLabel: 'Unis',
       icon: Icons.school_rounded,
       requiresFyp: true,
     ),
-    _AdminNavItem(id: 8, label: 'Analytics', icon: Icons.bar_chart_rounded),
-    _AdminNavItem(id: 9, label: 'Verify Files', icon: Icons.fact_check_rounded),
-    _AdminNavItem(id: 10, label: 'Settings', icon: Icons.settings_rounded),
+    _AdminNavItem(
+      id: 8,
+      label: 'Analytics',
+      shortLabel: 'Stats',
+      icon: Icons.bar_chart_rounded,
+    ),
+    _AdminNavItem(
+      id: 9,
+      label: 'Verify Files',
+      shortLabel: 'Verify',
+      icon: Icons.fact_check_rounded,
+    ),
+    _AdminNavItem(
+      id: 10,
+      label: 'Settings',
+      shortLabel: 'More',
+      icon: Icons.settings_rounded,
+    ),
   ];
+
+  /// Primary destinations shown in the mobile bottom bar.
+  static const _mobilePrimaryIds = <int>[0, 1, 3, 6, 10];
 
   List<_AdminNavItem> get _visibleItems => _allItems
       .where((item) => !item.requiresFyp || DevUserConfig.hasFypModule)
       .toList();
+
+  List<_AdminNavItem> get _mobilePrimaryItems {
+    final visible = _visibleItems;
+    return _mobilePrimaryIds
+        .map((id) {
+          for (final item in visible) {
+            if (item.id == id) return item;
+          }
+          return null;
+        })
+        .whereType<_AdminNavItem>()
+        .toList();
+  }
 
   @override
   void initState() {
@@ -154,23 +209,131 @@ class _AdminDashboardState extends State<AdminDashboard> {
     }
   }
 
+  void _selectNav(_AdminNavItem item, {bool closeDrawer = false}) {
+    setState(() => _selectedId = item.id);
+    if (closeDrawer) {
+      Navigator.of(context).maybePop();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final items = _visibleItems;
+    final compact = isCompact(context);
+
     return Scaffold(
+      key: _scaffoldKey,
       backgroundColor: AdminColors.background,
-      body: Row(
-        children: [
-          _buildSidebar(items),
-          Expanded(
-            child: Column(
+      drawer: compact ? _buildDrawer(items) : null,
+      body: compact
+          ? SafeArea(
+              child: Column(
+                children: [
+                  _buildTopBar(compact: true),
+                  Expanded(child: _buildContent()),
+                ],
+              ),
+            )
+          : Row(
               children: [
-                _buildTopBar(),
-                Expanded(child: _buildContent()),
+                _buildSidebar(items),
+                Expanded(
+                  child: Column(
+                    children: [
+                      _buildTopBar(compact: false),
+                      Expanded(child: _buildContent()),
+                    ],
+                  ),
+                ),
               ],
             ),
-          ),
-        ],
+      bottomNavigationBar: compact ? _buildMobileBottomNav() : null,
+    );
+  }
+
+  Widget _buildDrawer(List<_AdminNavItem> items) {
+    return Drawer(
+      backgroundColor: AdminColors.surface,
+      child: SafeArea(
+        child: Column(
+          children: [
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.fromLTRB(20, 20, 20, 16),
+              decoration: BoxDecoration(
+                border: Border(
+                  bottom: BorderSide(color: AdminColors.border.withOpacity(0.5)),
+                ),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: AdminColors.primary.withOpacity(0.2),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Icon(
+                      Icons.shield_rounded,
+                      color: AdminColors.primary,
+                      size: 20,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Admin Panel',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.white,
+                          ),
+                        ),
+                        Text(
+                          DevUserConfig.orgCode,
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Colors.white.withOpacity(0.5),
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: ListView.builder(
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                itemCount: items.length,
+                itemBuilder: (context, index) {
+                  return _buildNavItem(items[index], closeDrawer: true);
+                },
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+              child: OutlinedButton.icon(
+                onPressed: () {
+                  Navigator.of(context).maybePop();
+                  confirmAndLogout(context);
+                },
+                icon: const Icon(Icons.logout_rounded, size: 18),
+                label: const Text('Logout'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.white70,
+                  side: BorderSide(color: AdminColors.border.withOpacity(0.8)),
+                  minimumSize: const Size(double.infinity, 44),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -201,7 +364,11 @@ class _AdminDashboardState extends State<AdminDashboard> {
                     color: AdminColors.primary.withOpacity(0.2),
                     borderRadius: BorderRadius.circular(8),
                   ),
-                  child: const Icon(Icons.shield_rounded, color: AdminColors.primary, size: 20),
+                  child: const Icon(
+                    Icons.shield_rounded,
+                    color: AdminColors.primary,
+                    size: 20,
+                  ),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -210,11 +377,18 @@ class _AdminDashboardState extends State<AdminDashboard> {
                     children: [
                       const Text(
                         'Admin Panel',
-                        style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: Colors.white),
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.white,
+                        ),
                       ),
                       Text(
                         DevUserConfig.orgCode,
-                        style: TextStyle(fontSize: 11, color: Colors.white.withOpacity(0.5)),
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: Colors.white.withOpacity(0.5),
+                        ),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
@@ -230,8 +404,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
               child: ListView.builder(
                 itemCount: items.length,
                 itemBuilder: (context, index) {
-                  final item = items[index];
-                  return _buildNavItem(item);
+                  return _buildNavItem(items[index]);
                 },
               ),
             ),
@@ -242,7 +415,10 @@ class _AdminDashboardState extends State<AdminDashboard> {
               child: SizedBox(
                 width: 16,
                 height: 16,
-                child: CircularProgressIndicator(strokeWidth: 2, color: AdminColors.primary),
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: AdminColors.primary,
+                ),
               ),
             ),
           Container(
@@ -255,12 +431,14 @@ class _AdminDashboardState extends State<AdminDashboard> {
             child: Consumer<AuthProvider>(
               builder: (context, auth, _) {
                 final displayName =
-                    auth.currentUser?.trim().isNotEmpty == true ? auth.currentUser! : 'Admin';
+                    auth.currentUser?.trim().isNotEmpty == true
+                        ? auth.currentUser!
+                        : 'Admin';
                 final subtitle = auth.userEmail?.trim().isNotEmpty == true
                     ? auth.userEmail!
                     : (auth.userRole ?? 'Administrator');
                 return GestureDetector(
-                  onLongPress: _showLogoutDialog,
+                  onLongPress: () => confirmAndLogout(context),
                   child: Row(
                     children: [
                       Container(
@@ -272,7 +450,10 @@ class _AdminDashboardState extends State<AdminDashboard> {
                           ),
                           borderRadius: BorderRadius.circular(8),
                         ),
-                        child: const Icon(Icons.person_rounded, color: Colors.white),
+                        child: const Icon(
+                          Icons.person_rounded,
+                          color: Colors.white,
+                        ),
                       ),
                       const SizedBox(width: 12),
                       Expanded(
@@ -291,7 +472,10 @@ class _AdminDashboardState extends State<AdminDashboard> {
                             ),
                             Text(
                               subtitle,
-                              style: TextStyle(fontSize: 10, color: Colors.white.withOpacity(0.5)),
+                              style: TextStyle(
+                                fontSize: 10,
+                                color: Colors.white.withOpacity(0.5),
+                              ),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                             ),
@@ -309,25 +493,31 @@ class _AdminDashboardState extends State<AdminDashboard> {
     );
   }
 
-  Widget _buildNavItem(_AdminNavItem item) {
+  Widget _buildNavItem(_AdminNavItem item, {bool closeDrawer = false}) {
     final isSelected = _selectedId == item.id;
     return GestureDetector(
-      onTap: () => setState(() => _selectedId = item.id),
+      onTap: () => _selectNav(item, closeDrawer: closeDrawer),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 180),
         margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
         decoration: BoxDecoration(
-          color: isSelected ? AdminColors.primary.withOpacity(0.15) : Colors.transparent,
+          color: isSelected
+              ? AdminColors.primary.withOpacity(0.15)
+              : Colors.transparent,
           borderRadius: BorderRadius.circular(10),
-          border: isSelected ? Border.all(color: AdminColors.primary.withOpacity(0.35)) : null,
+          border: isSelected
+              ? Border.all(color: AdminColors.primary.withOpacity(0.35))
+              : null,
         ),
         child: Row(
           children: [
             Icon(
               item.icon,
               size: 20,
-              color: isSelected ? AdminColors.primary : Colors.white.withOpacity(0.6),
+              color: isSelected
+                  ? AdminColors.primary
+                  : Colors.white.withOpacity(0.6),
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -336,7 +526,9 @@ class _AdminDashboardState extends State<AdminDashboard> {
                 style: TextStyle(
                   fontSize: 13,
                   fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
-                  color: isSelected ? AdminColors.primary : Colors.white.withOpacity(0.7),
+                  color: isSelected
+                      ? AdminColors.primary
+                      : Colors.white.withOpacity(0.7),
                 ),
               ),
             ),
@@ -346,44 +538,131 @@ class _AdminDashboardState extends State<AdminDashboard> {
     );
   }
 
-  Widget _buildTopBar() {
+  Widget _buildMobileBottomNav() {
+    final items = _mobilePrimaryItems;
+    final selectedNav = items.indexWhere((item) => item.id == _selectedId);
+    final showMoreSelected = selectedNav < 0;
+
     return Container(
-      height: 72,
+      decoration: BoxDecoration(
+        color: AdminColors.surface,
+        border: Border(
+          top: BorderSide(color: AdminColors.border.withOpacity(0.5)),
+        ),
+      ),
+      child: SafeArea(
+        top: false,
+        child: SizedBox(
+          height: 64,
+          child: Row(
+            children: [
+              for (final item in items)
+                Expanded(
+                  child: _buildMobileNavButton(
+                    icon: item.icon,
+                    label: item.shortLabel,
+                    selected: item.id == _selectedId,
+                    onTap: () => _selectNav(item),
+                  ),
+                ),
+              Expanded(
+                child: _buildMobileNavButton(
+                  icon: Icons.menu_rounded,
+                  label: 'Menu',
+                  selected: showMoreSelected,
+                  onTap: () => _scaffoldKey.currentState?.openDrawer(),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMobileNavButton({
+    required IconData icon,
+    required String label,
+    required bool selected,
+    required VoidCallback onTap,
+  }) {
+    final color =
+        selected ? AdminColors.primary : Colors.white.withOpacity(0.45);
+
+    return InkWell(
+      onTap: onTap,
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(icon, size: 22, color: color),
+          const SizedBox(height: 4),
+          Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: 10,
+              fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+              color: color,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTopBar({required bool compact}) {
+    return Container(
+      height: compact ? 56 : 72,
       decoration: BoxDecoration(
         color: AdminColors.surface,
         border: Border(
           bottom: BorderSide(color: AdminColors.border.withOpacity(0.5)),
         ),
       ),
-      padding: const EdgeInsets.symmetric(horizontal: 28),
+      padding: EdgeInsets.symmetric(horizontal: compact ? 8 : 28),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                _selectedLabel,
-                style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w700, color: Colors.white),
-              ),
-              Text(
-                _selectedSubtitle,
-                style: TextStyle(fontSize: 12, color: Colors.white.withOpacity(0.55)),
-              ),
-            ],
+          if (compact)
+            IconButton(
+              icon: const Icon(Icons.menu_rounded),
+              color: Colors.white,
+              tooltip: 'Menu',
+              onPressed: () => _scaffoldKey.currentState?.openDrawer(),
+            ),
+          Expanded(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _selectedLabel,
+                  style: TextStyle(
+                    fontSize: compact ? 17 : 24,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.white,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                if (!compact)
+                  Text(
+                    _selectedSubtitle,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.white.withOpacity(0.55),
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+              ],
+            ),
           ),
-          Row(
-            children: [
-              Container(width: 1, height: 24, color: AdminColors.border),
-              const SizedBox(width: 12),
-              IconButton(
-                icon: const Icon(Icons.logout_rounded),
-                color: AdminColors.primary,
-                tooltip: 'Logout',
-                onPressed: () => confirmAndLogout(context),
-              ),
-            ],
+          IconButton(
+            icon: const Icon(Icons.logout_rounded),
+            color: AdminColors.primary,
+            tooltip: 'Logout',
+            onPressed: () => confirmAndLogout(context),
           ),
         ],
       ),
@@ -419,9 +698,5 @@ class _AdminDashboardState extends State<AdminDashboard> {
       default:
         return const SizedBox();
     }
-  }
-
-  void _showLogoutDialog() {
-    confirmAndLogout(context);
   }
 }

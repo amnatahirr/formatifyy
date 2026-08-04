@@ -1,3 +1,5 @@
+import 'dart:io' show Platform;
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -6,6 +8,10 @@ import 'package:shared_preferences/shared_preferences.dart';
 ///
 /// Uses secure storage when available; falls back to SharedPreferences if
 /// Keychain/secure-storage hangs or fails (common on first macOS run).
+///
+/// On macOS desktop debug builds without a signed development certificate,
+/// Keychain APIs return errSecMissingEntitlement (-34018). We skip secure
+/// storage there and use SharedPreferences only.
 class AuthTokenStore {
   AuthTokenStore._();
 
@@ -16,6 +22,16 @@ class AuthTokenStore {
   );
 
   static String? _memoryToken;
+
+  /// Keychain needs signing entitlements on macOS; unsigned local runs fail.
+  static bool get _useSecureStorage {
+    if (kIsWeb) return false;
+    try {
+      return !Platform.isMacOS;
+    } catch (_) {
+      return true;
+    }
+  }
 
   static String? get token => _memoryToken;
 
@@ -29,11 +45,13 @@ class AuthTokenStore {
   }
 
   static Future<void> load() async {
-    try {
-      _memoryToken = await _withTimeout<String?>(_storage.read(key: _key));
-    } catch (e) {
-      debugPrint('[AuthTokenStore] secure load failed: $e');
-      _memoryToken = null;
+    if (_useSecureStorage) {
+      try {
+        _memoryToken = await _withTimeout<String?>(_storage.read(key: _key));
+      } catch (e) {
+        debugPrint('[AuthTokenStore] secure load failed: $e');
+        _memoryToken = null;
+      }
     }
     if ((_memoryToken ?? '').isEmpty) {
       try {
@@ -48,10 +66,12 @@ class AuthTokenStore {
 
   static Future<void> save(String token) async {
     _memoryToken = token;
-    try {
-      await _withTimeout<void>(_storage.write(key: _key, value: token));
-    } catch (e) {
-      debugPrint('[AuthTokenStore] secure save failed: $e');
+    if (_useSecureStorage) {
+      try {
+        await _withTimeout<void>(_storage.write(key: _key, value: token));
+      } catch (e) {
+        debugPrint('[AuthTokenStore] secure save failed: $e');
+      }
     }
     try {
       final prefs = await SharedPreferences.getInstance()
@@ -64,10 +84,12 @@ class AuthTokenStore {
 
   static Future<void> clear() async {
     _memoryToken = null;
-    try {
-      await _withTimeout<void>(_storage.delete(key: _key));
-    } catch (e) {
-      debugPrint('[AuthTokenStore] secure clear failed: $e');
+    if (_useSecureStorage) {
+      try {
+        await _withTimeout<void>(_storage.delete(key: _key));
+      } catch (e) {
+        debugPrint('[AuthTokenStore] secure clear failed: $e');
+      }
     }
     try {
       final prefs = await SharedPreferences.getInstance()

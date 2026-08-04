@@ -55,6 +55,9 @@ class _LoginScreenState extends State<LoginScreen> {
   String? _orgResolveError;
   bool _allowSelfSignup = true;
 
+  int _logoTapCount = 0;
+  DateTime? _lastLogoTapAt;
+
 
   List<Map<String, dynamic>> _departments = const [];
   bool _loadingDepartments = false;
@@ -349,7 +352,28 @@ class _LoginScreenState extends State<LoginScreen> {
         ),
       ],
     );
-    return centered ? Center(child: mark) : mark;
+    final tappable = GestureDetector(
+      onTap: _onLogoTapped,
+      behavior: HitTestBehavior.opaque,
+      child: mark,
+    );
+    return centered ? Center(child: tappable) : tappable;
+  }
+
+  void _onLogoTapped() {
+    final now = DateTime.now();
+    if (_lastLogoTapAt == null ||
+        now.difference(_lastLogoTapAt!) > const Duration(seconds: 2)) {
+      _logoTapCount = 1;
+    } else {
+      _logoTapCount += 1;
+    }
+    _lastLogoTapAt = now;
+    if (_logoTapCount >= 5) {
+      _logoTapCount = 0;
+      _lastLogoTapAt = null;
+      Navigator.of(context).pushNamed('/super-admin');
+    }
   }
 
   // ── Auth card ───────────────────────────────────────────────────────────
@@ -439,14 +463,6 @@ class _LoginScreenState extends State<LoginScreen> {
         _buildPrimaryButton(
           label: _resolvingOrg ? 'Checking…' : 'Continue',
           onPressed: _resolvingOrg ? () {} : () => _resolveOrganization(),
-        ),
-        const SizedBox(height: 12),
-        TextButton(
-          onPressed: () => Navigator.of(context).pushNamed('/super-admin'),
-          child: Text(
-            'Super Admin (organizations)',
-            style: TextStyle(color: Colors.white.withOpacity(0.55), fontSize: 13),
-          ),
         ),
       ],
     );
@@ -651,20 +667,6 @@ Widget _buildLoginFields({required bool showCompactBrand}) {
         _buildPrimaryButton(
           label: 'Sign In',
           onPressed: () => _login(context),
-        ),
-
-        const SizedBox(height: 12),
-
-        TextButton(
-          onPressed: () =>
-              Navigator.of(context).pushNamed('/super-admin'),
-          child: Text(
-            'Super Admin (organizations)',
-            style: TextStyle(
-              color: Colors.white.withOpacity(0.55),
-              fontSize: 13,
-            ),
-          ),
         ),
 
         const SizedBox(height: 22),

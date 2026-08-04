@@ -3,19 +3,8 @@ import 'package:flutter/services.dart';
 
 import '../../config/dev_user_config.dart';
 import '../../services/super_admin_api_service.dart';
+import '../../utils/responsive.dart';
 import '../../widgets/admin/admin_ui.dart';
-
-class _SuperAdminNavItem {
-  final int id;
-  final String label;
-  final IconData icon;
-
-  const _SuperAdminNavItem({
-    required this.id,
-    required this.label,
-    required this.icon,
-  });
-}
 
 /// Platform Super Admin — manage organizations (multi-tenancy).
 /// Access with [DevUserConfig.superAdminKey] matching backend SUPER_ADMIN_KEY.
@@ -26,18 +15,65 @@ class SuperAdminScreen extends StatefulWidget {
   State<SuperAdminScreen> createState() => _SuperAdminScreenState();
 }
 
+class _SuperAdminNavItem {
+  final int id;
+  final String label;
+  final String shortLabel;
+  final IconData icon;
+
+  const _SuperAdminNavItem({
+    required this.id,
+    required this.label,
+    required this.shortLabel,
+    required this.icon,
+  });
+}
+
 class _SuperAdminScreenState extends State<SuperAdminScreen> {
   final SuperAdminApiService _api = SuperAdminApiService();
+  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   final _keyController = TextEditingController(text: DevUserConfig.superAdminKey);
 
   static const _navItems = <_SuperAdminNavItem>[
-    _SuperAdminNavItem(id: 0, label: 'Overview', icon: Icons.dashboard_outlined),
-    _SuperAdminNavItem(id: 1, label: 'Organizations', icon: Icons.apartment_outlined),
-    _SuperAdminNavItem(id: 2, label: 'Admins', icon: Icons.people_outline),
-    _SuperAdminNavItem(id: 3, label: 'Billing', icon: Icons.receipt_long_outlined),
-    _SuperAdminNavItem(id: 4, label: 'Activity', icon: Icons.history),
-    _SuperAdminNavItem(id: 5, label: 'Settings', icon: Icons.settings_outlined),
+    _SuperAdminNavItem(
+      id: 0,
+      label: 'Overview',
+      shortLabel: 'Home',
+      icon: Icons.dashboard_outlined,
+    ),
+    _SuperAdminNavItem(
+      id: 1,
+      label: 'Organizations',
+      shortLabel: 'Orgs',
+      icon: Icons.apartment_outlined,
+    ),
+    _SuperAdminNavItem(
+      id: 2,
+      label: 'Admins',
+      shortLabel: 'Admins',
+      icon: Icons.people_outline,
+    ),
+    _SuperAdminNavItem(
+      id: 3,
+      label: 'Billing',
+      shortLabel: 'Billing',
+      icon: Icons.receipt_long_outlined,
+    ),
+    _SuperAdminNavItem(
+      id: 4,
+      label: 'Activity',
+      shortLabel: 'Activity',
+      icon: Icons.history,
+    ),
+    _SuperAdminNavItem(
+      id: 5,
+      label: 'Settings',
+      shortLabel: 'More',
+      icon: Icons.settings_outlined,
+    ),
   ];
+
+  static const _mobilePrimaryIds = <int>[0, 1, 2, 5];
 
   int _selectedId = 1; // Organizations — existing screen
   List<Map<String, dynamic>> _orgs = const [];
@@ -53,6 +89,25 @@ class _SuperAdminScreenState extends State<SuperAdminScreen> {
       if (item.id == _selectedId) return item.label;
     }
     return 'Super Admin';
+  }
+
+  List<_SuperAdminNavItem> get _mobilePrimaryItems {
+    return _mobilePrimaryIds
+        .map((id) {
+          for (final item in _navItems) {
+            if (item.id == id) return item;
+          }
+          return null;
+        })
+        .whereType<_SuperAdminNavItem>()
+        .toList();
+  }
+
+  void _selectNav(_SuperAdminNavItem item, {bool closeDrawer = false}) {
+    setState(() => _selectedId = item.id);
+    if (closeDrawer) {
+      Navigator.of(context).maybePop();
+    }
   }
 
   @override
@@ -116,14 +171,19 @@ class _SuperAdminScreenState extends State<SuperAdminScreen> {
     var hasFyp = true;
     var autoPassword = true;
 
+    final compact = isCompact(context);
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setLocal) => AlertDialog(
           backgroundColor: AdminColors.surface,
+          insetPadding: EdgeInsets.symmetric(
+            horizontal: compact ? 16 : 40,
+            vertical: compact ? 24 : 40,
+          ),
           title: const Text('Create Organization'),
           content: SizedBox(
-            width: 460,
+            width: compact ? double.maxFinite : 460,
             child: SingleChildScrollView(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -137,20 +197,30 @@ class _SuperAdminScreenState extends State<SuperAdminScreen> {
                   TextField(
                     controller: codeCtrl,
                     textCapitalization: TextCapitalization.characters,
-                    decoration: const InputDecoration(labelText: 'Org Code (e.g. NUST-ISB)'),
+                    decoration: const InputDecoration(
+                      labelText: 'Org Code (e.g. NUST-ISB)',
+                    ),
                   ),
                   const SizedBox(height: 10),
                   DropdownButtonFormField<String>(
                     value: plan,
                     decoration: const InputDecoration(labelText: 'Plan'),
                     items: const [
-                      DropdownMenuItem(value: 'university', child: Text('university')),
-                      DropdownMenuItem(value: 'enterprise', child: Text('enterprise (company)')),
-                      DropdownMenuItem(value: 'starter', child: Text('starter')),
+                      DropdownMenuItem(
+                        value: 'university',
+                        child: Text('university'),
+                      ),
+                      DropdownMenuItem(
+                        value: 'enterprise',
+                        child: Text('enterprise (company)'),
+                      ),
+                      DropdownMenuItem(
+                        value: 'starter',
+                        child: Text('starter'),
+                      ),
                     ],
                     onChanged: (v) => setLocal(() {
                       plan = v ?? 'university';
-                      // Starter / company orgs are document-formatting tenants — no FYP by default.
                       if (plan == 'enterprise' || plan == 'starter') {
                         hasFyp = false;
                       } else {
@@ -204,17 +274,22 @@ class _SuperAdminScreenState extends State<SuperAdminScreen> {
                     TextField(
                       controller: adminPassCtrl,
                       obscureText: true,
-                      decoration: const InputDecoration(labelText: 'Admin Password'),
+                      decoration: const InputDecoration(
+                        labelText: 'Admin Password',
+                      ),
                     ),
                 ],
               ),
             ),
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel'),
+            ),
             ElevatedButton(
               onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('Create Organization + Admin'),
+              child: Text(compact ? 'Create' : 'Create Organization + Admin'),
             ),
           ],
         ),
@@ -236,6 +311,41 @@ class _SuperAdminScreenState extends State<SuperAdminScreen> {
       return;
     }
 
+    if (!mounted) return;
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => PopScope(
+        canPop: false,
+        child: AlertDialog(
+          backgroundColor: AdminColors.surface,
+          content: Row(
+            children: [
+              const SizedBox(
+                width: 28,
+                height: 28,
+                child: CircularProgressIndicator(
+                  strokeWidth: 3,
+                  color: AdminColors.primary,
+                ),
+              ),
+              const SizedBox(width: 18),
+              Expanded(
+                child: Text(
+                  'Creating organization and sending login credentials to $adminEmail…',
+                  style: TextStyle(
+                    color: Colors.white.withOpacity(0.85),
+                    fontSize: 13,
+                    height: 1.4,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
     try {
       final result = await _api.createOrganization({
         'name': nameCtrl.text.trim(),
@@ -249,10 +359,12 @@ class _SuperAdminScreenState extends State<SuperAdminScreen> {
         if (!autoPassword && adminPassCtrl.text.trim().isNotEmpty)
           'admin_password': adminPassCtrl.text.trim(),
       });
+      if (mounted) Navigator.of(context, rootNavigator: true).pop();
       await _refresh();
       if (!mounted) return;
       await _showCreatedCredentialsDialog(result);
     } catch (e) {
+      if (mounted) Navigator.of(context, rootNavigator: true).pop();
       if (mounted) showAdminSnackBar(context, e.toString(), isError: true);
     }
   }
@@ -263,6 +375,13 @@ class _SuperAdminScreenState extends State<SuperAdminScreen> {
         ? Map<String, dynamic>.from(result['admin'] as Map)
         : null;
     final code = (result['org_code'] ?? org['code'] ?? '').toString();
+    final emailInfo = result['credentials_email'] is Map
+        ? Map<String, dynamic>.from(result['credentials_email'] as Map)
+        : (admin != null && admin['credentials_email'] is Map
+            ? Map<String, dynamic>.from(admin['credentials_email'] as Map)
+            : null);
+    final emailSent = emailInfo?['sent'] == true;
+    final emailMessage = (emailInfo?['message'] ?? result['message'] ?? '').toString();
 
     await showDialog<void>(
       context: context,
@@ -277,9 +396,24 @@ class _SuperAdminScreenState extends State<SuperAdminScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'Share only these with the Org Admin (never share internal API keys):',
+                emailSent
+                    ? 'Login credentials were emailed to the org admin. You can still copy them below if needed:'
+                    : 'Credentials email could not be sent automatically. Share these with the Org Admin:',
                 style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 13, height: 1.4),
               ),
+              if (emailMessage.isNotEmpty) ...[
+                const SizedBox(height: 10),
+                Text(
+                  emailMessage,
+                  style: TextStyle(
+                    color: emailSent
+                        ? const Color(0xFF4ADE80)
+                        : const Color(0xFFFBBF24),
+                    fontSize: 12,
+                    height: 1.35,
+                  ),
+                ),
+              ],
               const SizedBox(height: 16),
               _credRow('Org Code', code, copyable: true),
               if (admin != null) ...[
@@ -627,26 +761,120 @@ class _SuperAdminScreenState extends State<SuperAdminScreen> {
       );
     }
 
+    final compact = isCompact(context);
+
     return Scaffold(
+      key: _scaffoldKey,
       backgroundColor: AdminColors.background,
-      body: Row(
-        children: [
-          _buildSidebar(),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
+      drawer: compact ? _buildDrawer() : null,
+      floatingActionButton: compact && _selectedId == 1
+          ? FloatingActionButton(
+              onPressed: _showCreateDialog,
+              backgroundColor: AdminColors.primary,
+              child: const Icon(Icons.add, color: Colors.white),
+            )
+          : null,
+      body: compact
+          ? SafeArea(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _buildTopBar(compact: true),
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+                      child: _buildContent(),
+                    ),
+                  ),
+                ],
+              ),
+            )
+          : Row(
               children: [
-                _buildTopBar(),
+                _buildSidebar(),
                 Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.all(26),
-                    child: _buildContent(),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      _buildTopBar(compact: false),
+                      Expanded(
+                        child: Padding(
+                          padding: const EdgeInsets.all(26),
+                          child: _buildContent(),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ],
             ),
-          ),
-        ],
+      bottomNavigationBar: compact ? _buildMobileBottomNav() : null,
+    );
+  }
+
+  Widget _buildDrawer() {
+    return Drawer(
+      backgroundColor: AdminColors.surface,
+      child: SafeArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 20, 20, 16),
+              child: Row(
+                children: [
+                  Container(
+                    width: 26,
+                    height: 26,
+                    decoration: BoxDecoration(
+                      color: AdminColors.primary,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Icon(
+                      Icons.shield_outlined,
+                      size: 14,
+                      color: Colors.white,
+                    ),
+                  ),
+                  const SizedBox(width: 9),
+                  const Text(
+                    'Super Admin',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 14.5,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Divider(height: 1, color: AdminColors.border.withOpacity(0.55)),
+            Expanded(
+              child: ListView(
+                padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 14),
+                children: _navItems
+                    .map((item) => _buildNavItem(item, closeDrawer: true))
+                    .toList(),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+              child: OutlinedButton.icon(
+                onPressed: () {
+                  Navigator.of(context).maybePop();
+                  Navigator.of(context).maybePop();
+                },
+                icon: const Icon(Icons.arrow_back_rounded, size: 18),
+                label: const Text('Back to login'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.white70,
+                  side: BorderSide(color: AdminColors.border.withOpacity(0.8)),
+                  minimumSize: const Size(double.infinity, 44),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -711,16 +939,18 @@ class _SuperAdminScreenState extends State<SuperAdminScreen> {
     );
   }
 
-  Widget _buildNavItem(_SuperAdminNavItem item) {
+  Widget _buildNavItem(_SuperAdminNavItem item, {bool closeDrawer = false}) {
     final isSelected = _selectedId == item.id;
     return Padding(
       padding: const EdgeInsets.only(bottom: 2),
       child: Material(
-        color: isSelected ? AdminColors.primary.withOpacity(0.14) : Colors.transparent,
+        color: isSelected
+            ? AdminColors.primary.withOpacity(0.14)
+            : Colors.transparent,
         borderRadius: BorderRadius.circular(9),
         child: InkWell(
           borderRadius: BorderRadius.circular(9),
-          onTap: () => setState(() => _selectedId = item.id),
+          onTap: () => _selectNav(item, closeDrawer: closeDrawer),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
             child: Row(
@@ -728,14 +958,18 @@ class _SuperAdminScreenState extends State<SuperAdminScreen> {
                 Icon(
                   item.icon,
                   size: 16,
-                  color: isSelected ? AdminColors.primary : Colors.white.withOpacity(0.35),
+                  color: isSelected
+                      ? AdminColors.primary
+                      : Colors.white.withOpacity(0.35),
                 ),
                 const SizedBox(width: 10),
                 Text(
                   item.label,
                   style: TextStyle(
                     fontSize: 13,
-                    color: isSelected ? Colors.white : Colors.white.withOpacity(0.55),
+                    color: isSelected
+                        ? Colors.white
+                        : Colors.white.withOpacity(0.55),
                   ),
                 ),
               ],
@@ -746,21 +980,123 @@ class _SuperAdminScreenState extends State<SuperAdminScreen> {
     );
   }
 
-  Widget _buildTopBar() {
+  Widget _buildMobileBottomNav() {
+    final items = _mobilePrimaryItems;
+    final selectedNav = items.indexWhere((item) => item.id == _selectedId);
+    final showMoreSelected = selectedNav < 0;
+
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 26, vertical: 16),
+      decoration: BoxDecoration(
+        color: AdminColors.surface,
+        border: Border(top: BorderSide(color: AdminColors.border)),
+      ),
+      child: SafeArea(
+        top: false,
+        child: SizedBox(
+          height: 64,
+          child: Row(
+            children: [
+              for (final item in items)
+                Expanded(
+                  child: InkWell(
+                    onTap: () => _selectNav(item),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          item.icon,
+                          size: 22,
+                          color: item.id == _selectedId
+                              ? AdminColors.primary
+                              : Colors.white.withOpacity(0.35),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          item.shortLabel,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: item.id == _selectedId
+                                ? FontWeight.w600
+                                : FontWeight.w400,
+                            color: item.id == _selectedId
+                                ? AdminColors.primary
+                                : Colors.white.withOpacity(0.45),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              Expanded(
+                child: InkWell(
+                  onTap: () => _scaffoldKey.currentState?.openDrawer(),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.menu_rounded,
+                        size: 22,
+                        color: showMoreSelected
+                            ? AdminColors.primary
+                            : Colors.white.withOpacity(0.35),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Menu',
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: showMoreSelected
+                              ? FontWeight.w600
+                              : FontWeight.w400,
+                          color: showMoreSelected
+                              ? AdminColors.primary
+                              : Colors.white.withOpacity(0.45),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTopBar({required bool compact}) {
+    return Container(
+      padding: EdgeInsets.symmetric(
+        horizontal: compact ? 8 : 26,
+        vertical: compact ? 10 : 16,
+      ),
       decoration: BoxDecoration(
         color: AdminColors.surface,
         border: Border(bottom: BorderSide(color: AdminColors.border)),
       ),
       child: Row(
         children: [
-          Text(
-            _selectedLabel,
-            style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600, color: Colors.white),
+          if (compact)
+            IconButton(
+              onPressed: () => _scaffoldKey.currentState?.openDrawer(),
+              icon: const Icon(Icons.menu_rounded, color: Colors.white),
+              tooltip: 'Menu',
+            ),
+          Expanded(
+            child: Text(
+              _selectedLabel,
+              style: TextStyle(
+                fontSize: compact ? 16 : 17,
+                fontWeight: FontWeight.w600,
+                color: Colors.white,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
           ),
-          const Spacer(),
-          if (_selectedId == 1) ...[
+          if (_selectedId == 1 && !compact) ...[
             SizedBox(
               width: 220,
               height: 36,
@@ -769,8 +1105,15 @@ class _SuperAdminScreenState extends State<SuperAdminScreen> {
                 onChanged: (v) => setState(() => _orgSearch = v),
                 decoration: InputDecoration(
                   hintText: 'Search organizations',
-                  hintStyle: TextStyle(color: Colors.white.withOpacity(0.35), fontSize: 13),
-                  prefixIcon: Icon(Icons.search, size: 16, color: Colors.white.withOpacity(0.35)),
+                  hintStyle: TextStyle(
+                    color: Colors.white.withOpacity(0.35),
+                    fontSize: 13,
+                  ),
+                  prefixIcon: Icon(
+                    Icons.search,
+                    size: 16,
+                    color: Colors.white.withOpacity(0.35),
+                  ),
                   filled: true,
                   fillColor: AdminColors.card,
                   contentPadding: const EdgeInsets.symmetric(vertical: 0),
@@ -787,13 +1130,27 @@ class _SuperAdminScreenState extends State<SuperAdminScreen> {
             ),
             const SizedBox(width: 10),
           ],
+          if (_selectedId == 1 && compact)
+            IconButton(
+              onPressed: () => _showMobileSearchSheet(),
+              icon: Icon(
+                Icons.search,
+                size: 20,
+                color: Colors.white.withOpacity(0.7),
+              ),
+              tooltip: 'Search',
+            ),
           if (_selectedId == 0 || _selectedId == 1 || _selectedId == 2)
             IconButton(
               onPressed: _loading ? null : _refresh,
-              icon: Icon(Icons.refresh, size: 18, color: Colors.white.withOpacity(0.55)),
+              icon: Icon(
+                Icons.refresh,
+                size: 18,
+                color: Colors.white.withOpacity(0.55),
+              ),
               tooltip: 'Refresh',
             ),
-          if (_selectedId == 1) ...[
+          if (_selectedId == 1 && !compact) ...[
             const SizedBox(width: 8),
             ElevatedButton.icon(
               onPressed: _showCreateDialog,
@@ -802,18 +1159,71 @@ class _SuperAdminScreenState extends State<SuperAdminScreen> {
               style: ElevatedButton.styleFrom(
                 backgroundColor: AdminColors.primary,
                 foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(9)),
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(9),
+                ),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 12,
+                ),
               ),
             ),
           ],
           IconButton(
             onPressed: () => Navigator.of(context).maybePop(),
-            icon: Icon(Icons.arrow_back_rounded, size: 18, color: Colors.white.withOpacity(0.55)),
+            icon: Icon(
+              Icons.arrow_back_rounded,
+              size: 18,
+              color: Colors.white.withOpacity(0.55),
+            ),
             tooltip: 'Back',
           ),
         ],
       ),
+    );
+  }
+
+  Future<void> _showMobileSearchSheet() async {
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: AdminColors.surface,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) {
+        return Padding(
+          padding: EdgeInsets.fromLTRB(
+            16,
+            16,
+            16,
+            16 + MediaQuery.of(ctx).viewInsets.bottom,
+          ),
+          child: TextField(
+            autofocus: true,
+            style: const TextStyle(color: Colors.white, fontSize: 15),
+            onChanged: (v) => setState(() => _orgSearch = v),
+            decoration: InputDecoration(
+              hintText: 'Search organizations',
+              hintStyle: TextStyle(color: Colors.white.withOpacity(0.35)),
+              prefixIcon: Icon(
+                Icons.search,
+                color: Colors.white.withOpacity(0.35),
+              ),
+              filled: true,
+              fillColor: AdminColors.card,
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: const BorderSide(color: AdminColors.border),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: const BorderSide(color: AdminColors.primary),
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -1026,55 +1436,125 @@ class _SuperAdminScreenState extends State<SuperAdminScreen> {
       onRefresh: _refresh,
       child: ListView(
         children: [
-          _saPanel(
-            padding: EdgeInsets.zero,
-            child: Column(
-              children: [
-                _saRowHeader(const ['NAME', 'EMAIL', 'ORG', 'ROLE']),
-                ..._admins.map((admin) {
-                  final name = admin['name']?.toString() ?? '';
-                  final email = admin['email']?.toString() ?? '';
-                  final role = admin['role']?.toString() ?? 'admin';
-                  final orgName = admin['org_name']?.toString() ?? '';
-                  final orgCode = admin['org_code']?.toString() ?? '';
-                  final orgLabel = orgCode.isEmpty ? orgName : orgCode;
-                  return _saDataRow([
-                    Row(
-                      children: [
-                        Icon(Icons.person_outline, size: 13, color: Colors.white.withOpacity(0.35)),
-                        const SizedBox(width: 8),
-                        Flexible(
-                          child: Text(
-                            name.isEmpty ? '—' : name,
-                            style: const TextStyle(fontSize: 13, color: Colors.white),
-                            overflow: TextOverflow.ellipsis,
+          if (isCompact(context))
+            ..._admins.map((admin) {
+              final name = admin['name']?.toString() ?? '';
+              final email = admin['email']?.toString() ?? '';
+              final role = admin['role']?.toString() ?? 'admin';
+              final orgName = admin['org_name']?.toString() ?? '';
+              final orgCode = admin['org_code']?.toString() ?? '';
+              final orgLabel = orgCode.isEmpty ? orgName : orgCode;
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: _saPanel(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.person_outline,
+                            size: 16,
+                            color: Colors.white.withOpacity(0.45),
                           ),
-                        ),
-                      ],
-                    ),
-                    Text(
-                      email.isEmpty ? '—' : email,
-                      style: TextStyle(fontSize: 12.5, color: Colors.white.withOpacity(0.55)),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    Text(
-                      orgLabel.isEmpty ? '—' : orgLabel,
-                      style: TextStyle(
-                        fontSize: 12.5,
-                        color: Colors.white.withOpacity(0.55),
-                        fontFamily: 'monospace',
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              name.isEmpty ? '—' : name,
+                              style: const TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.white,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          _SaPill.accent(role),
+                        ],
                       ),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: _SaPill.accent(role),
-                    ),
-                  ]);
-                }),
-              ],
+                      const SizedBox(height: 8),
+                      Text(
+                        email.isEmpty ? '—' : email,
+                        style: TextStyle(
+                          fontSize: 12.5,
+                          color: Colors.white.withOpacity(0.55),
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        orgLabel.isEmpty ? '—' : orgLabel,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.white.withOpacity(0.4),
+                          fontFamily: 'monospace',
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            })
+          else
+            _saPanel(
+              padding: EdgeInsets.zero,
+              child: Column(
+                children: [
+                  _saRowHeader(const ['NAME', 'EMAIL', 'ORG', 'ROLE']),
+                  ..._admins.map((admin) {
+                    final name = admin['name']?.toString() ?? '';
+                    final email = admin['email']?.toString() ?? '';
+                    final role = admin['role']?.toString() ?? 'admin';
+                    final orgName = admin['org_name']?.toString() ?? '';
+                    final orgCode = admin['org_code']?.toString() ?? '';
+                    final orgLabel = orgCode.isEmpty ? orgName : orgCode;
+                    return _saDataRow([
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.person_outline,
+                            size: 13,
+                            color: Colors.white.withOpacity(0.35),
+                          ),
+                          const SizedBox(width: 8),
+                          Flexible(
+                            child: Text(
+                              name.isEmpty ? '—' : name,
+                              style: const TextStyle(
+                                fontSize: 13,
+                                color: Colors.white,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                      Text(
+                        email.isEmpty ? '—' : email,
+                        style: TextStyle(
+                          fontSize: 12.5,
+                          color: Colors.white.withOpacity(0.55),
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      Text(
+                        orgLabel.isEmpty ? '—' : orgLabel,
+                        style: TextStyle(
+                          fontSize: 12.5,
+                          color: Colors.white.withOpacity(0.55),
+                          fontFamily: 'monospace',
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: _SaPill.accent(role),
+                      ),
+                    ]);
+                  }),
+                ],
+              ),
             ),
-          ),
         ],
       ),
     );
@@ -1181,58 +1661,68 @@ class _SuperAdminScreenState extends State<SuperAdminScreen> {
               return Padding(
                 padding: const EdgeInsets.only(bottom: 10),
                 child: _saPanel(
-                  padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
-                  child: Row(
-                    children: [
-                      _SaQuotaRing(used: used, limit: limit),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: InkWell(
-                          onTap: () => _openOrgDetail(org),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      final narrow = constraints.maxWidth < 520;
+                      final leading = Row(
+                        children: [
+                          _SaQuotaRing(used: used, limit: limit),
+                          const SizedBox(width: 14),
+                          Expanded(
+                            child: InkWell(
+                              onTap: () => _openOrgDetail(org),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Flexible(
-                                    child: Text(
-                                      org['name']?.toString() ?? '',
-                                      style: const TextStyle(
-                                        fontSize: 14.5,
-                                        fontWeight: FontWeight.w600,
-                                        color: Colors.white,
+                                  Row(
+                                    children: [
+                                      Flexible(
+                                        child: Text(
+                                          org['name']?.toString() ?? '',
+                                          style: const TextStyle(
+                                            fontSize: 14.5,
+                                            fontWeight: FontWeight.w600,
+                                            color: Colors.white,
+                                          ),
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
                                       ),
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
+                                      const SizedBox(width: 6),
+                                      Icon(
+                                        Icons.chevron_right,
+                                        size: 15,
+                                        color: Colors.white.withOpacity(0.35),
+                                      ),
+                                    ],
                                   ),
-                                  const SizedBox(width: 6),
-                                  Icon(Icons.chevron_right, size: 15, color: Colors.white.withOpacity(0.35)),
+                                  const SizedBox(height: 6),
+                                  Wrap(
+                                    spacing: 8,
+                                    runSpacing: 6,
+                                    crossAxisAlignment: WrapCrossAlignment.center,
+                                    children: [
+                                      Text(
+                                        org['code']?.toString() ?? '',
+                                        style: TextStyle(
+                                          fontSize: 11.5,
+                                          color: Colors.white.withOpacity(0.55),
+                                          fontFamily: 'monospace',
+                                        ),
+                                      ),
+                                      _SaPill.accent(planLabel),
+                                      ...modules.map((m) => _SaPill(m)),
+                                    ],
+                                  ),
                                 ],
                               ),
-                              const SizedBox(height: 6),
-                              Wrap(
-                                spacing: 8,
-                                runSpacing: 6,
-                                crossAxisAlignment: WrapCrossAlignment.center,
-                                children: [
-                                  Text(
-                                    org['code']?.toString() ?? '',
-                                    style: TextStyle(
-                                      fontSize: 11.5,
-                                      color: Colors.white.withOpacity(0.55),
-                                      fontFamily: 'monospace',
-                                    ),
-                                  ),
-                                  _SaPill.accent(planLabel),
-                                  ...modules.map((m) => _SaPill(m)),
-                                ],
-                              ),
-                            ],
+                            ),
                           ),
-                        ),
-                      ),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.end,
+                        ],
+                      );
+
+                      final trailing = Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           Text(
                             'Docs $used/$limit',
@@ -1242,22 +1732,72 @@ class _SuperAdminScreenState extends State<SuperAdminScreen> {
                               fontFamily: 'monospace',
                             ),
                           ),
+                          Switch(
+                            value: active,
+                            activeColor: AdminColors.primary,
+                            onChanged: (_) async {
+                              try {
+                                await _api.toggleOrganization(org['id'] as int);
+                                await _refresh();
+                              } catch (e) {
+                                if (mounted) {
+                                  showAdminSnackBar(
+                                    context,
+                                    e.toString(),
+                                    isError: true,
+                                  );
+                                }
+                              }
+                            },
+                          ),
                         ],
-                      ),
-                      const SizedBox(width: 16),
-                      Switch(
-                        value: active,
-                        activeColor: AdminColors.primary,
-                        onChanged: (_) async {
-                          try {
-                            await _api.toggleOrganization(org['id'] as int);
-                            await _refresh();
-                          } catch (e) {
-                            if (mounted) showAdminSnackBar(context, e.toString(), isError: true);
-                          }
-                        },
-                      ),
-                    ],
+                      );
+
+                      if (narrow) {
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            leading,
+                            const SizedBox(height: 10),
+                            trailing,
+                          ],
+                        );
+                      }
+
+                      return Row(
+                        children: [
+                          Expanded(child: leading),
+                          const SizedBox(width: 12),
+                          Text(
+                            'Docs $used/$limit',
+                            style: TextStyle(
+                              fontSize: 11.5,
+                              color: Colors.white.withOpacity(0.4),
+                              fontFamily: 'monospace',
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Switch(
+                            value: active,
+                            activeColor: AdminColors.primary,
+                            onChanged: (_) async {
+                              try {
+                                await _api.toggleOrganization(org['id'] as int);
+                                await _refresh();
+                              } catch (e) {
+                                if (mounted) {
+                                  showAdminSnackBar(
+                                    context,
+                                    e.toString(),
+                                    isError: true,
+                                  );
+                                }
+                              }
+                            },
+                          ),
+                        ],
+                      );
+                    },
                   ),
                 ),
               );
