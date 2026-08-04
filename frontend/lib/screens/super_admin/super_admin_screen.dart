@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import '../../config/dev_user_config.dart';
 import '../../services/super_admin_api_service.dart';
 import '../../utils/responsive.dart';
+import '../../theme/app_theme.dart';
 import '../../widgets/admin/admin_ui.dart';
 
 /// Platform Super Admin — manage organizations (multi-tenancy).
@@ -752,12 +753,12 @@ class _SuperAdminScreenState extends State<SuperAdminScreen> {
   Widget build(BuildContext context) {
     if (!_unlocked) {
       return Scaffold(
-        backgroundColor: AdminColors.background,
+        backgroundColor: Colors.transparent,
         appBar: AppBar(
           backgroundColor: AdminColors.surface,
           title: const Text('Super Admin'),
         ),
-        body: _buildGate(),
+        body: AppPalette.dark.ambientGlowBackdrop(child: _buildGate()),
       );
     }
 
@@ -765,7 +766,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen> {
 
     return Scaffold(
       key: _scaffoldKey,
-      backgroundColor: AdminColors.background,
+      backgroundColor: Colors.transparent,
       drawer: compact ? _buildDrawer() : null,
       floatingActionButton: compact && _selectedId == 1
           ? FloatingActionButton(
@@ -774,40 +775,42 @@ class _SuperAdminScreenState extends State<SuperAdminScreen> {
               child: const Icon(Icons.add, color: Colors.white),
             )
           : null,
-      body: compact
-          ? SafeArea(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
+      body: AppPalette.dark.ambientGlowBackdrop(
+        child: compact
+            ? SafeArea(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _buildTopBar(compact: true),
+                    Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+                        child: _buildContent(),
+                      ),
+                    ),
+                  ],
+                ),
+              )
+            : Row(
                 children: [
-                  _buildTopBar(compact: true),
+                  _buildSidebar(),
                   Expanded(
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
-                      child: _buildContent(),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        _buildTopBar(compact: false),
+                        Expanded(
+                          child: Padding(
+                            padding: const EdgeInsets.all(26),
+                            child: _buildContent(),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ],
               ),
-            )
-          : Row(
-              children: [
-                _buildSidebar(),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      _buildTopBar(compact: false),
-                      Expanded(
-                        child: Padding(
-                          padding: const EdgeInsets.all(26),
-                          child: _buildContent(),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
+      ),
       bottomNavigationBar: compact ? _buildMobileBottomNav() : null,
     );
   }

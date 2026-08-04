@@ -74,9 +74,7 @@ class _ProjectVersionHistoryTabState extends State<ProjectVersionHistoryTab> {
           ),
           ElevatedButton(
             onPressed: () => Navigator.pop(context, true),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF6366F1),
-            ),
+            style: ElevatedButton.styleFrom(),
             child: const Text('Restore this version'),
           ),
         ],
@@ -219,7 +217,6 @@ class _ProjectVersionHistoryTabState extends State<ProjectVersionHistoryTab> {
                         style: TextStyle(fontSize: 12),
                       ),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF6366F1),
                         padding: const EdgeInsets.symmetric(
                           horizontal: 12,
                           vertical: 6,

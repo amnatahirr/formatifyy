@@ -280,10 +280,6 @@ class _ExportDialogState extends State<ExportDialog> {
                                   ),
                                   label: const Text('Scan & Download'),
                                   style: ElevatedButton.styleFrom(
-                                    backgroundColor: const Color(0xFF6366F1),
-                                    disabledBackgroundColor: const Color(
-                                      0xFF6366F1,
-                                    ).withOpacity(0.5),
                                     shape: RoundedRectangleBorder(
                                       borderRadius: BorderRadius.circular(6),
                                     ),
@@ -357,10 +353,7 @@ class _ExportDialogState extends State<ExportDialog> {
                           widget.isLoading ? 'Exporting...' : 'Export',
                         ),
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF3B82F6),
                           foregroundColor: Colors.white,
-                          disabledBackgroundColor:
-                              const Color(0xFF3B82F6).withOpacity(0.5),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(6),
                           ),

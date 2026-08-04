@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../models/supervisor_models.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/supervisor_api_service.dart';
+import '../../theme/app_theme.dart';
 import '../../utils/responsive.dart';
 import '../../widgets/admin/admin_ui.dart';
 import 'document_review_screen.dart';
@@ -216,45 +217,47 @@ class _SubmissionDetailScreenState extends State<SubmissionDetailScreen> {
         : (widget.titleHint ?? 'Submission Review');
 
     return Scaffold(
-      backgroundColor: AdminColors.background,
-      body: Column(
-        children: [
-          Container(
-            height: 72,
-            decoration: BoxDecoration(
-              color: AdminColors.surface,
-              border: Border(bottom: BorderSide(color: AdminColors.border.withOpacity(0.5))),
-            ),
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Row(
-              children: [
-                IconButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  icon: const Icon(Icons.arrow_back_rounded, color: Colors.white),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    title,
-                    style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: Colors.white),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+      backgroundColor: Colors.transparent,
+      body: AppPalette.dark.ambientGlowBackdrop(
+        child: Column(
+          children: [
+            Container(
+              height: 72,
+              decoration: BoxDecoration(
+                color: AdminColors.surface,
+                border: Border(bottom: BorderSide(color: AdminColors.border.withOpacity(0.5))),
+              ),
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Row(
+                children: [
+                  IconButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    icon: const Icon(Icons.arrow_back_rounded, color: Colors.white),
                   ),
-                ),
-                if (_busy)
-                  const Padding(
-                    padding: EdgeInsets.only(right: 12),
-                    child: SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2, color: AdminColors.primary),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      title,
+                      style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: Colors.white),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ),
-              ],
+                  if (_busy)
+                    const Padding(
+                      padding: EdgeInsets.only(right: 12),
+                      child: SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: AdminColors.primary),
+                      ),
+                    ),
+                ],
+              ),
             ),
-          ),
-          Expanded(child: _buildBody()),
-        ],
+            Expanded(child: _buildBody()),
+          ],
+        ),
       ),
     );
   }

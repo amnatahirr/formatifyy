@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../models/supervisor_models.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/supervisor_api_service.dart';
+import '../../theme/app_theme.dart';
 import '../../widgets/admin/admin_ui.dart';
 
 class MeetingNotesScreen extends StatefulWidget {
@@ -88,47 +89,49 @@ class _MeetingNotesScreenState extends State<MeetingNotesScreen> {
     final title = widget.groupTitle?.isNotEmpty == true ? widget.groupTitle! : 'Meeting Notes';
 
     return Scaffold(
-      backgroundColor: AdminColors.background,
-      body: Column(
-        children: [
-          Container(
-            height: 72,
-            decoration: BoxDecoration(
-              color: AdminColors.surface,
-              border: Border(bottom: BorderSide(color: AdminColors.border.withOpacity(0.5))),
-            ),
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Row(
-              children: [
-                IconButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  icon: const Icon(Icons.arrow_back_rounded, color: Colors.white),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    title,
-                    style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: Colors.white),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+      backgroundColor: Colors.transparent,
+      body: AppPalette.dark.ambientGlowBackdrop(
+        child: Column(
+          children: [
+            Container(
+              height: 72,
+              decoration: BoxDecoration(
+                color: AdminColors.surface,
+                border: Border(bottom: BorderSide(color: AdminColors.border.withOpacity(0.5))),
+              ),
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Row(
+                children: [
+                  IconButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    icon: const Icon(Icons.arrow_back_rounded, color: Colors.white),
                   ),
-                ),
-                ElevatedButton.icon(
-                  onPressed: _saving || _loading ? null : _openAddNote,
-                  icon: _saving
-                      ? const SizedBox(
-                          width: 14,
-                          height: 14,
-                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                        )
-                      : const Icon(Icons.note_add_outlined, size: 18),
-                  label: Text(_saving ? 'Saving…' : 'Add Note'),
-                ),
-              ],
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      title,
+                      style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: Colors.white),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  ElevatedButton.icon(
+                    onPressed: _saving || _loading ? null : _openAddNote,
+                    icon: _saving
+                        ? const SizedBox(
+                            width: 14,
+                            height: 14,
+                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                          )
+                        : const Icon(Icons.note_add_outlined, size: 18),
+                    label: Text(_saving ? 'Saving…' : 'Add Note'),
+                  ),
+                ],
+              ),
             ),
-          ),
-          Expanded(child: _buildBody()),
-        ],
+            Expanded(child: _buildBody()),
+          ],
+        ),
       ),
     );
   }

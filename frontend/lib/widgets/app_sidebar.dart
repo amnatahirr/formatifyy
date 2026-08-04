@@ -22,7 +22,9 @@ class AppSidebar extends StatelessWidget {
       width: 200,
       decoration: BoxDecoration(
         color: p.sidebarBg,
-        border: Border(right: BorderSide(color: p.border)),
+        border: Border(
+          right: BorderSide(color: p.isDark ? p.borderStrong : p.border),
+        ),
       ),
       child: Column(
         children: [
@@ -87,8 +89,12 @@ class AppSidebar extends StatelessWidget {
             child: Container(
               decoration: BoxDecoration(
                 color: p.surfaceAlt,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: p.border),
+                borderRadius:
+                    BorderRadius.circular(p.isDark ? p.cardRadius : 8),
+                border: Border.all(
+                  color: p.isDark ? p.borderStrong : p.border,
+                ),
+                boxShadow: p.isDark ? p.cardShadow : null,
               ),
               child: Padding(
                 padding: const EdgeInsets.all(12),
@@ -157,7 +163,6 @@ class AppSidebar extends StatelessWidget {
                               ),
                             ),
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: p.accent,
                               foregroundColor: Colors.white,
                               padding: const EdgeInsets.symmetric(vertical: 8),
                               minimumSize: const Size(0, 32),
@@ -190,7 +195,7 @@ class AppSidebar extends StatelessWidget {
         margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
         decoration: BoxDecoration(
           color: isSelected ? p.accentSoft : Colors.transparent,
-          borderRadius: BorderRadius.circular(6),
+          borderRadius: BorderRadius.circular(10),
           border: isSelected
               ? Border.all(color: p.accent, width: 1.5)
               : null,

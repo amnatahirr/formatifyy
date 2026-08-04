@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../utils/logout_confirm.dart';
 import '../utils/responsive.dart';
+import '../theme/app_theme.dart';
 import '../widgets/admin/admin_ui.dart';
 import 'supervisor/assignment_requests_screen.dart';
 import 'supervisor/my_groups_screen.dart';
@@ -120,30 +121,32 @@ class _SupervisorDashboardState extends State<SupervisorDashboard> {
         }
       },
       child: Scaffold(
-        backgroundColor: AdminColors.background,
-        body: compact
-            ? SafeArea(
-                bottom: false,
-                child: Column(
+        backgroundColor: Colors.transparent,
+        body: AppPalette.dark.ambientGlowBackdrop(
+          child: compact
+              ? SafeArea(
+                  bottom: false,
+                  child: Column(
+                    children: [
+                      _buildTopBar(compact: true),
+                      Expanded(child: _buildShellNavigator()),
+                    ],
+                  ),
+                )
+              : Row(
                   children: [
-                    _buildTopBar(compact: true),
-                    Expanded(child: _buildShellNavigator()),
+                    _buildSidebar(),
+                    Expanded(
+                      child: Column(
+                        children: [
+                          _buildTopBar(compact: false),
+                          Expanded(child: _buildShellNavigator()),
+                        ],
+                      ),
+                    ),
                   ],
                 ),
-              )
-            : Row(
-                children: [
-                  _buildSidebar(),
-                  Expanded(
-                    child: Column(
-                      children: [
-                        _buildTopBar(compact: false),
-                        Expanded(child: _buildShellNavigator()),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
+        ),
         bottomNavigationBar: compact ? _buildMobileBottomNav() : null,
       ),
     );

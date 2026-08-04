@@ -4200,33 +4200,35 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
   Widget build(BuildContext context) {
     _ap = context.watch<ThemeProvider>().palette;
     return Scaffold(
-      backgroundColor: _bg,
-      body: Row(
-        children: [
-          AppSidebar(
-            selectedIndex: _selectedSidebarIndex,
-            onItemSelected: _handleSidebarSelection,
-          ),
-          Expanded(
-            child: Column(
-              children: [
-                _buildTopBar(),
-                Expanded(
-                  child: FutureBuilder<Map<String, dynamic>>(
-                    future: _analysisFuture,
-                    builder: (ctx, snap) {
-                      if (snap.connectionState == ConnectionState.waiting)
-                        return _buildLoading();
-                      if (snap.hasError)
-                        return _buildError(snap.error.toString());
-                      return _buildBody(snap.data ?? {});
-                    },
-                  ),
-                ),
-              ],
+      backgroundColor: Colors.transparent,
+      body: _ap.ambientGlowBackdrop(
+        child: Row(
+          children: [
+            AppSidebar(
+              selectedIndex: _selectedSidebarIndex,
+              onItemSelected: _handleSidebarSelection,
             ),
-          ),
-        ],
+            Expanded(
+              child: Column(
+                children: [
+                  _buildTopBar(),
+                  Expanded(
+                    child: FutureBuilder<Map<String, dynamic>>(
+                      future: _analysisFuture,
+                      builder: (ctx, snap) {
+                        if (snap.connectionState == ConnectionState.waiting)
+                          return _buildLoading();
+                        if (snap.hasError)
+                          return _buildError(snap.error.toString());
+                        return _buildBody(snap.data ?? {});
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

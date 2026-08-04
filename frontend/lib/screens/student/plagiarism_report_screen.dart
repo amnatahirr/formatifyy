@@ -26,7 +26,6 @@ class _PlagiarismReportScreenState extends State<PlagiarismReportScreen> {
   AppPalette get _p => context.watch<ThemeProvider>().palette;
   String? _error;
   bool _loading = true;
-  static const _accent = Color(0xFF3B82F6);
   static const _safe = Color(0xFF10B981);
   static const _some = Color(0xFFF59E0B);
   static const _high = Color(0xFFEF4444);
@@ -96,7 +95,7 @@ class _PlagiarismReportScreenState extends State<PlagiarismReportScreen> {
     final groupId = fyp.fypGroupId;
 
     if (_loading || fyp.isPlagiarismLoading) {
-      return Center(child: CircularProgressIndicator(color: _accent));
+      return Center(child: CircularProgressIndicator(color: _p.accent));
     }
 
     if (groupId == null) {
@@ -114,7 +113,7 @@ class _PlagiarismReportScreenState extends State<PlagiarismReportScreen> {
             ElevatedButton(
               onPressed: widget.onChooseSupervisor,
               style: ElevatedButton.styleFrom(
-                backgroundColor: _accent,
+                backgroundColor: _p.accent,
                 foregroundColor: Colors.white,
               ),
               child: const Text('Choose Supervisor'),
@@ -157,7 +156,7 @@ class _PlagiarismReportScreenState extends State<PlagiarismReportScreen> {
     final riskColor = _riskColor(risk);
 
     return RefreshIndicator(
-      color: _accent,
+      color: _p.accent,
       backgroundColor: _p.surface,
       onRefresh: _load,
       child: ListView(
@@ -217,8 +216,9 @@ class _PlagiarismReportScreenState extends State<PlagiarismReportScreen> {
             padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(
               color: _p.surface,
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(_p.isDark ? _p.cardRadius : 12),
               border: Border.all(color: riskColor.withOpacity(0.4)),
+              boxShadow: _p.isDark ? _p.cardShadow : null,
             ),
             child: Row(
               children: [
@@ -289,7 +289,7 @@ class _PlagiarismReportScreenState extends State<PlagiarismReportScreen> {
                 child: ElevatedButton(
                   onPressed: widget.onOpenNewReport,
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: _accent,
+                    backgroundColor: _p.accent,
                     foregroundColor: Colors.white,
                   ),
                   child: const Text('Go to New Report'),
@@ -311,8 +311,9 @@ class _PlagiarismReportScreenState extends State<PlagiarismReportScreen> {
               padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(
                 color: _p.surface,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: _p.border),
+                borderRadius: BorderRadius.circular(_p.isDark ? _p.cardRadius : 12),
+                border: Border.all(color: _p.isDark ? _p.borderStrong : _p.border),
+                boxShadow: _p.isDark ? _p.cardShadow : null,
               ),
               child: Text(
                 hasSubmission
@@ -340,8 +341,9 @@ class _PlagiarismReportScreenState extends State<PlagiarismReportScreen> {
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
           color: _p.surface,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: _p.border),
+          borderRadius: BorderRadius.circular(_p.isDark ? _p.cardRadius : 12),
+          border: Border.all(color: _p.isDark ? _p.borderStrong : _p.border),
+          boxShadow: _p.isDark ? _p.cardShadow : null,
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -407,8 +409,9 @@ class _PlagiarismReportScreenState extends State<PlagiarismReportScreen> {
           padding: const EdgeInsets.all(24),
           decoration: BoxDecoration(
             color: _p.surface,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: _p.border),
+            borderRadius: BorderRadius.circular(_p.isDark ? _p.cardRadius : 12),
+            border: Border.all(color: _p.isDark ? _p.borderStrong : _p.border),
+            boxShadow: _p.isDark ? _p.cardShadow : null,
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,

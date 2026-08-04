@@ -519,7 +519,6 @@ class _MobileQrUploadScreenState extends State<MobileQrUploadScreen>
                 icon: const Icon(Icons.add_photo_alternate_outlined, size: 18),
                 label: const Text('Upload Another File', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF3B82F6),
                   foregroundColor: Colors.white,
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                 ),
@@ -575,7 +574,6 @@ class _MobileQrUploadScreenState extends State<MobileQrUploadScreen>
                 icon: const Icon(Icons.refresh_rounded, size: 18),
                 label: const Text('Try Again', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF3B82F6),
                   foregroundColor: Colors.white,
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                 ),

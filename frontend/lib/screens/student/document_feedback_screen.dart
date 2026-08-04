@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../models/supervisor_models.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/student_api_service.dart';
+import '../../theme/app_theme.dart';
 
 /// Student view of supervisor paragraph comments — reply + mark resolved.
 class DocumentFeedbackScreen extends StatefulWidget {
@@ -34,11 +35,16 @@ class _DocumentFeedbackScreenState extends State<DocumentFeedbackScreen> {
   int? _busyCommentId;
   bool _didFocusComment = false;
 
-  static const _card = Color(0xFF161B22);
-  static const _border = Color(0x22FFFFFF);
-  static const _accent = Color(0xFF3B82F6);
+  static const _legacyCard = Color(0xFF161B22);
+  static const _legacyBorder = Color(0x22FFFFFF);
+  static const _legacyAccent = Color(0xFF3B82F6);
   static const _unresolved = Color(0xFFFFF3C4);
   static const _resolved = Color(0xFF9CA3AF);
+
+  AppPalette get _p => context.watch<ThemeProvider>().palette;
+  Color get _card => _p.isDark ? _p.surface : _legacyCard;
+  Color get _border => _p.isDark ? _p.borderStrong : _legacyBorder;
+  Color get _accent => _p.isDark ? _p.accent : _legacyAccent;
 
   @override
   void initState() {
@@ -181,7 +187,7 @@ class _DocumentFeedbackScreenState extends State<DocumentFeedbackScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0D1117),
+      backgroundColor: _p.isDark ? _p.scaffold : const Color(0xFF0D1117),
       appBar: AppBar(
         backgroundColor: _card,
         foregroundColor: Colors.white,
@@ -198,7 +204,7 @@ class _DocumentFeedbackScreenState extends State<DocumentFeedbackScreen> {
 
   Widget _buildBody() {
     if (_loading) {
-      return const Center(
+      return Center(
         child: CircularProgressIndicator(color: _accent, strokeWidth: 2),
       );
     }
@@ -277,8 +283,11 @@ class _DocumentFeedbackScreenState extends State<DocumentFeedbackScreen> {
               padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(
                 color: _card,
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: BorderRadius.circular(
+                  _p.isDark ? _p.cardRadius : 12,
+                ),
                 border: Border.all(color: _border),
+                boxShadow: _p.isDark ? _p.cardShadow : null,
               ),
               child: Text(
                 'No comments on this document yet.',
@@ -309,12 +318,17 @@ class _DocumentFeedbackScreenState extends State<DocumentFeedbackScreen> {
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
           color: bg,
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(
+            _p.isDark ? _p.cardRadius : 12,
+          ),
           border: Border.all(
             color: highlight == 'unresolved'
                 ? const Color(0xFFF59E0B).withOpacity(0.5)
                 : _border,
           ),
+          boxShadow: _p.isDark && highlight != 'unresolved'
+              ? _p.cardShadow
+              : null,
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -432,7 +446,7 @@ class _DocumentFeedbackScreenState extends State<DocumentFeedbackScreen> {
                       onPressed: busy ? null : () => _reply(comment),
                       style: OutlinedButton.styleFrom(
                         foregroundColor: _accent,
-                        side: const BorderSide(color: _accent),
+                        side: BorderSide(color: _accent),
                       ),
                       child: busy
                           ? const SizedBox(

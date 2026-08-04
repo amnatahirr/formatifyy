@@ -25,7 +25,6 @@ class _FypMilestonesScreenState extends State<FypMilestonesScreen> {
   AppPalette get _p => context.watch<ThemeProvider>().palette;
   String? _error;
   bool _loading = true;
-  static const _accent = Color(0xFF3B82F6);
   static const _done = Color(0xFF10B981);
   static const _warn = Color(0xFFF59E0B);
 
@@ -109,7 +108,7 @@ class _FypMilestonesScreenState extends State<FypMilestonesScreen> {
     final compact = isCompact(context);
 
     if (_loading || fyp.isMilestonesLoading) {
-      return Center(child: CircularProgressIndicator(color: _accent));
+      return Center(child: CircularProgressIndicator(color: _p.accent));
     }
 
     if (groupId == null) {
@@ -146,7 +145,7 @@ class _FypMilestonesScreenState extends State<FypMilestonesScreen> {
     }
 
     return RefreshIndicator(
-      color: _accent,
+      color: _p.accent,
       backgroundColor: _p.surface,
       onRefresh: _load,
       child: ListView(
@@ -167,8 +166,9 @@ class _FypMilestonesScreenState extends State<FypMilestonesScreen> {
               padding: const EdgeInsets.all(24),
               decoration: BoxDecoration(
                 color: _p.surface,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: _p.border),
+                borderRadius: BorderRadius.circular(_p.isDark ? _p.cardRadius : 12),
+                border: Border.all(color: _p.isDark ? _p.borderStrong : _p.border),
+                boxShadow: _p.isDark ? _p.cardShadow : null,
               ),
               child: Text(
                 'No milestones yet for this group.',
@@ -193,7 +193,7 @@ class _FypMilestonesScreenState extends State<FypMilestonesScreen> {
         milestones.isEmpty ? 0.0 : doneCount / milestones.length;
 
     return RefreshIndicator(
-      color: _accent,
+      color: _p.accent,
       backgroundColor: _p.surface,
       onRefresh: _load,
       child: ListView(
@@ -203,8 +203,9 @@ class _FypMilestonesScreenState extends State<FypMilestonesScreen> {
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
               color: _p.surface,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: _p.border),
+              borderRadius: BorderRadius.circular(_p.isDark ? _p.cardRadius : 12),
+              border: Border.all(color: _p.isDark ? _p.borderStrong : _p.border),
+              boxShadow: _p.isDark ? _p.cardShadow : null,
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -223,8 +224,8 @@ class _FypMilestonesScreenState extends State<FypMilestonesScreen> {
                     ),
                     Text(
                       '${(overall * 100).round()}%',
-                      style: const TextStyle(
-                        color: _accent,
+                      style: TextStyle(
+                        color: _p.accent,
                         fontWeight: FontWeight.w700,
                         fontSize: 13,
                       ),
@@ -238,7 +239,7 @@ class _FypMilestonesScreenState extends State<FypMilestonesScreen> {
                     value: overall,
                     minHeight: 8,
                     backgroundColor: _p.border,
-                    color: _accent,
+                    color: _p.accent,
                   ),
                 ),
                 const SizedBox(height: 12),
@@ -273,8 +274,9 @@ class _FypMilestonesScreenState extends State<FypMilestonesScreen> {
               padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(
                 color: _p.surface,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: _p.border),
+                borderRadius: BorderRadius.circular(_p.isDark ? _p.cardRadius : 12),
+                border: Border.all(color: _p.isDark ? _p.borderStrong : _p.border),
+                boxShadow: _p.isDark ? _p.cardShadow : null,
               ),
               child: Text(
                 'No milestones yet for this group.',
@@ -300,10 +302,13 @@ class _FypMilestonesScreenState extends State<FypMilestonesScreen> {
         padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
         decoration: BoxDecoration(
           color: _p.surface,
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(_p.isDark ? _p.cardRadius : 12),
           border: Border.all(
-            color: done ? _done.withOpacity(0.35) : _p.border,
+            color: done
+                ? _done.withOpacity(0.35)
+                : (_p.isDark ? _p.borderStrong : _p.border),
           ),
+          boxShadow: _p.isDark ? _p.cardShadow : null,
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -339,7 +344,7 @@ class _FypMilestonesScreenState extends State<FypMilestonesScreen> {
                 value: progress,
                 minHeight: 7,
                 backgroundColor: _p.border,
-                color: done ? _done : _accent.withOpacity(0.45),
+                color: done ? _done : _p.accent.withOpacity(0.45),
               ),
             ),
             if (done && completedAt.isNotEmpty) ...[
@@ -368,8 +373,9 @@ class _FypMilestonesScreenState extends State<FypMilestonesScreen> {
           padding: const EdgeInsets.all(24),
           decoration: BoxDecoration(
             color: _p.surface,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: _p.border),
+            borderRadius: BorderRadius.circular(_p.isDark ? _p.cardRadius : 12),
+            border: Border.all(color: _p.isDark ? _p.borderStrong : _p.border),
+            boxShadow: _p.isDark ? _p.cardShadow : null,
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -406,7 +412,7 @@ class _FypMilestonesScreenState extends State<FypMilestonesScreen> {
                     ElevatedButton(
                       onPressed: widget.onChooseSupervisor,
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: _accent,
+                        backgroundColor: _p.accent,
                         foregroundColor: Colors.white,
                       ),
                       child: const Text('Choose Supervisor'),
@@ -431,10 +437,13 @@ class _FypMilestonesScreenState extends State<FypMilestonesScreen> {
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         decoration: BoxDecoration(
           color: _p.surface,
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(_p.isDark ? _p.cardRadius : 12),
           border: Border.all(
-            color: done ? _done.withOpacity(0.35) : _p.border,
+            color: done
+                ? _done.withOpacity(0.35)
+                : (_p.isDark ? _p.borderStrong : _p.border),
           ),
+          boxShadow: _p.isDark ? _p.cardShadow : null,
         ),
         child: Row(
           children: [

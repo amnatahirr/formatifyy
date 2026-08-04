@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../models/admin_models.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/admin_api_service.dart';
+import '../../theme/app_theme.dart';
 import '../../widgets/admin/admin_ui.dart';
 
 /// Admin UI for global Semester 6 / 7 FYP submission deadlines.
@@ -141,12 +142,12 @@ class _SemesterDeadlinesScreenState extends State<SemesterDeadlinesScreen> {
     }
 
     return Scaffold(
-      backgroundColor: AdminColors.background,
+      backgroundColor: Colors.transparent,
       appBar: AppBar(
         title: const Text('Semester Deadlines'),
         backgroundColor: AdminColors.surface,
       ),
-      body: body,
+      body: AppPalette.dark.ambientGlowBackdrop(child: body),
     );
   }
 

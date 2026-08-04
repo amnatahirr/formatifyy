@@ -134,33 +134,46 @@ class _StudentDashboardState extends State<StudentDashboard> {
     super.dispose();
   }
 
+  /// Dark-only card chrome; light keeps prior radius/border/no extra shadow.
+  BoxDecoration _cardDeco({Color? color, double lightRadius = 12}) =>
+      BoxDecoration(
+        color: color ?? _p.surface,
+        borderRadius: BorderRadius.circular(
+          _p.isDark ? _p.cardRadius : lightRadius,
+        ),
+        border: Border.all(color: _p.isDark ? _p.borderStrong : _p.border),
+        boxShadow: _p.isDark ? _p.cardShadow : null,
+      );
+
   @override
   Widget build(BuildContext context) {
     final compact = isCompact(context);
     _p = context.watch<ThemeProvider>().palette;
 
     return Scaffold(
-      backgroundColor: _p.scaffold,
-      body: compact
-          ? Column(
-              children: [
-                _buildTopBar(compact: true),
-                Expanded(child: _buildBody()),
-              ],
-            )
-          : Row(
-              children: [
-                _buildSidebar(),
-                Expanded(
-                  child: Column(
-                    children: [
-                      _buildTopBar(compact: false),
-                      Expanded(child: _buildBody()),
-                    ],
+      backgroundColor: Colors.transparent,
+      body: _p.ambientGlowBackdrop(
+        child: compact
+            ? Column(
+                children: [
+                  _buildTopBar(compact: true),
+                  Expanded(child: _buildBody()),
+                ],
+              )
+            : Row(
+                children: [
+                  _buildSidebar(),
+                  Expanded(
+                    child: Column(
+                      children: [
+                        _buildTopBar(compact: false),
+                        Expanded(child: _buildBody()),
+                      ],
+                    ),
                   ),
-                ),
-              ],
-            ),
+                ],
+              ),
+      ),
       bottomNavigationBar: compact ? _buildMobileBottomNav() : null,
     );
   }
@@ -173,9 +186,9 @@ class _StudentDashboardState extends State<StudentDashboard> {
 
     return Container(
       decoration: BoxDecoration(
-        color: _p.surface,
+        color: _p.isDark ? _p.topBarBg : _p.surface,
         border: Border(
-          top: BorderSide(color: _p.border),
+          top: BorderSide(color: _p.isDark ? _p.borderStrong : _p.border),
         ),
       ),
       child: SafeArea(
@@ -240,7 +253,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
         color: _p.sidebarBg,
         border: Border(
           right: BorderSide(
-            color: _p.border,
+            color: _p.isDark ? _p.borderStrong : _p.border,
           ),
         ),
       ),
@@ -368,10 +381,13 @@ class _StudentDashboardState extends State<StudentDashboard> {
             child: Container(
               decoration: BoxDecoration(
                 color: _p.surfaceAlt,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(
-                  color: _p.border,
+                borderRadius: BorderRadius.circular(
+                  _p.isDark ? _p.cardRadius : 8,
                 ),
+                border: Border.all(
+                  color: _p.isDark ? _p.borderStrong : _p.border,
+                ),
+                boxShadow: _p.isDark ? _p.cardShadow : null,
               ),
               child: Padding(
                 padding: EdgeInsets.all(12),
@@ -432,7 +448,6 @@ class _StudentDashboardState extends State<StudentDashboard> {
                               ),
                             ),
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: _p.accent,
                               foregroundColor: Colors.white,
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(6),
@@ -454,9 +469,16 @@ class _StudentDashboardState extends State<StudentDashboard> {
 
   Widget _buildSidebarItem(int index, IconData icon, String label) {
     final isSelected = _selectedIndex == index;
+    // No Semantics/Tooltip/Focus wrappers existed here — onTap body unchanged.
     return Container(
-      color: isSelected ? _p.accentSoft : Colors.transparent,
+      margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: isSelected ? _p.accentSoft : Colors.transparent,
+        borderRadius: BorderRadius.circular(10),
+        border: isSelected ? Border.all(color: _p.accent, width: 1.5) : null,
+      ),
       child: InkWell(
+        borderRadius: BorderRadius.circular(10),
         onTap: () {
           setState(() {
             _selectedIndex = index;
@@ -547,7 +569,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
         color: _p.topBarBg,
         border: Border(
           bottom: BorderSide(
-            color: _p.border,
+            color: _p.isDark ? _p.borderStrong : _p.border,
           ),
         ),
         boxShadow: _p.cardShadow,
@@ -878,26 +900,24 @@ class _StudentDashboardState extends State<StudentDashboard> {
             ),
           );
         },
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(
+          _p.isDark ? _p.cardRadius : 12,
+        ),
         child: Container(
           width: double.infinity,
           padding: EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: _p.surface,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: _p.border),
-          ),
+          decoration: _cardDeco(),
           child: Row(
             children: [
               Container(
                 padding: EdgeInsets.all(10),
                 decoration: BoxDecoration(
-                  color: Color(0xFF6366F1).withOpacity(0.15),
+                  color: _p.accentSoft,
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Icon(
                   Icons.qr_code_scanner_rounded,
-                  color: Color(0xFF6366F1),
+                  color: _p.accent,
                   size: 22,
                 ),
               ),
@@ -981,7 +1001,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
     if (compact) {
       return LayoutBuilder(
         builder: (context, constraints) {
-          final gap = 10.0;
+          final gap = 16.0;
           final cardWidth = (constraints.maxWidth - gap) / 2;
           return Wrap(
             spacing: gap,
@@ -1002,7 +1022,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
     return Row(
       children: [
         for (var i = 0; i < cards.length; i++) ...[
-          if (i > 0) SizedBox(width: 16),
+          if (i > 0) SizedBox(width: 24),
           Expanded(child: cards[i]),
         ],
       ],
@@ -1018,13 +1038,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
     bool compact = false,
   }) {
     return Container(
-      decoration: BoxDecoration(
-        color: _p.surface,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: _p.border,
-        ),
-      ),
+      decoration: _cardDeco(),
       padding: EdgeInsets.all(compact ? 12 : 20),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1090,13 +1104,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
     final recentDocs = documents.take(4).toList();
 
     return Container(
-      decoration: BoxDecoration(
-        color: _p.surface,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: _p.border,
-        ),
-      ),
+      decoration: _cardDeco(),
       padding: EdgeInsets.all(20),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1276,11 +1284,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
         SizedBox(height: 14),
         if (compact)
           Container(
-            decoration: BoxDecoration(
-              color: _p.surface,
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: _p.border),
-            ),
+            decoration: _cardDeco(lightRadius: 14),
             child: Column(
               children: [
                 for (var i = 0; i < tools.length; i++) ...[
@@ -1326,7 +1330,9 @@ class _StudentDashboardState extends State<StudentDashboard> {
         _selectedIndex = 1;
         _activeProjectId = null;
       }),
-      borderRadius: BorderRadius.circular(14),
+      borderRadius: BorderRadius.circular(
+        _p.isDark ? _p.cardRadius : 14,
+      ),
       child: Padding(
         padding: EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         child: Row(
@@ -1384,13 +1390,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
     Color color,
   ) {
     return Container(
-      decoration: BoxDecoration(
-        color: _p.surface,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: _p.border,
-        ),
-      ),
+      decoration: _cardDeco(),
       padding: EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1535,11 +1535,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
               Container(
                 width: double.infinity,
                 padding: EdgeInsets.all(24),
-                decoration: BoxDecoration(
-                  color: _p.surface,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: _p.border),
-                ),
+                decoration: _cardDeco(),
                 child: Column(
                   children: [
                     Icon(Icons.people_outline, size: 32, color: _p.textMuted),
@@ -1697,13 +1693,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
       child: MouseRegion(
         cursor: SystemMouseCursors.click,
         child: Container(
-          decoration: BoxDecoration(
-            color: _p.surface,
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(
-              color: _p.border,
-            ),
-          ),
+          decoration: _cardDeco(lightRadius: 14),
           padding: EdgeInsets.all(compact ? 14 : 16),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -2012,24 +2002,18 @@ class _StudentDashboardState extends State<StudentDashboard> {
                     final iconColor = _getIconColor(status);
 
                     return Container(
-                      decoration: BoxDecoration(
-                        color: _p.surface,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                          color: _p.border,
+                      decoration: _cardDeco(),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(
+                          _p.isDark ? _p.cardRadius : 12,
                         ),
-                      ),
-                      child: Column(
+                        child: Column(
                         children: [
                           // Top Section with Icon and Status Badge
                           Container(
                             height: 140,
                             decoration: BoxDecoration(
                               color: iconColor.withOpacity(0.15),
-                              borderRadius: BorderRadius.only(
-                                topLeft: Radius.circular(12),
-                                topRight: Radius.circular(12),
-                              ),
                             ),
                             child: Stack(
                               children: [
@@ -2257,6 +2241,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
                             ),
                           ),
                         ],
+                      ),
                       ),
                     );
                   },
@@ -2517,11 +2502,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
     final iconColor = _getIconColor(status);
 
     return Container(
-      decoration: BoxDecoration(
-        color: _p.surface,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: _p.border),
-      ),
+      decoration: _cardDeco(lightRadius: 14),
       padding: EdgeInsets.all(14),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -2775,10 +2756,13 @@ class _StudentDashboardState extends State<StudentDashboard> {
             child: Container(
               decoration: BoxDecoration(
                 color: _p.surfaceAlt,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: _p.border,
+                borderRadius: BorderRadius.circular(
+                  _p.isDark ? _p.cardRadius : 12,
                 ),
+                border: Border.all(
+                  color: _p.isDark ? _p.borderStrong : _p.border,
+                ),
+                boxShadow: _p.isDark ? _p.cardShadow : null,
               ),
               child: Column(
                 children: [
@@ -2921,9 +2905,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
                                   );
                                   if (success) Navigator.pop(context);
                                 },
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: _p.accent,
-                          ),
+                          style: ElevatedButton.styleFrom(),
                           child: Text(
                             'Save Changes',
                             style: TextStyle(
@@ -2957,10 +2939,13 @@ class _StudentDashboardState extends State<StudentDashboard> {
         child: Container(
           decoration: BoxDecoration(
             color: _p.surfaceAlt,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: _p.border,
+            borderRadius: BorderRadius.circular(
+              _p.isDark ? _p.cardRadius : 12,
             ),
+            border: Border.all(
+              color: _p.isDark ? _p.borderStrong : _p.border,
+            ),
+            boxShadow: _p.isDark ? _p.cardShadow : null,
           ),
           child: Column(
             children: [
@@ -3204,7 +3189,6 @@ class _StudentDashboardState extends State<StudentDashboard> {
                     icon: Icon(Icons.add, size: 18),
                     label: Text('Request Template'),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: _p.accent,
                       foregroundColor: Colors.white,
                       padding: EdgeInsets.symmetric(horizontal: 24, vertical: 12),
                       shape: RoundedRectangleBorder(
@@ -3303,9 +3287,14 @@ class _StudentDashboardState extends State<StudentDashboard> {
               if (_selectedTemplate != null)
                 Container(
                   decoration: BoxDecoration(
-                    color: Color(0xFF1A2847),
+                    color: _p.isDark
+                        ? _p.surfaceElevated
+                        : const Color(0xFF1A2847),
                     border: Border.all(color: _p.accent.withOpacity(0.3)),
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(
+                      _p.isDark ? _p.cardRadius : 12,
+                    ),
+                    boxShadow: _p.isDark ? _p.cardShadow : null,
                   ),
                   padding: EdgeInsets.all(20),
                   child: Row(
@@ -3346,7 +3335,6 @@ class _StudentDashboardState extends State<StudentDashboard> {
                       ElevatedButton(
                         onPressed: () => _showPreview(_selectedTemplate!),
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: _p.accent,
                           foregroundColor: Colors.white,
                           padding: EdgeInsets.symmetric(horizontal: 20, vertical: 10),
                           shape: RoundedRectangleBorder(
@@ -3363,7 +3351,9 @@ class _StudentDashboardState extends State<StudentDashboard> {
                   decoration: BoxDecoration(
                     color: _p.surface,
                     border: Border.all(color: _p.borderStrong),
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(
+                      _p.isDark ? _p.cardRadius : 12,
+                    ),
                     boxShadow: _p.cardShadow,
                   ),
                   padding: EdgeInsets.all(20),
@@ -3493,11 +3483,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
               // Request custom template section
               Center(
                 child: Container(
-                  decoration: BoxDecoration(
-                    color: _p.surface,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: _p.border, width: 1.5),
-                  ),
+                  decoration: _cardDeco(),
                   padding: EdgeInsets.all(40),
                   child: Column(
                     children: [
@@ -3538,7 +3524,6 @@ class _StudentDashboardState extends State<StudentDashboard> {
                           );
                         },
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: _p.accent,
                           foregroundColor: Colors.white,
                           padding: EdgeInsets.symmetric(horizontal: 32, vertical: 14),
                           shape: RoundedRectangleBorder(
@@ -3569,13 +3554,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
             children: [
               
               Container(
-                decoration: BoxDecoration(
-                  color: _p.surface,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                    color: _p.border,
-                  ),
-                ),
+                decoration: _cardDeco(),
                 padding: EdgeInsets.all(20),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -3602,13 +3581,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
               ),
               SizedBox(height: 24),
               Container(
-                decoration: BoxDecoration(
-                  color: _p.surface,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                    color: _p.border,
-                  ),
-                ),
+                decoration: _cardDeco(),
                 padding: EdgeInsets.all(20),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -3727,25 +3700,35 @@ class _StudentDashboardState extends State<StudentDashboard> {
     }
 
     return Container(
-      decoration: BoxDecoration(
-        color: _p.surface,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: _p.border),
-      ),
-      child: Column(
+      decoration: _cardDeco(),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(
+          _p.isDark ? _p.cardRadius : 12,
+        ),
+        child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
             width: double.infinity,
             height: 120,
             decoration: BoxDecoration(
-              color: cardColor,
-              borderRadius: BorderRadius.vertical(top: Radius.circular(12)),
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [cardColor, cardColor.withOpacity(0.8)],
-              ),
+              // Dark: purple-system header. Light: keep multi-color cardColor variety.
+              gradient: _p.isDark
+                  ? LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [
+                        _p.accentAlt.withOpacity(0.55),
+                        _p.accent.withOpacity(0.35),
+                        _p.surfaceElevated,
+                      ],
+                    )
+                  : LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [cardColor, cardColor.withOpacity(0.8)],
+                    ),
+              color: _p.isDark ? null : cardColor,
             ),
             padding: EdgeInsets.all(20),
             child: Align(
@@ -3850,8 +3833,10 @@ class _StudentDashboardState extends State<StudentDashboard> {
                               _activeProjectId = null;
                             });
                           },
+                          // No opaque backgroundColor — theme gradient CTA.
+                          // Sits in card body (surface), below header — not on gradient.
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: _p.border,
+                            foregroundColor: Colors.white,
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(6),
                             ),
@@ -3861,7 +3846,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
                             style: TextStyle(
                               fontSize: 11,
                               fontWeight: FontWeight.w600,
-                              color: _p.textPrimary,
+                              color: Colors.white,
                             ),
                           ),
                         ),
@@ -3873,6 +3858,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
             ),
           ),
         ],
+      ),
       ),
     );
   }
@@ -3887,7 +3873,11 @@ class _StudentDashboardState extends State<StudentDashboard> {
   Widget _buildUploadDialog(Map<String, dynamic> template) {
     return Dialog(
       backgroundColor: _p.surface,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(
+          _p.isDark ? _p.cardRadius : 12,
+        ),
+      ),
       child: Container(
         width: 400,
         padding: EdgeInsets.all(24),
@@ -4090,7 +4080,11 @@ class _StudentDashboardState extends State<StudentDashboard> {
       context: context,
       builder: (context) => Dialog(
         backgroundColor: _p.surface,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(
+            _p.isDark ? _p.cardRadius : 12,
+          ),
+        ),
         child: Container(
           width: 500,
           padding: EdgeInsets.all(24),
@@ -4166,7 +4160,6 @@ class _StudentDashboardState extends State<StudentDashboard> {
                   ElevatedButton(
                     onPressed: () => _uploadPastedContent(template, textController.text),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: _p.accent,
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(6),
                       ),
@@ -4593,15 +4586,23 @@ class _StudentDashboardState extends State<StudentDashboard> {
   }) {
     return Material(
       color: _p.surfaceAlt,
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: BorderRadius.circular(
+        _p.isDark ? _p.cardRadius : 12,
+      ),
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(
+          _p.isDark ? _p.cardRadius : 12,
+        ),
         child: Container(
           padding: EdgeInsets.all(14),
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: _p.border),
+            borderRadius: BorderRadius.circular(
+              _p.isDark ? _p.cardRadius : 12,
+            ),
+            border: Border.all(
+              color: _p.isDark ? _p.borderStrong : _p.border,
+            ),
           ),
           child: Row(
             children: [
@@ -4807,7 +4808,11 @@ class _StudentDashboardState extends State<StudentDashboard> {
       context: context,
       builder: (context) => Dialog(
         backgroundColor: _p.surface,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(
+            _p.isDark ? _p.cardRadius : 12,
+          ),
+        ),
         child: Container(
           padding: EdgeInsets.all(24),
           child: Column(
@@ -5205,15 +5210,24 @@ class TemplatesPanel extends StatelessWidget {
                       margin: EdgeInsets.only(bottom: 16),
                       decoration: BoxDecoration(
                         color: isSelected
-                            ? Color(0xFF6366F1).withOpacity(0.15)
-                            : Color(0xFF1A1F2E),
-                        borderRadius: BorderRadius.circular(12),
+                            ? (p.isDark
+                                ? p.accentSoft
+                                : const Color(0xFF6366F1).withOpacity(0.15))
+                            : (p.isDark
+                                ? p.surfaceElevated
+                                : const Color(0xFF1A1F2E)),
+                        borderRadius: BorderRadius.circular(
+                          p.isDark ? p.cardRadius : 12,
+                        ),
                         border: Border.all(
                           color: isSelected
-                              ? Color(0xFF6366F1).withOpacity(0.4)
-                              : p.border,
+                              ? (p.isDark
+                                  ? p.accent.withOpacity(0.4)
+                                  : const Color(0xFF6366F1).withOpacity(0.4))
+                              : (p.isDark ? p.borderStrong : p.border),
                           width: 1.5,
                         ),
+                        boxShadow: p.isDark ? p.cardShadow : null,
                       ),
                       child: Padding(
                         padding: EdgeInsets.all(20),
@@ -5231,12 +5245,18 @@ class TemplatesPanel extends StatelessWidget {
                                           Container(
                                             padding: EdgeInsets.all(8),
                                             decoration: BoxDecoration(
-                                              color: Color(0xFF6366F1).withOpacity(0.2),
-                                              borderRadius: BorderRadius.circular(6),
+                                              color: p.isDark
+                                                  ? p.accentSoft
+                                                  : const Color(0xFF6366F1)
+                                                      .withOpacity(0.2),
+                                              borderRadius:
+                                                  BorderRadius.circular(6),
                                             ),
                                             child: Icon(
                                               Icons.layers,
-                                              color: Color(0xFF6366F1),
+                                              color: p.isDark
+                                                  ? p.accent
+                                                  : const Color(0xFF6366F1),
                                               size: 16,
                                             ),
                                           ),
@@ -5375,9 +5395,16 @@ class SettingsPanel extends StatelessWidget {
             builder: (context, auth, _) {
               return Container(
                 decoration: BoxDecoration(
-                  color: Color(0xFF1A1F2E),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: p.border),
+                  color: p.isDark
+                      ? p.surfaceElevated
+                      : const Color(0xFF1A1F2E),
+                  borderRadius: BorderRadius.circular(
+                    p.isDark ? p.cardRadius : 12,
+                  ),
+                  border: Border.all(
+                    color: p.isDark ? p.borderStrong : p.border,
+                  ),
+                  boxShadow: p.isDark ? p.cardShadow : null,
                 ),
                 child: Padding(
                   padding: EdgeInsets.all(24.0),
@@ -5389,12 +5416,16 @@ class SettingsPanel extends StatelessWidget {
                           Container(
                             padding: EdgeInsets.all(10),
                             decoration: BoxDecoration(
-                              color: Color(0xFF6366F1).withOpacity(0.2),
+                              color: p.isDark
+                                  ? p.accentSoft
+                                  : const Color(0xFF6366F1).withOpacity(0.2),
                               borderRadius: BorderRadius.circular(8),
                             ),
                             child: Icon(
                               Icons.account_circle,
-                              color: Color(0xFF6366F1),
+                              color: p.isDark
+                                  ? p.accent
+                                  : const Color(0xFF6366F1),
                               size: 24,
                             ),
                           ),

@@ -9,6 +9,7 @@ import '../../../config/dev_user_config.dart';
 import '../../../providers/auth_provider.dart';
 import '../../../providers/collaboration_provider.dart';
 import '../../../providers/document_provider.dart';
+import '../../../theme/app_theme.dart';
 import '../section_editor_screen.dart';
 
 /// Document tab — preview by default, download / edit / upload new version.
@@ -83,10 +84,12 @@ class _ProjectEditorTabState extends State<ProjectEditorTab> {
     );
     if (result == null || result.files.single.path == null) return;
 
+    final p = context.read<ThemeProvider>().palette;
     final confirm = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
-        backgroundColor: const Color(0xFF1A1F2E),
+        backgroundColor:
+            p.isDark ? p.surfaceElevated : const Color(0xFF1A1F2E),
         title: const Text(
           'Upload new version?',
           style: TextStyle(color: Colors.white),
@@ -104,9 +107,7 @@ class _ProjectEditorTabState extends State<ProjectEditorTab> {
           ),
           ElevatedButton(
             onPressed: () => Navigator.pop(context, true),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF6366F1),
-            ),
+            style: ElevatedButton.styleFrom(),
             child: const Text('Upload'),
           ),
         ],
@@ -147,6 +148,12 @@ class _ProjectEditorTabState extends State<ProjectEditorTab> {
   @override
   Widget build(BuildContext context) {
     final vc = context.watch<CollaborationProvider>();
+    final p = context.watch<ThemeProvider>().palette;
+    final panelColor =
+        p.isDark ? p.surfaceElevated : const Color(0xFF1A1F2E);
+    final panelBorder =
+        p.isDark ? p.borderStrong : const Color(0xFF2D3748);
+    final panelRadius = p.isDark ? p.cardRadius : 10.0;
     final project = vc.currentProject ?? {};
     final sections = vc.sections;
     final members = (project['members'] as List? ?? [])
@@ -165,9 +172,9 @@ class _ProjectEditorTabState extends State<ProjectEditorTab> {
         Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: const Color(0xFF1A1F2E),
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: const Color(0xFF2D3748)),
+            color: panelColor,
+            borderRadius: BorderRadius.circular(panelRadius),
+            border: Border.all(color: panelBorder),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -220,9 +227,7 @@ class _ProjectEditorTabState extends State<ProjectEditorTab> {
                           )
                         : const Icon(Icons.download, size: 16),
                     label: const Text('Download'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF6366F1),
-                    ),
+                    style: ElevatedButton.styleFrom(),
                   ),
                   OutlinedButton.icon(
                     onPressed: () => setState(() => _editMode = !_editMode),
@@ -317,9 +322,9 @@ class _ProjectEditorTabState extends State<ProjectEditorTab> {
               width: double.infinity,
               padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(
-                color: const Color(0xFF1A1F2E),
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: const Color(0xFF2D3748)),
+                color: panelColor,
+                borderRadius: BorderRadius.circular(panelRadius),
+                border: Border.all(color: panelBorder),
               ),
               child: const Text(
                 'Nothing to preview yet. Upload a document or use Edit here to add content.',
@@ -341,6 +346,7 @@ class _PreviewSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.watch<ThemeProvider>().palette;
     final title = section['section_name'] as String? ?? '';
     final content = (section['latest_content'] as String? ?? '').trim();
     if (content.isEmpty) return const SizedBox.shrink();
@@ -350,9 +356,11 @@ class _PreviewSection extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: const Color(0xFF1A1F2E),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFF2D3748)),
+        color: p.isDark ? p.surfaceElevated : const Color(0xFF1A1F2E),
+        borderRadius: BorderRadius.circular(p.isDark ? p.cardRadius : 10),
+        border: Border.all(
+          color: p.isDark ? p.borderStrong : const Color(0xFF2D3748),
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -497,10 +505,17 @@ class _SectionTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.watch<ThemeProvider>().palette;
     final hasContent = (section['latest_content'] as String? ?? '').isNotEmpty;
     return Card(
-      color: const Color(0xFF1A1F2E),
+      color: p.isDark ? p.surfaceElevated : const Color(0xFF1A1F2E),
       margin: const EdgeInsets.only(bottom: 10),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(p.isDark ? p.cardRadius : 10),
+        side: BorderSide(
+          color: p.isDark ? p.borderStrong : const Color(0xFF2D3748),
+        ),
+      ),
       child: ListTile(
         title: Text(
           section['section_name'] as String? ?? '',

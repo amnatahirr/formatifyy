@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../models/supervisor_models.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/supervisor_api_service.dart';
+import '../../theme/app_theme.dart';
 import '../../widgets/admin/admin_ui.dart';
 
 class PlagiarismMonitorDetailScreen extends StatefulWidget {
@@ -146,36 +147,38 @@ class _PlagiarismMonitorDetailScreenState extends State<PlagiarismMonitorDetailS
     final title = _detail?.title.isNotEmpty == true ? _detail!.title : (widget.titleHint ?? 'Plagiarism Detail');
 
     return Scaffold(
-      backgroundColor: AdminColors.background,
-      body: Column(
-        children: [
-          Container(
-            height: 72,
-            decoration: BoxDecoration(
-              color: AdminColors.surface,
-              border: Border(bottom: BorderSide(color: AdminColors.border.withOpacity(0.5))),
-            ),
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Row(
-              children: [
-                IconButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  icon: const Icon(Icons.arrow_back_rounded, color: Colors.white),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    title,
-                    style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: Colors.white),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+      backgroundColor: Colors.transparent,
+      body: AppPalette.dark.ambientGlowBackdrop(
+        child: Column(
+          children: [
+            Container(
+              height: 72,
+              decoration: BoxDecoration(
+                color: AdminColors.surface,
+                border: Border(bottom: BorderSide(color: AdminColors.border.withOpacity(0.5))),
+              ),
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Row(
+                children: [
+                  IconButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    icon: const Icon(Icons.arrow_back_rounded, color: Colors.white),
                   ),
-                ),
-              ],
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      title,
+                      style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: Colors.white),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
-          Expanded(child: _buildBody()),
-        ],
+            Expanded(child: _buildBody()),
+          ],
+        ),
       ),
     );
   }

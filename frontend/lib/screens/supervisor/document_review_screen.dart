@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../models/supervisor_models.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/supervisor_api_service.dart';
+import '../../theme/app_theme.dart';
 import '../../widgets/admin/admin_ui.dart';
 
 /// Yellow for unresolved comments, gray for resolved-only paragraphs.
@@ -272,61 +273,63 @@ class _DocumentReviewScreenState extends State<DocumentReviewScreen> {
         : (widget.documentTitle ?? 'Document Review');
 
     return Scaffold(
-      backgroundColor: AdminColors.background,
-      body: Column(
-        children: [
-          Container(
-            height: 72,
-            decoration: BoxDecoration(
-              color: AdminColors.surface,
-              border: Border(bottom: BorderSide(color: AdminColors.border.withOpacity(0.5))),
-            ),
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Row(
-              children: [
-                IconButton(
-                  tooltip: 'Back',
-                  onPressed: () => Navigator.of(context).pop(),
-                  icon: const Icon(Icons.arrow_back_rounded, color: Colors.white),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        title,
-                        style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: Colors.white),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      Text(
-                        'Long-press a paragraph to add a comment',
-                        style: TextStyle(fontSize: 12, color: Colors.white.withOpacity(0.5)),
-                      ),
-                    ],
+      backgroundColor: Colors.transparent,
+      body: AppPalette.dark.ambientGlowBackdrop(
+        child: Column(
+          children: [
+            Container(
+              height: 72,
+              decoration: BoxDecoration(
+                color: AdminColors.surface,
+                border: Border(bottom: BorderSide(color: AdminColors.border.withOpacity(0.5))),
+              ),
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Row(
+                children: [
+                  IconButton(
+                    tooltip: 'Back',
+                    onPressed: () => Navigator.of(context).pop(),
+                    icon: const Icon(Icons.arrow_back_rounded, color: Colors.white),
                   ),
-                ),
-                if (_busy || _downloading)
-                  const Padding(
-                    padding: EdgeInsets.only(right: 8),
-                    child: SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2, color: AdminColors.primary),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          title,
+                          style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: Colors.white),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        Text(
+                          'Long-press a paragraph to add a comment',
+                          style: TextStyle(fontSize: 12, color: Colors.white.withOpacity(0.5)),
+                        ),
+                      ],
                     ),
                   ),
-                IconButton(
-                  tooltip: 'Download file',
-                  onPressed: (_busy || _downloading) ? null : _downloadFile,
-                  icon: const Icon(Icons.download_rounded, color: Colors.white),
-                ),
-              ],
+                  if (_busy || _downloading)
+                    const Padding(
+                      padding: EdgeInsets.only(right: 8),
+                      child: SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: AdminColors.primary),
+                      ),
+                    ),
+                  IconButton(
+                    tooltip: 'Download file',
+                    onPressed: (_busy || _downloading) ? null : _downloadFile,
+                    icon: const Icon(Icons.download_rounded, color: Colors.white),
+                  ),
+                ],
+              ),
             ),
-          ),
-          Expanded(child: _buildBody()),
-        ],
+            Expanded(child: _buildBody()),
+          ],
+        ),
       ),
     );
   }

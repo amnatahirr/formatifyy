@@ -20,8 +20,6 @@ class _MySupervisorScreenState extends State<MySupervisorScreen> {
   AppPalette get _p => context.watch<ThemeProvider>().palette;
   String? _error;
   bool _loading = true;
-  static const _accent = Color(0xFF3B82F6);
-
   @override
   void initState() {
     super.initState();
@@ -76,7 +74,7 @@ class _MySupervisorScreenState extends State<MySupervisorScreen> {
   @override
   Widget build(BuildContext context) {
     if (_loading) {
-      return Center(child: CircularProgressIndicator(color: _accent));
+      return Center(child: CircularProgressIndicator(color: _p.accent));
     }
     if (_error != null) {
       return Center(
@@ -103,7 +101,7 @@ class _MySupervisorScreenState extends State<MySupervisorScreen> {
     final status = (statusMap?['status'] ?? '').toString().toLowerCase();
 
     return RefreshIndicator(
-      color: _accent,
+      color: _p.accent,
       backgroundColor: _p.surface,
       onRefresh: _load,
       child: ListView(
@@ -134,8 +132,9 @@ class _MySupervisorScreenState extends State<MySupervisorScreen> {
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
         color: _p.surface,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: _p.border),
+        borderRadius: BorderRadius.circular(_p.isDark ? _p.cardRadius : 12),
+        border: Border.all(color: _p.isDark ? _p.borderStrong : _p.border),
+        boxShadow: _p.isDark ? _p.cardShadow : null,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -150,7 +149,7 @@ class _MySupervisorScreenState extends State<MySupervisorScreen> {
             icon: const Icon(Icons.school_outlined, size: 18),
             label: const Text('Choose Supervisor'),
             style: ElevatedButton.styleFrom(
-              backgroundColor: _accent,
+              backgroundColor: _p.accent,
               foregroundColor: Colors.white,
             ),
           ),
@@ -192,7 +191,7 @@ class _MySupervisorScreenState extends State<MySupervisorScreen> {
             icon: const Icon(Icons.refresh, size: 18),
             label: const Text('Choose another supervisor'),
             style: ElevatedButton.styleFrom(
-              backgroundColor: _accent,
+              backgroundColor: _p.accent,
               foregroundColor: Colors.white,
             ),
           ),
@@ -239,7 +238,7 @@ class _MySupervisorScreenState extends State<MySupervisorScreen> {
 
   Widget _genericCard(Map<String, dynamic> data) {
     return _statusShell(
-      accent: _accent,
+      accent: _p.accent,
       title: 'Status: ${data['status']}',
       subtitle: data['group_name']?.toString() ?? '',
       child: const SizedBox.shrink(),
@@ -256,8 +255,9 @@ class _MySupervisorScreenState extends State<MySupervisorScreen> {
       padding: const EdgeInsets.all(22),
       decoration: BoxDecoration(
         color: _p.surface,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: _p.border),
+        borderRadius: BorderRadius.circular(_p.isDark ? _p.cardRadius : 12),
+        border: Border.all(color: _p.isDark ? _p.borderStrong : _p.border),
+        boxShadow: _p.isDark ? _p.cardShadow : null,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,

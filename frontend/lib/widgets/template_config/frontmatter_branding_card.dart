@@ -222,7 +222,6 @@ class _FrontmatterBrandingCardState extends State<FrontmatterBrandingCard> {
                             : const Icon(Icons.save_rounded, size: 16),
                         label: Text(_saving ? 'Saving…' : 'Save branding'),
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF6366F1),
                           foregroundColor: Colors.white,
                           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                         ),

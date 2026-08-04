@@ -17,6 +17,7 @@ import '../screens/admin_verify_screen.dart';
 import '../services/super_admin_api_service.dart';
 import '../utils/logout_confirm.dart';
 import '../utils/responsive.dart';
+import '../theme/app_theme.dart';
 import '../widgets/admin/admin_ui.dart';
 
 class _AdminNavItem {
@@ -223,30 +224,32 @@ class _AdminDashboardState extends State<AdminDashboard> {
 
     return Scaffold(
       key: _scaffoldKey,
-      backgroundColor: AdminColors.background,
+      backgroundColor: Colors.transparent,
       drawer: compact ? _buildDrawer(items) : null,
-      body: compact
-          ? SafeArea(
-              child: Column(
+      body: AppPalette.dark.ambientGlowBackdrop(
+        child: compact
+            ? SafeArea(
+                child: Column(
+                  children: [
+                    _buildTopBar(compact: true),
+                    Expanded(child: _buildContent()),
+                  ],
+                ),
+              )
+            : Row(
                 children: [
-                  _buildTopBar(compact: true),
-                  Expanded(child: _buildContent()),
+                  _buildSidebar(items),
+                  Expanded(
+                    child: Column(
+                      children: [
+                        _buildTopBar(compact: false),
+                        Expanded(child: _buildContent()),
+                      ],
+                    ),
+                  ),
                 ],
               ),
-            )
-          : Row(
-              children: [
-                _buildSidebar(items),
-                Expanded(
-                  child: Column(
-                    children: [
-                      _buildTopBar(compact: false),
-                      Expanded(child: _buildContent()),
-                    ],
-                  ),
-                ),
-              ],
-            ),
+      ),
       bottomNavigationBar: compact ? _buildMobileBottomNav() : null,
     );
   }

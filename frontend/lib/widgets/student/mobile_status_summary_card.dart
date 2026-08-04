@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../../providers/auth_provider.dart';
 import '../../providers/fyp_provider.dart';
+import '../../theme/app_theme.dart';
 
 /// Compact FYP status summary for the mobile Dashboard tab.
 ///
@@ -22,9 +23,9 @@ class _MobileStatusSummaryCardState extends State<MobileStatusSummaryCard> {
   bool _loading = true;
   String? _error;
 
-  static const _card = Color(0xFF161B22);
-  static const _border = Color(0x22FFFFFF);
-  static const _accent = Color(0xFF3B82F6);
+  static const _legacyCard = Color(0xFF161B22);
+  static const _legacyBorder = Color(0x22FFFFFF);
+  static const _legacyAccent = Color(0xFF3B82F6);
   static const _done = Color(0xFF10B981);
   static const _warn = Color(0xFFF59E0B);
   static const _bad = Color(0xFFEF4444);
@@ -83,7 +84,7 @@ class _MobileStatusSummaryCardState extends State<MobileStatusSummaryCard> {
     }
   }
 
-  Color _statusColor(String status) {
+  Color _statusColor(String status, Color accent) {
     switch (status) {
       case 'approved':
         return _done;
@@ -92,7 +93,7 @@ class _MobileStatusSummaryCardState extends State<MobileStatusSummaryCard> {
       case 'rejected':
         return _bad;
       default:
-        return _accent;
+        return accent;
     }
   }
 
@@ -105,20 +106,25 @@ class _MobileStatusSummaryCardState extends State<MobileStatusSummaryCard> {
   @override
   Widget build(BuildContext context) {
     final fyp = context.watch<FypProvider>();
+    final p = context.watch<ThemeProvider>().palette;
+    final card = p.isDark ? p.surface : _legacyCard;
+    final border = p.isDark ? p.borderStrong : _legacyBorder;
+    final accent = p.isDark ? p.accent : _legacyAccent;
 
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: _card,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: _border),
+        color: card,
+        borderRadius: BorderRadius.circular(p.isDark ? p.cardRadius : 12),
+        border: Border.all(color: border),
+        boxShadow: p.isDark ? p.cardShadow : null,
       ),
       child: _loading || fyp.isStatusLoading || fyp.isSubmissionsLoading
-          ? const SizedBox(
+          ? SizedBox(
               height: 72,
               child: Center(
-                child: CircularProgressIndicator(color: _accent, strokeWidth: 2),
+                child: CircularProgressIndicator(color: accent, strokeWidth: 2),
               ),
             )
           : _error != null
@@ -140,7 +146,7 @@ class _MobileStatusSummaryCardState extends State<MobileStatusSummaryCard> {
                 )
               : fyp.fypGroupId == null
                   ? _emptyState()
-                  : _filledCard(fyp),
+                  : _filledCard(fyp, border: border, accent: accent),
     );
   }
 
@@ -179,7 +185,11 @@ class _MobileStatusSummaryCardState extends State<MobileStatusSummaryCard> {
     );
   }
 
-  Widget _filledCard(FypProvider fyp) {
+  Widget _filledCard(
+    FypProvider fyp, {
+    required Color border,
+    required Color accent,
+  }) {
     final statusMap = fyp.assignmentStatus;
     final supervisorName =
         ((statusMap?['supervisor'] as Map?)?['name'] ?? '').toString().trim();
@@ -260,7 +270,7 @@ class _MobileStatusSummaryCardState extends State<MobileStatusSummaryCard> {
           ),
         ),
         const SizedBox(height: 14),
-        const Divider(height: 1, color: _border),
+        Divider(height: 1, color: border),
         const SizedBox(height: 12),
         if (latest == null)
           _row('Submission', 'None yet', muted: true)
@@ -268,7 +278,7 @@ class _MobileStatusSummaryCardState extends State<MobileStatusSummaryCard> {
           _row(
             'Submission',
             stage.isNotEmpty ? stage : subStatus,
-            valueColor: _statusColor(subStatus),
+            valueColor: _statusColor(subStatus, accent),
           ),
           const SizedBox(height: 8),
           _row('Last updated', _formatDate(lastUpdated), muted: true),

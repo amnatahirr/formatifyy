@@ -24,7 +24,6 @@ class _StudentNotificationsPageState extends State<StudentNotificationsPage> {
   bool _loading = false;
   String? _error;
 
-  static const _accent = Color(0xFF3B82F6);
   static const _border = Color(0x22FFFFFF);
 
   String? get _email {
@@ -134,9 +133,10 @@ class _StudentNotificationsPageState extends State<StudentNotificationsPage> {
 
   @override
   Widget build(BuildContext context) {
+    final accent = context.watch<ThemeProvider>().palette.accent;
     if (_loading && _notifications.isEmpty) {
-      return const Center(
-        child: CircularProgressIndicator(color: _accent, strokeWidth: 2),
+      return Center(
+        child: CircularProgressIndicator(color: accent, strokeWidth: 2),
       );
     }
     if (_error != null && _notifications.isEmpty) {
@@ -177,7 +177,7 @@ class _StudentNotificationsPageState extends State<StudentNotificationsPage> {
     }
 
     return RefreshIndicator(
-      color: _accent,
+      color: accent,
       onRefresh: _refresh,
       child: ListView.separated(
         physics: const AlwaysScrollableScrollPhysics(),
@@ -476,10 +476,6 @@ class _NotificationsDropdown extends StatelessWidget {
     required this.onOpenComment,
   });
 
-  static const _card = Color(0xFF161B22);
-  static const _border = Color(0x22FFFFFF);
-  static const _accent = Color(0xFF3B82F6);
-
   @override
   Widget build(BuildContext context) {
     final p = context.watch<ThemeProvider>().palette;
@@ -488,17 +484,9 @@ class _NotificationsDropdown extends StatelessWidget {
       constraints: const BoxConstraints(maxHeight: 420),
       decoration: BoxDecoration(
         color: p.surface,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: p.border),
-        boxShadow: p.isDark
-            ? [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.45),
-                  blurRadius: 18,
-                  offset: const Offset(0, 8),
-                ),
-              ]
-            : p.cardShadow,
+        borderRadius: BorderRadius.circular(p.isDark ? p.cardRadius : 12),
+        border: Border.all(color: p.isDark ? p.borderStrong : p.border),
+        boxShadow: p.cardShadow,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,

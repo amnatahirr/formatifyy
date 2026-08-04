@@ -28,7 +28,6 @@ class _StatusTrackerScreenState extends State<StatusTrackerScreen> {
   AppPalette get _p => context.watch<ThemeProvider>().palette;
   String? _error;
   bool _loading = true;
-  static const _accent = Color(0xFF3B82F6);
   static const _done = Color(0xFF10B981);
   static const _warn = Color(0xFFF59E0B);
   static const _bad = Color(0xFFEF4444);
@@ -89,7 +88,7 @@ class _StatusTrackerScreenState extends State<StatusTrackerScreen> {
       case 'rejected':
         return _bad;
       default:
-        return _accent;
+        return _p.accent;
     }
   }
 
@@ -145,7 +144,7 @@ class _StatusTrackerScreenState extends State<StatusTrackerScreen> {
     final groupId = fyp.fypGroupId;
 
     if (_loading || fyp.isSubmissionsLoading) {
-      return Center(child: CircularProgressIndicator(color: _accent));
+      return Center(child: CircularProgressIndicator(color: _p.accent));
     }
 
     if (groupId == null) {
@@ -163,7 +162,7 @@ class _StatusTrackerScreenState extends State<StatusTrackerScreen> {
             ElevatedButton(
               onPressed: widget.onChooseSupervisor,
               style: ElevatedButton.styleFrom(
-                backgroundColor: _accent,
+                backgroundColor: _p.accent,
                 foregroundColor: Colors.white,
               ),
               child: const Text('Choose Supervisor'),
@@ -196,7 +195,7 @@ class _StatusTrackerScreenState extends State<StatusTrackerScreen> {
     final history = fyp.submissions;
 
     return RefreshIndicator(
-      color: _accent,
+      color: _p.accent,
       backgroundColor: _p.surface,
       onRefresh: _load,
       child: ListView(
@@ -247,8 +246,9 @@ class _StatusTrackerScreenState extends State<StatusTrackerScreen> {
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: _p.surface,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(_p.isDark ? _p.cardRadius : 12),
         border: Border.all(color: color.withOpacity(0.4)),
+        boxShadow: _p.isDark ? _p.cardShadow : null,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -429,8 +429,9 @@ class _StatusTrackerScreenState extends State<StatusTrackerScreen> {
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
           color: _p.surface,
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: _p.border),
+          borderRadius: BorderRadius.circular(_p.isDark ? _p.cardRadius : 10),
+          border: Border.all(color: _p.isDark ? _p.borderStrong : _p.border),
+          boxShadow: _p.isDark ? _p.cardShadow : null,
         ),
         child: Row(
           children: [
@@ -484,8 +485,9 @@ class _StatusTrackerScreenState extends State<StatusTrackerScreen> {
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
         color: _p.surface,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: _p.border),
+        borderRadius: BorderRadius.circular(_p.isDark ? _p.cardRadius : 12),
+        border: Border.all(color: _p.isDark ? _p.borderStrong : _p.border),
+        boxShadow: _p.isDark ? _p.cardShadow : null,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,

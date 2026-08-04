@@ -45,8 +45,9 @@ class _SupervisorSelectionScreenState extends State<SupervisorSelectionScreen> {
   int? _supervisorId;
   int? _cosupervisorId;
   bool _prefilled = false;
-  static const _accent = Color(0xFF3B82F6);
-  static const _surface = Color(0xFF0D1117);
+  static const _legacySurface = Color(0xFF0D1117);
+
+  Color get _inputSurface => _p.isDark ? _p.inputFill : _legacySurface;
 
   @override
   void initState() {
@@ -99,7 +100,7 @@ class _SupervisorSelectionScreenState extends State<SupervisorSelectionScreen> {
       hintText: hint,
       prefixIcon: prefixIcon,
       filled: true,
-      fillColor: _surface,
+      fillColor: _inputSurface,
       contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
       labelStyle: TextStyle(color: _p.textSecondary, fontSize: 13),
       hintStyle: TextStyle(color: _p.textMuted, fontSize: 13),
@@ -109,7 +110,7 @@ class _SupervisorSelectionScreenState extends State<SupervisorSelectionScreen> {
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: _accent),
+        borderSide: BorderSide(color: _p.accent),
       ),
       errorBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
@@ -264,11 +265,11 @@ class _SupervisorSelectionScreenState extends State<SupervisorSelectionScreen> {
         .toList();
 
     if (fyp.isLoading && fyp.supervisors.isEmpty) {
-      return const Center(child: CircularProgressIndicator(color: _accent));
+      return Center(child: CircularProgressIndicator(color: _p.accent));
     }
 
     return RefreshIndicator(
-      color: _accent,
+      color: _p.accent,
       backgroundColor: _p.surface,
       onRefresh: _bootstrap,
       child: ListView(
@@ -292,8 +293,13 @@ class _SupervisorSelectionScreenState extends State<SupervisorSelectionScreen> {
             padding: EdgeInsets.all(compact ? 16 : 22),
             decoration: BoxDecoration(
               color: _p.surface,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: _p.border),
+              borderRadius: BorderRadius.circular(
+                _p.isDark ? _p.cardRadius : 16,
+              ),
+              border: Border.all(
+                color: _p.isDark ? _p.borderStrong : _p.border,
+              ),
+              boxShadow: _p.isDark ? _p.cardShadow : null,
             ),
             child: Form(
               key: _formKey,
@@ -371,7 +377,7 @@ class _SupervisorSelectionScreenState extends State<SupervisorSelectionScreen> {
                         icon: const Icon(Icons.person_add_alt_1, size: 18),
                         label: const Text('Add'),
                         style: TextButton.styleFrom(
-                          foregroundColor: _accent,
+                          foregroundColor: _p.accent,
                         ),
                       ),
                     ],
@@ -382,9 +388,13 @@ class _SupervisorSelectionScreenState extends State<SupervisorSelectionScreen> {
                       width: double.infinity,
                       padding: const EdgeInsets.all(14),
                       decoration: BoxDecoration(
-                        color: _surface,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: _p.border),
+                        color: _inputSurface,
+                        borderRadius: BorderRadius.circular(
+                          _p.isDark ? _p.cardRadius : 12,
+                        ),
+                        border: Border.all(
+                          color: _p.isDark ? _p.borderStrong : _p.border,
+                        ),
                       ),
                       child: Text(
                         'Optional — add other members with their university emails. Leader is included automatically.',
@@ -402,9 +412,13 @@ class _SupervisorSelectionScreenState extends State<SupervisorSelectionScreen> {
                         child: Container(
                           padding: const EdgeInsets.all(12),
                           decoration: BoxDecoration(
-                            color: _surface,
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: _p.border),
+                            color: _inputSurface,
+                            borderRadius: BorderRadius.circular(
+                              _p.isDark ? _p.cardRadius : 12,
+                            ),
+                            border: Border.all(
+                              color: _p.isDark ? _p.borderStrong : _p.border,
+                            ),
                           ),
                           child: Column(
                             children: [
@@ -608,7 +622,7 @@ class _SupervisorSelectionScreenState extends State<SupervisorSelectionScreen> {
                         style: const TextStyle(fontWeight: FontWeight.w700),
                       ),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: _accent,
+                        backgroundColor: _p.accent,
                         foregroundColor: Colors.white,
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12),
@@ -635,8 +649,13 @@ class _SupervisorSelectionScreenState extends State<SupervisorSelectionScreen> {
               padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(
                 color: _p.surface,
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: _p.border),
+                borderRadius: BorderRadius.circular(
+                  _p.isDark ? _p.cardRadius : 14,
+                ),
+                border: Border.all(
+                  color: _p.isDark ? _p.borderStrong : _p.border,
+                ),
+                boxShadow: _p.isDark ? _p.cardShadow : null,
               ),
               child: Text(
                 'No assignment requests yet.',
@@ -654,8 +673,13 @@ class _SupervisorSelectionScreenState extends State<SupervisorSelectionScreen> {
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
                     color: _p.surface,
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: _p.border),
+                    borderRadius: BorderRadius.circular(
+                      _p.isDark ? _p.cardRadius : 14,
+                    ),
+                    border: Border.all(
+                      color: _p.isDark ? _p.borderStrong : _p.border,
+                    ),
+                    boxShadow: _p.isDark ? _p.cardShadow : null,
                   ),
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,

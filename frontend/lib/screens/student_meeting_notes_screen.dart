@@ -22,8 +22,6 @@ class _StudentMeetingNotesScreenState extends State<StudentMeetingNotesScreen> {
   List<MeetingNoteModel> _notes = const [];
   String? _error;
   bool _loading = true;
-  static const _accent = Color(0xFF3B82F6);
-
   @override
   void initState() {
     super.initState();
@@ -70,7 +68,7 @@ class _StudentMeetingNotesScreenState extends State<StudentMeetingNotesScreen> {
   @override
   Widget build(BuildContext context) {
     if (_loading) {
-      return Center(child: CircularProgressIndicator(color: _accent));
+      return Center(child: CircularProgressIndicator(color: _p.accent));
     }
     if (_error != null) {
       return Center(
@@ -93,7 +91,7 @@ class _StudentMeetingNotesScreenState extends State<StudentMeetingNotesScreen> {
     }
 
     return RefreshIndicator(
-      color: _accent,
+      color: _p.accent,
       backgroundColor: _p.surface,
       onRefresh: _load,
       child: ListView(
@@ -110,8 +108,13 @@ class _StudentMeetingNotesScreenState extends State<StudentMeetingNotesScreen> {
               padding: const EdgeInsets.all(24),
               decoration: BoxDecoration(
                 color: _p.surface,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: _p.border),
+                borderRadius: BorderRadius.circular(
+                  _p.isDark ? _p.cardRadius : 12,
+                ),
+                border: Border.all(
+                  color: _p.isDark ? _p.borderStrong : _p.border,
+                ),
+                boxShadow: _p.isDark ? _p.cardShadow : null,
               ),
               child: Text(
                 'No meeting notes yet for your FYP group. When your supervisor adds notes, they will appear here.',
@@ -141,8 +144,9 @@ class _StudentMeetingNotesScreenState extends State<StudentMeetingNotesScreen> {
         padding: const EdgeInsets.all(18),
         decoration: BoxDecoration(
           color: _p.surface,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: _p.border),
+          borderRadius: BorderRadius.circular(_p.isDark ? _p.cardRadius : 12),
+          border: Border.all(color: _p.isDark ? _p.borderStrong : _p.border),
+          boxShadow: _p.isDark ? _p.cardShadow : null,
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -152,12 +156,12 @@ class _StudentMeetingNotesScreenState extends State<StudentMeetingNotesScreen> {
                 Container(
                   padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
-                    color: _accent.withOpacity(0.15),
+                    color: _p.accent.withOpacity(0.15),
                     borderRadius: BorderRadius.circular(10),
                   ),
-                  child: const Icon(
+                  child: Icon(
                     Icons.sticky_note_2_outlined,
-                    color: _accent,
+                    color: _p.accent,
                     size: 20,
                   ),
                 ),

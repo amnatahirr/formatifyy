@@ -1919,7 +1919,12 @@ class _NewReportScreenState extends State<NewReportScreen> {
         builder: (context) => Dialog(
           backgroundColor: _p.surface,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(
+              _p.isDark ? _p.cardRadius : 12,
+            ),
+            side: BorderSide(
+              color: _p.isDark ? _p.borderStrong : _p.border,
+            ),
           ),
           child: Container(
             width: 450,
@@ -2136,7 +2141,7 @@ void _showSuccess(String message) {
                   index: 1,
                   icon: Icons.upload_file,
                   label: 'Upload File',
-                  color: const Color(0xFF3B82F6),
+                  color: _p.accent,
                 ),
                 const SizedBox(width: 16),
                 _buildOptionButton(
@@ -2182,8 +2187,8 @@ void _showSuccess(String message) {
     }
 
     return Scaffold(
-      backgroundColor: _p.scaffold,
-      body: body,
+      backgroundColor: Colors.transparent,
+      body: _p.ambientGlowBackdrop(child: body),
     );
   }
 
@@ -2242,8 +2247,9 @@ void _showSuccess(String message) {
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: _p.surface,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFF3B82F6).withOpacity(0.35)),
+        borderRadius: BorderRadius.circular(_p.isDark ? _p.cardRadius : 12),
+        border: Border.all(color: _p.accent.withOpacity(0.35)),
+        boxShadow: _p.isDark ? _p.cardShadow : null,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -2293,7 +2299,6 @@ void _showSuccess(String message) {
                     : 'Submit for Supervisor Review',
               ),
               style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF3B82F6),
                 foregroundColor: Colors.white,
               ),
             ),
@@ -2346,7 +2351,8 @@ void _showSuccess(String message) {
       await showDialog<void>(
         context: context,
         builder: (ctx) => AlertDialog(
-          backgroundColor: const Color(0xFF161B22),
+          backgroundColor:
+              _p.isDark ? _p.surfaceElevated : const Color(0xFF161B22),
           title: const Text(
             'Submissions closed',
             style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
@@ -2379,8 +2385,13 @@ void _showSuccess(String message) {
             padding: const EdgeInsets.all(24),
             decoration: BoxDecoration(
               color: _p.surface,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: _p.border),
+              borderRadius: BorderRadius.circular(
+                _p.isDark ? _p.cardRadius : 12,
+              ),
+              border: Border.all(
+                color: _p.isDark ? _p.borderStrong : _p.border,
+              ),
+              boxShadow: _p.isDark ? _p.cardShadow : null,
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -2464,11 +2475,16 @@ void _showSuccess(String message) {
             color: isSelected
                 ? color.withOpacity(0.2)
                 : _p.surface,
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(
+              _p.isDark ? _p.cardRadius : 12,
+            ),
             border: Border.all(
-              color: isSelected ? color : _p.border,
+              color: isSelected
+                  ? color
+                  : (_p.isDark ? _p.borderStrong : _p.border),
               width: isSelected ? 2 : 1,
             ),
+            boxShadow: isSelected && _p.isDark ? _p.cardShadow : null,
           ),
           padding: const EdgeInsets.all(20),
           child: Column(
@@ -2543,8 +2559,13 @@ Future<void> _handleUploadFromPhone(int userId) async {
           child: Container(
             decoration: BoxDecoration(
               color: _p.surface,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: _p.border),
+              borderRadius: BorderRadius.circular(
+                _p.isDark ? _p.cardRadius : 12,
+              ),
+              border: Border.all(
+                color: _p.isDark ? _p.borderStrong : _p.border,
+              ),
+              boxShadow: _p.isDark ? _p.cardShadow : null,
             ),
             padding: const EdgeInsets.all(24),
             child: Column(
@@ -2555,12 +2576,12 @@ Future<void> _handleUploadFromPhone(int userId) async {
                     Container(
                       padding: const EdgeInsets.all(10),
                       decoration: BoxDecoration(
-                        color: const Color(0xFF3B82F6).withOpacity(0.2),
+                        color: _p.accentSoft,
                         borderRadius: BorderRadius.circular(8),
                       ),
-                      child: const Icon(
+                      child: Icon(
                         Icons.upload_file,
-                        color: Color(0xFF3B82F6),
+                        color: _p.accent,
                         size: 20,
                       ),
                     ),
@@ -2700,7 +2721,6 @@ Future<void> _handleUploadFromPhone(int userId) async {
                       _isProcessing ? 'Processing...' : 'Upload & Process',
                     ),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF3B82F6),
                       foregroundColor: Colors.white,
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(8),
@@ -2727,8 +2747,13 @@ Future<void> _handleUploadFromPhone(int userId) async {
           child: Container(
             decoration: BoxDecoration(
               color: _p.surface,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: _p.border),
+              borderRadius: BorderRadius.circular(
+                _p.isDark ? _p.cardRadius : 12,
+              ),
+              border: Border.all(
+                color: _p.isDark ? _p.borderStrong : _p.border,
+              ),
+              boxShadow: _p.isDark ? _p.cardShadow : null,
             ),
             padding: const EdgeInsets.all(24),
             child: Column(
@@ -2888,8 +2913,13 @@ Future<void> _handleUploadFromPhone(int userId) async {
           child: Container(
             decoration: BoxDecoration(
               color: _p.surface,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: _p.border),
+              borderRadius: BorderRadius.circular(
+                _p.isDark ? _p.cardRadius : 12,
+              ),
+              border: Border.all(
+                color: _p.isDark ? _p.borderStrong : _p.border,
+              ),
+              boxShadow: _p.isDark ? _p.cardShadow : null,
             ),
             padding: const EdgeInsets.all(24),
             child: Column(
@@ -3039,8 +3069,9 @@ Future<void> _handleUploadFromPhone(int userId) async {
     return Container(
       decoration: BoxDecoration(
         color: _p.surface,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: _p.border),
+        borderRadius: BorderRadius.circular(_p.isDark ? _p.cardRadius : 12),
+        border: Border.all(color: _p.isDark ? _p.borderStrong : _p.border),
+        boxShadow: _p.isDark ? _p.cardShadow : null,
       ),
       padding: const EdgeInsets.all(24),
       child: Column(

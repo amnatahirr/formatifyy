@@ -1,15 +1,19 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../theme/app_theme.dart';
 import '../../utils/responsive.dart';
 
 class AdminColors {
-  static const background = Color(0xFF0F1419);
-  static const surface = Color(0xFF141B27);
-  static const card = Color(0xFF1A1F2E);
-  static const border = Color(0xFF2D3748);
-  static const primary = Color(0xFF6366F1);
-  static const accent = Color(0xFF8B5CF6);
+  // Aligned with AppPalette.dark (admin/supervisor/super-admin are dark-only).
+  static const background = Color(0xFF0A0E1A); // scaffold
+  static const surface = Color(0xFF13182B);
+  static const card = Color(0xFF161B33); // surfaceElevated
+  // Solid approx of purple@18% on navy — kept const for `const BorderSide(...)` call sites.
+  static const border = Color(0xFF2E2650);
+  static const primary = Color(0xFF6366F1); // accentAlt / gradient start
+  static const accent = Color(0xFFA855F7); // AppPalette.dark.accent
+  // Semantic status — keep recognizable.
   static const success = Color(0xFF10B981);
   static const warning = Color(0xFFF59E0B);
   static const danger = Color(0xFFEF4444);
@@ -21,9 +25,14 @@ BoxDecoration adminCardDecoration({Color? color}) => BoxDecoration(
       border: Border.all(color: AdminColors.border),
       boxShadow: [
         BoxShadow(
-          color: Colors.black.withOpacity(0.18),
-          blurRadius: 18,
-          offset: const Offset(0, 8),
+          color: const Color(0xFF7C3AED).withOpacity(0.18),
+          blurRadius: 24,
+          offset: const Offset(0, 10),
+        ),
+        BoxShadow(
+          color: Colors.black.withOpacity(0.35),
+          blurRadius: 16,
+          offset: const Offset(0, 6),
         ),
       ],
     );
@@ -52,22 +61,21 @@ class AdminPage extends StatelessWidget {
       ),
       child: child,
     );
+    Widget body;
     if (!scrollable) {
-      return Container(color: AdminColors.background, child: content);
-    }
-    if (onRefresh == null) {
-      return Container(color: AdminColors.background, child: SingleChildScrollView(child: content));
-    }
-    return Container(
-      color: AdminColors.background,
-      child: RefreshIndicator(
+      body = content;
+    } else if (onRefresh == null) {
+      body = SingleChildScrollView(child: content);
+    } else {
+      body = RefreshIndicator(
         onRefresh: onRefresh!,
         child: SingleChildScrollView(
           physics: const AlwaysScrollableScrollPhysics(),
           child: content,
         ),
-      ),
-    );
+      );
+    }
+    return AppPalette.dark.ambientGlowBackdrop(child: body);
   }
 }
 
@@ -106,7 +114,7 @@ class AdminSubPage extends StatelessWidget {
 
     if (compact) {
       return Scaffold(
-        backgroundColor: AdminColors.background,
+        backgroundColor: Colors.transparent,
         floatingActionButton: floatingActionButton,
         appBar: AppBar(
           backgroundColor: AdminColors.surface,
@@ -138,14 +146,15 @@ class AdminSubPage extends StatelessWidget {
             ],
           ),
         ),
-        body: content,
+        body: AppPalette.dark.ambientGlowBackdrop(child: content),
       );
     }
 
     return Scaffold(
-      backgroundColor: AdminColors.background,
+      backgroundColor: Colors.transparent,
       floatingActionButton: floatingActionButton,
-      body: Row(
+      body: AppPalette.dark.ambientGlowBackdrop(
+        child: Row(
         children: [
           Container(
             width: 220,
@@ -327,6 +336,7 @@ class AdminSubPage extends StatelessWidget {
             ),
           ),
         ],
+        ),
       ),
     );
   }

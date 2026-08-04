@@ -150,7 +150,6 @@ class _ProjectDownloadScreenState extends State<ProjectDownloadScreen> {
                     : const Icon(Icons.download),
                 label: const Text('Download Merged DOCX'),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF6366F1),
                   padding: const EdgeInsets.symmetric(vertical: 14),
                 ),
               ),

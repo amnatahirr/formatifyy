@@ -119,7 +119,6 @@ class _ProjectDashboardScreenState extends State<ProjectDashboardScreen> {
                 icon: const Icon(Icons.add, size: 18, color: Colors.white),
                 label: const Text('Create Project', style: TextStyle(color: Colors.white)),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF6366F1),
                   foregroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                 ),
@@ -158,8 +157,8 @@ class _ProjectDashboardScreenState extends State<ProjectDashboardScreen> {
               padding: const EdgeInsets.all(24),
               decoration: BoxDecoration(
                 color: p.surface,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: p.border),
+                borderRadius: BorderRadius.circular(p.isDark ? p.cardRadius : 12),
+                border: Border.all(color: p.isDark ? p.borderStrong : p.border),
                 boxShadow: p.cardShadow,
               ),
               child: Text(

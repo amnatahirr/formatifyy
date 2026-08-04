@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../models/supervisor_models.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/supervisor_api_service.dart';
+import '../../theme/app_theme.dart';
 import '../../utils/responsive.dart';
 import '../../widgets/admin/admin_ui.dart';
 import 'document_review_screen.dart';
@@ -191,59 +192,61 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
         : (widget.groupTitle ?? 'Group Detail');
 
     return Scaffold(
-      backgroundColor: AdminColors.background,
-      body: Column(
-        children: [
-          Container(
-            height: 72,
-            decoration: BoxDecoration(
-              color: AdminColors.surface,
-              border: Border(bottom: BorderSide(color: AdminColors.border.withOpacity(0.5))),
-            ),
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Row(
-              children: [
-                IconButton(
-                  tooltip: 'Back to My Groups',
-                  onPressed: () => Navigator.of(context).pop(),
-                  icon: const Icon(Icons.arrow_back_rounded, color: Colors.white),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        title,
-                        style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: Colors.white),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      Text(
-                        'Group overview',
-                        style: TextStyle(fontSize: 12, color: Colors.white.withOpacity(0.5)),
-                      ),
-                    ],
+      backgroundColor: Colors.transparent,
+      body: AppPalette.dark.ambientGlowBackdrop(
+        child: Column(
+          children: [
+            Container(
+              height: 72,
+              decoration: BoxDecoration(
+                color: AdminColors.surface,
+                border: Border(bottom: BorderSide(color: AdminColors.border.withOpacity(0.5))),
+              ),
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Row(
+                children: [
+                  IconButton(
+                    tooltip: 'Back to My Groups',
+                    onPressed: () => Navigator.of(context).pop(),
+                    icon: const Icon(Icons.arrow_back_rounded, color: Colors.white),
                   ),
-                ),
-                TextButton.icon(
-                  onPressed: (_discarding || _loading) ? null : _discardGroup,
-                  icon: _discarding
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2, color: AdminColors.danger),
-                        )
-                      : const Icon(Icons.delete_outline_rounded, size: 18),
-                  label: const Text('Discard'),
-                  style: TextButton.styleFrom(foregroundColor: AdminColors.danger),
-                ),
-              ],
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          title,
+                          style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: Colors.white),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        Text(
+                          'Group overview',
+                          style: TextStyle(fontSize: 12, color: Colors.white.withOpacity(0.5)),
+                        ),
+                      ],
+                    ),
+                  ),
+                  TextButton.icon(
+                    onPressed: (_discarding || _loading) ? null : _discardGroup,
+                    icon: _discarding
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2, color: AdminColors.danger),
+                          )
+                        : const Icon(Icons.delete_outline_rounded, size: 18),
+                    label: const Text('Discard'),
+                    style: TextButton.styleFrom(foregroundColor: AdminColors.danger),
+                  ),
+                ],
+              ),
             ),
-          ),
-          Expanded(child: _buildBody()),
-        ],
+            Expanded(child: _buildBody()),
+          ],
+        ),
       ),
     );
   }
