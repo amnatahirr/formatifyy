@@ -3093,6 +3093,31 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
     }).toList();
   }
 
+  /// Export unlocks as soon as the analysis finished and the fixes were
+  /// applied. Flagged images stay a reminder, never a blocker.
+  bool get _canExport => _analysisComplete && _isFixApplied;
+
+  /// Why the export button is locked, or `null` when it is available.
+  String? get _exportBlockedReason {
+    if (!_analysisComplete) {
+      return 'Available once the document analysis finishes';
+    }
+    if (!_isFixApplied) {
+      return 'Click "Apply All Fixes" first to build the formatted document';
+    }
+    return null;
+  }
+
+  /// Tooltip once export is available — still mentions unresolved images.
+  String get _exportReadyHint {
+    final pending = _pendingImageIssues.length;
+    if (pending > 0) {
+      return 'Export the formatted document — $pending flagged image'
+          '${pending == 1 ? '' : 's'} still unresolved';
+    }
+    return 'Export the formatted document';
+  }
+
   /// Checklist shown in the reminder dialog before anything is sent.
   List<ApplyAllOutcome> _plannedFixOutcomes(_AutoFixBatch batch) {
     ApplyAllOutcome line(String label, int count) => ApplyAllOutcome(
@@ -4612,46 +4637,29 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
             ),
           ),
           const SizedBox(width: 12),
-          if (!widget.freeformAnalysis) ...[
-            OutlinedButton.icon(
-              onPressed: _isSavingFormatted ? null : _saveFormattedDocument,
-              icon: _isSavingFormatted
-                  ? const SizedBox(
-                      width: 14,
-                      height: 14,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : Icon(
-                      _formattedSaved
-                          ? Icons.check_circle_outline
-                          : Icons.save_outlined,
-                      size: 16,
-                    ),
+          Tooltip(
+            message: _exportBlockedReason ?? _exportReadyHint,
+            child: ElevatedButton.icon(
+              onPressed: _canExport
+                  ? () => _handleDownload({'id': widget.documentId})
+                  : null,
+              icon: Icon(
+                _canExport ? Icons.download : Icons.lock_outline,
+                size: 16,
+              ),
               label: Text(
-                _isSavingFormatted
-                    ? 'Saving...'
-                    : (_formattedSaved
-                        ? 'Saved to My Reports'
-                        : 'Save Formatted Document'),
+                widget.freeformAnalysis ? 'Export (AI-guided)' : 'Export',
               ),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: _green,
-                side: BorderSide(color: _green),
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _green,
+                foregroundColor: Colors.white,
+                disabledBackgroundColor: _surface2,
+                disabledForegroundColor: _textSec,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 10,
+                ),
               ),
-            ),
-            const SizedBox(width: 10),
-          ],
-          ElevatedButton.icon(
-            onPressed: () => _handleDownload({'id': widget.documentId}),
-            icon: const Icon(Icons.download, size: 16),
-            label: Text(
-              widget.freeformAnalysis ? 'Export (AI-guided)' : 'Export',
-            ),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: _green,
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
             ),
           ),
         ],
