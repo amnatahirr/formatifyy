@@ -355,13 +355,12 @@ class _DocumentReviewScreenState extends State<DocumentReviewScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          AdminPageHeader(
-            title: review.document.title,
-            subtitle: review.groupTitle.isEmpty
+          AdminPageMeta(
+            text: review.groupTitle.isEmpty
                 ? 'Review submission paragraph by paragraph'
                 : '${review.groupTitle} · ${review.document.statusLabel}',
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 14),
           Wrap(
             spacing: 10,
             runSpacing: 8,

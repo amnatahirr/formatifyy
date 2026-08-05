@@ -295,20 +295,22 @@ class _SubmissionDetailScreenState extends State<SubmissionDetailScreen> {
 
     final summary = item.analysisSummary;
     final canDecide = item.status.toLowerCase() == 'pending';
+    final metaParts = [
+      if (item.groupTitle.isNotEmpty) item.groupTitle,
+      if (item.filename.isNotEmpty) item.filename,
+    ];
 
     return AdminPage(
       onRefresh: _load,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          AdminPageHeader(
-            title: item.title,
-            subtitle: [
-              if (item.groupTitle.isNotEmpty) item.groupTitle,
-              if (item.filename.isNotEmpty) item.filename,
-            ].join(' · '),
+          AdminPageMeta(
+            text: metaParts.isEmpty
+                ? 'Final submission review'
+                : metaParts.join(' · '),
           ),
-          const SizedBox(height: 18),
+          const SizedBox(height: 16),
           AdminSectionCard(
             title: 'Document',
             icon: Icons.description_outlined,

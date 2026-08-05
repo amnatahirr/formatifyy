@@ -69,13 +69,12 @@ class _SubmissionReviewScreenState extends State<SubmissionReviewScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          AdminPageHeader(
-            title: 'Submission Review',
-            subtitle: _submissions.isEmpty
+          AdminPageMeta(
+            text: _submissions.isEmpty
                 ? 'No pending final submissions'
                 : '${_submissions.length} final submission${_submissions.length == 1 ? '' : 's'} awaiting decision',
           ),
-          const SizedBox(height: 24),
+          const SizedBox(height: 20),
           if (_submissions.isEmpty)
             const AdminEmptyView(
               icon: Icons.fact_check_outlined,

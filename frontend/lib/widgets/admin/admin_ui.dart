@@ -634,6 +634,45 @@ class AdminPageHeader extends StatelessWidget {
   }
 }
 
+/// One-line contextual status for pages whose title already lives in the shell
+/// top bar — counts, filters, "N unread" — so the heading is never repeated.
+class AdminPageMeta extends StatelessWidget {
+  final String text;
+  final IconData? icon;
+
+  const AdminPageMeta({super.key, required this.text, this.icon});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        if (icon != null)
+          Icon(icon, size: 15, color: AdminColors.accent.withOpacity(0.85))
+        else
+          Container(
+            width: 7,
+            height: 7,
+            decoration: const BoxDecoration(
+              gradient: AdminColors.primaryGradient,
+              shape: BoxShape.circle,
+            ),
+          ),
+        const SizedBox(width: 9),
+        Expanded(
+          child: Text(
+            text,
+            style: TextStyle(
+              fontSize: 13,
+              color: Colors.white.withOpacity(0.6),
+              height: 1.4,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 /// Small caps label that separates groups of cards on a page.
 class AdminSectionLabel extends StatelessWidget {
   final String label;

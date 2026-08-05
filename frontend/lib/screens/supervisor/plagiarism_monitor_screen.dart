@@ -68,13 +68,12 @@ class _PlagiarismMonitorScreenState extends State<PlagiarismMonitorScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          AdminPageHeader(
-            title: 'Plagiarism Monitor',
-            subtitle: _groups.isEmpty
+          AdminPageMeta(
+            text: _groups.isEmpty
                 ? 'No accepted groups yet'
                 : '${_groups.length} group${_groups.length == 1 ? '' : 's'} · scores from Formatify plagiarism detection',
           ),
-          const SizedBox(height: 18),
+          const SizedBox(height: 16),
           const Wrap(
             spacing: 10,
             runSpacing: 8,

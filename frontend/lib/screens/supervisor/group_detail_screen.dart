@@ -277,13 +277,12 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          AdminPageHeader(
-            title: detail.group.title,
-            subtitle: detail.group.projectTitle.isEmpty
+          AdminPageMeta(
+            text: detail.group.projectTitle.isEmpty
                 ? 'Milestones and latest submission'
                 : detail.group.projectTitle,
           ),
-          const SizedBox(height: 22),
+          const SizedBox(height: 18),
           AdminSectionCard(
             title: 'Milestones',
             subtitle: '${detail.milestones.where((m) => m.isCompleted).length} of ${detail.milestones.length} completed',

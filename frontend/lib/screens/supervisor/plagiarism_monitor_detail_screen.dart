@@ -222,13 +222,12 @@ class _PlagiarismMonitorDetailScreenState extends State<PlagiarismMonitorDetailS
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          AdminPageHeader(
-            title: detail.title,
-            subtitle: detail.projectTitle.isEmpty
+          AdminPageMeta(
+            text: detail.projectTitle.isEmpty
                 ? 'Matched sources from Formatify plagiarism detection'
                 : detail.projectTitle,
           ),
-          const SizedBox(height: 18),
+          const SizedBox(height: 16),
           Container(
             width: double.infinity,
             padding: const EdgeInsets.all(18),

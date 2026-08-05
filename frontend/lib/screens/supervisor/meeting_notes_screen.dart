@@ -165,13 +165,12 @@ class _MeetingNotesScreenState extends State<MeetingNotesScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          AdminPageHeader(
-            title: 'Meeting Notes',
-            subtitle: _notes.isEmpty
+          AdminPageMeta(
+            text: _notes.isEmpty
                 ? 'No notes yet — add the first meeting log for this group'
                 : '${_notes.length} note${_notes.length == 1 ? '' : 's'} · latest at the top · visible to students read-only',
           ),
-          const SizedBox(height: 22),
+          const SizedBox(height: 18),
           if (_notes.isEmpty)
             const AdminEmptyView(
               icon: Icons.sticky_note_2_outlined,

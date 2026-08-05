@@ -170,9 +170,8 @@ class _AssignmentRequestsScreenState extends State<AssignmentRequestsScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          AdminPageHeader(
-            title: 'Assignment Requests',
-            subtitle: _requests.isEmpty
+          AdminPageMeta(
+            text: _requests.isEmpty
                 ? 'No pending requests right now'
                 : '${_requests.length} pending request${_requests.length == 1 ? '' : 's'} awaiting your decision',
           ),
@@ -183,7 +182,7 @@ class _AssignmentRequestsScreenState extends State<AssignmentRequestsScreen> {
               onDismiss: () => setState(() => _profileMismatchWarnings = const []),
             ),
           ],
-          const SizedBox(height: 24),
+          const SizedBox(height: 20),
           if (_requests.isEmpty)
             const AdminEmptyView(
               icon: Icons.assignment_ind_outlined,

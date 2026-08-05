@@ -711,11 +711,6 @@ class _SupervisorProfileViewState extends State<_SupervisorProfileView> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const AdminPageHeader(
-            title: 'Profile',
-            subtitle: 'Account details and password settings',
-          ),
-          const SizedBox(height: 24),
           AdminSectionCard(
             title: 'Account',
             subtitle: 'Your supervisor identity on Formatify',

@@ -125,13 +125,12 @@ class _SupervisorNotificationsScreenState
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          AdminPageHeader(
-            title: 'Notifications',
-            subtitle: _items.isEmpty
+          AdminPageMeta(
+            text: _items.isEmpty
                 ? 'No alerts yet'
                 : '${_items.where((n) => n['is_read'] != true).length} unread · tap to open',
           ),
-          const SizedBox(height: 18),
+          const SizedBox(height: 16),
           if (_items.isEmpty)
             const AdminEmptyView(
               icon: Icons.notifications_none_rounded,

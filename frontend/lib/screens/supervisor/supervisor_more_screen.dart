@@ -28,11 +28,11 @@ class SupervisorMoreScreen extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          AdminPageHeader(
-            title: 'More',
-            subtitle: auth.currentUser ?? 'Supervisor tools & account',
+          AdminPageMeta(
+            text: auth.currentUser ?? 'Supervisor tools & account',
+            icon: Icons.person_outline_rounded,
           ),
-          const SizedBox(height: 18),
+          const SizedBox(height: 16),
           AdminSectionCard(
             title: 'Quick access',
             icon: Icons.apps_rounded,

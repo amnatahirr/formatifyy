@@ -206,11 +206,20 @@ class _SupervisorHomeScreenState extends State<SupervisorHomeScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        AdminPageHeader(
-          title: 'Welcome, $displayName',
-          subtitle: 'Pending work and progress across your accepted groups',
+        Text(
+          'Welcome back, $displayName',
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 21,
+            fontWeight: FontWeight.w700,
+            letterSpacing: -0.3,
+          ),
         ),
-        const SizedBox(height: 24),
+        const SizedBox(height: 8),
+        const AdminPageMeta(
+          text: 'Pending work and progress across your accepted groups',
+        ),
+        const SizedBox(height: 22),
         adminResponsiveGrid(
           itemCount: 4,
           itemBuilder: (context, index) {

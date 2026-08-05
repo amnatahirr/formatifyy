@@ -148,13 +148,12 @@ class _MyGroupsScreenState extends State<MyGroupsScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          AdminPageHeader(
-            title: 'My Groups',
-            subtitle: _groups.isEmpty
+          AdminPageMeta(
+            text: _groups.isEmpty
                 ? 'Accepted groups will appear here'
                 : '${_groups.length} group${_groups.length == 1 ? '' : 's'} · filter: $_filter',
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 18),
           Wrap(
             spacing: 8,
             runSpacing: 8,
