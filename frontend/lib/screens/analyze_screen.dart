@@ -2058,6 +2058,7 @@ import 'package:frontend/providers/qr_service.dart';
 import '../widgets/image_issue_card_enhanced.dart';
 import '../widgets/document_preview_panel.dart';
 import '../widgets/image_replacement_dialog.dart';
+import '../widgets/apply_all_fixes_dialogs.dart';
 import '../models/json_parse.dart';
 import '../services/image_replacement_service.dart';
 import ' image_formatter_screen.dart';
@@ -2206,6 +2207,22 @@ class _TableMeta {
 
   int get issueCount => issues.length;
   bool get isClean => issues.isEmpty;
+}
+
+/// Fixes that "Apply All Fixes" sends to the backend, with per-kind counts used
+/// by the reminder dialog.
+class _AutoFixBatch {
+  _AutoFixBatch({
+    required this.fixes,
+    required this.grammarCount,
+    required this.headingCount,
+    required this.bulletCount,
+  });
+
+  final List<Map<String, dynamic>> fixes;
+  final int grammarCount;
+  final int headingCount;
+  final int bulletCount;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2941,46 +2958,59 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
     setState(() => _ignoredIssueIds.add(issueId));
   }
 
-  Future<void> _applyAllFixesAndStyles() async {
-    setState(() => _isApplyingFix = true);
-    try {
-      final auth = context.read<AuthProvider>();
-      final fixes = <Map<String, dynamic>>[];
+  /// Collects every fix "Apply All Fixes" can push to the backend.
+  _AutoFixBatch _collectAutoFixes() {
+    final fixes = <Map<String, dynamic>>[];
+    var grammarCount = 0;
+    var headingCount = 0;
+    var bulletCount = 0;
 
-      for (final i in _pipelineIssues) {
-        final pid = i['paragraph_id'] as String? ?? '';
-        final issueId = i['issue_id'] as String? ?? '';
-        if (_ignoredIssueIds.contains(issueId) ||
-            _resolvedIssueIds.contains(issueId)) {
-          continue;
+    for (final i in _pipelineIssues) {
+      final pid = i['paragraph_id'] as String? ?? '';
+      final issueId = i['issue_id'] as String? ?? '';
+      if (_ignoredIssueIds.contains(issueId) ||
+          _resolvedIssueIds.contains(issueId)) {
+        continue;
+      }
+      final fn = (i['function'] as String? ?? i['category'] as String? ?? '')
+          .toLowerCase();
+      final itype = (i['type'] as String? ?? '').toLowerCase();
+
+      // Heading style fixes
+      if ((fn.contains('format') || fn.contains('style')) &&
+          (itype == 'heading_style' || itype == 'heading')) {
+        if (pid.isEmpty) continue;
+        fixes.add({
+          'paragraph_id': pid,
+          'fix_type': 'heading',
+          'type': 'heading_style',
+          'heading_level': i['heading_level'] ??
+              _inferHeadingLevel(i['suggestion'] as String? ?? ''),
+        });
+        headingCount++;
+        continue;
+      }
+
+      // Bullet / list fixes
+      if (itype == 'missing_bullets' ||
+          itype == 'list_formatting' ||
+          (i['fix_type'] as String? ?? '') == 'apply_section_bullets') {
+        final indices = <int>[];
+        final rawIndices = i['para_indices'];
+        if (rawIndices is List) {
+          for (final v in rawIndices) {
+            if (v is int) {
+              indices.add(v);
+            } else if (v is num) {
+              indices.add(v.toInt());
+            }
+          }
         }
-        final fn =
-            (i['function'] as String? ?? i['category'] as String? ?? '')
-                .toLowerCase();
-        final itype = (i['type'] as String? ?? '').toLowerCase();
-
-        // Heading style fixes
-        if ((fn.contains('format') || fn.contains('style')) &&
-            (itype == 'heading_style' || itype == 'heading')) {
-          if (pid.isEmpty) continue;
-          fixes.add({
-            'paragraph_id': pid,
-            'fix_type': 'heading',
-            'type': 'heading_style',
-            'heading_level': i['heading_level'] ??
-                _inferHeadingLevel(i['suggestion'] as String? ?? ''),
-          });
-          continue;
-        }
-
-        // Bullet / list fixes
-        if (itype == 'missing_bullets' ||
-            itype == 'list_formatting' ||
-            (i['fix_type'] as String? ?? '') == 'apply_section_bullets') {
-          final indices = <int>[];
-          final rawIndices = i['para_indices'];
-          if (rawIndices is List) {
-            for (final v in rawIndices) {
+        final details = i['fix_details'];
+        if (indices.isEmpty && details is Map) {
+          final di = details['para_indices'];
+          if (di is List) {
+            for (final v in di) {
               if (v is int) {
                 indices.add(v);
               } else if (v is num) {
@@ -2988,102 +3018,405 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
               }
             }
           }
-          final details = i['fix_details'];
-          if (indices.isEmpty && details is Map) {
-            final di = details['para_indices'];
-            if (di is List) {
-              for (final v in di) {
-                if (v is int) {
-                  indices.add(v);
-                } else if (v is num) {
-                  indices.add(v.toInt());
-                }
-              }
-            }
-          }
-          if (indices.isEmpty && pid.isNotEmpty) {
-            final m = RegExp(r'^p(\d+)$').firstMatch(pid);
-            if (m != null) indices.add(int.parse(m.group(1)!));
-          }
-          fixes.add({
-            'paragraph_id': pid,
-            'fix_type': 'apply_section_bullets',
-            'type': itype.isEmpty ? 'missing_bullets' : itype,
-            'para_indices': indices,
-            'fix_details': {'para_indices': indices},
-          });
-          continue;
         }
-
-        // Grammar / content text fixes
-        if (fn.contains('grammar') &&
-            (i['suggestion'] as String? ?? '').isNotEmpty &&
-            pid.isNotEmpty) {
-          fixes.add({
-            'paragraph_id': pid,
-            'original': i['original'] ?? i['current'] ?? '',
-            'suggestion':
-                _appliedFixes[pid] ?? i['suggestion'],
-          });
+        if (indices.isEmpty && pid.isNotEmpty) {
+          final m = RegExp(r'^p(\d+)$').firstMatch(pid);
+          if (m != null) indices.add(int.parse(m.group(1)!));
         }
-      }
-
-      // Also include template heading mismatches awaiting style
-      for (final match in _templateHeadingMatches) {
-        if (match is! Map) continue;
-        if (match['fix_needed'] != true) continue;
-        if ((match['source'] as String? ?? '') == 'missing') continue;
-        final pid = match['paragraph_id'] as String? ?? '';
-        if (pid.isEmpty) continue;
-        final already = fixes.any(
-          (f) =>
-              f['paragraph_id'] == pid && f['fix_type'] == 'heading',
-        );
-        if (already) continue;
         fixes.add({
           'paragraph_id': pid,
-          'fix_type': 'heading',
-          'type': 'heading_style',
-          'heading_level': match['expected_level'] ??
-              match['heading_level'] ??
-              1,
-          'source': match['source'],
+          'fix_type': 'apply_section_bullets',
+          'type': itype.isEmpty ? 'missing_bullets' : itype,
+          'para_indices': indices,
+          'fix_details': {'para_indices': indices},
         });
+        bulletCount++;
+        continue;
       }
 
+      // Grammar / content text fixes
+      if (fn.contains('grammar') &&
+          (i['suggestion'] as String? ?? '').isNotEmpty &&
+          pid.isNotEmpty) {
+        fixes.add({
+          'paragraph_id': pid,
+          'original': i['original'] ?? i['current'] ?? '',
+          'suggestion': _appliedFixes[pid] ?? i['suggestion'],
+        });
+        grammarCount++;
+      }
+    }
+
+    // Also include template heading mismatches awaiting style
+    for (final match in _templateHeadingMatches) {
+      if (match is! Map) continue;
+      if (match['fix_needed'] != true) continue;
+      if ((match['source'] as String? ?? '') == 'missing') continue;
+      final pid = match['paragraph_id'] as String? ?? '';
+      if (pid.isEmpty) continue;
+      final already = fixes.any(
+        (f) => f['paragraph_id'] == pid && f['fix_type'] == 'heading',
+      );
+      if (already) continue;
+      fixes.add({
+        'paragraph_id': pid,
+        'fix_type': 'heading',
+        'type': 'heading_style',
+        'heading_level':
+            match['expected_level'] ?? match['heading_level'] ?? 1,
+        'source': match['source'],
+      });
+      headingCount++;
+    }
+
+    return _AutoFixBatch(
+      fixes: fixes,
+      grammarCount: grammarCount,
+      headingCount: headingCount,
+      bulletCount: bulletCount,
+    );
+  }
+
+  /// Image ethics / relevance issues that still need a manual decision —
+  /// "Apply All Fixes" can never resolve these on its own.
+  List<Map<String, dynamic>> get _pendingImageIssues {
+    return _pipelineIssues.where((i) {
+      if (!_isImageEthicsIssue(i) &&
+          !_isImageRelevanceIssue(i) &&
+          !_isImageIssueFn(
+            '${i['function'] ?? ''} ${i['category'] ?? ''} ${i['type'] ?? ''}',
+          )) {
+        return false;
+      }
+      final id = i['issue_id'] as String? ?? '';
+      return !_ignoredIssueIds.contains(id) && !_resolvedIssueIds.contains(id);
+    }).toList();
+  }
+
+  /// Checklist shown in the reminder dialog before anything is sent.
+  List<ApplyAllOutcome> _plannedFixOutcomes(_AutoFixBatch batch) {
+    ApplyAllOutcome line(String label, int count) => ApplyAllOutcome(
+          '$label ($count)',
+          status: count > 0
+              ? ApplyAllOutcomeStatus.pending
+              : ApplyAllOutcomeStatus.skipped,
+        );
+    return [
+      line('Grammar & content fixes', batch.grammarCount),
+      line('Heading styles & numbering', batch.headingCount),
+      line('Bullet / list paragraphs', batch.bulletCount),
+      const ApplyAllOutcome(
+        'Template formatting (fonts, spacing, margins)',
+        status: ApplyAllOutcomeStatus.pending,
+      ),
+      const ApplyAllOutcome(
+        'Image alignment & figure captions',
+        status: ApplyAllOutcomeStatus.pending,
+      ),
+    ];
+  }
+
+  Future<void> _applyAllFixesAndStyles() async {
+    if (_isApplyingFix) return;
+    final batch = _collectAutoFixes();
+
+    // The reminder needs current TOC / LOT / LOF status before the user picks.
+    if (!_tocLoaded && !_tocLoading) {
+      setState(() => _isApplyingFix = true);
+      try {
+        await _loadTocCheck();
+      } finally {
+        if (mounted) setState(() => _isApplyingFix = false);
+      }
+    }
+    if (!mounted) return;
+
+    final plan = await showApplyAllFixesReminderDialog(
+      context: context,
+      plannedFixes: _plannedFixOutcomes(batch),
+      imageIssues: _pendingImageIssues,
+      listsStatus: _tocData,
+      includeToc: _includeToc,
+      includeLot: _includeLot,
+      includeLof: _includeLof,
+      imageUrlBuilder: _buildImageUrl,
+      listsError: _tocError,
+    );
+    if (plan == null || !mounted) return;
+
+    setState(() {
+      _includeToc = plan.includeToc;
+      _includeLot = plan.includeLot;
+      _includeLof = plan.includeLof;
+      _isApplyingFix = true;
+    });
+
+    try {
+      final auth = context.read<AuthProvider>();
       final resp = await http.post(
         Uri.parse(
           '$_baseUrl/documents/apply-all-fixes/${widget.documentId}?user_id=${auth.userId}',
         ),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
-          'fixes': fixes,
-          'include_toc': _includeToc,
-          'include_lot': _includeLot,
-          'include_lof': _includeLof,
+          'fixes': batch.fixes,
+          'include_toc': plan.includeToc,
+          'include_lot': plan.includeLot,
+          'include_lof': plan.includeLof,
         }),
       );
       if (resp.statusCode == 200) {
         final data = json.decode(resp.body) as Map<String, dynamic>;
         _mergeWorkingDocumentState(data);
-        final bullets = data['bullet_fixes'] as Map?;
-        final bulletCount = (bullets?['applied'] as List?)?.length ?? 0;
-        _showSnack(
-          'All fixes applied'
-          '${bulletCount > 0 ? ' ($bulletCount list items)' : ''}!',
-          _green,
-        );
         setState(() {
           _styleIssues = [];
           _isFixApplied = true;
         });
+        // Re-scan so the summary and the Document Lists tab agree.
+        await _loadTocCheck();
+        if (!mounted) return;
+        setState(() => _isApplyingFix = false);
+        await _showApplyAllSummary(data, batch, plan);
       } else {
         _showSnack('Apply-all failed: ${resp.body}', _red);
       }
     } catch (e) {
       _showSnack('Error: $e', _red);
     } finally {
-      setState(() => _isApplyingFix = false);
+      if (mounted) setState(() => _isApplyingFix = false);
+    }
+  }
+
+  /// Post-apply recap: what changed, which lists were built, and which images
+  /// the user still has to replace or remove.
+  Future<void> _showApplyAllSummary(
+    Map<String, dynamic> data,
+    _AutoFixBatch batch,
+    ApplyAllPlan plan,
+  ) async {
+    final textFixes = data['text_fixes'] as Map?;
+    final textApplied = (textFixes?['applied'] as num?)?.toInt() ?? 0;
+    final textSkipped = (textFixes?['skipped'] as num?)?.toInt() ?? 0;
+    final bulletApplied =
+        ((data['bullet_fixes'] as Map?)?['applied'] as List?)?.length ?? 0;
+    final imageResult = data['image_formatting'] as Map?;
+    final listsResult = data['document_lists'] as Map?;
+
+    ApplyAllOutcome countLine(String label, int count, {String? detail}) =>
+        ApplyAllOutcome(
+          '$label ($count)',
+          status: count > 0
+              ? ApplyAllOutcomeStatus.done
+              : ApplyAllOutcomeStatus.skipped,
+          detail: detail,
+        );
+
+    final imageStatus = imageResult?['status'] as String? ?? 'skipped';
+    final formattedImages =
+        (imageResult?['total_images'] as num?)?.toInt() ?? 0;
+    final captionsAdded =
+        (imageResult?['captions_added'] as num?)?.toInt() ?? 0;
+    late final ApplyAllOutcome imageOutcome;
+    if (imageStatus == 'error') {
+      imageOutcome = ApplyAllOutcome(
+        'Image formatting failed',
+        status: ApplyAllOutcomeStatus.failed,
+        detail: imageResult?['message'] as String?,
+      );
+    } else if (formattedImages > 0) {
+      imageOutcome = ApplyAllOutcome(
+        'Images centred & captioned ($formattedImages)',
+        detail: captionsAdded > 0
+            ? '$captionsAdded figure caption${captionsAdded == 1 ? '' : 's'} written'
+            : null,
+      );
+    } else {
+      imageOutcome = const ApplyAllOutcome(
+        'No images to format',
+        status: ApplyAllOutcomeStatus.skipped,
+      );
+    }
+
+    // The backend counts heading and grammar fixes in the same bucket, so the
+    // breakdown comes from what was requested.
+    final breakdown = [
+      if (batch.grammarCount > 0) '${batch.grammarCount} grammar',
+      if (batch.headingCount > 0) '${batch.headingCount} heading',
+      if (textSkipped > 0) '$textSkipped could not be matched',
+    ].join('  ·  ');
+
+    final applied = <ApplyAllOutcome>[
+      countLine(
+        'Grammar & heading fixes applied',
+        textApplied,
+        detail: breakdown,
+      ),
+      countLine('Bullet / list paragraphs formatted', bulletApplied),
+      const ApplyAllOutcome('Template formatting applied'),
+      imageOutcome,
+    ];
+
+    final listOutcomes = <ApplyAllOutcome>[];
+    if ((listsResult?['status'] as String?) == 'error') {
+      listOutcomes.add(
+        ApplyAllOutcome(
+          'Document lists could not be generated',
+          status: ApplyAllOutcomeStatus.failed,
+          detail: listsResult?['message'] as String?,
+        ),
+      );
+    } else {
+      listOutcomes.addAll([
+        _documentListOutcome(
+          label: 'Table of Contents',
+          requested: plan.includeToc,
+          added: listsResult?['toc_added'] == true,
+          present: (_tocData['has_toc'] as bool? ?? false) &&
+              (_tocData['toc_populated'] as bool? ?? false),
+          error: listsResult?['toc_error'] as String?,
+        ),
+        _documentListOutcome(
+          label: 'List of Tables',
+          requested: plan.includeLot,
+          added: listsResult?['lot_added'] == true,
+          present: (_tocData['has_lot'] as bool? ?? false) &&
+              (_tocData['lot_populated'] as bool? ?? false),
+        ),
+        _documentListOutcome(
+          label: 'List of Figures',
+          requested: plan.includeLof,
+          added: listsResult?['lof_added'] == true,
+          present: (_tocData['has_lof'] as bool? ?? false) &&
+              (_tocData['lof_populated'] as bool? ?? false),
+        ),
+      ]);
+    }
+
+    await showApplyAllFixesSummaryDialog(
+      context: context,
+      applied: applied,
+      listOutcomes: listOutcomes,
+      pendingImageIssues: () => _pendingImageIssues,
+      onReplaceImage: _openImageReplacementFlow,
+      onRemoveImage: _confirmAndRemoveImage,
+      imageUrlBuilder: _buildImageUrl,
+      onOpenImagesTab: _goToImageIssuesTab,
+      onOpenListsTab: () => _goToTab(_documentListsTabIndex),
+    );
+  }
+
+  ApplyAllOutcome _documentListOutcome({
+    required String label,
+    required bool requested,
+    required bool added,
+    required bool present,
+    String? error,
+  }) {
+    if (requested && error != null && error.isNotEmpty) {
+      return ApplyAllOutcome(
+        '$label not generated',
+        status: ApplyAllOutcomeStatus.failed,
+        detail: error,
+      );
+    }
+    if (added) return ApplyAllOutcome('$label generated');
+    if (present) {
+      return ApplyAllOutcome(
+        '$label already in the document',
+        status: ApplyAllOutcomeStatus.done,
+      );
+    }
+    return ApplyAllOutcome(
+      requested ? '$label could not be generated' : '$label not added',
+      status: ApplyAllOutcomeStatus.skipped,
+      detail: requested
+          ? 'Nothing was found in the document to build it from.'
+          : 'It was not selected — you can still add it from the Document '
+              'Lists tab.',
+    );
+  }
+
+  static const int _imageEthicsTabIndex = 3;
+  static const int _imageRelevanceTabIndex = 4;
+  static const int _documentListsTabIndex = 8;
+
+  void _goToTab(int index) {
+    if (!mounted) return;
+    if (index < 0 || index >= _tabController.length) return;
+    _tabController.animateTo(index);
+  }
+
+  void _goToImageIssuesTab() {
+    final hasEthics = _pendingImageIssues.any(_isImageEthicsIssue);
+    _goToTab(hasEthics ? _imageEthicsTabIndex : _imageRelevanceTabIndex);
+  }
+
+  /// Opens the image replacement dialog for a flagged image and resolves once
+  /// the user closes it, so callers can refresh their view.
+  Future<void> _openImageReplacementFlow(Map<String, dynamic> issue) async {
+    final auth = context.read<AuthProvider>();
+    final service = ImageReplacementService(imageBaseUrl: _imageHostBase);
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => ImageReplacementDialog(
+        documentId: widget.documentId,
+        imageIndex: jsonIntOr(issue['image_index'], 0),
+        currentImagePath: issue['image_path'] as String? ?? '',
+        service: service,
+        userId: auth.userId,
+        onSuccess: (result) => _handleImageReplaceSuccess(
+          result,
+          issueId: issue['issue_id'] as String?,
+        ),
+        onError: (e) => _showSnack('Error: $e', _red),
+      ),
+    );
+  }
+
+  /// Asks for confirmation, then deletes the flagged image from the document.
+  Future<void> _confirmAndRemoveImage(Map<String, dynamic> issue) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: _surface,
+        title: Text('Remove Image?', style: TextStyle(color: _textPri)),
+        content: Text(
+          'This permanently deletes the image from the document. '
+          'A nearby figure caption will also be removed if present.',
+          style: TextStyle(color: _textSec, fontSize: 13),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text('Cancel', style: TextStyle(color: _textSec)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: _red,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Remove'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    try {
+      final auth = context.read<AuthProvider>();
+      final service = ImageReplacementService(imageBaseUrl: _imageHostBase);
+      final result = await service.removeImage(
+        documentId: widget.documentId,
+        imageIndex: jsonIntOr(issue['image_index'], 0),
+        userId: auth.userId,
+      );
+      if (!mounted) return;
+      _handleImageRemoveSuccess(
+        result,
+        issueId: issue['issue_id'] as String?,
+      );
+    } catch (e) {
+      if (mounted) _showSnack('Remove failed: $e', _red);
     }
   }
 
@@ -7131,25 +7464,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
                       backgroundColor: _blue,
                       foregroundColor: Colors.white,
                     ),
-                    onPressed: () {
-                      final auth = context.read<AuthProvider>();
-                      final service = ImageReplacementService(imageBaseUrl: _imageHostBase);
-                      showDialog(
-                        context: context,
-                        builder: (ctx) => ImageReplacementDialog(
-                          documentId: widget.documentId,
-                          imageIndex: jsonIntOr(issue['image_index'], 0),
-                          currentImagePath: rawPath,
-                          service: service,
-                          userId: auth.userId,
-                          onSuccess: (result) => _handleImageReplaceSuccess(
-                            result,
-                            issueId: issue['issue_id'] as String?,
-                          ),
-                          onError: (e) => _showSnack('Error: $e', _red),
-                        ),
-                      );
-                    },
+                    onPressed: () => _openImageReplacementFlow(issue),
                   ),
                 ),
                 const SizedBox(height: 8),
@@ -7162,55 +7477,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
                       foregroundColor: _red,
                       side: BorderSide(color: _red.withOpacity(0.55)),
                     ),
-                    onPressed: () async {
-                      final confirmed = await showDialog<bool>(
-                        context: context,
-                        builder: (ctx) => AlertDialog(
-                          backgroundColor: _surface,
-                          title: Text(
-                            'Remove Image?',
-                            style: TextStyle(color: _textPri),
-                          ),
-                          content: Text(
-                            'This permanently deletes the image from the document. '
-                            'A nearby figure caption will also be removed if present.',
-                            style: TextStyle(color: _textSec, fontSize: 13),
-                          ),
-                          actions: [
-                            TextButton(
-                              onPressed: () => Navigator.pop(ctx, false),
-                              child: Text('Cancel', style: TextStyle(color: _textSec)),
-                            ),
-                            ElevatedButton(
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: _red,
-                                foregroundColor: Colors.white,
-                              ),
-                              onPressed: () => Navigator.pop(ctx, true),
-                              child: const Text('Remove'),
-                            ),
-                          ],
-                        ),
-                      );
-                      if (confirmed != true || !mounted) return;
-                      try {
-                        final auth = context.read<AuthProvider>();
-                        final service =
-                            ImageReplacementService(imageBaseUrl: _imageHostBase);
-                        final result = await service.removeImage(
-                          documentId: widget.documentId,
-                          imageIndex: jsonIntOr(issue['image_index'], 0),
-                          userId: auth.userId,
-                        );
-                        if (!mounted) return;
-                        _handleImageRemoveSuccess(
-                          result,
-                          issueId: issue['issue_id'] as String?,
-                        );
-                      } catch (e) {
-                        if (mounted) _showSnack('Remove failed: $e', _red);
-                      }
-                    },
+                    onPressed: () => _confirmAndRemoveImage(issue),
                   ),
                 ),
                 const SizedBox(height: 8),
@@ -8736,6 +9003,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
       final sev = ((i as Map)['severity'] as String? ?? '').toLowerCase();
       return sev == 'major' || sev == 'critical' || sev == 'error';
     }).length;
+    final pendingImages = _pendingImageIssues.length;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
       decoration: BoxDecoration(
@@ -8751,10 +9019,28 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
                 '$activeIssues issues  ·  $majorCount major',
                 style: TextStyle(color: _textPri, fontSize: 13),
               ),
-              Text(
-                'Review highlights, apply fixes, then download',
-                style: TextStyle(color: _textSec, fontSize: 11),
-              ),
+              pendingImages > 0
+                  ? Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(
+                          Icons.warning_amber_rounded,
+                          color: _yellow,
+                          size: 12,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          '$pendingImages image${pendingImages == 1 ? '' : 's'} '
+                          'need${pendingImages == 1 ? 's' : ''} to be replaced '
+                          'or removed manually',
+                          style: const TextStyle(color: _yellow, fontSize: 11),
+                        ),
+                      ],
+                    )
+                  : Text(
+                      'Review highlights, apply fixes, then download',
+                      style: TextStyle(color: _textSec, fontSize: 11),
+                    ),
             ],
           ),
           const Spacer(),
