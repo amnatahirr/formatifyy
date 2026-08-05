@@ -90,14 +90,14 @@ class _MeetingNotesScreenState extends State<MeetingNotesScreen> {
 
     return Scaffold(
       backgroundColor: Colors.transparent,
-      body: AppPalette.dark.ambientGlowBackdrop(
+      body: AppPalette.dark.innerGlowBackdrop(
         child: Column(
           children: [
             Container(
               height: 72,
               decoration: BoxDecoration(
                 color: AdminColors.surface,
-                border: Border(bottom: BorderSide(color: AdminColors.border.withOpacity(0.5))),
+                border: Border(bottom: BorderSide(color: AdminColors.borderStrong)),
               ),
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Row(
@@ -108,11 +108,27 @@ class _MeetingNotesScreenState extends State<MeetingNotesScreen> {
                   ),
                   const SizedBox(width: 8),
                   Expanded(
-                    child: Text(
-                      title,
-                      style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: Colors.white),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          title,
+                          style: const TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.white,
+                            letterSpacing: -0.2,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          'Meeting log',
+                          style: TextStyle(fontSize: 12, color: Colors.white.withOpacity(0.5)),
+                        ),
+                      ],
                     ),
                   ),
                   ElevatedButton.icon(
@@ -137,7 +153,9 @@ class _MeetingNotesScreenState extends State<MeetingNotesScreen> {
   }
 
   Widget _buildBody() {
-    if (_loading) return const AdminPage(child: AdminLoadingView());
+    if (_loading) {
+      return const AdminPage(child: AdminLoadingView(label: 'Loading notes...'));
+    }
     if (_error != null) {
       return AdminPage(child: AdminErrorView(message: _error!, onRetry: _load));
     }
@@ -156,6 +174,8 @@ class _MeetingNotesScreenState extends State<MeetingNotesScreen> {
           const SizedBox(height: 22),
           if (_notes.isEmpty)
             const AdminEmptyView(
+              icon: Icons.sticky_note_2_outlined,
+              title: 'No meeting notes yet',
               message: 'Use Add Note to record the meeting date, topic, and action items.',
             )
           else
@@ -231,7 +251,7 @@ class _AddMeetingNoteDialogState extends State<_AddMeetingNoteDialog> {
   Widget build(BuildContext context) {
     return AlertDialog(
       backgroundColor: AdminColors.surface,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      shape: adminDialogShape(),
       title: const Text('Add Note'),
       content: SizedBox(
         width: 460,
@@ -242,11 +262,12 @@ class _AddMeetingNoteDialogState extends State<_AddMeetingNoteDialog> {
             children: [
               TextFormField(
                 controller: _dateController,
-                decoration: const InputDecoration(
-                  labelText: 'Date',
-                  hintText: 'YYYY-MM-DD',
-                  helperText: 'Auto-filled with today — editable',
-                ),
+                style: const TextStyle(color: Colors.white),
+                decoration: adminFieldDecoration(
+                  label: 'Date',
+                  hint: 'YYYY-MM-DD',
+                  prefixIcon: Icons.event_rounded,
+                ).copyWith(helperText: 'Auto-filled with today — editable'),
                 validator: (value) {
                   final text = (value ?? '').trim();
                   if (text.isEmpty) return 'Date is required';
@@ -259,9 +280,11 @@ class _AddMeetingNoteDialogState extends State<_AddMeetingNoteDialog> {
               const SizedBox(height: 12),
               TextFormField(
                 controller: _topicController,
-                decoration: const InputDecoration(
-                  labelText: 'Topic',
-                  hintText: 'Meeting topic',
+                style: const TextStyle(color: Colors.white),
+                decoration: adminFieldDecoration(
+                  label: 'Topic',
+                  hint: 'Meeting topic',
+                  prefixIcon: Icons.title_rounded,
                 ),
                 validator: (value) =>
                     (value == null || value.trim().isEmpty) ? 'Topic is required' : null,
@@ -270,11 +293,11 @@ class _AddMeetingNoteDialogState extends State<_AddMeetingNoteDialog> {
               TextFormField(
                 controller: _actionsController,
                 maxLines: 4,
-                decoration: const InputDecoration(
-                  labelText: 'Action items',
-                  hintText: 'List follow-ups for the group…',
-                  alignLabelWithHint: true,
-                ),
+                style: const TextStyle(color: Colors.white),
+                decoration: adminFieldDecoration(
+                  label: 'Action items',
+                  hint: 'List follow-ups for the group…',
+                ).copyWith(alignLabelWithHint: true),
               ),
             ],
           ),
@@ -310,14 +333,7 @@ class _MeetingNoteCard extends StatelessWidget {
         children: [
           Row(
             children: [
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: AdminColors.primary.withOpacity(0.14),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: const Icon(Icons.sticky_note_2_outlined, color: AdminColors.primary, size: 20),
-              ),
+              const AdminIconBadge(icon: Icons.sticky_note_2_outlined, size: 20),
               const SizedBox(width: 14),
               Expanded(
                 child: Column(
@@ -343,18 +359,33 @@ class _MeetingNoteCard extends StatelessWidget {
           ),
           if (note.actionItems.isNotEmpty) ...[
             const SizedBox(height: 14),
-            Text(
-              'Action items',
-              style: TextStyle(
-                color: Colors.white.withOpacity(0.7),
-                fontWeight: FontWeight.w600,
-                fontSize: 12,
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AdminColors.surfaceAlt,
+                borderRadius: BorderRadius.circular(adminTileRadius),
+                border: Border.all(color: AdminColors.borderStrong),
               ),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              note.actionItems,
-              style: TextStyle(color: Colors.white.withOpacity(0.78), height: 1.45, fontSize: 13),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'ACTION ITEMS',
+                    style: TextStyle(
+                      color: AdminColors.accent.withOpacity(0.9),
+                      fontWeight: FontWeight.w700,
+                      fontSize: 10,
+                      letterSpacing: 0.9,
+                    ),
+                  ),
+                  const SizedBox(height: 7),
+                  Text(
+                    note.actionItems,
+                    style: TextStyle(color: Colors.white.withOpacity(0.8), height: 1.45, fontSize: 13),
+                  ),
+                ],
+              ),
             ),
           ],
         ],

@@ -57,7 +57,7 @@ class _PlagiarismMonitorScreenState extends State<PlagiarismMonitorScreen> {
   @override
   Widget build(BuildContext context) {
     if (_loading) {
-      return const AdminPage(child: AdminLoadingView());
+      return const AdminPage(child: AdminLoadingView(label: 'Checking similarity scores...'));
     }
     if (_error != null) {
       return AdminPage(child: AdminErrorView(message: _error!, onRetry: _load));
@@ -74,19 +74,33 @@ class _PlagiarismMonitorScreenState extends State<PlagiarismMonitorScreen> {
                 ? 'No accepted groups yet'
                 : '${_groups.length} group${_groups.length == 1 ? '' : 's'} · scores from Formatify plagiarism detection',
           ),
-          const SizedBox(height: 14),
-          Wrap(
+          const SizedBox(height: 18),
+          const Wrap(
             spacing: 10,
             runSpacing: 8,
-            children: const [
-              _LegendPill(color: AdminColors.success, label: 'Safe (< 30%)'),
-              _LegendPill(color: AdminColors.warning, label: 'Some risk (30–59%)'),
-              _LegendPill(color: AdminColors.danger, label: 'High risk (60%+)'),
+            children: [
+              AdminPill(
+                label: 'Safe (< 30%)',
+                color: AdminColors.success,
+                icon: Icons.check_circle_rounded,
+              ),
+              AdminPill(
+                label: 'Some risk (30–59%)',
+                color: AdminColors.warning,
+                icon: Icons.error_outline_rounded,
+              ),
+              AdminPill(
+                label: 'High risk (60%+)',
+                color: AdminColors.danger,
+                icon: Icons.warning_amber_rounded,
+              ),
             ],
           ),
           const SizedBox(height: 22),
           if (_groups.isEmpty)
             const AdminEmptyView(
+              icon: Icons.policy_outlined,
+              title: 'No groups monitored yet',
               message: 'Accepted groups will appear here with plagiarism scores from the detection module.',
             )
           else
@@ -95,33 +109,13 @@ class _PlagiarismMonitorScreenState extends State<PlagiarismMonitorScreen> {
                 padding: const EdgeInsets.only(bottom: 12),
                 child: InkWell(
                   onTap: () => _openDetail(group),
-                  borderRadius: BorderRadius.circular(14),
+                  borderRadius: BorderRadius.circular(adminCardRadius),
                   child: _PlagiarismGroupCard(group: group),
                 ),
               ),
             ),
         ],
       ),
-    );
-  }
-}
-
-class _LegendPill extends StatelessWidget {
-  final Color color;
-  final String label;
-
-  const _LegendPill({required this.color, required this.label});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.14),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: color.withOpacity(0.45)),
-      ),
-      child: Text(label, style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.w600)),
     );
   }
 }
@@ -158,23 +152,21 @@ class _PlagiarismGroupCard extends StatelessWidget {
     final color = _riskColor;
     return Container(
       padding: const EdgeInsets.all(18),
-      decoration: adminCardDecoration().copyWith(
-        border: Border.all(color: color.withOpacity(0.55), width: 1.2),
-        color: color.withOpacity(0.08),
-      ),
+      decoration: adminCardDecoration(borderColor: color.withOpacity(0.45)),
       child: Row(
         children: [
           Container(
-            width: 54,
-            height: 54,
+            width: 56,
+            height: 56,
             decoration: BoxDecoration(
-              color: color.withOpacity(0.18),
-              borderRadius: BorderRadius.circular(12),
+              color: color.withOpacity(0.16),
+              borderRadius: BorderRadius.circular(adminTileRadius + 2),
+              border: Border.all(color: color.withOpacity(0.35)),
             ),
             child: Center(
               child: Text(
                 '${group.plagiarismScore.round()}%',
-                style: TextStyle(color: color, fontWeight: FontWeight.w800, fontSize: 14),
+                style: TextStyle(color: color, fontWeight: FontWeight.w800, fontSize: 15),
               ),
             ),
           ),
@@ -204,17 +196,9 @@ class _PlagiarismGroupCard extends StatelessWidget {
               ],
             ),
           ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-            decoration: BoxDecoration(
-              color: color.withOpacity(0.16),
-              borderRadius: BorderRadius.circular(6),
-            ),
-            child: Text(
-              _riskLabel,
-              style: TextStyle(color: color, fontWeight: FontWeight.w700, fontSize: 12),
-            ),
-          ),
+          AdminPill(label: _riskLabel, color: color),
+          const SizedBox(width: 6),
+          Icon(Icons.chevron_right_rounded, color: Colors.white.withOpacity(0.4)),
         ],
       ),
     );

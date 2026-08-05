@@ -114,7 +114,7 @@ class _SupervisorNotificationsScreenState
   @override
   Widget build(BuildContext context) {
     if (_loading && _items.isEmpty) {
-      return const AdminPage(child: AdminLoadingView());
+      return const AdminPage(child: AdminLoadingView(label: 'Loading notifications...'));
     }
     if (_error != null && _items.isEmpty) {
       return AdminPage(child: AdminErrorView(message: _error!, onRetry: _load));
@@ -134,6 +134,8 @@ class _SupervisorNotificationsScreenState
           const SizedBox(height: 18),
           if (_items.isEmpty)
             const AdminEmptyView(
+              icon: Icons.notifications_none_rounded,
+              title: 'Inbox is empty',
               message:
                   'New submissions and student replies to your comments will appear here.',
             )
@@ -144,28 +146,21 @@ class _SupervisorNotificationsScreenState
                 padding: const EdgeInsets.only(bottom: 12),
                 child: InkWell(
                   onTap: () => _openItem(n),
-                  borderRadius: BorderRadius.circular(14),
+                  borderRadius: BorderRadius.circular(adminCardRadius),
                   child: Container(
                     padding: const EdgeInsets.all(16),
                     decoration: adminCardDecoration(
-                      color: unread
-                          ? AdminColors.primary.withOpacity(0.08)
+                      borderColor: unread
+                          ? AdminColors.accent.withOpacity(0.5)
                           : null,
                     ),
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Container(
-                          padding: const EdgeInsets.all(10),
-                          decoration: BoxDecoration(
-                            color: AdminColors.primary.withOpacity(0.14),
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: Icon(
-                            _iconFor(n),
-                            color: AdminColors.primary,
-                            size: 20,
-                          ),
+                        AdminIconBadge(
+                          icon: _iconFor(n),
+                          color: unread ? AdminColors.accent : AdminColors.primary,
+                          size: 20,
                         ),
                         const SizedBox(width: 12),
                         Expanded(
@@ -187,11 +182,17 @@ class _SupervisorNotificationsScreenState
                                   ),
                                   if (unread)
                                     Container(
-                                      width: 8,
-                                      height: 8,
-                                      decoration: const BoxDecoration(
-                                        color: AdminColors.primary,
+                                      width: 9,
+                                      height: 9,
+                                      decoration: BoxDecoration(
+                                        color: AdminColors.accentBright,
                                         shape: BoxShape.circle,
+                                        boxShadow: [
+                                          BoxShadow(
+                                            color: AdminColors.accent.withOpacity(0.6),
+                                            blurRadius: 8,
+                                          ),
+                                        ],
                                       ),
                                     ),
                                 ],

@@ -5,37 +5,251 @@ import '../../theme/app_theme.dart';
 import '../../utils/responsive.dart';
 
 class AdminColors {
-  // Aligned with AppPalette.dark (admin/supervisor/super-admin are dark-only).
+  // Aligned with AppPalette.dark (admin/supervisor/super-admin are dark-only) so
+  // these consoles share the student side's visual language.
   static const background = Color(0xFF0A0E1A); // scaffold
-  static const surface = Color(0xFF13182B);
-  static const card = Color(0xFF161B33); // surfaceElevated
-  // Solid approx of purple@18% on navy — kept const for `const BorderSide(...)` call sites.
-  static const border = Color(0xFF2E2650);
+  static const surface = Color(0xFF151A3A); // AppPalette.dark.surface
+  static const surfaceAlt = Color(0xFF0D1220); // AppPalette.dark.surfaceAlt
+  static const card = Color(0xFF1A2040); // surfaceElevated
+  static const inputFill = Color(0xFF0C1028);
+  // Solid approximations of the translucent palette borders — kept const so
+  // `const BorderSide(...)` call sites keep compiling.
+  static const border = Color(0xFF272C5C); // ≈ purple@18% on navy
+  static const borderStrong = Color(0xFF34387C); // ≈ indigo@35% on surface
   static const primary = Color(0xFF6366F1); // accentAlt / gradient start
   static const accent = Color(0xFFA855F7); // AppPalette.dark.accent
+  static const accentBright = Color(0xFFC084FC); // gradient end
   // Semantic status — keep recognizable.
   static const success = Color(0xFF10B981);
   static const warning = Color(0xFFF59E0B);
   static const danger = Color(0xFFEF4444);
+
+  static const primaryGradient = LinearGradient(
+    begin: Alignment.centerLeft,
+    end: Alignment.centerRight,
+    colors: [primary, accent, accentBright],
+  );
 }
 
-BoxDecoration adminCardDecoration({Color? color}) => BoxDecoration(
+/// Card corner radius shared with `AppPalette.dark.cardRadius`.
+const double adminCardRadius = 18;
+
+/// Smaller radius for inner tiles, chips and list rows.
+const double adminTileRadius = 12;
+
+/// Indigo glow + depth shadow used by every elevated admin surface.
+List<BoxShadow> adminCardGlow({double opacity = 0.26}) => [
+      BoxShadow(
+        color: AdminColors.primary.withOpacity(opacity),
+        blurRadius: 30,
+        spreadRadius: 1,
+        offset: const Offset(0, 12),
+      ),
+      BoxShadow(
+        color: Colors.black.withOpacity(0.32),
+        blurRadius: 20,
+        offset: const Offset(0, 8),
+      ),
+    ];
+
+BoxDecoration adminCardDecoration({
+  Color? color,
+  Color? borderColor,
+  double? radius,
+  bool glow = true,
+}) =>
+    BoxDecoration(
       color: color ?? AdminColors.card,
-      borderRadius: BorderRadius.circular(14),
-      border: Border.all(color: AdminColors.border),
-      boxShadow: [
-        BoxShadow(
-          color: const Color(0xFF7C3AED).withOpacity(0.18),
-          blurRadius: 24,
-          offset: const Offset(0, 10),
-        ),
-        BoxShadow(
-          color: Colors.black.withOpacity(0.35),
-          blurRadius: 16,
-          offset: const Offset(0, 6),
-        ),
-      ],
+      borderRadius: BorderRadius.circular(radius ?? adminCardRadius),
+      border: Border.all(color: borderColor ?? AdminColors.borderStrong),
+      boxShadow: glow ? adminCardGlow() : null,
     );
+
+/// Tinted square that holds a leading icon on cards, headers and list rows.
+class AdminIconBadge extends StatelessWidget {
+  final IconData icon;
+  final Color color;
+  final double size;
+  final double padding;
+
+  const AdminIconBadge({
+    super.key,
+    required this.icon,
+    this.color = AdminColors.primary,
+    this.size = 20,
+    this.padding = 10,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: EdgeInsets.all(padding),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.16),
+        borderRadius: BorderRadius.circular(adminTileRadius),
+        border: Border.all(color: color.withOpacity(0.28)),
+      ),
+      child: Icon(icon, color: color, size: size),
+    );
+  }
+}
+
+/// Pill used for statuses, counts and filters.
+class AdminPill extends StatelessWidget {
+  final String label;
+  final Color color;
+  final IconData? icon;
+
+  const AdminPill({
+    super.key,
+    required this.label,
+    this.color = AdminColors.primary,
+    this.icon,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.14),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color.withOpacity(0.35)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (icon != null) ...[
+            Icon(icon, size: 12, color: color),
+            const SizedBox(width: 5),
+          ],
+          Text(
+            label,
+            style: TextStyle(
+              color: color,
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.2,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Selectable filter chip matching the sidebar's selected-pill treatment.
+class AdminFilterChip extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+  final IconData? icon;
+
+  const AdminFilterChip({
+    super.key,
+    required this.label,
+    required this.selected,
+    required this.onTap,
+    this.icon,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(999),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 160),
+        padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 9),
+        decoration: BoxDecoration(
+          color: selected
+              ? AdminColors.primary.withOpacity(0.2)
+              : AdminColors.surfaceAlt,
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(
+            color: selected
+                ? AdminColors.accent.withOpacity(0.6)
+                : AdminColors.borderStrong,
+            width: selected ? 1.4 : 1,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (icon != null) ...[
+              Icon(
+                icon,
+                size: 14,
+                color: selected
+                    ? AdminColors.accentBright
+                    : Colors.white.withOpacity(0.55),
+              ),
+              const SizedBox(width: 6),
+            ],
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 12.5,
+                fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                color: selected ? Colors.white : Colors.white.withOpacity(0.65),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Shared dialog frame so every admin/supervisor dialog matches the cards.
+RoundedRectangleBorder adminDialogShape() => RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(20),
+      side: const BorderSide(color: AdminColors.borderStrong),
+    );
+
+/// Rounded gradient progress bar used for group/document progress.
+class AdminProgressBar extends StatelessWidget {
+  /// Fraction between 0 and 1.
+  final double value;
+  final double height;
+  final Color? color;
+
+  const AdminProgressBar({
+    super.key,
+    required this.value,
+    this.height = 8,
+    this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final fraction = value.isNaN ? 0.0 : value.clamp(0.0, 1.0);
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(999),
+      child: Container(
+        height: height,
+        decoration: BoxDecoration(
+          color: AdminColors.surfaceAlt,
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: AdminColors.border, width: 0.8),
+        ),
+        child: Align(
+          alignment: Alignment.centerLeft,
+          child: FractionallySizedBox(
+            widthFactor: fraction,
+            child: Container(
+              decoration: BoxDecoration(
+                color: color,
+                gradient: color == null ? AdminColors.primaryGradient : null,
+                borderRadius: BorderRadius.circular(999),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
 
 class AdminPage extends StatelessWidget {
   final Widget child;
@@ -54,10 +268,10 @@ class AdminPage extends StatelessWidget {
     final compact = isCompact(context);
     final content = Padding(
       padding: EdgeInsets.fromLTRB(
-        compact ? 16 : 28,
-        compact ? 16 : 24,
-        compact ? 16 : 28,
-        compact ? 20 : 28,
+        compact ? 16 : 32,
+        compact ? 16 : 26,
+        compact ? 16 : 32,
+        compact ? 20 : 32,
       ),
       child: child,
     );
@@ -75,7 +289,9 @@ class AdminPage extends StatelessWidget {
         ),
       );
     }
-    return AppPalette.dark.ambientGlowBackdrop(child: body);
+    // Inner backdrop (no orbs): AdminPage always renders inside a shell or a
+    // detail route, where orb circles would be clipped into visible blobs.
+    return AppPalette.dark.innerGlowBackdrop(child: body);
   }
 }
 
@@ -118,6 +334,10 @@ class AdminSubPage extends StatelessWidget {
         floatingActionButton: floatingActionButton,
         appBar: AppBar(
           backgroundColor: AdminColors.surface,
+          elevation: 0,
+          shape: const Border(
+            bottom: BorderSide(color: AdminColors.borderStrong),
+          ),
           leading: IconButton(
             icon: const Icon(Icons.arrow_back_rounded),
             onPressed: () => _handleBack(context),
@@ -146,22 +366,22 @@ class AdminSubPage extends StatelessWidget {
             ],
           ),
         ),
-        body: AppPalette.dark.ambientGlowBackdrop(child: content),
+        body: AppPalette.dark.innerGlowBackdrop(child: content),
       );
     }
 
     return Scaffold(
       backgroundColor: Colors.transparent,
       floatingActionButton: floatingActionButton,
-      body: AppPalette.dark.ambientGlowBackdrop(
+      body: AppPalette.dark.innerGlowBackdrop(
         child: Row(
         children: [
           Container(
-            width: 220,
-            decoration: BoxDecoration(
+            width: 224,
+            decoration: const BoxDecoration(
               color: AdminColors.surface,
               border: Border(
-                right: BorderSide(color: AdminColors.border.withOpacity(0.55)),
+                right: BorderSide(color: AdminColors.borderStrong),
               ),
             ),
             child: SafeArea(
@@ -169,36 +389,44 @@ class AdminSubPage extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Padding(
-                    padding: const EdgeInsets.fromLTRB(18, 20, 18, 16),
+                    padding: const EdgeInsets.fromLTRB(18, 22, 18, 18),
                     child: Row(
                       children: [
                         Container(
-                          padding: const EdgeInsets.all(8),
+                          padding: const EdgeInsets.all(9),
                           decoration: BoxDecoration(
-                            color: AdminColors.primary.withOpacity(0.2),
-                            borderRadius: BorderRadius.circular(8),
+                            gradient: AdminColors.primaryGradient,
+                            borderRadius: BorderRadius.circular(10),
+                            boxShadow: [
+                              BoxShadow(
+                                color: AdminColors.primary.withOpacity(0.4),
+                                blurRadius: 14,
+                                offset: const Offset(0, 5),
+                              ),
+                            ],
                           ),
                           child: const Icon(
                             Icons.shield_rounded,
-                            color: AdminColors.primary,
+                            color: Colors.white,
                             size: 18,
                           ),
                         ),
-                        const SizedBox(width: 10),
+                        const SizedBox(width: 11),
                         Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               const Text(
-                                'Admin Panel',
+                                'FORMATIFY',
                                 style: TextStyle(
-                                  fontSize: 13,
+                                  fontSize: 13.5,
                                   fontWeight: FontWeight.w700,
                                   color: Colors.white,
+                                  letterSpacing: 0.4,
                                 ),
                               ),
                               Text(
-                                'FORMATIFY',
+                                'Admin Panel',
                                 style: TextStyle(
                                   fontSize: 10,
                                   color: Colors.white.withOpacity(0.5),
@@ -210,40 +438,38 @@ class AdminSubPage extends StatelessWidget {
                       ],
                     ),
                   ),
-                  Divider(height: 1, color: AdminColors.border.withOpacity(0.55)),
+                  const Divider(height: 1, color: AdminColors.border),
                   Padding(
-                    padding: const EdgeInsets.fromLTRB(12, 14, 12, 8),
+                    padding: const EdgeInsets.fromLTRB(12, 16, 12, 8),
                     child: InkWell(
                       onTap: () => _handleBack(context),
-                      borderRadius: BorderRadius.circular(10),
+                      borderRadius: BorderRadius.circular(adminTileRadius),
                       child: Container(
                         width: double.infinity,
                         padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
+                          horizontal: 14,
                           vertical: 12,
                         ),
                         decoration: BoxDecoration(
-                          color: AdminColors.primary.withOpacity(0.12),
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(
-                            color: AdminColors.primary.withOpacity(0.3),
-                          ),
+                          color: AdminColors.surfaceAlt,
+                          borderRadius: BorderRadius.circular(adminTileRadius),
+                          border: Border.all(color: AdminColors.borderStrong),
                         ),
                         child: Row(
                           children: [
                             Icon(
                               Icons.arrow_back_rounded,
-                              size: 18,
-                              color: Colors.white.withOpacity(0.85),
+                              size: 17,
+                              color: Colors.white.withOpacity(0.8),
                             ),
                             const SizedBox(width: 10),
                             Expanded(
                               child: Text(
                                 'Back',
                                 style: TextStyle(
-                                  fontSize: 12,
+                                  fontSize: 12.5,
                                   fontWeight: FontWeight.w600,
-                                  color: Colors.white.withOpacity(0.9),
+                                  color: Colors.white.withOpacity(0.88),
                                 ),
                               ),
                             ),
@@ -253,26 +479,27 @@ class AdminSubPage extends StatelessWidget {
                     ),
                   ),
                   Padding(
-                    padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
+                    padding: const EdgeInsets.fromLTRB(12, 6, 12, 12),
                     child: Container(
                       width: double.infinity,
                       padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
+                        horizontal: 14,
                         vertical: 12,
                       ),
                       decoration: BoxDecoration(
                         color: AdminColors.primary.withOpacity(0.16),
-                        borderRadius: BorderRadius.circular(10),
+                        borderRadius: BorderRadius.circular(adminTileRadius),
                         border: Border.all(
-                          color: AdminColors.primary.withOpacity(0.35),
+                          color: AdminColors.accent.withOpacity(0.55),
+                          width: 1.4,
                         ),
                       ),
                       child: Text(
                         title,
                         style: const TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                          color: AdminColors.primary,
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w700,
+                          color: AdminColors.accentBright,
                         ),
                       ),
                     ),
@@ -280,12 +507,25 @@ class AdminSubPage extends StatelessWidget {
                   const Spacer(),
                   Padding(
                     padding: const EdgeInsets.all(16),
-                    child: Text(
-                      'Live backend data',
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: Colors.white.withOpacity(0.45),
-                      ),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 7,
+                          height: 7,
+                          decoration: const BoxDecoration(
+                            color: AdminColors.success,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Live backend data',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Colors.white.withOpacity(0.45),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ],
@@ -298,13 +538,11 @@ class AdminSubPage extends StatelessWidget {
               children: [
                 Container(
                   width: double.infinity,
-                  padding: const EdgeInsets.fromLTRB(28, 22, 28, 18),
-                  decoration: BoxDecoration(
+                  padding: const EdgeInsets.fromLTRB(32, 24, 32, 20),
+                  decoration: const BoxDecoration(
                     color: AdminColors.surface,
                     border: Border(
-                      bottom: BorderSide(
-                        color: AdminColors.border.withOpacity(0.7),
-                      ),
+                      bottom: BorderSide(color: AdminColors.borderStrong),
                     ),
                   ),
                   child: Column(
@@ -316,14 +554,15 @@ class AdminSubPage extends StatelessWidget {
                           fontSize: 24,
                           fontWeight: FontWeight.w700,
                           color: Colors.white,
+                          letterSpacing: -0.3,
                         ),
                       ),
                       if (subtitle != null) ...[
-                        const SizedBox(height: 4),
+                        const SizedBox(height: 5),
                         Text(
                           subtitle!,
                           style: TextStyle(
-                            color: Colors.white.withOpacity(0.65),
+                            color: Colors.white.withOpacity(0.62),
                             fontSize: 13,
                           ),
                         ),
@@ -370,17 +609,60 @@ class AdminPageHeader extends StatelessWidget {
                   fontSize: compact ? 20 : 28,
                   fontWeight: FontWeight.w700,
                   color: Colors.white,
+                  letterSpacing: -0.3,
+                  height: 1.15,
                 ),
               ),
-              const SizedBox(height: 4),
+              const SizedBox(height: 6),
               Text(
                 subtitle,
                 style: TextStyle(
-                  fontSize: compact ? 12 : 14,
-                  color: Colors.white.withOpacity(0.65),
+                  fontSize: compact ? 12 : 13.5,
+                  color: Colors.white.withOpacity(0.62),
+                  height: 1.4,
                 ),
               ),
             ],
+          ),
+        ),
+        if (trailing != null) ...[
+          const SizedBox(width: 16),
+          trailing!,
+        ],
+      ],
+    );
+  }
+}
+
+/// Small caps label that separates groups of cards on a page.
+class AdminSectionLabel extends StatelessWidget {
+  final String label;
+  final Widget? trailing;
+
+  const AdminSectionLabel({super.key, required this.label, this.trailing});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Container(
+          width: 3,
+          height: 15,
+          decoration: BoxDecoration(
+            gradient: AdminColors.primaryGradient,
+            borderRadius: BorderRadius.circular(99),
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text(
+            label,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 14,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.1,
+            ),
           ),
         ),
         if (trailing != null) trailing!,
@@ -410,19 +692,17 @@ class AdminStatCard extends StatelessWidget {
     return Container(
       width: double.infinity,
       padding: EdgeInsets.all(compact ? 14 : 20),
-      decoration: adminCardDecoration(),
+      decoration: adminCardDecoration(borderColor: color.withOpacity(0.32)),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisAlignment: MainAxisAlignment.center,
         mainAxisSize: MainAxisSize.min,
         children: [
-          Container(
-            padding: EdgeInsets.all(compact ? 8 : 10),
-            decoration: BoxDecoration(
-              color: color.withOpacity(0.14),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Icon(icon, color: color, size: compact ? 18 : 22),
+          AdminIconBadge(
+            icon: icon,
+            color: color,
+            size: compact ? 18 : 22,
+            padding: compact ? 8 : 10,
           ),
           SizedBox(height: compact ? 10 : 18),
           Text(
@@ -434,6 +714,7 @@ class AdminStatCard extends StatelessWidget {
               fontWeight: FontWeight.w700,
               color: Colors.white,
               height: 1.1,
+              letterSpacing: -0.5,
             ),
           ),
           SizedBox(height: compact ? 4 : 6),
@@ -443,8 +724,8 @@ class AdminStatCard extends StatelessWidget {
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
               fontSize: compact ? 12 : 13,
-              color: Colors.white.withOpacity(0.65),
-              height: 1.2,
+              color: Colors.white.withOpacity(0.62),
+              height: 1.25,
             ),
           ),
         ],
@@ -472,7 +753,7 @@ class AdminActionTile extends StatelessWidget {
     final compact = isCompact(context);
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(14),
+      borderRadius: BorderRadius.circular(adminCardRadius),
       child: Container(
         width: compact ? double.infinity : 220,
         padding: EdgeInsets.all(compact ? 14 : 18),
@@ -480,12 +761,12 @@ class AdminActionTile extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(icon, color: AdminColors.primary, size: compact ? 22 : 24),
+            AdminIconBadge(icon: icon, size: compact ? 20 : 22, padding: 9),
             SizedBox(height: compact ? 10 : 14),
             Text(
               title,
               style: TextStyle(
-                fontWeight: FontWeight.w600,
+                fontWeight: FontWeight.w700,
                 color: Colors.white,
                 fontSize: compact ? 14 : 15,
               ),
@@ -496,6 +777,7 @@ class AdminActionTile extends StatelessWidget {
               style: TextStyle(
                 color: Colors.white.withOpacity(0.6),
                 fontSize: compact ? 11.5 : 12,
+                height: 1.35,
               ),
             ),
           ],
@@ -525,40 +807,25 @@ class AdminDepartmentTile extends StatelessWidget {
       padding: const EdgeInsets.only(bottom: 12),
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(adminCardRadius),
         child: Container(
           padding: const EdgeInsets.all(18),
           decoration: adminCardDecoration(),
           child: Row(
             children: [
-              Container(
-                width: 44,
-                height: 44,
-                decoration: BoxDecoration(
-                  color: AdminColors.primary.withOpacity(0.14),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: const Icon(Icons.apartment_rounded, color: AdminColors.primary),
-              ),
+              const AdminIconBadge(icon: Icons.apartment_rounded, padding: 12),
               const SizedBox(width: 14),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(title, style: const TextStyle(fontWeight: FontWeight.w600, color: Colors.white, fontSize: 16)),
+                    Text(title, style: const TextStyle(fontWeight: FontWeight.w700, color: Colors.white, fontSize: 16)),
                     const SizedBox(height: 4),
-                    Text(subtitle, style: TextStyle(color: Colors.white.withOpacity(0.65), fontSize: 13)),
+                    Text(subtitle, style: TextStyle(color: Colors.white.withOpacity(0.62), fontSize: 13)),
                   ],
                 ),
               ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                decoration: BoxDecoration(
-                  color: AdminColors.primary.withOpacity(0.12),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Text(badge, style: const TextStyle(color: AdminColors.primary, fontWeight: FontWeight.w600)),
-              ),
+              AdminPill(label: badge),
               const SizedBox(width: 8),
               Icon(Icons.chevron_right_rounded, color: Colors.white.withOpacity(0.45)),
             ],
@@ -572,19 +839,67 @@ class AdminDepartmentTile extends StatelessWidget {
 class AdminSectionCard extends StatelessWidget {
   final String title;
   final Widget child;
+  final String? subtitle;
+  final IconData? icon;
+  final Color? accent;
+  final Widget? trailing;
 
-  const AdminSectionCard({super.key, required this.title, required this.child});
+  const AdminSectionCard({
+    super.key,
+    required this.title,
+    required this.child,
+    this.subtitle,
+    this.icon,
+    this.accent,
+    this.trailing,
+  });
 
   @override
   Widget build(BuildContext context) {
+    final color = accent ?? AdminColors.primary;
     return Container(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(22),
       decoration: adminCardDecoration(),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: Colors.white)),
-          const SizedBox(height: 16),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (icon != null) ...[
+                AdminIconBadge(icon: icon!, color: color, size: 18, padding: 9),
+                const SizedBox(width: 12),
+              ],
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.white,
+                      ),
+                    ),
+                    if (subtitle != null) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        subtitle!,
+                        style: TextStyle(
+                          fontSize: 12.5,
+                          color: Colors.white.withOpacity(0.6),
+                          height: 1.4,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              if (trailing != null) trailing!,
+            ],
+          ),
+          const SizedBox(height: 18),
           child,
         ],
       ),
@@ -593,11 +908,37 @@ class AdminSectionCard extends StatelessWidget {
 }
 
 class AdminLoadingView extends StatelessWidget {
-  const AdminLoadingView({super.key});
+  final String? label;
+
+  const AdminLoadingView({super.key, this.label});
 
   @override
   Widget build(BuildContext context) {
-    return const Center(child: CircularProgressIndicator(color: AdminColors.primary));
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const SizedBox(
+            width: 30,
+            height: 30,
+            child: CircularProgressIndicator(
+              color: AdminColors.accent,
+              strokeWidth: 2.6,
+            ),
+          ),
+          if (label != null) ...[
+            const SizedBox(height: 14),
+            Text(
+              label!,
+              style: TextStyle(
+                color: Colors.white.withOpacity(0.6),
+                fontSize: 12.5,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
   }
 }
 
@@ -605,30 +946,124 @@ class AdminEmptyView extends StatelessWidget {
   final String message;
   final String? actionLabel;
   final Future<void> Function()? onAction;
+  final IconData icon;
+  final String? title;
 
   const AdminEmptyView({
     super.key,
     required this.message,
     this.actionLabel,
     this.onAction,
+    this.icon = Icons.inbox_rounded,
+    this.title,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return AdminStateCard(
+      icon: icon,
+      iconColor: AdminColors.accent,
+      title: title,
+      message: message,
+      action: onAction == null
+          ? null
+          : OutlinedButton.icon(
+              onPressed: onAction,
+              icon: const Icon(Icons.refresh_rounded, size: 16),
+              label: Text(actionLabel ?? 'Refresh'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: AdminColors.accent,
+                side: BorderSide(color: AdminColors.accent.withOpacity(0.5)),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 18,
+                  vertical: 12,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(adminTileRadius),
+                ),
+              ),
+            ),
+    );
+  }
+}
+
+/// Centered glowing card used by the empty and error states so a mostly blank
+/// pane still has the layered look of the auth screens.
+class AdminStateCard extends StatelessWidget {
+  final IconData icon;
+  final Color iconColor;
+  final String? title;
+  final String message;
+  final Widget? action;
+
+  const AdminStateCard({
+    super.key,
+    required this.icon,
+    required this.iconColor,
+    required this.message,
+    this.title,
+    this.action,
   });
 
   @override
   Widget build(BuildContext context) {
     return Center(
       child: Padding(
-        padding: const EdgeInsets.all(28),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.inbox_outlined, size: 42, color: Colors.white.withOpacity(0.35)),
-            const SizedBox(height: 14),
-            Text(message, textAlign: TextAlign.center, style: TextStyle(color: Colors.white.withOpacity(0.72))),
-            if (onAction != null) ...[
-              const SizedBox(height: 16),
-              OutlinedButton(onPressed: onAction, child: Text(actionLabel ?? 'Refresh')),
-            ],
-          ],
+        padding: const EdgeInsets.symmetric(vertical: 40, horizontal: 20),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 460),
+          child: Container(
+            padding: const EdgeInsets.fromLTRB(32, 34, 32, 34),
+            decoration: adminCardDecoration(
+              borderColor: iconColor.withOpacity(0.3),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(18),
+                  decoration: BoxDecoration(
+                    color: iconColor.withOpacity(0.14),
+                    shape: BoxShape.circle,
+                    border: Border.all(color: iconColor.withOpacity(0.3)),
+                    boxShadow: [
+                      BoxShadow(
+                        color: iconColor.withOpacity(0.3),
+                        blurRadius: 22,
+                        spreadRadius: 1,
+                      ),
+                    ],
+                  ),
+                  child: Icon(icon, size: 30, color: iconColor),
+                ),
+                const SizedBox(height: 20),
+                Text(
+                  title ?? 'Nothing here yet',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 17,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: -0.2,
+                  ),
+                ),
+                const SizedBox(height: 9),
+                Text(
+                  message,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: Colors.white.withOpacity(0.6),
+                    fontSize: 13,
+                    height: 1.55,
+                  ),
+                ),
+                if (action != null) ...[
+                  const SizedBox(height: 20),
+                  action!,
+                ],
+              ],
+            ),
+          ),
         ),
       ),
     );
@@ -643,19 +1078,15 @@ class AdminErrorView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(28),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.error_outline_rounded, color: AdminColors.danger, size: 40),
-            const SizedBox(height: 14),
-            Text(message, textAlign: TextAlign.center, style: TextStyle(color: Colors.white.withOpacity(0.75))),
-            const SizedBox(height: 16),
-            ElevatedButton(onPressed: onRetry, child: const Text('Retry')),
-          ],
-        ),
+    return AdminStateCard(
+      icon: Icons.error_outline_rounded,
+      iconColor: AdminColors.danger,
+      title: 'Something went wrong',
+      message: message,
+      action: ElevatedButton.icon(
+        onPressed: onRetry,
+        icon: const Icon(Icons.refresh_rounded, size: 16),
+        label: const Text('Retry'),
       ),
     );
   }
@@ -667,35 +1098,41 @@ InputDecoration adminFieldDecoration({
   IconData? prefixIcon,
   Widget? suffixIcon,
 }) {
+  const radius = 14.0;
   return InputDecoration(
     labelText: label,
     hintText: hint,
     filled: true,
-    fillColor: AdminColors.card,
-    prefixIcon: prefixIcon == null ? null : Icon(prefixIcon, color: AdminColors.primary.withOpacity(0.9)),
+    fillColor: AdminColors.inputFill,
+    prefixIcon: prefixIcon == null ? null : Icon(prefixIcon, size: 20, color: AdminColors.accent.withOpacity(0.9)),
     suffixIcon: suffixIcon,
-    labelStyle: TextStyle(color: Colors.white.withOpacity(0.7)),
-    hintStyle: TextStyle(color: Colors.white.withOpacity(0.35)),
+    labelStyle: TextStyle(color: Colors.white.withOpacity(0.68), fontSize: 13.5),
+    floatingLabelStyle: const TextStyle(color: AdminColors.accent, fontWeight: FontWeight.w600),
+    hintStyle: TextStyle(color: Colors.white.withOpacity(0.32)),
     contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
     border: OutlineInputBorder(
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: BorderRadius.circular(radius),
       borderSide: const BorderSide(color: AdminColors.border),
     ),
     enabledBorder: OutlineInputBorder(
-      borderRadius: BorderRadius.circular(12),
-      borderSide: BorderSide(color: AdminColors.border.withOpacity(0.9)),
+      borderRadius: BorderRadius.circular(radius),
+      borderSide: const BorderSide(color: AdminColors.borderStrong),
     ),
     focusedBorder: OutlineInputBorder(
-      borderRadius: BorderRadius.circular(12),
-      borderSide: const BorderSide(color: AdminColors.primary, width: 1.4),
+      borderRadius: BorderRadius.circular(radius),
+      borderSide: const BorderSide(color: AdminColors.accent, width: 1.6),
     ),
     disabledBorder: OutlineInputBorder(
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: BorderRadius.circular(radius),
       borderSide: BorderSide(color: AdminColors.border.withOpacity(0.5)),
     ),
     errorBorder: OutlineInputBorder(
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: BorderRadius.circular(radius),
       borderSide: const BorderSide(color: AdminColors.danger),
+    ),
+    focusedErrorBorder: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(radius),
+      borderSide: const BorderSide(color: AdminColors.danger, width: 1.6),
     ),
   );
 }
@@ -717,15 +1154,9 @@ Future<void> showAdminBottomSheet({
           margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
           decoration: BoxDecoration(
             color: AdminColors.surface,
-            borderRadius: BorderRadius.circular(22),
-            border: Border.all(color: AdminColors.border.withOpacity(0.8)),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.35),
-                blurRadius: 28,
-                offset: const Offset(0, 12),
-              ),
-            ],
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(color: AdminColors.borderStrong),
+            boxShadow: adminCardGlow(opacity: 0.22),
           ),
           child: SingleChildScrollView(
             padding: const EdgeInsets.fromLTRB(22, 12, 22, 22),
@@ -746,14 +1177,7 @@ Future<void> showAdminBottomSheet({
                 ),
                 Row(
                   children: [
-                    Container(
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        color: AdminColors.primary.withOpacity(0.16),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: const Icon(Icons.edit_note_rounded, color: AdminColors.primary),
-                    ),
+                    const AdminIconBadge(icon: Icons.edit_note_rounded, size: 22),
                     const SizedBox(width: 12),
                     Expanded(
                       child: Column(
@@ -788,11 +1212,35 @@ Future<void> showAdminBottomSheet({
 }
 
 void showAdminSnackBar(BuildContext context, String message, {bool isError = false}) {
+  final accent = isError ? AdminColors.danger : AdminColors.success;
   ScaffoldMessenger.of(context).showSnackBar(
     SnackBar(
-      content: Text(message),
-      backgroundColor: isError ? AdminColors.danger : AdminColors.success,
+      content: Row(
+        children: [
+          Icon(
+            isError ? Icons.error_outline_rounded : Icons.check_circle_rounded,
+            color: accent,
+            size: 20,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              message,
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+        ],
+      ),
+      backgroundColor: AdminColors.card,
       behavior: SnackBarBehavior.floating,
+      elevation: 8,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(adminTileRadius),
+        side: BorderSide(color: accent.withOpacity(0.45)),
+      ),
     ),
   );
 }
@@ -813,7 +1261,10 @@ Future<void> showSupervisorCredentialsDialog({
         builder: (context, setDialogState) {
           return AlertDialog(
             backgroundColor: AdminColors.surface,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20),
+              side: const BorderSide(color: AdminColors.borderStrong),
+            ),
             title: const Row(
               children: [
                 Icon(Icons.check_circle_rounded, color: AdminColors.success),
@@ -836,9 +1287,9 @@ Future<void> showSupervisorCredentialsDialog({
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                     decoration: BoxDecoration(
-                      color: AdminColors.card,
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: AdminColors.border),
+                      color: AdminColors.inputFill,
+                      borderRadius: BorderRadius.circular(adminTileRadius),
+                      border: Border.all(color: AdminColors.borderStrong),
                     ),
                     child: Row(
                       children: [

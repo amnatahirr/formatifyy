@@ -58,7 +58,7 @@ class _SubmissionReviewScreenState extends State<SubmissionReviewScreen> {
   @override
   Widget build(BuildContext context) {
     if (_loading) {
-      return const AdminPage(child: AdminLoadingView());
+      return const AdminPage(child: AdminLoadingView(label: 'Loading submissions...'));
     }
     if (_error != null) {
       return AdminPage(child: AdminErrorView(message: _error!, onRetry: _loadSubmissions));
@@ -78,6 +78,8 @@ class _SubmissionReviewScreenState extends State<SubmissionReviewScreen> {
           const SizedBox(height: 24),
           if (_submissions.isEmpty)
             const AdminEmptyView(
+              icon: Icons.fact_check_outlined,
+              title: 'Nothing to review',
               message: 'When students submit a final document, it will appear here with the Formatify AI analysis report.',
             )
           else
@@ -86,7 +88,7 @@ class _SubmissionReviewScreenState extends State<SubmissionReviewScreen> {
                 padding: const EdgeInsets.only(bottom: 14),
                 child: InkWell(
                   onTap: () => _openDetail(item),
-                  borderRadius: BorderRadius.circular(14),
+                  borderRadius: BorderRadius.circular(adminCardRadius),
                   child: _SubmissionListCard(item: item),
                 ),
               ),
@@ -114,13 +116,10 @@ class _SubmissionListCard extends StatelessWidget {
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: AdminColors.warning.withOpacity(0.14),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: const Icon(Icons.fact_check_outlined, color: AdminColors.warning, size: 22),
+              const AdminIconBadge(
+                icon: Icons.fact_check_outlined,
+                color: AdminColors.warning,
+                size: 22,
               ),
               const SizedBox(width: 14),
               Expanded(
@@ -139,17 +138,7 @@ class _SubmissionListCard extends StatelessWidget {
                   ],
                 ),
               ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                decoration: BoxDecoration(
-                  color: AdminColors.warning.withOpacity(0.15),
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: Text(
-                  item.statusLabel,
-                  style: const TextStyle(color: AdminColors.warning, fontWeight: FontWeight.w700, fontSize: 12),
-                ),
-              ),
+              AdminPill(label: item.statusLabel, color: AdminColors.warning),
             ],
           ),
           const SizedBox(height: 14),
@@ -157,16 +146,34 @@ class _SubmissionListCard extends StatelessWidget {
             spacing: 10,
             runSpacing: 8,
             children: [
-              _MiniStat(label: 'Grammar', value: '${summary.grammarIssues}'),
-              _MiniStat(label: 'Plagiarism risk', value: '${summary.plagiarismScore.toStringAsFixed(0)}%'),
-              _MiniStat(label: 'Compliance', value: '${summary.complianceScore.toStringAsFixed(0)}%'),
+              _MiniStat(
+                label: 'Grammar',
+                value: '${summary.grammarIssues}',
+                icon: Icons.spellcheck_rounded,
+              ),
+              _MiniStat(
+                label: 'Plagiarism risk',
+                value: '${summary.plagiarismScore.toStringAsFixed(0)}%',
+                icon: Icons.policy_outlined,
+              ),
+              _MiniStat(
+                label: 'Compliance',
+                value: '${summary.complianceScore.toStringAsFixed(0)}%',
+                icon: Icons.rule_rounded,
+              ),
             ],
           ),
           if (item.submittedAt.isNotEmpty) ...[
-            const SizedBox(height: 12),
-            Text(
-              'Submitted: ${item.submittedAt}',
-              style: TextStyle(fontSize: 12, color: Colors.white.withOpacity(0.45)),
+            const SizedBox(height: 14),
+            Row(
+              children: [
+                Icon(Icons.schedule_rounded, size: 13, color: Colors.white.withOpacity(0.4)),
+                const SizedBox(width: 6),
+                Text(
+                  'Submitted ${item.submittedAt}',
+                  style: TextStyle(fontSize: 12, color: Colors.white.withOpacity(0.45)),
+                ),
+              ],
             ),
           ],
         ],
@@ -178,21 +185,40 @@ class _SubmissionListCard extends StatelessWidget {
 class _MiniStat extends StatelessWidget {
   final String label;
   final String value;
+  final IconData? icon;
 
-  const _MiniStat({required this.label, required this.value});
+  const _MiniStat({required this.label, required this.value, this.icon});
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
       decoration: BoxDecoration(
-        color: AdminColors.background.withOpacity(0.45),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: AdminColors.border.withOpacity(0.8)),
+        color: AdminColors.surfaceAlt,
+        borderRadius: BorderRadius.circular(adminTileRadius - 2),
+        border: Border.all(color: AdminColors.borderStrong),
       ),
-      child: Text(
-        '$label: $value',
-        style: TextStyle(fontSize: 12, color: Colors.white.withOpacity(0.8), fontWeight: FontWeight.w600),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (icon != null) ...[
+            Icon(icon, size: 13, color: AdminColors.accent.withOpacity(0.8)),
+            const SizedBox(width: 6),
+          ],
+          Text(
+            label,
+            style: TextStyle(fontSize: 12, color: Colors.white.withOpacity(0.55)),
+          ),
+          const SizedBox(width: 5),
+          Text(
+            value,
+            style: const TextStyle(
+              fontSize: 12.5,
+              color: Colors.white,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
       ),
     );
   }

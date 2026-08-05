@@ -224,6 +224,60 @@ class AppPalette {
       ],
     );
   }
+
+  /// Backdrop for panes nested inside a shell (content area beside a sidebar,
+  /// pushed detail routes). Uses corner washes that extend past the pane edges
+  /// instead of orbs, so no glow circle is ever visible — the depth comes from
+  /// the cards' own glow, like the auth screens.
+  Widget innerGlowBackdrop({required Widget child}) {
+    if (!isDark) {
+      return ColoredBox(color: scaffold, child: child);
+    }
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        ColoredBox(color: scaffold),
+        IgnorePointer(
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: RadialGradient(
+                center: const Alignment(-0.85, -1.0),
+                radius: 1.35,
+                colors: [
+                  const Color(0xFF7C3AED).withOpacity(0.17),
+                  const Color(0xFF6366F1).withOpacity(0.05),
+                  Colors.transparent,
+                ],
+                stops: const [0.0, 0.45, 1.0],
+              ),
+            ),
+          ),
+        ),
+        IgnorePointer(
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: RadialGradient(
+                center: const Alignment(0.95, 1.0),
+                radius: 1.25,
+                colors: [
+                  const Color(0xFF4F46E5).withOpacity(0.14),
+                  const Color(0xFF6366F1).withOpacity(0.04),
+                  Colors.transparent,
+                ],
+                stops: const [0.0, 0.5, 1.0],
+              ),
+            ),
+          ),
+        ),
+        const Positioned.fill(
+          child: IgnorePointer(
+            child: CustomPaint(painter: _DottedGridPainter(opacity: 0.07)),
+          ),
+        ),
+        child,
+      ],
+    );
+  }
 }
 
 class _AmbientGlowOrb extends StatelessWidget {
@@ -256,12 +310,14 @@ class _AmbientGlowOrb extends StatelessWidget {
 
 /// Static dotted texture — does not repaint.
 class _DottedGridPainter extends CustomPainter {
-  const _DottedGridPainter();
+  final double opacity;
+
+  const _DottedGridPainter({this.opacity = 0.12});
 
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
-      ..color = const Color(0xFFA855F7).withOpacity(0.12)
+      ..color = const Color(0xFFA855F7).withOpacity(opacity)
       ..style = PaintingStyle.fill;
     const step = 22.0;
     const radius = 1.1;
@@ -273,7 +329,8 @@ class _DottedGridPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+  bool shouldRepaint(covariant _DottedGridPainter oldDelegate) =>
+      oldDelegate.opacity != opacity;
 }
 
 class ThemeProvider extends ChangeNotifier {

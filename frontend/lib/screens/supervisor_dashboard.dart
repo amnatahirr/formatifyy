@@ -65,6 +65,16 @@ class _SupervisorDashboardState extends State<SupervisorDashboard> {
     Icons.policy_rounded,
     Icons.person_rounded,
   ];
+  final List<String> _tabSubtitles = const [
+    'Overview of your supervision workload',
+    'Approve or decline student group requests',
+    'Groups you supervise and their progress',
+    'Documents waiting for your review',
+    'Similarity monitoring across submissions',
+    'Account details and password settings',
+    'Additional supervisor tools',
+    'Recent activity and alerts',
+  ];
 
   static const int _requestsTabIndex = 1;
   static const int _groupsTabIndex = 2;
@@ -107,6 +117,13 @@ class _SupervisorDashboardState extends State<SupervisorDashboard> {
     return 'Supervisor';
   }
 
+  String? get _subtitle {
+    if (_selectedTab >= 0 && _selectedTab < _tabSubtitles.length) {
+      return _tabSubtitles[_selectedTab];
+    }
+    return null;
+  }
+
   @override
   Widget build(BuildContext context) {
     final compact = isCompact(context);
@@ -122,7 +139,7 @@ class _SupervisorDashboardState extends State<SupervisorDashboard> {
       },
       child: Scaffold(
         backgroundColor: Colors.transparent,
-        body: AppPalette.dark.ambientGlowBackdrop(
+        body: AppPalette.dark.innerGlowBackdrop(
           child: compact
               ? SafeArea(
                   bottom: false,
@@ -175,14 +192,14 @@ class _SupervisorDashboardState extends State<SupervisorDashboard> {
     );
 
     return Container(
-      decoration: BoxDecoration(
+      decoration: const BoxDecoration(
         color: AdminColors.surface,
-        border: Border(top: BorderSide(color: AdminColors.border.withOpacity(0.6))),
+        border: Border(top: BorderSide(color: AdminColors.borderStrong)),
       ),
       child: SafeArea(
         top: false,
         child: SizedBox(
-          height: 64,
+          height: 66,
           child: Row(
             children: [
               for (var i = 0; i < _kMobileNavItems.length; i++)
@@ -203,19 +220,27 @@ class _SupervisorDashboardState extends State<SupervisorDashboard> {
     required _MobileNavItem item,
     required bool selected,
   }) {
-    final color = selected ? AdminColors.primary : Colors.white.withOpacity(0.55);
+    final color = selected ? AdminColors.accentBright : Colors.white.withOpacity(0.55);
 
     return InkWell(
       onTap: () => _selectTab(item.tabIndex),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(item.icon, size: 22, color: color),
-          const SizedBox(height: 4),
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 180),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+            decoration: BoxDecoration(
+              color: selected ? AdminColors.primary.withOpacity(0.2) : Colors.transparent,
+              borderRadius: BorderRadius.circular(999),
+            ),
+            child: Icon(item.icon, size: 21, color: color),
+          ),
+          const SizedBox(height: 3),
           Text(
             item.label,
             style: TextStyle(
-              fontSize: 11,
+              fontSize: 10.5,
               fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
               color: color,
             ),
@@ -227,105 +252,179 @@ class _SupervisorDashboardState extends State<SupervisorDashboard> {
 
   Widget _buildSidebar() {
     return Container(
-      width: 250,
-      decoration: BoxDecoration(
+      width: 252,
+      decoration: const BoxDecoration(
         color: AdminColors.surface,
-        border: Border(right: BorderSide(color: AdminColors.border.withOpacity(0.5))),
+        border: Border(right: BorderSide(color: AdminColors.borderStrong)),
       ),
       child: Column(
         children: [
           Container(
             padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              border: Border(bottom: BorderSide(color: AdminColors.border.withOpacity(0.5))),
+            decoration: const BoxDecoration(
+              border: Border(bottom: BorderSide(color: AdminColors.border)),
             ),
             child: Row(
               children: [
                 Container(
-                  padding: const EdgeInsets.all(8),
+                  padding: const EdgeInsets.all(9),
                   decoration: BoxDecoration(
-                    color: AdminColors.primary.withOpacity(0.2),
-                    borderRadius: BorderRadius.circular(8),
+                    gradient: AdminColors.primaryGradient,
+                    borderRadius: BorderRadius.circular(10),
+                    boxShadow: [
+                      BoxShadow(
+                        color: AdminColors.primary.withOpacity(0.42),
+                        blurRadius: 16,
+                        offset: const Offset(0, 6),
+                      ),
+                    ],
                   ),
-                  child: const Icon(Icons.supervisor_account_rounded, color: AdminColors.primary, size: 20),
+                  child: const Icon(Icons.supervisor_account_rounded, color: Colors.white, size: 20),
                 ),
                 const SizedBox(width: 12),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Supervisor',
-                      style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: Colors.white),
-                    ),
-                    Text(
-                      'FORMATIFY',
-                      style: TextStyle(fontSize: 11, color: Colors.white.withOpacity(0.5)),
-                    ),
-                  ],
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'FORMATIFY',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.white,
+                          letterSpacing: 0.4,
+                        ),
+                      ),
+                      Text(
+                        'Supervisor Console',
+                        style: TextStyle(fontSize: 10.5, color: Color(0x8CFFFFFF)),
+                      ),
+                    ],
+                  ),
                 ),
               ],
             ),
           ),
           Expanded(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 12),
-              child: ListView(
-                children: [
-                  for (var index = 0; index < 6; index++)
-                    _sidebarItem(index),
-                  _sidebarItem(
-                    _notificationsTabIndex,
-                    label: 'Notifications',
-                    icon: Icons.notifications_outlined,
-                  ),
-                ],
-              ),
+            child: ListView(
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              children: [
+                _sidebarSectionLabel('Workspace'),
+                for (var index = 0; index < 5; index++) _sidebarItem(index),
+                const SizedBox(height: 6),
+                _sidebarSectionLabel('Account'),
+                _sidebarItem(_profileTabIndex),
+                _sidebarItem(
+                  _notificationsTabIndex,
+                  label: 'Notifications',
+                  icon: Icons.notifications_outlined,
+                ),
+              ],
             ),
           ),
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              border: Border(top: BorderSide(color: AdminColors.border.withOpacity(0.5))),
-            ),
-            child: Consumer<AuthProvider>(
-              builder: (context, auth, _) {
-                return Row(
-                  children: [
-                    Container(
-                      width: 40,
-                      height: 40,
-                      decoration: BoxDecoration(
-                        gradient: const LinearGradient(colors: [AdminColors.primary, AdminColors.accent]),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: const Icon(Icons.person_rounded, color: Colors.white),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+          Padding(
+            padding: const EdgeInsets.all(14),
+            child: Container(
+              decoration: BoxDecoration(
+                color: AdminColors.surfaceAlt,
+                borderRadius: BorderRadius.circular(adminCardRadius),
+                border: Border.all(color: AdminColors.borderStrong),
+              ),
+              padding: const EdgeInsets.all(14),
+              child: Consumer<AuthProvider>(
+                builder: (context, auth, _) {
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
                         children: [
-                          Text(
-                            auth.currentUser ?? 'Supervisor',
-                            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.white),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
+                          Container(
+                            width: 36,
+                            height: 36,
+                            decoration: BoxDecoration(
+                              gradient: AdminColors.primaryGradient,
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Center(
+                              child: Text(
+                                (auth.currentUser?.isNotEmpty ?? false)
+                                    ? auth.currentUser![0].toUpperCase()
+                                    : 'S',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 15,
+                                ),
+                              ),
+                            ),
                           ),
-                          Text(
-                            auth.userEmail ?? 'supervisor',
-                            style: TextStyle(fontSize: 10, color: Colors.white.withOpacity(0.5)),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
+                          const SizedBox(width: 11),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  auth.currentUser ?? 'Supervisor',
+                                  style: const TextStyle(
+                                    fontSize: 12.5,
+                                    fontWeight: FontWeight.w700,
+                                    color: Colors.white,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  auth.userEmail ?? 'supervisor',
+                                  style: TextStyle(fontSize: 10, color: Colors.white.withOpacity(0.5)),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ],
+                            ),
                           ),
                         ],
                       ),
-                    ),
-                  ],
-                );
-              },
+                      const SizedBox(height: 12),
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          onPressed: () => confirmAndLogout(context),
+                          icon: const Icon(Icons.logout_rounded, size: 14),
+                          label: const Text('Logout', style: TextStyle(fontSize: 11.5)),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: Colors.white.withOpacity(0.85),
+                            side: const BorderSide(color: AdminColors.borderStrong),
+                            padding: const EdgeInsets.symmetric(vertical: 9),
+                            minimumSize: const Size(0, 34),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(adminTileRadius),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  );
+                },
+              ),
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _sidebarSectionLabel(String label) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(24, 6, 16, 8),
+      child: Text(
+        label.toUpperCase(),
+        style: TextStyle(
+          fontSize: 10,
+          fontWeight: FontWeight.w700,
+          letterSpacing: 1.1,
+          color: Colors.white.withOpacity(0.38),
+        ),
       ),
     );
   }
@@ -334,102 +433,133 @@ class _SupervisorDashboardState extends State<SupervisorDashboard> {
     final selected = _selectedTab == index;
     final title = label ?? _tabs[index];
     final tabIcon = icon ?? _tabIcons[index];
-    return GestureDetector(
-      onTap: () => _selectTab(index),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-        decoration: BoxDecoration(
-          color: selected ? AdminColors.primary.withOpacity(0.15) : Colors.transparent,
-          borderRadius: BorderRadius.circular(10),
-          border: selected ? Border.all(color: AdminColors.primary.withOpacity(0.35)) : null,
-        ),
-        child: Row(
-          children: [
-            Icon(
-              tabIcon,
-              size: 20,
-              color: selected ? AdminColors.primary : Colors.white.withOpacity(0.6),
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
+      child: InkWell(
+        onTap: () => _selectTab(index),
+        borderRadius: BorderRadius.circular(adminTileRadius),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 11),
+          decoration: BoxDecoration(
+            color: selected ? AdminColors.primary.withOpacity(0.18) : Colors.transparent,
+            borderRadius: BorderRadius.circular(adminTileRadius),
+            border: Border.all(
+              color: selected ? AdminColors.accent.withOpacity(0.6) : Colors.transparent,
+              width: 1.4,
             ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                title,
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
-                  color: selected ? AdminColors.primary : Colors.white.withOpacity(0.7),
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
+          ),
+          child: Row(
+            children: [
+              Icon(
+                tabIcon,
+                size: 19,
+                color: selected ? AdminColors.accentBright : Colors.white.withOpacity(0.58),
               ),
-            ),
-            if (index == _notificationsTabIndex && _unreadCount > 0)
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                decoration: BoxDecoration(
-                  color: AdminColors.primary,
-                  borderRadius: BorderRadius.circular(10),
-                ),
+              const SizedBox(width: 12),
+              Expanded(
                 child: Text(
-                  '$_unreadCount',
-                  style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w700),
+                  title,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                    color: selected ? Colors.white : Colors.white.withOpacity(0.68),
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
-          ],
+              if (index == _notificationsTabIndex && _unreadCount > 0)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                  decoration: BoxDecoration(
+                    gradient: AdminColors.primaryGradient,
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    '$_unreadCount',
+                    style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w700),
+                  ),
+                ),
+            ],
+          ),
         ),
       ),
     );
   }
 
   Widget _buildTopBar({required bool compact}) {
+    final subtitle = _subtitle;
     return Container(
-      height: compact ? 52 : 72,
-      decoration: BoxDecoration(
+      height: compact ? 54 : 84,
+      decoration: const BoxDecoration(
         color: AdminColors.surface,
-        border: Border(bottom: BorderSide(color: AdminColors.border.withOpacity(0.5))),
+        border: Border(bottom: BorderSide(color: AdminColors.borderStrong)),
       ),
-      padding: EdgeInsets.symmetric(horizontal: compact ? 8 : 28),
+      padding: EdgeInsets.symmetric(horizontal: compact ? 10 : 32),
       child: Row(
         children: [
           if (compact) ...[
             Container(
-              padding: const EdgeInsets.all(6),
+              padding: const EdgeInsets.all(7),
               decoration: BoxDecoration(
-                color: AdminColors.primary.withOpacity(0.18),
-                borderRadius: BorderRadius.circular(8),
+                gradient: AdminColors.primaryGradient,
+                borderRadius: BorderRadius.circular(9),
               ),
-              child: const Icon(Icons.supervisor_account_rounded, color: AdminColors.primary, size: 16),
+              child: const Icon(Icons.supervisor_account_rounded, color: Colors.white, size: 16),
             ),
-            const SizedBox(width: 8),
+            const SizedBox(width: 10),
           ],
           Expanded(
-            child: Text(
-              compact && _selectedTab == 0 ? 'Supervisor' : _title,
-              style: TextStyle(
-                fontSize: compact ? 16 : 24,
-                fontWeight: FontWeight.w700,
-                color: Colors.white,
-              ),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  compact && _selectedTab == 0 ? 'Supervisor' : _title,
+                  style: TextStyle(
+                    fontSize: compact ? 16 : 23,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.white,
+                    letterSpacing: -0.3,
+                    height: 1.15,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                if (!compact && subtitle != null) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    subtitle,
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      color: Colors.white.withOpacity(0.55),
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ],
             ),
           ),
-          if (compact)
-            IconButton(
-              tooltip: 'Notifications',
-              visualDensity: VisualDensity.compact,
-              onPressed: () => _selectTab(_notificationsTabIndex),
-              icon: Badge(
-                isLabelVisible: _unreadCount > 0,
-                label: Text('$_unreadCount'),
-                child: const Icon(Icons.notifications_outlined, color: Colors.white, size: 22),
+          IconButton(
+            tooltip: 'Notifications',
+            visualDensity: VisualDensity.compact,
+            onPressed: () => _selectTab(_notificationsTabIndex),
+            icon: Badge(
+              isLabelVisible: _unreadCount > 0,
+              label: Text('$_unreadCount'),
+              backgroundColor: AdminColors.accent,
+              child: Icon(
+                Icons.notifications_outlined,
+                color: Colors.white.withOpacity(0.85),
+                size: 22,
               ),
             ),
+          ),
           IconButton(
-            icon: const Icon(Icons.logout_rounded, size: 22),
-            color: AdminColors.primary,
+            icon: const Icon(Icons.logout_rounded, size: 21),
+            color: AdminColors.accentBright,
             tooltip: 'Logout',
             visualDensity: VisualDensity.compact,
             onPressed: () => confirmAndLogout(context),
@@ -548,6 +678,32 @@ class _SupervisorProfileViewState extends State<_SupervisorProfileView> {
     }
   }
 
+  Widget _profileRow(IconData icon, String label, String value) {
+    return Row(
+      children: [
+        Icon(icon, size: 17, color: AdminColors.accent.withOpacity(0.85)),
+        const SizedBox(width: 10),
+        SizedBox(
+          width: 64,
+          child: Text(
+            label,
+            style: TextStyle(fontSize: 12.5, color: Colors.white.withOpacity(0.55)),
+          ),
+        ),
+        Expanded(
+          child: Text(
+            value,
+            style: const TextStyle(
+              fontSize: 13.5,
+              fontWeight: FontWeight.w600,
+              color: Colors.white,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
@@ -562,20 +718,25 @@ class _SupervisorProfileViewState extends State<_SupervisorProfileView> {
           const SizedBox(height: 24),
           AdminSectionCard(
             title: 'Account',
+            subtitle: 'Your supervisor identity on Formatify',
+            icon: Icons.badge_rounded,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Name: ${auth.currentUser ?? '—'}', style: const TextStyle(color: Colors.white)),
-                const SizedBox(height: 8),
-                Text('Email: ${auth.userEmail ?? '—'}', style: const TextStyle(color: Colors.white)),
-                const SizedBox(height: 8),
-                Text('Role: supervisor', style: TextStyle(color: Colors.white.withOpacity(0.75))),
+                _profileRow(Icons.person_outline_rounded, 'Name', auth.currentUser ?? '—'),
+                const SizedBox(height: 12),
+                _profileRow(Icons.mail_outline_rounded, 'Email', auth.userEmail ?? '—'),
+                const SizedBox(height: 12),
+                _profileRow(Icons.verified_user_outlined, 'Role', 'Supervisor'),
               ],
             ),
           ),
           const SizedBox(height: 18),
           AdminSectionCard(
             title: 'Change Password',
+            subtitle: 'Use at least 6 characters',
+            icon: Icons.lock_outline_rounded,
+            accent: AdminColors.accent,
             child: Form(
               key: _formKey,
               child: Column(
@@ -583,11 +744,16 @@ class _SupervisorProfileViewState extends State<_SupervisorProfileView> {
                   TextFormField(
                     controller: _currentController,
                     obscureText: _obscureCurrent,
-                    decoration: InputDecoration(
-                      labelText: 'Current password',
+                    style: const TextStyle(color: Colors.white),
+                    decoration: adminFieldDecoration(
+                      label: 'Current password',
+                      prefixIcon: Icons.lock_outline_rounded,
                       suffixIcon: IconButton(
                         onPressed: () => setState(() => _obscureCurrent = !_obscureCurrent),
-                        icon: Icon(_obscureCurrent ? Icons.visibility_outlined : Icons.visibility_off_outlined),
+                        icon: Icon(
+                          _obscureCurrent ? Icons.visibility_outlined : Icons.visibility_off_outlined,
+                          size: 19,
+                        ),
                       ),
                     ),
                     validator: (v) => v == null || v.isEmpty ? 'Enter your current password' : null,
@@ -596,11 +762,16 @@ class _SupervisorProfileViewState extends State<_SupervisorProfileView> {
                   TextFormField(
                     controller: _newController,
                     obscureText: _obscureNew,
-                    decoration: InputDecoration(
-                      labelText: 'New password',
+                    style: const TextStyle(color: Colors.white),
+                    decoration: adminFieldDecoration(
+                      label: 'New password',
+                      prefixIcon: Icons.lock_reset_rounded,
                       suffixIcon: IconButton(
                         onPressed: () => setState(() => _obscureNew = !_obscureNew),
-                        icon: Icon(_obscureNew ? Icons.visibility_outlined : Icons.visibility_off_outlined),
+                        icon: Icon(
+                          _obscureNew ? Icons.visibility_outlined : Icons.visibility_off_outlined,
+                          size: 19,
+                        ),
                       ),
                     ),
                     validator: (v) {
@@ -612,11 +783,16 @@ class _SupervisorProfileViewState extends State<_SupervisorProfileView> {
                   TextFormField(
                     controller: _confirmController,
                     obscureText: _obscureConfirm,
-                    decoration: InputDecoration(
-                      labelText: 'Confirm new password',
+                    style: const TextStyle(color: Colors.white),
+                    decoration: adminFieldDecoration(
+                      label: 'Confirm new password',
+                      prefixIcon: Icons.check_circle_outline_rounded,
                       suffixIcon: IconButton(
                         onPressed: () => setState(() => _obscureConfirm = !_obscureConfirm),
-                        icon: Icon(_obscureConfirm ? Icons.visibility_outlined : Icons.visibility_off_outlined),
+                        icon: Icon(
+                          _obscureConfirm ? Icons.visibility_outlined : Icons.visibility_off_outlined,
+                          size: 19,
+                        ),
                       ),
                     ),
                     validator: (v) {

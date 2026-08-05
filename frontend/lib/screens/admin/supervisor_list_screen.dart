@@ -395,7 +395,7 @@ class _SupervisorListScreenState extends State<SupervisorListScreen> {
                                   child: Container(
                                     decoration: adminCardDecoration(),
                                     child: InkWell(
-                                      borderRadius: BorderRadius.circular(14),
+                                      borderRadius: BorderRadius.circular(adminCardRadius),
                                       onTap: () => _openSupervisorSheet(item: item),
                                       child: Padding(
                                         padding: const EdgeInsets.all(16),

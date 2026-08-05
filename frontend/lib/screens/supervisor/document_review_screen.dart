@@ -92,7 +92,7 @@ class _DocumentReviewScreenState extends State<DocumentReviewScreen> {
           builder: (context, setDialogState) {
             return AlertDialog(
               backgroundColor: AdminColors.surface,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              shape: adminDialogShape(),
               title: const Text('Add Comment'),
               content: SizedBox(
                 width: 440,
@@ -109,9 +109,9 @@ class _DocumentReviewScreenState extends State<DocumentReviewScreen> {
                       width: double.infinity,
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
-                        color: AdminColors.card,
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: AdminColors.border),
+                        color: AdminColors.surfaceAlt,
+                        borderRadius: BorderRadius.circular(adminTileRadius),
+                        border: Border.all(color: AdminColors.borderStrong),
                       ),
                       child: Text(
                         paragraph.text,
@@ -125,14 +125,11 @@ class _DocumentReviewScreenState extends State<DocumentReviewScreen> {
                       controller: controller,
                       maxLines: 4,
                       autofocus: true,
-                      decoration: InputDecoration(
-                        labelText: 'Comment',
-                        hintText: 'Write feedback for the student…',
-                        errorText: errorText,
-                        filled: true,
-                        fillColor: AdminColors.card,
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                      ),
+                      style: const TextStyle(color: Colors.white),
+                      decoration: adminFieldDecoration(
+                        label: 'Comment',
+                        hint: 'Write feedback for the student…',
+                      ).copyWith(errorText: errorText),
                     ),
                   ],
                 ),
@@ -214,8 +211,9 @@ class _DocumentReviewScreenState extends State<DocumentReviewScreen> {
           margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
           decoration: BoxDecoration(
             color: AdminColors.surface,
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: AdminColors.border.withOpacity(0.8)),
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(color: AdminColors.borderStrong),
+            boxShadow: adminCardGlow(opacity: 0.2),
           ),
           child: SafeArea(
             top: false,
@@ -274,14 +272,14 @@ class _DocumentReviewScreenState extends State<DocumentReviewScreen> {
 
     return Scaffold(
       backgroundColor: Colors.transparent,
-      body: AppPalette.dark.ambientGlowBackdrop(
+      body: AppPalette.dark.innerGlowBackdrop(
         child: Column(
           children: [
             Container(
               height: 72,
               decoration: BoxDecoration(
                 color: AdminColors.surface,
-                border: Border(bottom: BorderSide(color: AdminColors.border.withOpacity(0.5))),
+                border: Border(bottom: BorderSide(color: AdminColors.borderStrong)),
               ),
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Row(
@@ -336,14 +334,20 @@ class _DocumentReviewScreenState extends State<DocumentReviewScreen> {
 
   Widget _buildBody() {
     if (_loading) {
-      return const AdminPage(child: AdminLoadingView());
+      return const AdminPage(child: AdminLoadingView(label: 'Loading document...'));
     }
     if (_error != null) {
       return AdminPage(child: AdminErrorView(message: _error!, onRetry: _loadReview));
     }
     final review = _review;
     if (review == null) {
-      return const AdminPage(child: AdminEmptyView(message: 'Document review data is unavailable.'));
+      return const AdminPage(
+        child: AdminEmptyView(
+          icon: Icons.description_outlined,
+          title: 'Review unavailable',
+          message: 'Document review data is unavailable.',
+        ),
+      );
     }
 
     return AdminPage(
@@ -369,7 +373,11 @@ class _DocumentReviewScreenState extends State<DocumentReviewScreen> {
           ),
           const SizedBox(height: 20),
           if (review.paragraphs.isEmpty)
-            const AdminEmptyView(message: 'This document has no paragraphs to review yet.')
+            const AdminEmptyView(
+              icon: Icons.notes_rounded,
+              title: 'Nothing to review',
+              message: 'This document has no paragraphs to review yet.',
+            )
           else
             ...review.paragraphs.map(
               (paragraph) => Padding(
@@ -403,8 +411,8 @@ class _LegendChip extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
         color: color.withOpacity(bordered ? 1 : 0.9),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: bordered ? AdminColors.border : color.withOpacity(0.8)),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: bordered ? AdminColors.borderStrong : color.withOpacity(0.8)),
       ),
       child: Text(
         label,
@@ -461,19 +469,19 @@ class _ParagraphCard extends StatelessWidget {
       color: Colors.transparent,
       child: InkWell(
         onLongPress: onLongPress,
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(adminCardRadius),
         child: Container(
           width: double.infinity,
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
             color: _background,
-            borderRadius: BorderRadius.circular(14),
+            borderRadius: BorderRadius.circular(adminCardRadius),
             border: Border.all(
               color: paragraph.highlight == 'unresolved'
                   ? AdminColors.warning.withOpacity(0.7)
                   : paragraph.highlight == 'resolved'
                       ? Colors.white.withOpacity(0.15)
-                      : AdminColors.border,
+                      : AdminColors.borderStrong,
             ),
             boxShadow: [
               BoxShadow(
@@ -494,7 +502,7 @@ class _ParagraphCard extends StatelessWidget {
                       color: paragraph.highlight == 'none'
                           ? Colors.white.withOpacity(0.08)
                           : const Color(0xFF4B5563).withOpacity(0.18),
-                      borderRadius: BorderRadius.circular(6),
+                      borderRadius: BorderRadius.circular(999),
                     ),
                     child: Text(
                       paragraph.blockLabel,

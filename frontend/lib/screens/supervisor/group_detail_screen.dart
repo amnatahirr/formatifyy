@@ -65,7 +65,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
       builder: (dialogContext) {
         return AlertDialog(
           backgroundColor: AdminColors.surface,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          shape: adminDialogShape(),
           title: const Text('Discard group?'),
           content: Column(
             mainAxisSize: MainAxisSize.min,
@@ -79,12 +79,8 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
               TextField(
                 controller: reasonController,
                 maxLines: 2,
-                decoration: InputDecoration(
-                  labelText: 'Reason (optional)',
-                  filled: true,
-                  fillColor: AdminColors.card,
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                ),
+                style: const TextStyle(color: Colors.white),
+                decoration: adminFieldDecoration(label: 'Reason (optional)'),
               ),
             ],
           ),
@@ -193,14 +189,14 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
 
     return Scaffold(
       backgroundColor: Colors.transparent,
-      body: AppPalette.dark.ambientGlowBackdrop(
+      body: AppPalette.dark.innerGlowBackdrop(
         child: Column(
           children: [
             Container(
               height: 72,
               decoration: BoxDecoration(
                 color: AdminColors.surface,
-                border: Border(bottom: BorderSide(color: AdminColors.border.withOpacity(0.5))),
+                border: Border(bottom: BorderSide(color: AdminColors.borderStrong)),
               ),
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Row(
@@ -218,10 +214,16 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
                       children: [
                         Text(
                           title,
-                          style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: Colors.white),
+                          style: const TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.white,
+                            letterSpacing: -0.2,
+                          ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
+                        const SizedBox(height: 2),
                         Text(
                           'Group overview',
                           style: TextStyle(fontSize: 12, color: Colors.white.withOpacity(0.5)),
@@ -253,14 +255,20 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
 
   Widget _buildBody() {
     if (_loading) {
-      return const AdminPage(child: AdminLoadingView());
+      return const AdminPage(child: AdminLoadingView(label: 'Loading group...'));
     }
     if (_error != null) {
       return AdminPage(child: AdminErrorView(message: _error!, onRetry: _loadDetail));
     }
     final detail = _detail;
     if (detail == null) {
-      return const AdminPage(child: AdminEmptyView(message: 'Group details are not available.'));
+      return const AdminPage(
+        child: AdminEmptyView(
+          icon: Icons.groups_outlined,
+          title: 'Group unavailable',
+          message: 'Group details are not available.',
+        ),
+      );
     }
 
     final doc = detail.latestDocument;
@@ -278,6 +286,8 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
           const SizedBox(height: 22),
           AdminSectionCard(
             title: 'Milestones',
+            subtitle: '${detail.milestones.where((m) => m.isCompleted).length} of ${detail.milestones.length} completed',
+            icon: Icons.flag_rounded,
             child: Column(
               children: [
                 for (var i = 0; i < detail.milestones.length; i++) ...[
@@ -290,6 +300,8 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
           const SizedBox(height: 18),
           AdminSectionCard(
             title: 'Latest Document',
+            icon: Icons.description_outlined,
+            accent: AdminColors.accent,
             child: doc == null
                 ? Text(
                     'No document has been submitted yet.',
@@ -298,14 +310,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
                 : Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Container(
-                        padding: const EdgeInsets.all(10),
-                        decoration: BoxDecoration(
-                          color: AdminColors.primary.withOpacity(0.14),
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: const Icon(Icons.description_outlined, color: AdminColors.primary, size: 20),
-                      ),
+                      const AdminIconBadge(icon: Icons.description_outlined, size: 20),
                       const SizedBox(width: 14),
                       Expanded(
                         child: Column(
@@ -336,20 +341,9 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
                           ],
                         ),
                       ),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: _statusColor(doc.status).withOpacity(0.16),
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: Text(
-                          doc.statusLabel,
-                          style: TextStyle(
-                            color: _statusColor(doc.status),
-                            fontWeight: FontWeight.w700,
-                            fontSize: 12,
-                          ),
-                        ),
+                      AdminPill(
+                        label: doc.statusLabel,
+                        color: _statusColor(doc.status),
                       ),
                     ],
                   ),
@@ -376,7 +370,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
                 label: const Text('Meeting Notes'),
                 style: OutlinedButton.styleFrom(
                   foregroundColor: Colors.white,
-                  side: const BorderSide(color: AdminColors.border),
+                  side: const BorderSide(color: AdminColors.borderStrong),
                   padding: const EdgeInsets.symmetric(vertical: 14),
                 ),
               ),
@@ -416,7 +410,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
                     label: const Text('Meeting Notes'),
                     style: OutlinedButton.styleFrom(
                       foregroundColor: Colors.white,
-                      side: const BorderSide(color: AdminColors.border),
+                      side: const BorderSide(color: AdminColors.borderStrong),
                       padding: const EdgeInsets.symmetric(vertical: 14),
                     ),
                   ),
@@ -453,12 +447,12 @@ class _MilestoneRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final done = milestone.isCompleted;
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: done ? AdminColors.success.withOpacity(0.08) : AdminColors.background.withOpacity(0.35),
-        borderRadius: BorderRadius.circular(10),
+        color: done ? AdminColors.success.withOpacity(0.08) : AdminColors.surfaceAlt,
+        borderRadius: BorderRadius.circular(adminTileRadius),
         border: Border.all(
-          color: done ? AdminColors.success.withOpacity(0.35) : AdminColors.border.withOpacity(0.8),
+          color: done ? AdminColors.success.withOpacity(0.35) : AdminColors.borderStrong,
         ),
       ),
       child: Row(
@@ -488,13 +482,9 @@ class _MilestoneRow extends StatelessWidget {
               ),
             ),
           ),
-          Text(
-            done ? 'Completed' : 'Pending',
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-              color: done ? AdminColors.success : Colors.white.withOpacity(0.45),
-            ),
+          AdminPill(
+            label: done ? 'Completed' : 'Pending',
+            color: done ? AdminColors.success : AdminColors.primary,
           ),
         ],
       ),

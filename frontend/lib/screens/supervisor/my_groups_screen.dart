@@ -68,7 +68,7 @@ class _MyGroupsScreenState extends State<MyGroupsScreen> {
       builder: (dialogContext) {
         return AlertDialog(
           backgroundColor: AdminColors.surface,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          shape: adminDialogShape(),
           title: const Text('Discard group?'),
           content: Column(
             mainAxisSize: MainAxisSize.min,
@@ -82,12 +82,10 @@ class _MyGroupsScreenState extends State<MyGroupsScreen> {
               TextField(
                 controller: reasonController,
                 maxLines: 2,
-                decoration: InputDecoration(
-                  labelText: 'Reason (optional)',
-                  hintText: 'e.g. Group inactive / wrong allotment',
-                  filled: true,
-                  fillColor: AdminColors.card,
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                style: const TextStyle(color: Colors.white),
+                decoration: adminFieldDecoration(
+                  label: 'Reason (optional)',
+                  hint: 'e.g. Group inactive / wrong allotment',
                 ),
               ),
             ],
@@ -139,7 +137,7 @@ class _MyGroupsScreenState extends State<MyGroupsScreen> {
   @override
   Widget build(BuildContext context) {
     if (_loading && _groups.isEmpty && _error == null) {
-      return const AdminPage(child: AdminLoadingView());
+      return const AdminPage(child: AdminLoadingView(label: 'Loading your groups...'));
     }
     if (_error != null && _groups.isEmpty) {
       return AdminPage(child: AdminErrorView(message: _error!, onRetry: _loadGroups));
@@ -156,29 +154,29 @@ class _MyGroupsScreenState extends State<MyGroupsScreen> {
                 ? 'Accepted groups will appear here'
                 : '${_groups.length} group${_groups.length == 1 ? '' : 's'} · filter: $_filter',
           ),
-          const SizedBox(height: 18),
-          Row(
-            children: ['All', 'On Track', 'Behind']
-                .map(
-                  (label) => Padding(
-                    padding: const EdgeInsets.only(right: 8),
-                    child: ChoiceChip(
-                      label: Text(label),
-                      selected: _filter == label,
-                      onSelected: (_) => _setFilter(label),
-                    ),
-                  ),
-                )
-                .toList(),
+          const SizedBox(height: 20),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final label in const ['All', 'On Track', 'Behind'])
+                AdminFilterChip(
+                  label: label,
+                  selected: _filter == label,
+                  onTap: () => _setFilter(label),
+                ),
+            ],
           ),
           const SizedBox(height: 20),
           if (_loading)
             const Padding(
               padding: EdgeInsets.symmetric(vertical: 40),
-              child: Center(child: CircularProgressIndicator(color: AdminColors.primary)),
+              child: AdminLoadingView(),
             )
           else if (_groups.isEmpty)
             AdminEmptyView(
+              icon: Icons.groups_outlined,
+              title: 'No groups to show',
               message: _filter == 'All'
                   ? 'No accepted groups yet. Accept an assignment request to add a group here.'
                   : 'No groups match the "$_filter" filter.',
@@ -199,7 +197,7 @@ class _MyGroupsScreenState extends State<MyGroupsScreen> {
                     );
                     if (mounted) _loadGroups();
                   },
-                  borderRadius: BorderRadius.circular(14),
+                  borderRadius: BorderRadius.circular(adminCardRadius),
                   child: _MyGroupCard(
                     group: group,
                     onDiscard: () => _discardGroup(group),
@@ -228,12 +226,11 @@ class _MyGroupCard extends StatelessWidget {
 
     return Container(
       padding: const EdgeInsets.all(18),
-      decoration: adminCardDecoration().copyWith(
-        border: Border.all(
-          color: behind ? AdminColors.danger.withOpacity(0.75) : AdminColors.border,
-          width: behind ? 1.4 : 1,
-        ),
-        color: behind ? AdminColors.danger.withOpacity(0.08) : AdminColors.card,
+      decoration: adminCardDecoration(
+        color: behind ? const Color(0xFF23193C) : AdminColors.card,
+        borderColor: behind
+            ? AdminColors.danger.withOpacity(0.6)
+            : AdminColors.borderStrong,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -241,14 +238,7 @@ class _MyGroupCard extends StatelessWidget {
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: accent.withOpacity(0.14),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Icon(Icons.groups_rounded, color: accent, size: 20),
-              ),
+              AdminIconBadge(icon: Icons.groups_rounded, color: accent, size: 20),
               const SizedBox(width: 14),
               Expanded(
                 child: Column(
@@ -279,7 +269,11 @@ class _MyGroupCard extends StatelessWidget {
                 children: [
                   PopupMenuButton<String>(
                     tooltip: 'Group actions',
-                    color: AdminColors.surface,
+                    color: AdminColors.card,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(adminTileRadius),
+                      side: const BorderSide(color: AdminColors.borderStrong),
+                    ),
                     onSelected: (value) {
                       if (value == 'discard') onDiscard();
                     },
@@ -291,30 +285,16 @@ class _MyGroupCard extends StatelessWidget {
                     ],
                     icon: Icon(Icons.more_vert_rounded, color: Colors.white.withOpacity(0.65)),
                   ),
-                  Text(
-                    '${group.progress.round()}%',
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                      color: accent,
-                    ),
+                  AdminPill(
+                    label: '${group.progress.round()}%',
+                    color: behind ? AdminColors.danger : AdminColors.accentBright,
                   ),
                   if (behind) ...[
                     const SizedBox(height: 6),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                      decoration: BoxDecoration(
-                        color: AdminColors.danger.withOpacity(0.18),
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: const Text(
-                        'Behind',
-                        style: TextStyle(
-                          color: AdminColors.danger,
-                          fontWeight: FontWeight.w700,
-                          fontSize: 11,
-                        ),
-                      ),
+                    const AdminPill(
+                      label: 'Behind',
+                      color: AdminColors.danger,
+                      icon: Icons.warning_amber_rounded,
                     ),
                   ],
                 ],
@@ -354,14 +334,9 @@ class _MyGroupCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 16),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(6),
-            child: LinearProgressIndicator(
-              value: progress,
-              minHeight: 8,
-              backgroundColor: AdminColors.border.withOpacity(0.65),
-              valueColor: AlwaysStoppedAnimation<Color>(accent),
-            ),
+          AdminProgressBar(
+            value: progress,
+            color: behind ? AdminColors.danger : null,
           ),
         ],
       ),

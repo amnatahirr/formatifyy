@@ -2156,11 +2156,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen> {
 
 Widget _saPanel({required Widget child, EdgeInsets? padding}) => Container(
       padding: padding ?? const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: AdminColors.surface,
-        border: Border.all(color: AdminColors.border),
-        borderRadius: BorderRadius.circular(14),
-      ),
+      decoration: adminCardDecoration(color: AdminColors.surface, glow: false),
       child: child,
     );
 

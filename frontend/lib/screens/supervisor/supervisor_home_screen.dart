@@ -64,7 +64,7 @@ class _SupervisorHomeScreenState extends State<SupervisorHomeScreen> {
   @override
   Widget build(BuildContext context) {
     if (_loading) {
-      return const AdminPage(child: AdminLoadingView());
+      return const AdminPage(child: AdminLoadingView(label: 'Loading your dashboard...'));
     }
     if (_error != null) {
       return AdminPage(child: AdminErrorView(message: _error!, onRetry: _loadHome));
@@ -75,6 +75,8 @@ class _SupervisorHomeScreenState extends State<SupervisorHomeScreen> {
       return AdminPage(
         onRefresh: _loadHome,
         child: const AdminEmptyView(
+          icon: Icons.dashboard_outlined,
+          title: 'Dashboard not available',
           message: 'Dashboard data is not available yet. Pull to refresh once the backend is running.',
         ),
       );
@@ -165,15 +167,8 @@ class _SupervisorHomeScreenState extends State<SupervisorHomeScreen> {
             ),
           ],
         ),
-        const SizedBox(height: 22),
-        Text(
-          'Groups',
-          style: TextStyle(
-            color: Colors.white.withOpacity(0.85),
-            fontWeight: FontWeight.w600,
-            fontSize: 15,
-          ),
-        ),
+        const SizedBox(height: 24),
+        const AdminSectionLabel(label: 'Groups'),
         const SizedBox(height: 12),
         if (home.groups.isEmpty)
           Container(
@@ -191,7 +186,7 @@ class _SupervisorHomeScreenState extends State<SupervisorHomeScreen> {
                   padding: const EdgeInsets.only(bottom: 10),
                   child: InkWell(
                     onTap: widget.onOpenMyGroups,
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(adminCardRadius),
                     child: _MobileGroupCard(group: group),
                   ),
                 ),
@@ -259,26 +254,26 @@ class _SupervisorHomeScreenState extends State<SupervisorHomeScreen> {
             return cards[index];
           },
         ),
-        const SizedBox(height: 28),
-        Row(
-          children: [
-            Expanded(
-              child: Text(
-                'Accepted Groups',
-                style: TextStyle(color: Colors.white.withOpacity(0.8), fontWeight: FontWeight.w600),
-              ),
-            ),
-            if (widget.onOpenMyGroups != null)
-              TextButton(
-                onPressed: widget.onOpenMyGroups,
-                child: const Text('View My Groups'),
-              ),
-          ],
+        const SizedBox(height: 30),
+        AdminSectionLabel(
+          label: 'Accepted Groups',
+          trailing: widget.onOpenMyGroups == null
+              ? null
+              : TextButton.icon(
+                  onPressed: widget.onOpenMyGroups,
+                  icon: const Icon(Icons.arrow_forward_rounded, size: 15),
+                  label: const Text('View My Groups'),
+                  style: TextButton.styleFrom(
+                    foregroundColor: AdminColors.accentBright,
+                    textStyle: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
+                  ),
+                ),
         ),
         const SizedBox(height: 14),
         if (home.groups.isEmpty)
           AdminSectionCard(
             title: 'No groups yet',
+            icon: Icons.groups_outlined,
             child: Text(
               'Accepted groups will appear here with their progress.',
               style: TextStyle(color: Colors.white.withOpacity(0.65), height: 1.45),
@@ -290,7 +285,7 @@ class _SupervisorHomeScreenState extends State<SupervisorHomeScreen> {
               padding: const EdgeInsets.only(bottom: 14),
               child: InkWell(
                 onTap: widget.onOpenMyGroups,
-                borderRadius: BorderRadius.circular(14),
+                borderRadius: BorderRadius.circular(adminCardRadius),
                 child: _SupervisorGroupProgressCard(group: group),
               ),
             ),
@@ -321,24 +316,17 @@ class _CompactStatTile extends StatelessWidget {
       color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(adminTileRadius + 2),
         child: Container(
-          padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
+          padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
             color: AdminColors.card,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: AdminColors.border),
+            borderRadius: BorderRadius.circular(adminTileRadius + 2),
+            border: Border.all(color: color.withOpacity(0.3)),
           ),
           child: Row(
             children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: color.withOpacity(0.14),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Icon(icon, color: color, size: 18),
-              ),
+              AdminIconBadge(icon: icon, color: color, size: 17, padding: 8),
               const SizedBox(width: 10),
               Expanded(
                 child: Column(
@@ -387,11 +375,7 @@ class _MobileGroupCard extends StatelessWidget {
 
     return Container(
       padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: AdminColors.card,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AdminColors.border),
-      ),
+      decoration: adminCardDecoration(radius: adminCardRadius, glow: false),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -402,7 +386,7 @@ class _MobileGroupCard extends StatelessWidget {
                   group.title,
                   style: const TextStyle(
                     fontSize: 14,
-                    fontWeight: FontWeight.w600,
+                    fontWeight: FontWeight.w700,
                     color: Colors.white,
                   ),
                   maxLines: 1,
@@ -410,13 +394,9 @@ class _MobileGroupCard extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 8),
-              Text(
-                '${group.progress.round()}%',
-                style: const TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w700,
-                  color: AdminColors.primary,
-                ),
+              AdminPill(
+                label: '${group.progress.round()}%',
+                color: AdminColors.accentBright,
               ),
             ],
           ),
@@ -429,16 +409,8 @@ class _MobileGroupCard extends StatelessWidget {
               overflow: TextOverflow.ellipsis,
             ),
           ],
-          const SizedBox(height: 10),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(4),
-            child: LinearProgressIndicator(
-              value: progress,
-              minHeight: 6,
-              backgroundColor: AdminColors.border.withOpacity(0.65),
-              valueColor: const AlwaysStoppedAnimation<Color>(AdminColors.primary),
-            ),
-          ),
+          const SizedBox(height: 12),
+          AdminProgressBar(value: progress, height: 6),
         ],
       ),
     );
@@ -458,7 +430,7 @@ class _TappableStatCard extends StatelessWidget {
       color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(adminCardRadius),
         child: child,
       ),
     );
@@ -483,14 +455,7 @@ class _SupervisorGroupProgressCard extends StatelessWidget {
         children: [
           Row(
             children: [
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: AdminColors.primary.withOpacity(0.14),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: const Icon(Icons.groups_rounded, color: AdminColors.primary, size: 20),
-              ),
+              const AdminIconBadge(icon: Icons.groups_rounded, size: 20),
               const SizedBox(width: 14),
               Expanded(
                 child: Column(
@@ -500,7 +465,7 @@ class _SupervisorGroupProgressCard extends StatelessWidget {
                       group.title,
                       style: const TextStyle(
                         fontSize: 15,
-                        fontWeight: FontWeight.w600,
+                        fontWeight: FontWeight.w700,
                         color: Colors.white,
                       ),
                     ),
@@ -516,26 +481,11 @@ class _SupervisorGroupProgressCard extends StatelessWidget {
                   ],
                 ),
               ),
-              Text(
-                percentLabel,
-                style: const TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w700,
-                  color: AdminColors.primary,
-                ),
-              ),
+              AdminPill(label: percentLabel, color: AdminColors.accentBright),
             ],
           ),
           const SizedBox(height: 16),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(6),
-            child: LinearProgressIndicator(
-              value: progress,
-              minHeight: 8,
-              backgroundColor: AdminColors.border.withOpacity(0.65),
-              valueColor: const AlwaysStoppedAnimation<Color>(AdminColors.primary),
-            ),
-          ),
+          AdminProgressBar(value: progress),
         ],
       ),
     );

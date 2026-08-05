@@ -80,7 +80,7 @@ class _PlagiarismMonitorDetailScreenState extends State<PlagiarismMonitorDetailS
       builder: (dialogContext) {
         return AlertDialog(
           backgroundColor: AdminColors.surface,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          shape: adminDialogShape(),
           title: const Text('Flag plagiarism'),
           content: SizedBox(
             width: 420,
@@ -97,12 +97,10 @@ class _PlagiarismMonitorDetailScreenState extends State<PlagiarismMonitorDetailS
                   controller: controller,
                   maxLines: 3,
                   autofocus: true,
-                  decoration: InputDecoration(
-                    labelText: 'Optional note',
-                    hintText: 'Add guidance for the students…',
-                    filled: true,
-                    fillColor: AdminColors.card,
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                  style: const TextStyle(color: Colors.white),
+                  decoration: adminFieldDecoration(
+                    label: 'Optional note',
+                    hint: 'Add guidance for the students…',
                   ),
                 ),
               ],
@@ -148,14 +146,14 @@ class _PlagiarismMonitorDetailScreenState extends State<PlagiarismMonitorDetailS
 
     return Scaffold(
       backgroundColor: Colors.transparent,
-      body: AppPalette.dark.ambientGlowBackdrop(
+      body: AppPalette.dark.innerGlowBackdrop(
         child: Column(
           children: [
             Container(
               height: 72,
               decoration: BoxDecoration(
                 color: AdminColors.surface,
-                border: Border(bottom: BorderSide(color: AdminColors.border.withOpacity(0.5))),
+                border: Border(bottom: BorderSide(color: AdminColors.borderStrong)),
               ),
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Row(
@@ -166,11 +164,27 @@ class _PlagiarismMonitorDetailScreenState extends State<PlagiarismMonitorDetailS
                   ),
                   const SizedBox(width: 8),
                   Expanded(
-                    child: Text(
-                      title,
-                      style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: Colors.white),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          title,
+                          style: const TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.white,
+                            letterSpacing: -0.2,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          'Similarity report',
+                          style: TextStyle(fontSize: 12, color: Colors.white.withOpacity(0.5)),
+                        ),
+                      ],
                     ),
                   ),
                 ],
@@ -184,13 +198,21 @@ class _PlagiarismMonitorDetailScreenState extends State<PlagiarismMonitorDetailS
   }
 
   Widget _buildBody() {
-    if (_loading) return const AdminPage(child: AdminLoadingView());
+    if (_loading) {
+      return const AdminPage(child: AdminLoadingView(label: 'Loading report...'));
+    }
     if (_error != null) {
       return AdminPage(child: AdminErrorView(message: _error!, onRetry: _load));
     }
     final detail = _detail;
     if (detail == null) {
-      return const AdminPage(child: AdminEmptyView(message: 'Plagiarism details unavailable.'));
+      return const AdminPage(
+        child: AdminEmptyView(
+          icon: Icons.policy_outlined,
+          title: 'Report unavailable',
+          message: 'Plagiarism details unavailable.',
+        ),
+      );
     }
 
     final color = _riskColor(detail.riskLevel);
@@ -210,18 +232,16 @@ class _PlagiarismMonitorDetailScreenState extends State<PlagiarismMonitorDetailS
           Container(
             width: double.infinity,
             padding: const EdgeInsets.all(18),
-            decoration: adminCardDecoration().copyWith(
-              border: Border.all(color: color.withOpacity(0.55)),
-              color: color.withOpacity(0.1),
-            ),
+            decoration: adminCardDecoration(borderColor: color.withOpacity(0.45)),
             child: Row(
               children: [
                 Container(
                   width: 72,
                   height: 72,
                   decoration: BoxDecoration(
-                    color: color.withOpacity(0.2),
-                    borderRadius: BorderRadius.circular(14),
+                    color: color.withOpacity(0.18),
+                    borderRadius: BorderRadius.circular(adminTileRadius + 4),
+                    border: Border.all(color: color.withOpacity(0.35)),
                   ),
                   child: Center(
                     child: Text(
@@ -260,6 +280,8 @@ class _PlagiarismMonitorDetailScreenState extends State<PlagiarismMonitorDetailS
           const SizedBox(height: 18),
           AdminSectionCard(
             title: 'Matched sources',
+            icon: Icons.find_in_page_outlined,
+            accent: AdminColors.warning,
             child: detail.matches.isEmpty
                 ? Text(
                     'No matched sources were returned for this group.',
@@ -272,9 +294,9 @@ class _PlagiarismMonitorDetailScreenState extends State<PlagiarismMonitorDetailS
                         margin: const EdgeInsets.only(bottom: 10),
                         padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
-                          color: AdminColors.background.withOpacity(0.4),
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: AdminColors.border),
+                          color: AdminColors.surfaceAlt,
+                          borderRadius: BorderRadius.circular(adminTileRadius),
+                          border: Border.all(color: AdminColors.borderStrong),
                         ),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -287,13 +309,9 @@ class _PlagiarismMonitorDetailScreenState extends State<PlagiarismMonitorDetailS
                                     style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
                                   ),
                                 ),
-                                Text(
-                                  '${match.similarity.round()}% similar',
-                                  style: const TextStyle(
-                                    color: AdminColors.warning,
-                                    fontWeight: FontWeight.w700,
-                                    fontSize: 12,
-                                  ),
+                                AdminPill(
+                                  label: '${match.similarity.round()}% similar',
+                                  color: AdminColors.warning,
                                 ),
                               ],
                             ),

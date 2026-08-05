@@ -35,6 +35,7 @@ class SupervisorMoreScreen extends StatelessWidget {
           const SizedBox(height: 18),
           AdminSectionCard(
             title: 'Quick access',
+            icon: Icons.apps_rounded,
             child: Column(
               children: [
                 _MoreTile(
@@ -74,6 +75,9 @@ class SupervisorMoreScreen extends StatelessWidget {
                 foregroundColor: AdminColors.danger,
                 side: BorderSide(color: AdminColors.danger.withOpacity(0.55)),
                 padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(adminTileRadius),
+                ),
               ),
             ),
           ),
@@ -102,24 +106,17 @@ class _MoreTile extends StatelessWidget {
   Widget build(BuildContext context) {
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: BorderRadius.circular(adminTileRadius + 2),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: AdminColors.background.withOpacity(0.45),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: AdminColors.border.withOpacity(0.7)),
+          color: AdminColors.surfaceAlt,
+          borderRadius: BorderRadius.circular(adminTileRadius + 2),
+          border: Border.all(color: AdminColors.borderStrong),
         ),
         child: Row(
           children: [
-            Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: AdminColors.primary.withOpacity(0.14),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Icon(icon, color: AdminColors.primary, size: 20),
-            ),
+            AdminIconBadge(icon: icon, size: 20),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
@@ -129,7 +126,7 @@ class _MoreTile extends StatelessWidget {
                     label,
                     style: const TextStyle(
                       color: Colors.white,
-                      fontWeight: FontWeight.w600,
+                      fontWeight: FontWeight.w700,
                       fontSize: 14,
                     ),
                   ),
@@ -149,8 +146,8 @@ class _MoreTile extends StatelessWidget {
                 margin: const EdgeInsets.only(right: 8),
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
-                  color: AdminColors.primary,
-                  borderRadius: BorderRadius.circular(10),
+                  gradient: AdminColors.primaryGradient,
+                  borderRadius: BorderRadius.circular(999),
                 ),
                 child: Text(
                   badge > 99 ? '99+' : '$badge',

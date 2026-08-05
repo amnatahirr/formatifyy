@@ -102,7 +102,7 @@ class _AssignmentRequestsScreenState extends State<AssignmentRequestsScreen> {
           builder: (context, setDialogState) {
             return AlertDialog(
               backgroundColor: AdminColors.surface,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              shape: adminDialogShape(),
               title: const Text('Reject request'),
               content: SizedBox(
                 width: 420,
@@ -119,14 +119,11 @@ class _AssignmentRequestsScreenState extends State<AssignmentRequestsScreen> {
                       controller: controller,
                       maxLines: 4,
                       autofocus: true,
-                      decoration: InputDecoration(
-                        labelText: 'Rejection reason',
-                        hintText: 'Explain why this request cannot be accepted…',
-                        errorText: errorText,
-                        filled: true,
-                        fillColor: AdminColors.card,
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                      ),
+                      style: const TextStyle(color: Colors.white),
+                      decoration: adminFieldDecoration(
+                        label: 'Rejection reason',
+                        hint: 'Explain why this request cannot be accepted…',
+                      ).copyWith(errorText: errorText),
                     ),
                   ],
                 ),
@@ -162,7 +159,7 @@ class _AssignmentRequestsScreenState extends State<AssignmentRequestsScreen> {
   @override
   Widget build(BuildContext context) {
     if (_loading) {
-      return const AdminPage(child: AdminLoadingView());
+      return const AdminPage(child: AdminLoadingView(label: 'Loading requests...'));
     }
     if (_error != null) {
       return AdminPage(child: AdminErrorView(message: _error!, onRetry: _loadRequests));
@@ -189,6 +186,8 @@ class _AssignmentRequestsScreenState extends State<AssignmentRequestsScreen> {
           const SizedBox(height: 24),
           if (_requests.isEmpty)
             const AdminEmptyView(
+              icon: Icons.assignment_ind_outlined,
+              title: 'No pending requests',
               message: 'When student groups choose you as supervisor, their requests will appear here.',
             )
           else
@@ -225,7 +224,7 @@ class _ProfileMismatchBanner extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(14, 12, 8, 12),
       decoration: BoxDecoration(
         color: AdminColors.warning.withOpacity(0.12),
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(adminTileRadius + 2),
         border: Border.all(color: AdminColors.warning.withOpacity(0.45)),
       ),
       child: Row(
@@ -301,14 +300,7 @@ class _AssignmentRequestCard extends StatelessWidget {
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: AdminColors.primary.withOpacity(0.14),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: const Icon(Icons.assignment_ind_rounded, color: AdminColors.primary, size: 22),
-              ),
+              const AdminIconBadge(icon: Icons.assignment_ind_rounded, size: 22),
               const SizedBox(width: 14),
               Expanded(
                 child: Column(
@@ -326,16 +318,10 @@ class _AssignmentRequestCard extends StatelessWidget {
                   ],
                 ),
               ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                decoration: BoxDecoration(
-                  color: AdminColors.warning.withOpacity(0.15),
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: const Text(
-                  'Pending',
-                  style: TextStyle(color: AdminColors.warning, fontWeight: FontWeight.w600, fontSize: 12),
-                ),
+              const AdminPill(
+                label: 'Pending',
+                color: AdminColors.warning,
+                icon: Icons.schedule_rounded,
               ),
             ],
           ),
@@ -357,6 +343,9 @@ class _AssignmentRequestCard extends StatelessWidget {
                     foregroundColor: AdminColors.danger,
                     side: BorderSide(color: AdminColors.danger.withOpacity(0.7)),
                     padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(adminTileRadius),
+                    ),
                   ),
                   icon: const Icon(Icons.close_rounded, size: 18),
                   label: const Text('Reject'),
@@ -370,6 +359,9 @@ class _AssignmentRequestCard extends StatelessWidget {
                     backgroundColor: AdminColors.success,
                     foregroundColor: Colors.white,
                     padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(adminTileRadius),
+                    ),
                   ),
                   icon: busy
                       ? const SizedBox(

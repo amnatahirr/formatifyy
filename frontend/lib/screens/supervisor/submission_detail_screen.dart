@@ -69,7 +69,7 @@ class _SubmissionDetailScreenState extends State<SubmissionDetailScreen> {
           builder: (context, setDialogState) {
             return AlertDialog(
               backgroundColor: AdminColors.surface,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              shape: adminDialogShape(),
               title: Text(title),
               content: SizedBox(
                 width: 420,
@@ -77,13 +77,10 @@ class _SubmissionDetailScreenState extends State<SubmissionDetailScreen> {
                   controller: controller,
                   maxLines: 4,
                   autofocus: true,
-                  decoration: InputDecoration(
-                    labelText: required ? 'Reason / note' : 'Optional note',
-                    errorText: errorText,
-                    filled: true,
-                    fillColor: AdminColors.card,
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                  ),
+                  style: const TextStyle(color: Colors.white),
+                  decoration: adminFieldDecoration(
+                    label: required ? 'Reason / note' : 'Optional note',
+                  ).copyWith(errorText: errorText),
                 ),
               ),
               actions: [
@@ -218,14 +215,14 @@ class _SubmissionDetailScreenState extends State<SubmissionDetailScreen> {
 
     return Scaffold(
       backgroundColor: Colors.transparent,
-      body: AppPalette.dark.ambientGlowBackdrop(
+      body: AppPalette.dark.innerGlowBackdrop(
         child: Column(
           children: [
             Container(
               height: 72,
               decoration: BoxDecoration(
                 color: AdminColors.surface,
-                border: Border(bottom: BorderSide(color: AdminColors.border.withOpacity(0.5))),
+                border: Border(bottom: BorderSide(color: AdminColors.borderStrong)),
               ),
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Row(
@@ -236,11 +233,27 @@ class _SubmissionDetailScreenState extends State<SubmissionDetailScreen> {
                   ),
                   const SizedBox(width: 8),
                   Expanded(
-                    child: Text(
-                      title,
-                      style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: Colors.white),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          title,
+                          style: const TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.white,
+                            letterSpacing: -0.2,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          'Final submission review',
+                          style: TextStyle(fontSize: 12, color: Colors.white.withOpacity(0.5)),
+                        ),
+                      ],
                     ),
                   ),
                   if (_busy)
@@ -263,13 +276,21 @@ class _SubmissionDetailScreenState extends State<SubmissionDetailScreen> {
   }
 
   Widget _buildBody() {
-    if (_loading) return const AdminPage(child: AdminLoadingView());
+    if (_loading) {
+      return const AdminPage(child: AdminLoadingView(label: 'Loading submission...'));
+    }
     if (_error != null) {
       return AdminPage(child: AdminErrorView(message: _error!, onRetry: _load));
     }
     final item = _submission;
     if (item == null) {
-      return const AdminPage(child: AdminEmptyView(message: 'Submission not found.'));
+      return const AdminPage(
+        child: AdminEmptyView(
+          icon: Icons.search_off_rounded,
+          title: 'Submission not found',
+          message: 'This submission may have been withdrawn or removed.',
+        ),
+      );
     }
 
     final summary = item.analysisSummary;
@@ -290,6 +311,13 @@ class _SubmissionDetailScreenState extends State<SubmissionDetailScreen> {
           const SizedBox(height: 18),
           AdminSectionCard(
             title: 'Document',
+            icon: Icons.description_outlined,
+            trailing: AdminPill(
+              label: item.statusLabel,
+              color: item.status.toLowerCase() == 'pending'
+                  ? AdminColors.warning
+                  : AdminColors.success,
+            ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -354,6 +382,8 @@ class _SubmissionDetailScreenState extends State<SubmissionDetailScreen> {
           const SizedBox(height: 16),
           AdminSectionCard(
             title: 'AI Analysis Report',
+            icon: Icons.auto_awesome_rounded,
+            accent: AdminColors.accent,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -393,16 +423,16 @@ class _SubmissionDetailScreenState extends State<SubmissionDetailScreen> {
                     return cards[index];
                   },
                 ),
-                const SizedBox(height: 18),
-                Text('Grammar findings', style: TextStyle(color: Colors.white.withOpacity(0.8), fontWeight: FontWeight.w600)),
-                const SizedBox(height: 10),
+                const SizedBox(height: 22),
+                const AdminSectionLabel(label: 'Grammar findings'),
+                const SizedBox(height: 12),
                 if (item.grammarIssues.isEmpty)
                   Text('No grammar issues reported.', style: TextStyle(color: Colors.white.withOpacity(0.55)))
                 else
                   ...item.grammarIssues.map((issue) => _IssueTile(issue: issue, accent: AdminColors.primary)),
-                const SizedBox(height: 16),
-                Text('Plagiarism findings', style: TextStyle(color: Colors.white.withOpacity(0.8), fontWeight: FontWeight.w600)),
-                const SizedBox(height: 10),
+                const SizedBox(height: 20),
+                const AdminSectionLabel(label: 'Plagiarism findings'),
+                const SizedBox(height: 12),
                 if (item.plagiarismIssues.isEmpty)
                   Text('No plagiarism issues reported.', style: TextStyle(color: Colors.white.withOpacity(0.55)))
                 else
@@ -422,6 +452,8 @@ class _SubmissionDetailScreenState extends State<SubmissionDetailScreen> {
           else
             AdminSectionCard(
               title: 'Decision',
+              icon: Icons.gavel_rounded,
+              accent: AdminColors.success,
               child: Text(
                 'Status: ${item.statusLabel}'
                 '${item.decisionNote.isEmpty ? '' : '\nNote: ${item.decisionNote}'}',
@@ -520,8 +552,8 @@ class _IssueTile extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: AdminColors.background.withOpacity(0.4),
-        borderRadius: BorderRadius.circular(10),
+        color: AdminColors.surfaceAlt,
+        borderRadius: BorderRadius.circular(adminTileRadius),
         border: Border.all(color: accent.withOpacity(0.35)),
       ),
       child: Column(
@@ -529,17 +561,7 @@ class _IssueTile extends StatelessWidget {
         children: [
           Row(
             children: [
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  color: accent.withOpacity(0.16),
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: Text(
-                  issue.severity.toUpperCase(),
-                  style: TextStyle(color: accent, fontSize: 10, fontWeight: FontWeight.w700),
-                ),
-              ),
+              AdminPill(label: issue.severity.toUpperCase(), color: accent),
               if (issue.similarity != null) ...[
                 const SizedBox(width: 8),
                 Text(
