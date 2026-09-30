@@ -338,7 +338,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
                       return _buildSidebarItem(
                         6,
                         Icons.school_outlined,
-                        'Choose Supervisor',
+                        'ChooseSupervisor',
                       );
                     },
                   ),

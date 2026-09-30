@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import '../config/api_config.dart';
 
 class ImageEthicsResult {
   final String imagePath;
@@ -99,9 +100,9 @@ class ImageEthicsProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final uri = Uri.parse(
-        'http://172.20.10.2:8000/check-images-by-id?document_id=$documentId&user_id=$userId',
-      );
+    final uri = Uri.parse(
+  '${ApiConfig.imageBaseUrl}/check-images-by-id?document_id=$documentId&user_id=$userId',
+);
       final response = await http.post(uri);
       final body = response.body;
 
@@ -128,7 +129,7 @@ class ImageEthicsProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final uri = Uri.parse('http://172.20.10.2:8000/check-images');
+      final uri = Uri.parse('${ApiConfig.imageBaseUrl}/check-images');
       final request = http.MultipartRequest('POST', uri);
 
       request.files.add(

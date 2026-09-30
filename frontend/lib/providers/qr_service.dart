@@ -3,10 +3,8 @@ import 'package:http/http.dart' as http;
 import '../config/api_config.dart';
 
 class QRService {
-  static const String _serverIp = '172.20.10.2';
-  static const String _serverPort = '8000';
-  static String get serverHost => '$_serverIp:$_serverPort';
-  static String get baseUrl => 'http://$serverHost';
+     static String get serverHost => Uri.parse(ApiConfig.imageBaseUrl).authority;
+  static String get baseUrl => ApiConfig.imageBaseUrl;
 
   static Future<Map<String, dynamic>> generateQr(int documentId, {String fileType = 'pdf'}) async {
     final response = await http.post(
