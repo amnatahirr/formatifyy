@@ -191,7 +191,8 @@ from middleware.org_middleware import OrganizationMiddleware, get_organization
 app.add_middleware(OrganizationMiddleware)
 
 app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
-
+from qr_routes import router as qr_router
+app.include_router(qr_router)
 # In-memory job store: job_id → {report, output_path, filename}
 _jobs: Dict[str, Dict] = {}
 

@@ -3,7 +3,7 @@ import 'package:http/http.dart' as http;
 import '../config/api_config.dart';
 
 class QRService {
-     static String get serverHost => Uri.parse(ApiConfig.imageBaseUrl).authority;
+  static String get serverHost => ApiConfig.serverHost;
   static String get baseUrl => ApiConfig.imageBaseUrl;
 
   static Future<Map<String, dynamic>> generateQr(int documentId, {String fileType = 'pdf'}) async {

@@ -72,9 +72,11 @@ class FypProvider extends ChangeNotifier {
 
   List<Map<String, dynamic>> supervisorsForDepartment(int? departmentId) {
     if (departmentId == null) return _supervisors;
-    return _supervisors
-        .where((s) => s['department_id'] == departmentId)
-        .toList();
+    return _supervisors.where((s) {
+      final id = s['department_id'];
+      if (id == null) return false;
+      return id == departmentId || id.toString() == departmentId.toString();
+    }).toList();
   }
 
   Uri _uri(String path, [Map<String, dynamic>? query]) {
@@ -100,6 +102,7 @@ class FypProvider extends ChangeNotifier {
     try {
       final response = await http.get(
         _uri('/student/supervisors', {'user_id': userId}),
+        headers: ApiConfig.getHeaders(includeOrgCode: true),
       );
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
@@ -129,6 +132,7 @@ class FypProvider extends ChangeNotifier {
     try {
       final response = await http.get(
         _uri('/student/assignment-requests', {'user_id': userId}),
+        headers: ApiConfig.getHeaders(includeOrgCode: true),
       );
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
@@ -159,6 +163,7 @@ class FypProvider extends ChangeNotifier {
           'user_id': userId,
           'email': email.trim(),
         }),
+        headers: ApiConfig.getHeaders(includeOrgCode: true),
       );
       if (response.statusCode == 200) {
         final data = Map<String, dynamic>.from(jsonDecode(response.body) as Map);
@@ -195,6 +200,7 @@ class FypProvider extends ChangeNotifier {
     try {
       final response = await http.get(
         _uri('/student/groups/$groupId/milestones', {'user_id': userId}),
+        headers: ApiConfig.getHeaders(includeOrgCode: true),
       );
       if (response.statusCode == 200) {
         final data = Map<String, dynamic>.from(jsonDecode(response.body) as Map);
@@ -230,6 +236,7 @@ class FypProvider extends ChangeNotifier {
     try {
       final response = await http.get(
         _uri('/student/groups/$groupId/plagiarism', {'user_id': userId}),
+        headers: ApiConfig.getHeaders(includeOrgCode: true),
       );
       if (response.statusCode == 200) {
         _plagiarismReport =
@@ -261,6 +268,7 @@ class FypProvider extends ChangeNotifier {
     try {
       final response = await http.get(
         _uri('/student/groups/$groupId/submissions', {'user_id': userId}),
+        headers: ApiConfig.getHeaders(includeOrgCode: true),
       );
       if (response.statusCode == 200) {
         final data = Map<String, dynamic>.from(jsonDecode(response.body) as Map);
@@ -300,6 +308,7 @@ class FypProvider extends ChangeNotifier {
     try {
       final response = await http.get(
         _uri('/student/semester-deadline', {'user_id': userId}),
+        headers: ApiConfig.getHeaders(includeOrgCode: true),
       );
       if (response.statusCode == 200) {
         _semesterDeadline =
@@ -336,7 +345,7 @@ class FypProvider extends ChangeNotifier {
     try {
       final response = await http.post(
         _uri('/student/assignment-requests', {'user_id': userId}),
-        headers: {'Content-Type': 'application/json'},
+        headers: ApiConfig.getHeaders(json: true, includeOrgCode: true),
         body: jsonEncode({
           'supervisor_id': supervisorId,
           'group_name': groupName,

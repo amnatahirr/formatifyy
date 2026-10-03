@@ -500,13 +500,18 @@ class _SupervisorSelectionScreenState extends State<SupervisorSelectionScreen> {
                         child: Text('All departments'),
                       ),
                       ...fyp.departments.map(
-                        (d) => DropdownMenuItem<int>(
-                          value: d['id'] as int?,
-                          child: Text(
-                            '${d['name'] ?? ''}${d['code'] != null ? ' (${d['code']})' : ''}',
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
+                        (d) {
+                          final id = d['id'] is int
+                              ? d['id'] as int
+                              : int.tryParse(d['id']?.toString() ?? '');
+                          return DropdownMenuItem<int>(
+                            value: id,
+                            child: Text(
+                              '${d['name'] ?? ''}${d['code'] != null ? ' (${d['code']})' : ''}',
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          );
+                        },
                       ),
                     ],
                     onChanged: (v) {
@@ -515,14 +520,14 @@ class _SupervisorSelectionScreenState extends State<SupervisorSelectionScreen> {
                         if (_supervisorId != null &&
                             !fyp
                                 .supervisorsForDepartment(v)
-                                .any((s) => s['id'] == _supervisorId)) {
+                                .any((s) => (s['id'] is int ? s['id'] as int : int.tryParse(s['id']?.toString() ?? '')) == _supervisorId)) {
                           _supervisorId = null;
                         }
                         if (_cosupervisorId != null &&
                             (_cosupervisorId == _supervisorId ||
                                 !fyp
                                     .supervisorsForDepartment(v)
-                                    .any((s) => s['id'] == _cosupervisorId))) {
+                                    .any((s) => (s['id'] is int ? s['id'] as int : int.tryParse(s['id']?.toString() ?? '')) == _cosupervisorId))) {
                           _cosupervisorId = null;
                         }
                       });
@@ -536,7 +541,9 @@ class _SupervisorSelectionScreenState extends State<SupervisorSelectionScreen> {
                     style: TextStyle(color: _p.textPrimary, fontSize: 14),
                     decoration: _dec('Supervisor'),
                     items: filteredSupervisors.map((s) {
-                      final id = s['id'] as int;
+                      final id = s['id'] is int
+                          ? s['id'] as int
+                          : (int.tryParse(s['id']?.toString() ?? '') ?? 0);
                       final full = s['is_full'] == true;
                       final slots = s['slots_available'] ?? 0;
                       final dept = s['department_name'] ?? '';
@@ -577,7 +584,9 @@ class _SupervisorSelectionScreenState extends State<SupervisorSelectionScreen> {
                         child: Text('None'),
                       ),
                       ...coOptions.map((s) {
-                        final id = s['id'] as int;
+                        final id = s['id'] is int
+                            ? s['id'] as int
+                            : (int.tryParse(s['id']?.toString() ?? '') ?? 0);
                         final dept = s['department_name'] ?? '';
                         return DropdownMenuItem<int>(
                           value: id,

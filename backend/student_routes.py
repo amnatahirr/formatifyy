@@ -55,18 +55,27 @@ def _resolve_student_org_id(
 ) -> int:
     """
     Tenant for student routes.
-    Prefer users.org_id; optionally cross-check request.state.org_id.
+    Prefer users.org_id; optionally cross-check request.state.org_id when explicitly sent.
     """
     user_org = _user_org_id(cursor, user_id)
-    req_org = _request_org_id(request)
-    if req_org is not None and int(req_org) != user_org:
-        raise HTTPException(
-            status_code=403,
-            detail="Your account does not belong to this organization.",
+    if request is not None:
+        has_explicit_jwt = bool(getattr(request.state, "jwt_claims", None))
+        has_explicit_header = bool(
+            request.headers.get("X-Org-Code")
+            or request.headers.get("x-org-code")
+            or request.headers.get("Authorization")
+            or request.headers.get("authorization")
+            or request.query_params.get("org_code")
         )
-    if prefer_user:
-        return user_org
-    return int(req_org) if req_org is not None else user_org
+        if has_explicit_jwt or has_explicit_header:
+            req_org = _request_org_id(request)
+            if req_org is not None and int(req_org) != user_org:
+                raise HTTPException(
+                    status_code=403,
+                    detail="Your account does not belong to this organization.",
+                )
+    return user_org
+
 
 
 def _require_student(user_id: int | None) -> dict[str, Any]:
