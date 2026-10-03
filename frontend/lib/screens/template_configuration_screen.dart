@@ -25,6 +25,11 @@ import '../widgets/template_config/image_formatting_rules_card.dart';
 import '../utils/template_mapping_utils.dart';
 import '../screens/admin_reference_settings_screen.dart';
 import '../widgets/admin/admin_ui.dart';
+import '../models/template_preview_data.dart';
+import '../utils/unit_utils.dart';
+import '../services/template_sample_service.dart';
+import '../widgets/template_config/template_preview_panel.dart';
+import '../widgets/template_config/sample_document_dialog.dart';
 
 class TemplateConfigurationScreen extends StatefulWidget {
   final int? departmentId;
@@ -1254,6 +1259,203 @@ class _TemplateConfigurationScreenState
     super.dispose();
   }
 
+  // ── Live preview ──────────────────────────────────────────────────────────
+
+  /// Every controller the preview depends on. ListenableBuilder rebuilds the
+  /// preview whenever one changes (dropdowns/switches already call setState).
+  List<Listenable> get _previewListenables => [
+        _templateNameController,
+        _pageMarginTopController,
+        _pageMarginBottomController,
+        _pageMarginLeftController,
+        _pageMarginRightController,
+        _heading1SizeController,
+        _heading1SpaceBeforeController,
+        _heading1SpaceAfterController,
+        _heading2SizeController,
+        _heading2SpaceBeforeController,
+        _heading2SpaceAfterController,
+        _heading3SizeController,
+        _heading3SpaceBeforeController,
+        _heading3SpaceAfterController,
+        _heading4SizeController,
+        _heading4SpaceBeforeController,
+        _heading4SpaceAfterController,
+        _bodyFontSizeController,
+        _lineSpacingController,
+        _firstLineIndentController,
+        _bulletIndentController,
+        _paragraphSpaceBeforeController,
+        _paragraphSpaceAfterController,
+        _tableFontSizeController,
+        _tableHeaderBgColorController,
+        _tableBandColorController,
+        _tableBorderColorController,
+        _tableBorderSizeController,
+        _tablePaddingTopController,
+        _tablePaddingBottomController,
+        _tablePaddingLeftController,
+        _tablePaddingRightController,
+        _tableMaxWidthPercentController,
+        _tableMinColumnWidthController,
+        _tableSpaceBeforeController,
+        _tableSpaceAfterController,
+        _tableCaptionPatternController,
+        _tableMaxEmptyCellPercentController,
+        _captionPatternController,
+        _maxImageWidthPercentController,
+      ];
+
+  /// Plain, parsed and clamped snapshot of the form for the preview panel.
+  TemplatePreviewData _buildPreviewData() {
+    double n(TextEditingController c, double def, double min, double max) =>
+        UnitUtils.parse(c.text, def, min: min, max: max);
+
+    double margin(TextEditingController c, double def) =>
+        UnitUtils.toPoints(n(c, def, 0, 100), _spacingUnit);
+
+    HeadingPreviewStyle heading(
+      TextEditingController size,
+      TextEditingController before,
+      TextEditingController after,
+      String weight,
+      bool italic,
+      String align,
+      String transform,
+      double defSize,
+    ) =>
+        HeadingPreviewStyle(
+          size: n(size, defSize, 6, 72),
+          bold: weight.contains('Bold'), // same rule as _buildTemplateData
+          italic: italic,
+          alignment: align,
+          transform: transform,
+          spaceBefore: n(before, 12, 0, 100),
+          spaceAfter: n(after, 6, 0, 100),
+        );
+
+    final headingNumbering = _headingNumberingStyle == '1, 1.1, 1.1.1'
+        ? 'decimal'
+        : _headingNumberingStyle == 'I, A, 1'
+            ? 'roman'
+            : _headingNumberingStyle == 'A, 1, a'
+                ? 'alpha'
+                : 'none';
+
+    return TemplatePreviewData(
+      name: _templateNameController.text.trim(),
+      pageSize: _pageSize,
+      marginTop: margin(_pageMarginTopController, 25),
+      marginBottom: margin(_pageMarginBottomController, 25),
+      marginLeft: margin(_pageMarginLeftController, 30),
+      marginRight: margin(_pageMarginRightController, 20),
+      fontFamily: _primaryFontFamily,
+      bodySize: n(_bodyFontSizeController, 12, 6, 48),
+      lineSpacing: n(_lineSpacingController, 2.0, 0.8, 4),
+      firstLineIndentIn: n(_firstLineIndentController, 0.5, 0, 3),
+      bulletIndentIn: n(_bulletIndentController, 0.5, 0, 3),
+      paraBefore: n(_paragraphSpaceBeforeController, 0, 0, 100),
+      paraAfter: n(_paragraphSpaceAfterController, 0, 0, 100),
+      justify: _justifyText,
+      bulletStyle: _bulletStyle,
+      numberingFormat: _numberingFormat,
+      headingNumbering: headingNumbering,
+      headings: [
+        heading(_heading1SizeController, _heading1SpaceBeforeController,
+            _heading1SpaceAfterController, _heading1Weight, _heading1Italic,
+            _heading1Alignment, _heading1Transform, 18),
+        heading(_heading2SizeController, _heading2SpaceBeforeController,
+            _heading2SpaceAfterController, _heading2Weight, _heading2Italic,
+            _heading2Alignment, _heading2Transform, 16),
+        heading(_heading3SizeController, _heading3SpaceBeforeController,
+            _heading3SpaceAfterController, _heading3Weight, _heading3Italic,
+            _heading3Alignment, _heading3Transform, 14),
+        heading(_heading4SizeController, _heading4SpaceBeforeController,
+            _heading4SpaceAfterController, _heading4Weight, _heading4Italic,
+            _heading4Alignment, _heading4Transform, 12),
+      ],
+      table: TablePreviewStyle(
+        fontName: _tableFontName,
+        fontSize: n(_tableFontSizeController, 12, 6, 48),
+        headerBold: _tableHeaderBold,
+        headerShading: _tableHeaderRowShading,
+        headerBg: UnitUtils.parseHex(
+            _tableHeaderBgColorController.text, Colors.white),
+        headerAlign: _tableHeaderAlign.toLowerCase(),
+        numericAlign: _tableNumericAlign.toLowerCase(),
+        textAlign: _tableTextAlign.toLowerCase(),
+        bandedRows: _tableBandedRows,
+        bandColor: UnitUtils.parseHex(
+            _tableBandColorController.text, const Color(0xFFF2F8FC)),
+        borders: _tableBorders,
+        borderColor: UnitUtils.parseHex(
+            _tableBorderColorController.text, Colors.black),
+        borderSize: n(_tableBorderSizeController, 4, 1, 48),
+        borderStyle: _tableBorderStyle,
+        padTop: n(_tablePaddingTopController, 60, 0, 400),
+        padBottom: n(_tablePaddingBottomController, 60, 0, 400),
+        padLeft: n(_tablePaddingLeftController, 108, 0, 400),
+        padRight: n(_tablePaddingRightController, 108, 0, 400),
+        alignmentOnPage:
+            _tableAlignmentOnPage.toLowerCase() == 'left' ? 'left' : 'center',
+        maxWidthPercent: n(_tableMaxWidthPercentController, 100, 30, 100),
+        fixedRowHeight: _tableRowHeightPolicy == 'Fixed minimum',
+        spaceBefore: n(_tableSpaceBeforeController, 6, 0, 100),
+        spaceAfter: n(_tableSpaceAfterController, 6, 0, 100),
+        captionPattern: _tableCaptionPatternController.text.trim().isEmpty
+            ? 'Table {n}: {description}'
+            : _tableCaptionPatternController.text.trim(),
+        captionAbove: _tableCaptionPosition == 'above',
+        chapterNumbering: _tableNumberingScheme == 'chapter',
+      ),
+      imageCaptionPattern: _captionPatternController.text.trim().isEmpty
+          ? 'Figure {n}: {caption}'
+          : _captionPatternController.text.trim(),
+      imageCaptionAbove: _captionPosition == 'above',
+      imageMaxWidthPercent: n(_maxImageWidthPercentController, 80, 20, 100),
+      imageChapterNumbering: _imageNumberingScheme == 'chapter',
+      requiredSections: _requiredSections.map((s) => s.name).toList(),
+    );
+  }
+
+  Widget _buildPreviewPane() => ListenableBuilder(
+        listenable: Listenable.merge(_previewListenables),
+        builder: (context, _) => TemplatePreviewPanel(
+          data: _buildPreviewData(),
+          // Remove this line to hide the "Word preview" button.
+          onOpenWordPreview: _openSamplePreview,
+        ),
+      );
+
+  /// Narrow screens: the preview opens in a bottom sheet.
+  void _showPreviewSheet() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF161B22),
+      builder: (_) => SizedBox(
+        height: MediaQuery.of(context).size.height * 0.9,
+        child: _buildPreviewPane(),
+      ),
+    );
+  }
+
+  /// Optional: server-rendered sample (.docx -> PDF) of the current form.
+  void _openSamplePreview() {
+    final data = _buildTemplateData(
+        UnitUtils.parse(_lineSpacingController.text, 2.0, min: 0.8, max: 4));
+    showDialog(
+      context: context,
+      builder: (_) => SampleDocumentDialog(
+        loader: () => TemplateSampleService.fetchSamplePdf(
+          baseUrl: baseUrl,
+          userId: _userId,
+          templateData: data,
+        ),
+      ),
+    );
+  }
+
   // ── Reference Rules button ────────────────────────────────────────────────
 
   Widget _buildReferenceRulesButton() {
@@ -1627,7 +1829,46 @@ class _TemplateConfigurationScreenState
       ),
     );
 
-    if (!widget.standalone) return form;
+    final content = LayoutBuilder(
+      builder: (context, c) {
+        if (c.maxWidth >= 1100) {
+          // Wide screens: form on the left, sticky live preview on the right.
+          return Row(
+            children: [
+              Expanded(child: form),
+              Container(
+                width: 460,
+                decoration: const BoxDecoration(
+                  border: Border(left: BorderSide(color: Color(0xFF30363D))),
+                ),
+                child: _buildPreviewPane(),
+              ),
+            ],
+          );
+        }
+        // Narrow screens: floating "Preview" button opens a bottom sheet.
+        return Stack(
+          children: [
+            form,
+            Positioned(
+              right: 16,
+              bottom: 16,
+              child: Material(
+                color: Colors.transparent,
+                child: FloatingActionButton.extended(
+                  heroTag: 'template_preview_fab',
+                  onPressed: _showPreviewSheet,
+                  icon: const Icon(Icons.visibility_outlined),
+                  label: const Text('Preview'),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (!widget.standalone) return content;
 
     return AdminSubPage(
       title: 'Create Template',
@@ -1635,10 +1876,7 @@ class _TemplateConfigurationScreenState
           ? 'Using the full template configuration for this department'
           : 'Using the full template configuration screen',
       onBack: () => Navigator.of(context).pop(false),
-      child: form,
+      child: content,
     );
   }
 }
-
-
-
