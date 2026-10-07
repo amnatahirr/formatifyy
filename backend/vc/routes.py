@@ -23,6 +23,7 @@ from vc.service import (
     create_project_with_document,
     delete_section_image,
     get_merge_status,
+    get_project_activity,
     get_project_detail,
     get_project_history,
     get_section_history,
@@ -138,6 +139,12 @@ async def api_invite_member(
 @router.get("/projects/{project_id}/history")
 async def api_project_history(project_id: int, user_id: int = Query(...)):
     return {"history": get_project_history(project_id, user_id)}
+
+
+@router.get("/projects/{project_id}/activity")
+async def api_project_activity(project_id: int, user_id: int = Query(...)):
+    """Activity feed: document uploads + section saves/rollbacks, newest first."""
+    return {"activity": get_project_activity(project_id, user_id)}
 
 
 @router.get("/projects/{project_id}/sections/{section_id}/images")

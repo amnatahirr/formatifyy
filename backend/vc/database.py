@@ -145,6 +145,26 @@ def init_vc_tables() -> None:
         ON section_images(project_id, section_id)
     """)
 
+    # Project-level activity (document uploads / new versions), independent of sections.
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS project_activity (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            project_id INTEGER NOT NULL,
+            user_id INTEGER NOT NULL,
+            author_name TEXT NOT NULL,
+            action TEXT NOT NULL,
+            filename TEXT,
+            details TEXT DEFAULT '{}',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (project_id) REFERENCES collaboration_projects(id),
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        )
+    """)
+    cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_project_activity_lookup
+        ON project_activity(project_id, created_at)
+    """)
+
     # Add base_document_path column if missing (existing DBs)
     cursor.execute("PRAGMA table_info(collaboration_projects)")
     cols = {row[1] for row in cursor.fetchall()}

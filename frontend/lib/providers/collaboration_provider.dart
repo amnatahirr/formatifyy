@@ -11,6 +11,8 @@ class CollaborationProvider extends ChangeNotifier {
   List<Map<String, dynamic>> sections = [];
   List<Map<String, dynamic>> history = [];
   List<Map<String, dynamic>> projectHistory = [];
+  /// Project activity feed (document uploads + section saves/rollbacks).
+  List<Map<String, dynamic>> projectActivity = [];
   /// Cross-project recent commits for the Collaboration hub summary panel.
   List<Map<String, dynamic>> hubActivity = [];
   Map<String, dynamic>? mergeStatus;
@@ -221,6 +223,7 @@ class CollaborationProvider extends ChangeNotifier {
             .map((e) => Map<String, dynamic>.from(e as Map))
             .toList();
         await loadProjectHistory(projectId);
+        await loadProjectActivity(projectId);
         await fetchProjects();
         return true;
       }
@@ -278,6 +281,31 @@ class CollaborationProvider extends ChangeNotifier {
       if (resp.statusCode == 200) {
         final data = jsonDecode(resp.body) as Map<String, dynamic>;
         projectHistory = (data['history'] as List? ?? [])
+            .map((e) => Map<String, dynamic>.from(e as Map))
+            .toList();
+      } else {
+        error = resp.body;
+      }
+    } catch (e) {
+      error = e.toString();
+    } finally {
+      loading = false;
+      notifyListeners();
+    }
+  }
+
+  /// Loads the Activity tab feed: document uploads, new versions, section
+  /// saves and restores — newest first.
+  Future<void> loadProjectActivity(int projectId) async {
+    loading = true;
+    notifyListeners();
+    try {
+      final resp = await http.get(
+        Uri.parse(_base('/vc/projects/$projectId/activity')),
+      );
+      if (resp.statusCode == 200) {
+        final data = jsonDecode(resp.body) as Map<String, dynamic>;
+        projectActivity = (data['activity'] as List? ?? [])
             .map((e) => Map<String, dynamic>.from(e as Map))
             .toList();
       } else {

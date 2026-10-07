@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../providers/collaboration_provider.dart';
 
-/// Activity tab — who changed what, most recent first.
+/// Activity tab — who uploaded / changed what and when, most recent first.
 class ProjectActivityTab extends StatefulWidget {
   final int projectId;
 
@@ -20,26 +20,19 @@ class _ProjectActivityTabState extends State<ProjectActivityTab> {
   }
 
   Future<void> _load() async {
-    await context.read<CollaborationProvider>().loadProjectHistory(widget.projectId);
+    await context
+        .read<CollaborationProvider>()
+        .loadProjectActivity(widget.projectId);
   }
 
-  String _verb(String type) {
-    switch (type) {
-      case 'import':
-        return 'imported';
-      case 'rollback':
-        return 'restored';
-      default:
-        return 'updated';
-    }
-  }
-
-  /// Returns a const Icon widget — do not return IconData dynamically
+  /// Returns a const-style Icon widget — do not return IconData dynamically
   /// (breaks Material icon tree-shaking and can empty all icons app-wide).
   Widget _typeIcon(String type, Color color) {
     switch (type) {
-      case 'import':
+      case 'upload':
         return Icon(Icons.upload_file, color: color, size: 16);
+      case 'new_version':
+        return Icon(Icons.file_upload_outlined, color: color, size: 16);
       case 'rollback':
         return Icon(Icons.restore, color: color, size: 16);
       default:
@@ -49,8 +42,10 @@ class _ProjectActivityTabState extends State<ProjectActivityTab> {
 
   Color _color(String type) {
     switch (type) {
-      case 'import':
+      case 'upload':
         return const Color(0xFF8B5CF6);
+      case 'new_version':
+        return const Color(0xFF10B981);
       case 'rollback':
         return const Color(0xFFF59E0B);
       default:
@@ -58,19 +53,102 @@ class _ProjectActivityTabState extends State<ProjectActivityTab> {
     }
   }
 
+  /// Backend timestamps are UTC ("YYYY-MM-DD HH:MM:SS"); show them in local time.
+  String _formatWhen(String raw) {
+    if (raw.isEmpty) return '';
+    final parsed = DateTime.tryParse(raw.replaceFirst(' ', 'T'));
+    if (parsed == null) return raw;
+    final utc = parsed.isUtc
+        ? parsed
+        : DateTime.utc(
+            parsed.year,
+            parsed.month,
+            parsed.day,
+            parsed.hour,
+            parsed.minute,
+            parsed.second,
+          );
+    final l = utc.toLocal();
+    const months = [
+      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+    ];
+    final hour12 = l.hour % 12 == 0 ? 12 : l.hour % 12;
+    final minute = l.minute.toString().padLeft(2, '0');
+    final ampm = l.hour >= 12 ? 'PM' : 'AM';
+    return '${l.day} ${months[l.month - 1]} ${l.year}, $hour12:$minute $ampm';
+  }
+
+  List<InlineSpan> _description(Map<String, dynamic> e, String type) {
+    final author = e['author_name'] as String? ?? 'Someone';
+    final filename = (e['filename'] as String?)?.trim();
+    final section =
+        e['section_name'] as String? ?? e['section_id'] as String? ?? 'section';
+    final version = e['version_number'];
+
+    const bold = TextStyle(fontWeight: FontWeight.w700);
+    const semi = TextStyle(fontWeight: FontWeight.w600);
+    const dim = TextStyle(color: Color(0xFF94A3B8));
+
+    switch (type) {
+      case 'upload':
+        return [
+          TextSpan(text: author, style: bold),
+          const TextSpan(text: ' uploaded '),
+          TextSpan(
+            text: (filename != null && filename.isNotEmpty)
+                ? filename
+                : 'a document',
+            style: semi,
+          ),
+        ];
+      case 'new_version':
+        return [
+          TextSpan(text: author, style: bold),
+          const TextSpan(text: ' uploaded a new version '),
+          TextSpan(
+            text: (filename != null && filename.isNotEmpty) ? filename : '',
+            style: semi,
+          ),
+        ];
+      case 'rollback':
+        return [
+          TextSpan(text: author, style: bold),
+          const TextSpan(text: ' restored '),
+          TextSpan(text: section, style: semi),
+          TextSpan(text: ' to v$version', style: dim),
+        ];
+      default:
+        return [
+          TextSpan(text: author, style: bold),
+          const TextSpan(text: ' updated '),
+          TextSpan(text: section, style: semi),
+          TextSpan(text: ' to v$version', style: dim),
+        ];
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final vc = context.watch<CollaborationProvider>();
-    final events = vc.projectHistory.reversed.toList();
+    final events = vc.projectActivity;
 
     if (vc.loading && events.isEmpty) {
       return const Center(child: CircularProgressIndicator());
     }
     if (events.isEmpty) {
-      return const Center(
-        child: Text(
-          'No activity yet',
-          style: TextStyle(color: Color(0xFF94A3B8)),
+      return RefreshIndicator(
+        onRefresh: _load,
+        child: ListView(
+          children: const [
+            SizedBox(height: 160),
+            Center(
+              child: Text(
+                'No activity yet',
+                style: TextStyle(color: Color(0xFF94A3B8)),
+              ),
+            ),
+          ],
         ),
       );
     }
@@ -83,12 +161,9 @@ class _ProjectActivityTabState extends State<ProjectActivityTab> {
         separatorBuilder: (_, __) => const SizedBox(height: 8),
         itemBuilder: (_, i) {
           final e = events[i];
-          final type = e['commit_type'] as String? ?? 'save';
+          final type = e['event_type'] as String? ?? 'save';
           final color = _color(type);
-          final author = e['author_name'] as String? ?? 'Someone';
-          final section = e['section_name'] as String? ?? e['section_id'] ?? 'section';
-          final version = e['version_number'];
-          final when = e['created_at'] as String? ?? '';
+          final when = _formatWhen(e['created_at'] as String? ?? '');
           final message = (e['message'] as String?)?.trim();
 
           return Container(
@@ -116,22 +191,11 @@ class _ProjectActivityTabState extends State<ProjectActivityTab> {
                     children: [
                       Text.rich(
                         TextSpan(
-                          style: const TextStyle(color: Colors.white, fontSize: 13),
-                          children: [
-                            TextSpan(
-                              text: author,
-                              style: const TextStyle(fontWeight: FontWeight.w700),
-                            ),
-                            TextSpan(text: ' ${_verb(type)} '),
-                            TextSpan(
-                              text: '$section',
-                              style: const TextStyle(fontWeight: FontWeight.w600),
-                            ),
-                            TextSpan(
-                              text: ' to v$version',
-                              style: const TextStyle(color: Color(0xFF94A3B8)),
-                            ),
-                          ],
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 13,
+                          ),
+                          children: _description(e, type),
                         ),
                       ),
                       if (message != null && message.isNotEmpty) ...[
