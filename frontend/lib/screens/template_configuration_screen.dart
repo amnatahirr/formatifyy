@@ -30,6 +30,8 @@ import '../utils/unit_utils.dart';
 import '../services/template_sample_service.dart';
 import '../widgets/template_config/template_preview_panel.dart';
 import '../widgets/template_config/sample_document_dialog.dart';
+import '../widgets/template_config/voice_template_button.dart';
+
 
 class TemplateConfigurationScreen extends StatefulWidget {
   final int? departmentId;
@@ -55,6 +57,8 @@ class _TemplateConfigurationScreenState
   bool _isLoading = false;
   List<RequiredSectionItem> _requiredSections = [];
   bool _isSaving = false;
+
+  static const bool kVoiceTemplateEnabled = true;
 
   // ── Existing form controllers ─────────────────────────────────────────────
   late TextEditingController _templateNameController;
@@ -677,7 +681,7 @@ class _TemplateConfigurationScreenState
 
   /// Populate the existing form fields from an extracted draft.
   /// Does not save — admin still uses Create Template / Save Changes as usual.
-  void _applyExtractedDraft(Map<String, dynamic> draft) {
+  void _applyExtractedDraft(Map<String, dynamic> draft, {bool keepSelection = false}) {
     final rules = (draft['formatting_rules'] as Map?)?.cast<String, dynamic>() ??
         <String, dynamic>{};
     final rawSections = (draft['required_sections'] as List<dynamic>?) ?? [];
@@ -695,8 +699,11 @@ class _TemplateConfigurationScreenState
 
     setState(() {
       // Stay on create path (not edit-selected-template)
-      _selectedTemplateId = null;
+
+      if (!keepSelection){
+        _selectedTemplateId = null;
       _selectedTemplate = null;
+      }
 
       _templateNameController.text = (draft['name'] ?? '').toString();
       _requiredSections = sections;
@@ -872,8 +879,22 @@ class _TemplateConfigurationScreenState
                   rules['table_caption_format_pattern'] ??
                   'Table {n}: {description}')
               .toString();
+      
     });
   }
+
+
+
+  void _applyVoicePatch(Map<String, dynamic> patch) {
+  final lineSpacing = UnitUtils.parse(
+      _lineSpacingController.text, 2.0, min: 0.8, max: 4);
+  final current = _buildTemplateData(lineSpacing);
+  final rules = Map<String, dynamic>.from(current['formatting_rules'] as Map)
+    ..addAll(patch);
+  _applyExtractedDraft({...current, 'formatting_rules': rules},
+      keepSelection: true);
+}
+
 
   Future<void> _createTemplate() async {
     if (_templateNameController.text.trim().isEmpty) {
@@ -1004,8 +1025,10 @@ class _TemplateConfigurationScreenState
   double _safeDouble(String value, double def) =>
       value.isEmpty ? def : (double.tryParse(value) ?? def);
 
-  int _safeInt(String value, int def) =>
-      value.isEmpty ? def : (int.tryParse(value) ?? def);
+  int _safeInt(String value, int def) {
+  if (value.isEmpty) return def;
+  return int.tryParse(value) ?? double.tryParse(value)?.round() ?? def;
+}
 
   /// Build the table_style sub-object from current UI state.
   Map<String, dynamic> _buildTableStyleData() {
@@ -1803,12 +1826,30 @@ class _TemplateConfigurationScreenState
             if (_selectedTemplateId != null) const SizedBox(height: 32),
 
             Align(
-              alignment: Alignment.centerRight,
-              child: UploadTemplateDocumentButton(
-                enabled: !_isSaving && !_isLoading,
-                onDraftReady: _applyExtractedDraft,
-              ),
-            ),
+  alignment: Alignment.centerRight,
+  child: Row(
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      if (kVoiceTemplateEnabled) ...[
+        VoiceTemplateButton(
+          enabled: !_isSaving && !_isLoading,
+          baseUrl: baseUrl,
+          userId: _userId,
+          spacingUnit: _spacingUnit,
+          currentRules: () => (_buildTemplateData(UnitUtils.parse(
+              _lineSpacingController.text, 2.0,
+              min: 0.8, max: 4))['formatting_rules'] as Map<String, dynamic>),
+          onPatchReady: _applyVoicePatch,
+        ),
+        const SizedBox(width: 12),
+      ],
+      UploadTemplateDocumentButton(
+        enabled: !_isSaving && !_isLoading,
+        onDraftReady: _applyExtractedDraft,
+      ),
+    ],
+  ),
+),
             const SizedBox(height: 12),
             ActionButtons(
               selectedTemplateId: _selectedTemplateId,

@@ -847,6 +847,10 @@ from services.google_drive_routes import uploads_router as google_uploads_router
 app.include_router(google_auth_router)
 app.include_router(google_uploads_router)
 
+# Voice-enabled template patch (Whisper STT → GPT-4o-mini → JSON patch)
+from voice_template import router as voice_template_router
+app.include_router(voice_template_router)
+
 
 @app.get("/api/org/resolve", tags=["Organization"])
 @app.get("/org/resolve", tags=["Organization"])
