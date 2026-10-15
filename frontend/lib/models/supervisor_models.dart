@@ -27,6 +27,60 @@ List<String> _asStringList(dynamic value) {
   return const [];
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Extra helpers for rich document blocks (tables, images, styles, runs)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// First non-null value found under any of [keys].
+dynamic _pick(Map<String, dynamic> json, List<String> keys) {
+  for (final k in keys) {
+    if (json.containsKey(k) && json[k] != null) return json[k];
+  }
+  return null;
+}
+
+String? _asStringOrNull(dynamic value) {
+  if (value == null) return null;
+  final s = value.toString();
+  return s.isEmpty ? null : s;
+}
+
+double? _asDoubleOrNull(dynamic value) {
+  if (value == null) return null;
+  if (value is num) return value.toDouble();
+  return double.tryParse('$value');
+}
+
+bool? _asBoolOrNull(dynamic value) {
+  if (value == null) return null;
+  if (value is bool) return value;
+  if (value is num) return value != 0;
+  final s = value.toString().toLowerCase();
+  if (s == 'true' || s == '1') return true;
+  if (s == 'false' || s == '0') return false;
+  return null;
+}
+
+/// List of JSON objects, silently skipping anything that is not a map.
+List<Map<String, dynamic>> _asMapList(dynamic value) {
+  if (value is! List) return const [];
+  return value.whereType<Map>().map((m) => Map<String, dynamic>.from(m)).toList();
+}
+
+/// Table rows: List<List<cell>>, where a cell is a String or a Map.
+List<List<dynamic>> _asTableRows(dynamic value) {
+  if (value is! List) return const [];
+  final rows = <List<dynamic>>[];
+  for (final row in value) {
+    if (row is List) {
+      rows.add(
+        row.map((c) => c is Map ? Map<String, dynamic>.from(c) : (c ?? '').toString()).toList(),
+      );
+    }
+  }
+  return rows;
+}
+
 class SupervisorGroupSummary {
   final int id;
   final String title;
@@ -266,16 +320,53 @@ class DocumentCommentModel {
       );
 }
 
+/// One block of a submitted document: paragraph, heading, list item,
+/// table, image or table-of-contents entry.
+///
+/// Every formatting field is optional, so older backend responses that only
+/// send `text` / `block_type` / `block_label` keep working. Keys are accepted
+/// in snake_case (preferred) and camelCase.
 class DocumentParagraphModel {
   final int id;
   final int sortOrder;
   final int displayIndex;
   final String text;
+
+  /// paragraph | heading | subheading | bullet | line | table | image | toc
   final String blockType;
   final String blockLabel;
   final String highlight;
   final bool hasUnresolvedComments;
   final List<DocumentCommentModel> comments;
+
+  // ── Word formatting (all optional) ──
+  final String? styleName; // "Heading 1", "Title", "TOC 2", "List Bullet" ...
+  final double? fontSize; // points
+  final bool? isBold;
+  final bool? isItalic;
+  final bool? isUnderline;
+  final String? alignment; // left | center | right | justify
+  final String? fontName;
+  final String? colorHex; // "1F3864" or "#1F3864"
+  final double? indentLevel;
+  final bool? isListItem;
+  final String? listMarker; // "•", "1.", "a)" ...
+
+  /// Inline formatting: [{text, bold, italic, underline, strike, colorHex,
+  /// backgroundHex, fontSize, fontName, superscript, subscript}]
+  final List<Map<String, dynamic>> runs;
+
+  /// Table content: rows -> cells. A cell is a String or
+  /// {text, bold, fill_hex, align, col_span}.
+  final List<List<dynamic>> tableRows;
+
+  /// Images: [{url | base64, widthPx, heightPx, alt}]
+  final List<Map<String, dynamic>> images;
+  final String? imageUrl;
+  final String? imageBase64;
+
+  /// TOC entries: page number printed on the right.
+  final int? pageNumber;
 
   const DocumentParagraphModel({
     required this.id,
@@ -287,12 +378,30 @@ class DocumentParagraphModel {
     required this.highlight,
     required this.hasUnresolvedComments,
     required this.comments,
+    this.styleName,
+    this.fontSize,
+    this.isBold,
+    this.isItalic,
+    this.isUnderline,
+    this.alignment,
+    this.fontName,
+    this.colorHex,
+    this.indentLevel,
+    this.isListItem,
+    this.listMarker,
+    this.runs = const [],
+    this.tableRows = const [],
+    this.images = const [],
+    this.imageUrl,
+    this.imageBase64,
+    this.pageNumber,
   });
 
   factory DocumentParagraphModel.fromJson(Map<String, dynamic> json) {
     final sortOrder = _asInt(json['sort_order']);
     final blockType = (json['block_type'] ?? 'paragraph').toString().toLowerCase();
     final blockLabel = (json['block_label'] ?? '').toString().trim();
+
     return DocumentParagraphModel(
       id: _asInt(json['id']),
       sortOrder: sortOrder,
@@ -306,6 +415,9 @@ class DocumentParagraphModel {
               'subheading' => 'Subheading',
               'bullet' => 'Bullet',
               'line' => 'Line',
+              'table' => 'Table',
+              'image' => 'Image',
+              'toc' => 'Table of Contents',
               _ => 'Paragraph',
             },
       highlight: (json['highlight'] ?? 'none').toString(),
@@ -313,8 +425,50 @@ class DocumentParagraphModel {
       comments: List<Map<String, dynamic>>.from(json['comments'] ?? const [])
           .map(DocumentCommentModel.fromJson)
           .toList(),
+      styleName: _asStringOrNull(_pick(json, ['style_name', 'styleName'])),
+      fontSize: _asDoubleOrNull(_pick(json, ['font_size', 'fontSize'])),
+      isBold: _asBoolOrNull(_pick(json, ['is_bold', 'isBold', 'bold'])),
+      isItalic: _asBoolOrNull(_pick(json, ['is_italic', 'isItalic', 'italic'])),
+      isUnderline: _asBoolOrNull(_pick(json, ['is_underline', 'isUnderline', 'underline'])),
+      alignment: _asStringOrNull(_pick(json, ['alignment', 'align'])),
+      fontName: _asStringOrNull(_pick(json, ['font_name', 'fontName'])),
+      colorHex: _asStringOrNull(_pick(json, ['color_hex', 'colorHex', 'color'])),
+      indentLevel: _asDoubleOrNull(_pick(json, ['indent_level', 'indentLevel'])),
+      isListItem: _asBoolOrNull(_pick(json, ['is_list_item', 'isListItem'])),
+      listMarker: _asStringOrNull(_pick(json, ['list_marker', 'listMarker'])),
+      runs: _asMapList(json['runs']).map(_normalizeRun).toList(),
+      tableRows: _asTableRows(_pick(json, ['table_rows', 'tableRows', 'rows'])),
+      images: _asMapList(json['images']).map(_normalizeImage).toList(),
+      imageUrl: _asStringOrNull(_pick(json, ['image_url', 'imageUrl'])),
+      imageBase64: _asStringOrNull(_pick(json, ['image_base64', 'imageBase64'])),
+      pageNumber: _asIntOrNull(_pick(json, ['page_number', 'pageNumber'])),
     );
   }
+
+  /// The review screen reads camelCase keys from run / image maps; map the
+  /// snake_case backend keys onto them once, here.
+  static Map<String, dynamic> _normalizeRun(Map<String, dynamic> r) => {
+        'text': (r['text'] ?? '').toString(),
+        'bold': _asBoolOrNull(_pick(r, ['bold', 'is_bold'])),
+        'italic': _asBoolOrNull(_pick(r, ['italic', 'is_italic'])),
+        'underline': _asBoolOrNull(_pick(r, ['underline', 'is_underline'])),
+        'strike': _asBoolOrNull(_pick(r, ['strike', 'is_strike'])),
+        'colorHex': _asStringOrNull(_pick(r, ['color_hex', 'colorHex', 'color'])),
+        'backgroundHex':
+            _asStringOrNull(_pick(r, ['highlight_hex', 'background_hex', 'backgroundHex'])),
+        'fontSize': _asDoubleOrNull(_pick(r, ['font_size', 'fontSize', 'size'])),
+        'fontName': _asStringOrNull(_pick(r, ['font_name', 'fontName', 'font'])),
+        'superscript': _asBoolOrNull(r['superscript']),
+        'subscript': _asBoolOrNull(r['subscript']),
+      };
+
+  static Map<String, dynamic> _normalizeImage(Map<String, dynamic> i) => {
+        'url': _asStringOrNull(_pick(i, ['url', 'image_url'])),
+        'base64': _asStringOrNull(_pick(i, ['base64', 'data'])),
+        'widthPx': _asDoubleOrNull(_pick(i, ['width_px', 'widthPx', 'width'])),
+        'heightPx': _asDoubleOrNull(_pick(i, ['height_px', 'heightPx', 'height'])),
+        'alt': _asStringOrNull(i['alt']),
+      };
 }
 
 class DocumentReviewModel {
