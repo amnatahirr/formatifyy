@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
@@ -248,6 +249,39 @@ class SupervisorApiService {
       queryParameters: {'user_id': userId},
     );
     return fetchDocumentReview(userId: userId, groupId: groupId, documentId: documentId);
+  }
+
+  /// Word-faithful page preview: page sizes + tappable paragraph regions.
+  /// Returns the raw JSON; the screen turns it into a DocumentPagesModel.
+  Future<Map<String, dynamic>> fetchDocumentPagesJson({
+    required int userId,
+    required int groupId,
+    required int documentId,
+  }) async {
+    final data = await _request(
+      'GET',
+      '/supervisor/groups/$groupId/documents/$documentId/pages',
+      queryParameters: {'user_id': userId},
+    );
+    return Map<String, dynamic>.from(data as Map);
+  }
+
+  /// PNG bytes of one rendered page (0-based [page]).
+  Future<Uint8List> fetchDocumentPageImage({
+    required int userId,
+    required int groupId,
+    required int documentId,
+    required int page,
+  }) async {
+    final uri = _uri(
+      '/supervisor/groups/$groupId/documents/$documentId/pages/$page.png',
+      {'user_id': userId},
+    );
+    final response = await http.get(uri, headers: ApiConfig.getHeaders());
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw Exception('Page ${page + 1} failed to load (${response.statusCode})');
+    }
+    return response.bodyBytes;
   }
 
   Future<List<FinalSubmissionModel>> fetchSubmissions(

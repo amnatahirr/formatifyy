@@ -9,6 +9,7 @@ import '../../providers/auth_provider.dart';
 import '../../services/supervisor_api_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/admin/admin_ui.dart';
+import 'document_page_view.dart';
 
 /// Yellow for unresolved comments, gray for resolved-only paragraphs.
 const Color _unresolvedHighlight = Color(0xFFFFF3C4);
@@ -42,10 +43,45 @@ class _DocumentReviewScreenState extends State<DocumentReviewScreen> {
   bool _downloading = false;
   bool _showStyleLabels = false;
 
+  // Page view = real rendered pages (Word look). Analysis view = block view.
+  bool _pageMode = true;
+  bool _pagesLoading = true;
+  DocumentPagesModel? _pages;
+
   @override
   void initState() {
     super.initState();
     _loadReview();
+    _loadPages();
+  }
+
+  Future<void> _loadPages() async {
+    final userId = context.read<AuthProvider>().userId;
+    if (userId == null) return;
+    setState(() => _pagesLoading = true);
+    try {
+      final json = await _api.fetchDocumentPagesJson(
+        userId: userId,
+        groupId: widget.groupId,
+        documentId: widget.documentId,
+      );
+      if (mounted) setState(() => _pages = DocumentPagesModel.fromJson(json));
+    } catch (_) {
+      // Server could not render the pages: fall back to the block view.
+      if (mounted) setState(() => _pageMode = false);
+    } finally {
+      if (mounted) setState(() => _pagesLoading = false);
+    }
+  }
+
+  Future<Uint8List> _loadPageImage(int page) {
+    final userId = context.read<AuthProvider>().userId!;
+    return _api.fetchDocumentPageImage(
+      userId: userId,
+      groupId: widget.groupId,
+      documentId: widget.documentId,
+      page: page,
+    );
   }
 
   Future<void> _loadReview() async {
@@ -326,6 +362,15 @@ class _DocumentReviewScreenState extends State<DocumentReviewScreen> {
                       ),
                     ),
                   IconButton(
+                    tooltip: _pageMode ? 'Analysis view' : 'Page view',
+                    onPressed: () => setState(() => _pageMode = !_pageMode),
+                    icon: Icon(
+                      _pageMode ? Icons.view_agenda_outlined : Icons.description_outlined,
+                      color: Colors.white,
+                    ),
+                  ),
+                  if (!_pageMode)
+                  IconButton(
                     tooltip: _showStyleLabels ? 'Hide style names' : 'Show style names',
                     onPressed: () => setState(() => _showStyleLabels = !_showStyleLabels),
                     icon: Icon(
@@ -366,6 +411,36 @@ class _DocumentReviewScreenState extends State<DocumentReviewScreen> {
       );
     }
 
+    if (_pageMode) {
+      if (_pagesLoading) {
+        return const AdminPage(child: AdminLoadingView(label: 'Preparing pages...'));
+      }
+      final pages = _pages;
+      if (pages != null && pages.pages.isNotEmpty) {
+        return Column(
+          children: [
+            const SizedBox(height: 10),
+            const Wrap(
+              spacing: 10,
+              runSpacing: 8,
+              children: [
+                _LegendChip(color: _unresolvedHighlight, label: 'Unresolved comment'),
+                _LegendChip(color: _resolvedHighlight, label: 'Resolved comment'),
+              ],
+            ),
+            Expanded(
+              child: DocumentPageView(
+                pages: pages,
+                paragraphsById: {for (final p in review.paragraphs) p.id: p},
+                loadPage: _loadPageImage,
+                onLongPress: _onParagraphLongPress,
+              ),
+            ),
+          ],
+        );
+      }
+    }
+
     return AdminPage(
       onRefresh: _loadReview,
       child: Column(
@@ -395,7 +470,7 @@ class _DocumentReviewScreenState extends State<DocumentReviewScreen> {
             )
           else
             _WordPage(
-              paragraphs: review.paragraphs,
+              paragraphs: _coalesceTocParagraphs(review.paragraphs),
               showStyleLabels: _showStyleLabels,
               onLongPress: _onParagraphLongPress,
             ),
@@ -416,6 +491,130 @@ T? _try<T>(T? Function() read) {
   } catch (_) {
     return null; // field not present on the model yet
   }
+}
+
+String _normalizeTocLine(String text) =>
+    text.replaceAll('\r', ' ').replaceAll('\n', ' ').replaceAll(RegExp(r'\s+'), ' ').trim();
+
+bool _styleIsToc(String? styleName) {
+  final s = (styleName ?? '').toLowerCase();
+  return s.startsWith('toc') && !s.contains('heading');
+}
+
+bool _isTocPrefixFragment(String text) {
+  final t = _normalizeTocLine(text);
+  if (t.isEmpty || t.length > 96) return false;
+  if (RegExp(r'\.{2,}\s*\d+\s*$').hasMatch(t)) return false;
+  if (RegExp(r'^\d+(?:\.\d+)*\.?\s*$').hasMatch(t)) return true;
+  if (RegExp(r'^\d+(?:\.\d+)*\.?\s+').hasMatch(t)) {
+    if (t.endsWith('—') || t.endsWith('–') || t.endsWith('-')) return true;
+    final words = t.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).length;
+    if (words <= 8 && !RegExp(r'(?<!\d)\d+\s*$').hasMatch(t)) return true;
+  }
+  return false;
+}
+
+bool _tocTailHasPage(DocumentParagraphModel p, String text) {
+  if (p.pageNumber != null) return true;
+  if (text.contains('\t') || RegExp(r'\.{2,}\s*\d+\s*$').hasMatch(text)) return true;
+  return RegExp(r'(?<!\d)\d+\s*$').hasMatch(text);
+}
+
+bool _paragraphIsTocish(DocumentParagraphModel p) {
+  if (p.blockType == 'toc') return true;
+  return _styleIsToc(p.styleName);
+}
+
+bool _shouldMergeTocPair(DocumentParagraphModel a, DocumentParagraphModel b) {
+  final t0 = _normalizeTocLine(a.text);
+  final t1 = _normalizeTocLine(b.text);
+  if (t0.isEmpty || t1.isEmpty) return false;
+  if (!_paragraphIsTocish(a) && !_paragraphIsTocish(b)) return false;
+  if (!_isTocPrefixFragment(t0)) return false;
+  return _tocTailHasPage(b, t1);
+}
+
+DocumentParagraphModel _mergeTocPair(DocumentParagraphModel a, DocumentParagraphModel b) {
+  final text = _normalizeTocLine('${a.text} ${b.text}');
+  final highlight = a.highlight == 'unresolved' || b.highlight == 'unresolved'
+      ? 'unresolved'
+      : (a.highlight == 'resolved' || b.highlight == 'resolved' ? 'resolved' : 'none');
+  return DocumentParagraphModel(
+    id: b.id,
+    sortOrder: a.sortOrder,
+    displayIndex: a.displayIndex,
+    text: text,
+    blockType: 'toc',
+    blockLabel: b.blockLabel.isNotEmpty ? b.blockLabel : 'Table of Contents',
+    highlight: highlight,
+    hasUnresolvedComments: a.hasUnresolvedComments || b.hasUnresolvedComments,
+    comments: [...a.comments, ...b.comments],
+    styleName: b.styleName ?? a.styleName,
+    fontSize: b.fontSize ?? a.fontSize,
+    isBold: b.isBold ?? a.isBold,
+    isItalic: b.isItalic ?? a.isItalic,
+    isUnderline: b.isUnderline ?? a.isUnderline,
+    alignment: b.alignment ?? a.alignment,
+    fontName: b.fontName ?? a.fontName,
+    colorHex: b.colorHex ?? a.colorHex,
+    indentLevel: b.indentLevel ?? a.indentLevel,
+    isListItem: b.isListItem ?? a.isListItem,
+    listMarker: b.listMarker ?? a.listMarker,
+    runs: b.runs.isNotEmpty ? b.runs : a.runs,
+    tableRows: b.tableRows.isNotEmpty ? b.tableRows : a.tableRows,
+    images: b.images.isNotEmpty ? b.images : a.images,
+    imageUrl: b.imageUrl ?? a.imageUrl,
+    imageBase64: b.imageBase64 ?? a.imageBase64,
+    pageNumber: b.pageNumber ?? a.pageNumber,
+  );
+}
+
+List<DocumentParagraphModel> _coalesceTocParagraphs(List<DocumentParagraphModel> paragraphs) {
+  final out = <DocumentParagraphModel>[];
+  var i = 0;
+  while (i < paragraphs.length) {
+    final cur = paragraphs[i];
+    if (i + 1 < paragraphs.length && _shouldMergeTocPair(cur, paragraphs[i + 1])) {
+      out.add(_mergeTocPair(cur, paragraphs[i + 1]));
+      i += 2;
+      continue;
+    }
+    if (cur.blockType == 'toc' && cur.text.contains('\n')) {
+      out.add(DocumentParagraphModel(
+        id: cur.id,
+        sortOrder: cur.sortOrder,
+        displayIndex: cur.displayIndex,
+        text: _normalizeTocLine(cur.text),
+        blockType: cur.blockType,
+        blockLabel: cur.blockLabel,
+        highlight: cur.highlight,
+        hasUnresolvedComments: cur.hasUnresolvedComments,
+        comments: cur.comments,
+        styleName: cur.styleName,
+        fontSize: cur.fontSize,
+        isBold: cur.isBold,
+        isItalic: cur.isItalic,
+        isUnderline: cur.isUnderline,
+        alignment: cur.alignment,
+        fontName: cur.fontName,
+        colorHex: cur.colorHex,
+        indentLevel: cur.indentLevel,
+        isListItem: cur.isListItem,
+        listMarker: cur.listMarker,
+        runs: cur.runs,
+        tableRows: cur.tableRows,
+        images: cur.images,
+        imageUrl: cur.imageUrl,
+        imageBase64: cur.imageBase64,
+        pageNumber: cur.pageNumber,
+      ));
+      i += 1;
+      continue;
+    }
+    out.add(cur);
+    i += 1;
+  }
+  return out;
 }
 
 String _blockPreviewText(DocumentParagraphModel p) {
@@ -461,6 +660,13 @@ class _Run {
     this.superscript,
     this.subscript,
   });
+}
+
+/// Nesting depth of a TOC line from its numbering: "4." -> 1, "3.1." -> 2, "4.3.1." -> 3.
+int _tocLevelFromText(String text) {
+  final m = RegExp(r'^\s*(\d+(?:\.\d+)*)\.?\s').firstMatch(text);
+  if (m == null) return 1;
+  return m.group(1)!.split('.').length.clamp(1, 6).toInt();
 }
 
 Color? _parseColor(String? hex) {
@@ -551,11 +757,13 @@ List<List<_Cell>> _readTableRows(DocumentParagraphModel p) {
         cells.add(_Cell(
           text: (c['text'] ?? '').toString(),
           bold: c['bold'] as bool? ?? c['isBold'] as bool? ?? false,
-          fill: _parseColor((c['fillHex'] ?? c['shading']) as String?),
+          fill: _parseColor((c['fillHex'] ?? c['fill_hex'] ?? c['shading']) as String?),
           align: c['align'] == null
               ? null
               : _WordStyle.parseAlign(c['align'].toString(), TextAlign.left),
-          colSpan: (c['colSpan'] as num?)?.toInt() ?? 1,
+          colSpan: (c['colSpan'] as num?)?.toInt() ??
+              (c['col_span'] as num?)?.toInt() ??
+              1,
         ));
       } else {
         cells.add(_Cell(text: (c ?? '').toString()));
@@ -779,9 +987,11 @@ class _WordStyle {
     }
 
     int tocLevel = 1;
-    final lvl = RegExp(r'(\d+)').firstMatch(key);
-    if (kind == _BlockKind.toc && lvl != null) {
-      tocLevel = int.tryParse(lvl.group(1)!) ?? 1;
+    if (kind == _BlockKind.toc) {
+      final lvl = RegExp(r'(\d+)').firstMatch(styleName.toLowerCase());
+      tocLevel = lvl != null
+          ? (int.tryParse(lvl.group(1)!) ?? 1)
+          : _tocLevelFromText(text);
     }
 
     // ── Defaults by style (Word's built-in look) ────────────────
@@ -793,14 +1003,49 @@ class _WordStyle {
     double before = 0;
     double after = 8;
 
+    // Backend block_type (from the docx extractor) — base layout before style names.
+    switch (blockType) {
+      case 'heading':
+        size = 18;
+        bold = true;
+        color = const Color(0xFF1F3864);
+        before = 18;
+        after = 8;
+        break;
+      case 'subheading':
+        size = 15;
+        bold = true;
+        color = const Color(0xFF2F5496);
+        before = 14;
+        after = 6;
+        break;
+      case 'bullet':
+        after = 4;
+        break;
+      case 'line':
+        size = 11;
+        after = 4;
+        break;
+      case 'paragraph':
+        align = TextAlign.justify;
+        break;
+      default:
+        break;
+    }
+
     // NOTE: "subtitle" must be tested before "title" (it contains "title").
-    if (key.contains('subtitle')) {
+    if (kind == _BlockKind.toc) {
+      // TOC entries: plain body text (the blockLabel "Table of Contents" used to
+      // match the heading branch below -> blue, bold, 16 pt).
+      size = 11;
+      after = 6;
+    } else if (key.contains('subtitle')) {
       size = 15;
       italic = true;
       align = TextAlign.center;
       color = const Color(0xFF595959);
       after = 14;
-    } else if (key == 'title' || key.contains('title') && !key.contains('toc')) {
+    } else if (RegExp(r'^(title|document title)\b').hasMatch(key.trim())) {
       size = 26;
       bold = true;
       align = TextAlign.center;
@@ -860,7 +1105,9 @@ class _WordStyle {
     final parsedColor = _parseColor(_try<String>(() => d.colorHex as String?));
     final indent = _try<num>(() => d.indentLevel as num?)?.toDouble() ?? 0;
     final isList = _try<bool>(() => d.isListItem as bool?) ??
-        (key.contains('list') || key.contains('bullet'));
+        blockType == 'bullet' ||
+        key.contains('list') ||
+        key.contains('bullet');
     final marker = _try<String>(() => d.listMarker as String?);
 
     return _WordStyle(
@@ -1010,34 +1257,77 @@ class _WordBlock extends StatelessWidget {
     }
     title = title.replaceAll('\t', ' ');
 
-    final indent = (style.tocLevel - 1).clamp(0, 6) * 18.0;
+    final indent = (style.tocLevel - 1).clamp(0, 6) * 16.0 * fontScale;
+    if (page.isEmpty) {
+      return Padding(
+        padding: EdgeInsets.only(left: indent),
+        child: Text(title, style: base),
+      );
+    }
     return Padding(
       padding: EdgeInsets.only(left: indent),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          Flexible(child: Text(title, style: base)),
-          Expanded(
-            child: Padding(
-              padding: const EdgeInsets.only(left: 6, right: 6),
-              child: Text(
-                '. ' * 150,
-                maxLines: 1,
-                softWrap: false,
-                overflow: TextOverflow.clip,
-                style: base.copyWith(color: const Color(0xFF6B7280)),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          double measure(String s) {
+            final tp = TextPainter(
+              text: TextSpan(text: s, style: base),
+              textDirection: TextDirection.ltr,
+              maxLines: 1,
+            )..layout();
+            return tp.width;
+          }
+
+          const gap = 6.0;
+          final avail = constraints.maxWidth;
+          final titleW = measure(title);
+          final pageW = measure(page);
+          final dotW = measure('.');
+          // Width left for the dotted leader once title and number are placed.
+          final dotsW = avail - titleW - pageW - gap * 2 - 2;
+
+          // Long title (no room for a leader): let it wrap, number stays right.
+          if (!avail.isFinite || dotsW < dotW * 3) {
+            return Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Expanded(child: Text(title, style: base)),
+                Padding(
+                  padding: const EdgeInsets.only(left: 8),
+                  child: Text(page, style: base),
+                ),
+              ],
+            );
+          }
+
+          final dotCount = (dotsW / dotW).floor();
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.baseline,
+            textBaseline: TextBaseline.alphabetic,
+            children: [
+              Flexible(child: Text(title, style: base)),
+              const SizedBox(width: gap),
+              SizedBox(
+                width: dotsW,
+                child: Text(
+                  '.' * dotCount,
+                  maxLines: 1,
+                  softWrap: false,
+                  overflow: TextOverflow.clip,
+                  style: base,
+                ),
               ),
-            ),
-          ),
-          if (page.isNotEmpty) Text(page, style: base),
-        ],
+              const SizedBox(width: gap),
+              Text(page, style: base),
+            ],
+          );
+        },
       ),
     );
   }
 
   Widget _tableBody() {
     final rows = _readTableRows(paragraph);
-    if (rows.isEmpty) return const SizedBox.shrink();
+    if (rows.isEmpty) return _imagePlaceholder('Table preview unavailable');
     final colCount = rows.fold<int>(
       1,
       (m, r) => r.fold<int>(0, (a, c) => a + c.colSpan) > m ? r.fold<int>(0, (a, c) => a + c.colSpan) : m,
@@ -1097,7 +1387,7 @@ class _WordBlock extends StatelessWidget {
 
   Widget _imageBody() {
     final images = _readImages(paragraph);
-    if (images.isEmpty) return const SizedBox.shrink();
+    if (images.isEmpty) return _imagePlaceholder('Image preview unavailable');
     return Column(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [

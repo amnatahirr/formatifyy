@@ -1154,6 +1154,91 @@ def _resolve_group_document_path(cursor, document_id: int, file_path: str | None
     return None
 
 
+def _ensure_meta_column(cursor) -> None:
+    """document_paragraphs.meta_json holds tables, images, fonts, runs ... (idempotent)."""
+    cursor.execute("PRAGMA table_info(document_paragraphs)")
+    if "meta_json" not in {row[1] for row in cursor.fetchall()}:
+        cursor.execute("ALTER TABLE document_paragraphs ADD COLUMN meta_json TEXT")
+
+
+def _row_meta_version(row) -> int:
+    try:
+        raw = row["meta_json"]
+        return int((json.loads(raw) or {}).get("v", 0)) if raw else 0
+    except (TypeError, ValueError, KeyError, IndexError):
+        return 0
+
+
+def _review_file_signature(path: str) -> str:
+    import os
+
+    st = os.stat(path)
+    return f"{int(st.st_mtime)}:{st.st_size}"
+
+
+def _stored_source_file_sig(rows) -> str | None:
+    for row in rows:
+        try:
+            raw = row["meta_json"]
+            if not raw:
+                continue
+            sig = (json.loads(raw) or {}).get("source_file_sig")
+            if sig:
+                return str(sig)
+        except (TypeError, ValueError, KeyError):
+            continue
+    return None
+
+
+def _block_to_meta(block: dict[str, Any], *, source_file_sig: str | None = None) -> dict[str, Any]:
+    from review_blocks import EXTRACT_VERSION
+
+    meta = {
+        k: v
+        for k, v in block.items()
+        if k not in ("text", "block_type", "skipped")
+        and v is not None
+        and v != ""
+        and v != []
+    }
+    meta["v"] = EXTRACT_VERSION
+    if source_file_sig:
+        meta["source_file_sig"] = source_file_sig
+    return meta
+
+
+def _sync_paragraphs_from_extract(
+    cursor,
+    document_id: int,
+    existing: list,
+    blocks: list[dict[str, Any]],
+    source_file_sig: str | None,
+) -> None:
+    """Refresh text / types / formatting in place so comment paragraph_ids stay valid."""
+    from review_blocks import BLOCK_PARAGRAPH
+
+    ordered = sorted(existing, key=lambda r: (r["sort_order"], r["id"]))
+    for idx, row in enumerate(ordered):
+        if idx >= len(blocks):
+            break
+        block = blocks[idx]
+        meta = _block_to_meta(block, source_file_sig=source_file_sig)
+        cursor.execute(
+            """
+            UPDATE document_paragraphs
+            SET text = ?, block_type = ?, meta_json = ?, sort_order = ?
+            WHERE id = ?
+            """,
+            (
+                block["text"],
+                block.get("block_type") or BLOCK_PARAGRAPH,
+                json.dumps(meta),
+                idx + 1,
+                row["id"],
+            ),
+        )
+
+
 def _ensure_document_paragraphs(
     cursor,
     document_id: int,
@@ -1169,30 +1254,37 @@ def _ensure_document_paragraphs(
     from review_blocks import (
         BLOCK_FRONTMATTER,
         BLOCK_PARAGRAPH,
+        EXTRACT_VERSION,
         classify_block_text,
         extract_review_blocks,
         frontmatter_text_set,
     )
 
+    _ensure_meta_column(cursor)
     cursor.execute(
-        "SELECT id, text, block_type FROM document_paragraphs WHERE document_id = ?",
+        "SELECT id, text, block_type, meta_json FROM document_paragraphs WHERE document_id = ?",
         (document_id,),
     )
     existing = cursor.fetchall()
     path = _resolve_group_document_path(cursor, document_id, file_path)
 
+    file_sig = _review_file_signature(path) if path else None
+
     def _insert_blocks(blocks: list[dict[str, Any]]) -> None:
         for order, block in enumerate(blocks, start=1):
+            meta = _block_to_meta(block, source_file_sig=file_sig)
             cursor.execute(
                 """
-                INSERT INTO document_paragraphs (document_id, sort_order, text, block_type)
-                VALUES (?, ?, ?, ?)
+                INSERT INTO document_paragraphs
+                    (document_id, sort_order, text, block_type, meta_json)
+                VALUES (?, ?, ?, ?, ?)
                 """,
                 (
                     document_id,
                     order,
                     block["text"],
                     block.get("block_type") or BLOCK_PARAGRAPH,
+                    json.dumps(meta),
                 ),
             )
 
@@ -1225,7 +1317,16 @@ def _ensure_document_paragraphs(
     needs_upgrade = all(t in ("", "paragraph") for t in types) or (
         len(types) > 0 and frontmatter_count >= len(types)
     )
-    if not needs_upgrade:
+    # Rows saved by an older extractor (no tables / images / fonts) are refreshed,
+    # but only when the document has no comments, so comment anchors stay intact.
+    stale_meta = (
+        not needs_upgrade
+        and max((_row_meta_version(row) for row in existing), default=0) < EXTRACT_VERSION
+    )
+    stored_sig = _stored_source_file_sig(existing)
+    stale_file = bool(path and file_sig and stored_sig and file_sig != stored_sig)
+    needs_file_resync = bool(path and file_sig and not stored_sig)
+    if not needs_upgrade and not stale_meta and not stale_file and not needs_file_resync:
         return
 
     cursor.execute(
@@ -1234,13 +1335,25 @@ def _ensure_document_paragraphs(
     )
     comment_count = int(cursor.fetchone()[0] or 0)
 
+    if path:
+        blocks = extract_review_blocks(path)
+    else:
+        blocks = []
+
     if comment_count == 0 and path:
         cursor.execute(
             "DELETE FROM document_paragraphs WHERE document_id = ?",
             (document_id,),
         )
-        blocks = extract_review_blocks(path)
         _insert_blocks(blocks or placeholder_blocks)
+        return
+
+    if path and blocks and (
+        needs_upgrade or stale_meta or stale_file or needs_file_resync
+    ):
+        _sync_paragraphs_from_extract(
+            cursor, document_id, list(existing), blocks, file_sig
+        )
         return
 
     # Preserve comment anchors: reclassify text in place; mark only true front-matter
@@ -1265,9 +1378,10 @@ def _ensure_document_paragraphs(
 def _serialize_review_paragraphs(cursor, document_id: int) -> list[dict[str, Any]]:
     from review_blocks import BLOCK_FRONTMATTER, display_label_for_block_type
 
+    _ensure_meta_column(cursor)
     cursor.execute(
         """
-        SELECT id, sort_order, text, block_type
+        SELECT id, sort_order, text, block_type, meta_json
         FROM document_paragraphs
         WHERE document_id = ?
         ORDER BY sort_order ASC, id ASC
@@ -1283,8 +1397,15 @@ def _serialize_review_paragraphs(cursor, document_id: int) -> list[dict[str, Any
         ).strip().lower()
         if block_type == BLOCK_FRONTMATTER:
             continue
-        # Skip empty lines if any slipped through
-        if not (row["text"] or "").strip():
+        try:
+            meta = json.loads(row["meta_json"]) if row["meta_json"] else {}
+        except (TypeError, ValueError):
+            meta = {}
+        if not isinstance(meta, dict):
+            meta = {}
+        has_rich = bool(meta.get("table_rows") or meta.get("images"))
+        # Skip empty lines if any slipped through (tables / images may carry no text)
+        if not (row["text"] or "").strip() and not has_rich:
             continue
 
         display_index += 1
@@ -1333,19 +1454,21 @@ def _serialize_review_paragraphs(cursor, document_id: int) -> list[dict[str, Any
             highlight = "resolved"
         else:
             highlight = "none"
-        paragraphs.append(
-            {
-                "id": row["id"],
-                "sort_order": row["sort_order"],
-                "display_index": display_index,
-                "text": row["text"],
-                "block_type": block_type,
-                "block_label": display_label_for_block_type(block_type),
-                "highlight": highlight,
-                "has_unresolved_comments": has_unresolved,
-                "comments": comments,
-            }
-        )
+        item = {
+            "id": row["id"],
+            "sort_order": row["sort_order"],
+            "display_index": display_index,
+            "text": row["text"],
+            "block_type": block_type,
+            "block_label": display_label_for_block_type(block_type),
+            "highlight": highlight,
+            "has_unresolved_comments": has_unresolved,
+            "comments": comments,
+        }
+        # formatting / rich content: style_name, font_*, is_bold, runs, table_rows,
+        # images, page_number ... (never overrides the core fields above)
+        item.update({k: v for k, v in meta.items() if k not in item and k != "v"})
+        paragraphs.append(item)
     return paragraphs
 
 
