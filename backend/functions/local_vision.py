@@ -232,3 +232,28 @@ def clip_text_text_similarity(text_a: str, text_b: str) -> float:
     emb_b = clip_text_embedding(b)
     raw = float((emb_a @ emb_b.T).squeeze().item())
     return float(max(0.0, min(1.0, raw)))
+
+
+
+def is_diagram_like_from_b64(b64: str) -> bool:
+    """
+    Heuristic: UML / flowchart / DFD / use-case style diagrams are mostly a
+    white background with very few distinct colours. CLIP/BLIP are unreliable
+    on these, so callers should not use CLIP similarity to judge them.
+    """
+    try:
+        image = decode_base64_image(b64, for_inference=True).convert("RGB")
+        small = image.resize((128, 128), Image.Resampling.BILINEAR)
+        total = 128 * 128
+
+        gray = small.convert("L")
+        near_white = sum(1 for p in gray.getdata() if p >= 235) / total
+
+        quant = small.quantize(colors=32)
+        counts = sorted((c for c, _ in (quant.getcolors() or [])), reverse=True)
+        top6 = sum(counts[:6]) / total
+
+        return near_white >= 0.55 and top6 >= 0.85
+    except Exception as exc:
+        print(f"[local_vision] diagram heuristic failed: {exc}")
+        return False

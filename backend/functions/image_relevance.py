@@ -16,6 +16,7 @@ from functions.local_vision import (
     clip_similarity_from_b64,
     generate_caption_from_b64,
     image_fingerprint,
+    is_diagram_like_from_b64,
 )
 
 
@@ -290,6 +291,28 @@ def analyze_image_relevance_sync(
             "caption": "",
             "before_text": before_text,
             "after_text": after_text,
+        }
+
+    # Diagrams (use case, class, ER, DFD, flowcharts...) cannot be judged by
+    # CLIP — treat them as relevant instead of flagging them falsely.
+    if is_diagram_like_from_b64(b64):
+        print("[image_relevance] RELEVANT | diagram-like image, CLIP skipped")
+        return {
+            "similarity": 1.0,
+            "clip_similarity": 0.0,
+            "caption_alignment": 0.0,
+            "relevant": True,
+            "is_relevant": True,
+            "verdict": "relevant",
+            "confidence": 1.0,
+            "threshold": threshold,
+            "caption": caption or "",
+            "heading": heading,
+            "before_text": before_text,
+            "after_text": after_text,
+            "keyword_matches": [],
+            "reason": "Diagram-style image (UML/flowchart/architecture); "
+                      "photo-based CLIP scoring is not applicable.",
         }
 
     if before_text or after_text:
