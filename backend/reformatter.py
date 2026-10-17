@@ -99,6 +99,26 @@ def _normalize_section_title(text: str) -> str:
     return _strip_heading_number_prefix(text).lower()
 
 
+_UNNUMBERED_FRONTMATTER_TITLES = frozenset({
+    "abstract",
+    "acknowledgement", "acknowledgements", "acknowledgment", "acknowledgments",
+    "dedication",
+    "declaration",
+    "certificate",
+    "preface",
+    "executive summary",
+    "list of abbreviations",
+    "list of acronyms",
+    "list of symbols",
+    "abbreviations",
+})
+
+
+def _is_unnumbered_frontmatter_title(text: str) -> bool:
+    """Front-matter headings (Abstract etc.) that must never get a section number."""
+    return _normalize_section_title(text) in _UNNUMBERED_FRONTMATTER_TITLES
+
+
 class _HeadingNumberTracker:
     """Track hierarchical heading counters (1 → 1.1 → 1.2 → 2 → 2.1 …)."""
 
@@ -501,7 +521,13 @@ def _reformat_docx(
         if is_heading:
             spec = styles.get(f"heading{min(level, 3)}", styles["heading1"])
             # Number Heading 1–3 only. Heading 4 gets style alone (no 3.2.1.1.).
-            if level >= 4:
+            if _is_unnumbered_frontmatter_title(text):
+                # Abstract etc.: strip any number, never touch the tracker
+                cleaned = _strip_heading_number_prefix(text)
+                if cleaned and cleaned != text:
+                    _set_paragraph_text_preserve_style(para, cleaned)
+                    text = cleaned
+            elif level >= 4:
                 cleaned = _strip_heading_number_prefix(text)
                 # Also drop a depth-4 auto-number if present (e.g. "3.2.1.1. Title")
                 if cleaned != text and cleaned:

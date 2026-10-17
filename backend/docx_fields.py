@@ -939,6 +939,7 @@ def apply_hierarchical_heading_numbering(doc) -> int:
         _format_numbered_heading,
         _set_paragraph_text_preserve_style,
         _strip_heading_number_prefix,
+        _is_unnumbered_frontmatter_title,
     )
 
     tracker = _HeadingNumberTracker()
@@ -952,6 +953,13 @@ def apply_hierarchical_heading_numbering(doc) -> int:
             continue
         level = _heading_level_from_paragraph(para)
         if level is None:
+            continue
+        # Abstract / Acknowledgement etc. never get a section number
+        if _is_unnumbered_frontmatter_title(text):
+            cleaned = _strip_heading_number_prefix(text)
+            if cleaned and cleaned != text:
+                _set_paragraph_text_preserve_style(para, cleaned)
+                updated += 1
             continue
         if level > 3:
             # Style-only: strip any erroneous 3.2.1.1-style prefix
