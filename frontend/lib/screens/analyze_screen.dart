@@ -210,6 +210,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
   late TabController _tabController;
   late Future<Map<String, dynamic>> _analysisFuture;
   String _baseUrl = '';
+  late String _displayName = widget.documentName;
   int _selectedSidebarIndex = 2;
   bool _isApplyingFix = false;
   bool _isFixApplied = false;
@@ -2533,6 +2534,61 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
     }
   }
 
+  Future<void> _renameThisDocument() async {
+    final userId = context.read<AuthProvider>().userId;
+    if (userId == null) return;
+
+    const known = ['.docx', '.pdf', '.txt', '.doc'];
+    final lower = _displayName.toLowerCase();
+    final ext = known.firstWhere((e) => lower.endsWith(e), orElse: () => '');
+    final stem = _displayName.substring(0, _displayName.length - ext.length);
+    final controller = TextEditingController(text: stem);
+
+    final entered = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: _surface,
+        title: Text('Rename Report', style: TextStyle(color: _textPri)),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          style: TextStyle(color: _textPri),
+          decoration: InputDecoration(
+            hintText: 'Report name',
+            hintStyle: TextStyle(color: _textSec),
+            suffixText: ext,
+          ),
+          onSubmitted: (v) => Navigator.pop(ctx, v.trim()),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text('Cancel', style: TextStyle(color: _textSec)),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, controller.text.trim()),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+
+    if (entered == null || entered.isEmpty || !mounted) return;
+    final docProvider = context.read<DocumentProvider>();
+    final saved = await docProvider.renameDocument(
+      widget.documentId,
+      userId,
+      '$entered$ext',
+    );
+    if (!mounted) return;
+    if (saved != null) {
+      setState(() => _displayName = saved);
+      _showSnack('Report renamed', _green);
+    } else {
+      _showSnack(docProvider.errorMessage ?? 'Rename failed', _red);
+    }
+  }
+
   void _handleSidebarSelection(int index) {
     setState(() { _selectedSidebarIndex = index; });
     switch (index) {
@@ -2700,9 +2756,22 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
                   fontWeight: FontWeight.w700,
                 ),
               ),
-              Text(
-                widget.documentName,
-                style: TextStyle(color: _textSec, fontSize: 12),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    _displayName,
+                    style: TextStyle(color: _textSec, fontSize: 12),
+                  ),
+                  const SizedBox(width: 4),
+                  Tooltip(
+                    message: 'Rename report',
+                    child: InkWell(
+                      onTap: _renameThisDocument,
+                      child: Icon(Icons.edit_outlined, size: 14, color: _textSec),
+                    ),
+                  ),
+                ],
               ),
             ],
           ),

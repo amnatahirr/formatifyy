@@ -1976,6 +1976,51 @@ async def analyze_document_freeform_endpoint(document_id: int, user_id: int = Qu
     }
 
 
+@app.patch("/api/documents/{document_id}/rename", tags=["Documents"])
+def rename_document(
+    document_id: int,
+    user_id: int = Query(...),
+    payload: Dict[str, Any] = Body(...),
+):
+    """Rename a report (display name only). Extension is preserved."""
+    new_name = str(payload.get("name") or payload.get("filename") or "")
+    new_name = re.sub(r'[\\/:*?"<>|\r\n\t]+', " ", new_name).strip()
+    if not new_name:
+        raise HTTPException(status_code=400, detail="Name cannot be empty.")
+    if len(new_name) > 150:
+        raise HTTPException(status_code=400, detail="Name is too long (max 150 characters).")
+
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT filename FROM documents WHERE id = ? AND user_id = ?",
+        (document_id, user_id),
+    )
+    doc = cursor.fetchone()
+    if not doc:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    known_exts = {".docx", ".pdf", ".txt", ".doc"}
+    old_ext = os.path.splitext(doc["filename"] or "")[1].lower()
+    if old_ext in known_exts:
+        stem, typed_ext = os.path.splitext(new_name)
+        if typed_ext.lower() in known_exts:
+            new_name = stem.strip()
+        if not new_name:
+            conn.close()
+            raise HTTPException(status_code=400, detail="Name cannot be empty.")
+        new_name = f"{new_name}{old_ext}"
+
+    cursor.execute(
+        "UPDATE documents SET filename = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?",
+        (new_name, document_id, user_id),
+    )
+    conn.commit()
+    conn.close()
+    return {"success": True, "document_id": document_id, "filename": new_name}
+
+
 @app.delete("/api/documents/{document_id}", tags=["Documents"])
 def delete_document(document_id: int, user_id: int = Query(...)):
     """Delete a document record and its physical files."""

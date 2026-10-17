@@ -848,6 +848,39 @@ class DocumentProvider extends ChangeNotifier {
     }
   }
 
+  /// Rename a report. Returns the saved name, or null on failure.
+  Future<String?> renameDocument(
+    int documentId,
+    int userId,
+    String newName,
+  ) async {
+    try {
+      final response = await http.patch(
+        Uri.parse("$baseUrl/$documentId/rename?user_id=$userId"),
+        headers: ApiConfig.getHeaders(json: true),
+        body: jsonEncode({"name": newName}),
+      );
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        final saved = (data['filename'] ?? newName).toString();
+        final idx = _documents.indexWhere((d) => d['id'] == documentId);
+        if (idx >= 0) {
+          _documents[idx] = {..._documents[idx], 'filename': saved};
+        }
+        _errorMessage = null;
+        notifyListeners();
+        return saved;
+      }
+      _errorMessage = _detail(response.body) ?? "Rename failed: ${response.body}";
+      notifyListeners();
+      return null;
+    } catch (e) {
+      _errorMessage = "Rename error: $e";
+      notifyListeners();
+      return null;
+    }
+  }
+
   Future<bool> deleteDocument(int documentId, int userId) async {
     try {
       final url = "$baseUrl/$documentId?user_id=$userId";

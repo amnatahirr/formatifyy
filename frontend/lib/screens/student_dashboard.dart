@@ -2166,6 +2166,8 @@ class _StudentDashboardState extends State<StudentDashboard> {
                                             _openAnalyzeScreen(doc);
                                           } else if (value == 'preview') {
                                             _showPreview(doc);
+                                          } else if (value == 'rename') {
+                                            _showRenameDialog(doc);
                                           } else if (value == 'edit') {
                                             _showEditDialog(doc, auth.userId!);
                                           } else if (value == 'send' &&
@@ -2204,6 +2206,16 @@ class _StudentDashboardState extends State<StudentDashboard> {
                                                 Icon(Icons.preview, size: 16),
                                                 SizedBox(width: 8),
                                                 Text('Preview'),
+                                              ],
+                                            ),
+                                          ),
+                                          const PopupMenuItem(
+                                            value: 'rename',
+                                            child: Row(
+                                              children: [
+                                                Icon(Icons.drive_file_rename_outline, size: 16),
+                                                SizedBox(width: 8),
+                                                Text('Rename'),
                                               ],
                                             ),
                                           ),
@@ -2616,6 +2628,19 @@ class _StudentDashboardState extends State<StudentDashboard> {
               ),
             ),
           if (DevUserConfig.hasFypModule) SizedBox(height: 8),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
+              onPressed: () => _showRenameDialog(doc),
+              icon: Icon(Icons.drive_file_rename_outline, size: 16),
+              label: Text('Rename', style: TextStyle(fontSize: 12)),
+              style: TextButton.styleFrom(
+                foregroundColor: _p.textSecondary,
+                padding: EdgeInsets.zero,
+                minimumSize: Size(0, 32),
+              ),
+            ),
+          ),
           Row(
             children: [
               Expanded(
@@ -2723,6 +2748,74 @@ class _StudentDashboardState extends State<StudentDashboard> {
       default:
         return _p.accent;
     }
+  }
+
+  Future<void> _showRenameDialog(Map<String, dynamic> doc) async {
+    final userId = context.read<AuthProvider>().userId;
+    final docProvider = context.read<DocumentProvider>();
+    final docId = doc['id'];
+    if (userId == null || docId is! int) return;
+
+    final oldName = (doc['filename'] ?? '').toString();
+    const known = ['.docx', '.pdf', '.txt', '.doc'];
+    final lower = oldName.toLowerCase();
+    final ext = known.firstWhere((e) => lower.endsWith(e), orElse: () => '');
+    final stem = oldName.substring(0, oldName.length - ext.length);
+    final controller = TextEditingController(text: stem);
+
+    final entered = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: _p.surface,
+        title: Text('Rename Report', style: TextStyle(color: _p.textPrimary)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            TextField(
+              controller: controller,
+              autofocus: true,
+              style: TextStyle(color: _p.textPrimary),
+              decoration: InputDecoration(
+                hintText: 'Report name',
+                hintStyle: TextStyle(color: _p.textMuted),
+                suffixText: ext,
+              ),
+              onSubmitted: (v) => Navigator.pop(ctx, v.trim()),
+            ),
+            if (ext.isNotEmpty) ...[
+              SizedBox(height: 8),
+              Text(
+                'The $ext extension is kept automatically.',
+                style: TextStyle(fontSize: 11, color: _p.textSecondary),
+              ),
+            ],
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, controller.text.trim()),
+            child: Text('Save'),
+          ),
+        ],
+      ),
+    );
+
+    if (entered == null || entered.isEmpty || !mounted) return;
+    final saved = await docProvider.renameDocument(docId, userId, '$entered$ext');
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(saved != null
+            ? 'Report renamed'
+            : (docProvider.errorMessage ?? 'Rename failed')),
+        backgroundColor: saved != null ? Color(0xFF10B981) : Color(0xFFEF4444),
+      ),
+    );
   }
 
   void _showEditDialog(Map<String, dynamic> doc, int userId) {
