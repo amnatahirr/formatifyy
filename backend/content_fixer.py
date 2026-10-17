@@ -339,6 +339,45 @@ def demote_heading_to_body(
     return True, "Demoted to Normal."
 
 
+# def apply_all_text_fixes(
+#     file_path: str,
+#     fixes: List[Dict[str, Any]],
+# ) -> Dict[str, Any]:
+#     """Apply a batch of text fixes. Each fix needs paragraph_id + suggestion."""
+#     applied = 0
+#     skipped = 0
+#     errors: List[str] = []
+
+#     heading_applied = False
+#     for fix in fixes:
+#         fix_type = fix.get("fix_type", "text")
+#         if fix_type == "heading":
+#             ok, msg = apply_heading_fix(
+#                 file_path,
+#                 fix.get("paragraph_id", ""),
+#                 int(fix.get("heading_level", 1) or 1),
+#                 renumber=False,
+#             )
+#             if ok:
+#                 heading_applied = True
+#         else:
+#             ok, msg = apply_text_fix(
+#                 file_path,
+#                 fix.get("paragraph_id", ""),
+#                 fix.get("original", ""),
+#                 fix.get("suggestion", ""),
+#             )
+#         if ok:
+#             applied += 1
+#         else:
+#             skipped += 1
+#             errors.append(msg)
+
+#     if heading_applied:
+#         renumber_heading_prefixes(file_path)
+
+#     return {"applied": applied, "skipped": skipped, "errors": errors}
+
 def apply_all_text_fixes(
     file_path: str,
     fixes: List[Dict[str, Any]],
@@ -347,6 +386,8 @@ def apply_all_text_fixes(
     applied = 0
     skipped = 0
     errors: List[str] = []
+    applied_ids: List[str] = []
+    failed_ids: List[str] = []
 
     heading_applied = False
     for fix in fixes:
@@ -367,17 +408,27 @@ def apply_all_text_fixes(
                 fix.get("original", ""),
                 fix.get("suggestion", ""),
             )
+        iid = str(fix.get("issue_id") or "")
         if ok:
             applied += 1
+            if iid:
+                applied_ids.append(iid)
         else:
             skipped += 1
             errors.append(msg)
+            if iid:
+                failed_ids.append(iid)
 
     if heading_applied:
         renumber_heading_prefixes(file_path)
 
-    return {"applied": applied, "skipped": skipped, "errors": errors}
-
+    return {
+        "applied": applied,
+        "skipped": skipped,
+        "errors": errors,
+        "applied_ids": applied_ids,
+        "failed_ids": failed_ids,
+    }
 
 def apply_template_reformat(
     file_path: str,

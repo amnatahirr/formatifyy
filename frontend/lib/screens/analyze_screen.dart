@@ -234,6 +234,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
   List<Map<String, dynamic>> _freeformManualNotes = [];
 
   // Document review preview state
+  Map<String, dynamic> _analysisData = {};
   List<Map<String, dynamic>> _previewBlocks = [];
   List<Map<String, dynamic>> _pipelineIssues = [];
   final Map<String, String> _appliedFixes = {};
@@ -310,8 +311,10 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
     _analysisFuture = _runAnalysisWithProgress();
     // Preload tables + restore "already saved" state from My Reports list.
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      // if (!mounted) return;
+      // _loadTables();
+      // final docs = context.read<DocumentProvider>().documents;
       if (!mounted) return;
-      _loadTables();
       final docs = context.read<DocumentProvider>().documents;
       final match = docs.where((d) => d['id'] == widget.documentId);
       if (match.isNotEmpty && match.first['has_formatted'] == true) {
@@ -320,14 +323,20 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
     });
   }
 
-  /// Runs analysis while the staged progress panel advances through named steps.
+
+    /// Runs analysis while the staged progress panel advances through named steps.
   Future<Map<String, dynamic>> _runAnalysisWithProgress() async {
     _analysisComplete = false;
     _analyzeProgressGen++;
     try {
       final data = await _fetchAnalysis();
       if (mounted) {
-        setState(() => _analysisComplete = true);
+        setState(() {
+          _seedFromAnalysis(data);
+          _analysisComplete = true;
+        });
+        // After analyze finishes (it rebuilds the working copy), not in parallel.
+        _loadTables();
         // Let the user see "Finalizing" before swapping to results.
         await Future.delayed(const Duration(milliseconds: 500));
       }
@@ -417,29 +426,51 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
     }).toList();
   }
 
-  void _seedPreviewData(Map<String, dynamic> data) {
-    final blocks = _asBlockList(
+  // void _seedPreviewData(Map<String, dynamic> data) {
+  //   final blocks = _asBlockList(
+  //     data['document_blocks'] as List<dynamic>? ??
+  //         data['document_content'] as List<dynamic>? ??
+  //         [],
+  //   );
+  //   final issues =
+  //       (data['issues'] as List<dynamic>? ?? [])
+  //           .map((i) => Map<String, dynamic>.from(i as Map))
+  //           .toList();
+  //   final headingMatches =
+  //       (data['template_heading_matches'] as List<dynamic>? ?? [])
+  //           .map((m) => Map<String, dynamic>.from(m as Map))
+  //           .toList();
+  //   WidgetsBinding.instance.addPostFrameCallback((_) {
+  //     if (!mounted) return;
+  //     setState(() {
+  //       _previewBlocks = blocks;
+  //       _pipelineIssues = issues;
+  //       _templateHeadingMatches = headingMatches;
+  //       _appliedTemplateHeadingFixes.clear();
+  //     });
+  //   });
+  // }
+
+
+    /// Seeds all local state ONCE per analysis run. It must never be called from
+  /// build(): doing so reset every applied fix on the next rebuild.
+  void _seedFromAnalysis(Map<String, dynamic> data) {
+    _analysisData = data;
+    _previewBlocks = _asBlockList(
       data['document_blocks'] as List<dynamic>? ??
           data['document_content'] as List<dynamic>? ??
           [],
     );
-    final issues =
-        (data['issues'] as List<dynamic>? ?? [])
-            .map((i) => Map<String, dynamic>.from(i as Map))
-            .toList();
-    final headingMatches =
+    _pipelineIssues = (data['issues'] as List<dynamic>? ?? [])
+        .map((i) => Map<String, dynamic>.from(i as Map))
+        .toList();
+    _templateHeadingMatches =
         (data['template_heading_matches'] as List<dynamic>? ?? [])
             .map((m) => Map<String, dynamic>.from(m as Map))
             .toList();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      setState(() {
-        _previewBlocks = blocks;
-        _pipelineIssues = issues;
-        _templateHeadingMatches = headingMatches;
-        _appliedTemplateHeadingFixes.clear();
-      });
-    });
+    _appliedTemplateHeadingFixes.clear();
+    _ignoredIssueIds.clear();
+    _resolvedIssueIds.clear();
   }
 
   void _mergeWorkingDocumentState(
@@ -611,6 +642,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
         _mergeWorkingDocumentState(data);
         setState(() {
           _appliedTemplateHeadingFixes.add(pid);
+          _resolvedIssueIds.add('heading_match_$pid');
           final idx = _templateHeadingMatches.indexWhere(
             (m) => m['paragraph_id'] == pid,
           );
@@ -678,6 +710,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
           _mergeWorkingDocumentState(data);
           setState(() {
             _appliedTemplateHeadingFixes.add(pid);
+            _resolvedIssueIds.add('heading_match_$pid');
             final idx = _templateHeadingMatches.indexWhere(
               (m) => m['paragraph_id'] == pid,
             );
@@ -937,6 +970,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
           (itype == 'heading_style' || itype == 'heading')) {
         if (pid.isEmpty) continue;
         fixes.add({
+          'issue_id': issueId,
           'paragraph_id': pid,
           'fix_type': 'heading',
           'type': 'heading_style',
@@ -980,6 +1014,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
           if (m != null) indices.add(int.parse(m.group(1)!));
         }
         fixes.add({
+          'issue_id': issueId,
           'paragraph_id': pid,
           'fix_type': 'apply_section_bullets',
           'type': itype.isEmpty ? 'missing_bullets' : itype,
@@ -995,6 +1030,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
           (i['suggestion'] as String? ?? '').isNotEmpty &&
           pid.isNotEmpty) {
         fixes.add({
+          'issue_id': issueId,
           'paragraph_id': pid,
           'original': i['original'] ?? i['current'] ?? '',
           'suggestion': _appliedFixes[pid] ?? i['suggestion'],
@@ -1015,6 +1051,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
       );
       if (already) continue;
       fixes.add({
+        'issue_id': 'heading_match_$pid',
         'paragraph_id': pid,
         'fix_type': 'heading',
         'type': 'heading_style',
@@ -1097,6 +1134,79 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
     ];
   }
 
+
+
+  // Formatting issue types Apply All cannot fix automatically.
+  static const _manualFormattingTypes = {'missing_section'};
+  // Formatting types that are only cleared when the backend reports them fixed.
+  static const _trackedFormattingTypes = {
+    'heading_style',
+    'missing_bullets',
+    'list_formatting',
+    'unconverted_parallel_list',
+  };
+
+  /// Clears every issue the backend reports as fixed from ALL tabs.
+  void _resolveAfterApplyAll(Map<String, dynamic> data) {
+    final ids = <String>{
+      for (final v in (data['resolved_issue_ids'] as List? ?? const []))
+        v.toString(),
+    };
+    final headingPids = <String>{
+      for (final v in (data['resolved_heading_pids'] as List? ?? const []))
+        v.toString(),
+    };
+    final reformatted = data['template_reformat_applied'] == true;
+
+    setState(() {
+      _resolvedIssueIds.addAll(ids);
+
+      // Template reformat fixes fonts / spacing / margins for the whole doc.
+      if (reformatted) {
+        for (final i in _pipelineIssues) {
+          final id = i['issue_id'] as String? ?? '';
+          final fn = (i['function'] as String? ?? '').toLowerCase();
+          final type = (i['type'] as String? ?? '').toLowerCase();
+          if (id.isNotEmpty &&
+              fn == 'formatting' &&
+              !_manualFormattingTypes.contains(type) &&
+              !_trackedFormattingTypes.contains(type)) {
+            _resolvedIssueIds.add(id);
+          }
+        }
+      }
+
+      for (var k = 0; k < _templateHeadingMatches.length; k++) {
+        final m = _templateHeadingMatches[k];
+        final pid = m['paragraph_id'] as String? ?? '';
+        if (headingPids.contains(pid)) {
+          _appliedTemplateHeadingFixes.add(pid);
+          _templateHeadingMatches[k] = {
+            ...m,
+            'fix_needed': false,
+            'fix_status': 'ok',
+            'status': 'ok',
+            'current_type': 'heading',
+          };
+        }
+      }
+
+      _styleIssues = [];
+      _isFixApplied = true;
+    });
+
+    // Keep the cached report (used for supervisor submission) in sync.
+    try {
+      context.read<DocumentProvider>().cacheAnalysisReport(
+        widget.documentId,
+        {..._analysisData, 'issues': _visibleIssues(_pipelineIssues)},
+      );
+    } catch (_) {}
+  }
+
+
+
+
   Future<void> _applyAllFixesAndStyles() async {
     if (_isApplyingFix) return;
     final batch = _collectAutoFixes();
@@ -1149,12 +1259,9 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
       if (resp.statusCode == 200) {
         final data = json.decode(resp.body) as Map<String, dynamic>;
         _mergeWorkingDocumentState(data);
-        setState(() {
-          _styleIssues = [];
-          _isFixApplied = true;
-        });
-        // Re-scan so the summary and the Document Lists tab agree.
-        await _loadTocCheck();
+        _resolveAfterApplyAll(data);
+        // Cheap deterministic re-scans (no AI): tables + document lists.
+        await Future.wait([_loadTocCheck(), _loadTables()]);
         if (!mounted) return;
         setState(() => _isApplyingFix = false);
         await _showApplyAllSummary(data, batch, plan);
@@ -2662,22 +2769,46 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
 
   // ── Main body ─────────────────────────────────────────────────────────────
 
+
+  /// Header numbers computed from the issues that are still open.
+  Map<String, dynamic> _liveSummary(List<dynamic> all) {
+    final open = _visibleIssues(all).cast<Map>();
+    String fn(Map m) => (m['function'] as String? ?? '').toLowerCase();
+    int count(bool Function(Map) test) => open.where(test).length;
+    return {
+      'missing': count((m) => (m['type'] ?? '') == 'missing_section'),
+      'style_issues': count((m) => fn(m) == 'formatting'),
+      'content_issues': count((m) =>
+          fn(m) == 'grammar' ||
+          fn(m) == 'para_relevance' ||
+          fn(m) == 'plagiarism'),
+    };
+  }
+
+
+
   Widget _buildBody(Map<String, dynamic> data) {
     final structure = data['structure'] as Map<String, dynamic>? ?? {};
+    // final oldIssues = data['issues'] as List<dynamic>? ?? [];
+    // _templateHeadingMatches =
+    //     (data['template_heading_matches'] as List<dynamic>? ?? [])
+    //         .map((m) => Map<String, dynamic>.from(m as Map))
+    //         .toList();
+    // final score =
     final oldIssues = data['issues'] as List<dynamic>? ?? [];
-    _templateHeadingMatches =
-        (data['template_heading_matches'] as List<dynamic>? ?? [])
-            .map((m) => Map<String, dynamic>.from(m as Map))
-            .toList();
     final score =
         (structure['score'] as num?)?.toInt() ?? (data['compliance_score'] as num?)?.toInt() ?? 0;
     final status = structure['status'] as String? ?? 'unknown';
-    final summary = structure['summary'] as Map<String, dynamic>? ?? {};
-    _seedPreviewData(data);
+    // final summary = structure['summary'] as Map<String, dynamic>? ?? {};
+    // _seedPreviewData(data);
+    final summary = _liveSummary(oldIssues);
 
     final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
     final formattingIssues = _visibleIssues(_issuesForFunction(oldIssues, 'formatting'));
-    final formattingTabCount = formattingIssues.length + _fixableTemplateHeadingMatches.length;
+    // final formattingTabCount = formattingIssues.length + _fixableTemplateHeadingMatches.length;
+    // Heading fixes are already part of formattingIssues (heading_match_*), so
+    // adding them again double-counted.
+    final formattingTabCount = formattingIssues.length;
     final imageEthicsIssues = _visibleIssues(_issuesForFunction(oldIssues, 'image_ethics'));
     final imageIssues = _visibleIssues(_issuesForFunction(oldIssues, 'image_relevance'));
     final paraRelevanceIssues = _visibleIssues(_issuesForFunction(oldIssues, 'para_relevance'));
@@ -3175,15 +3306,18 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
             ),
           ),
           const SizedBox(width: 32),
-          _SummaryPill('Found', '${summary['found'] ?? 0}', _green),
-          const SizedBox(width: 8),
+          // _SummaryPill('Found', '${summary['found'] ?? 0}', _green),
+          // const SizedBox(width: 8),
+          // _SummaryPill('Missing', '${summary['missing'] ?? 0}', _red),
+          // const SizedBox(width: 8),
+          // _SummaryPill('Order', '${summary['wrong_order'] ?? 0}', _yellow),
+          // const SizedBox(width: 8),
+          // _SummaryPill('Empty', '${summary['empty'] ?? 0}', _yellow),
+          // const SizedBox(width: 8),
+          // _SummaryPill('Extra', '${summary['extra_headings'] ?? 0}', _textSec),
+          // const SizedBox(width: 8),
+          // _SummaryPill('Content', '${summary['content_issues'] ?? 0}', _orange),
           _SummaryPill('Missing', '${summary['missing'] ?? 0}', _red),
-          const SizedBox(width: 8),
-          _SummaryPill('Order', '${summary['wrong_order'] ?? 0}', _yellow),
-          const SizedBox(width: 8),
-          _SummaryPill('Empty', '${summary['empty'] ?? 0}', _yellow),
-          const SizedBox(width: 8),
-          _SummaryPill('Extra', '${summary['extra_headings'] ?? 0}', _textSec),
           const SizedBox(width: 8),
           _SummaryPill('Content', '${summary['content_issues'] ?? 0}', _orange),
           const SizedBox(width: 8),
@@ -6959,11 +7093,9 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
   // ── Action bar ────────────────────────────────────────────────────────────
 
   Widget _buildActionBar(List<dynamic> oldIssues) {
-    final activeIssues = oldIssues.where((i) {
-      final id = (i as Map)['issue_id'] as String? ?? '';
-      return !_ignoredIssueIds.contains(id) && !_resolvedIssueIds.contains(id);
-    }).length;
-    final majorCount = oldIssues.where((i) {
+    final openIssues = _visibleIssues(oldIssues);
+    final activeIssues = openIssues.length;
+    final majorCount = openIssues.where((i) {
       final sev = ((i as Map)['severity'] as String? ?? '').toLowerCase();
       return sev == 'major' || sev == 'critical' || sev == 'error';
     }).length;
@@ -7009,7 +7141,14 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
           ),
           const Spacer(),
           TextButton(
-            onPressed: () => _showSnack('All issues ignored', _textSec),
+            onPressed: () {
+              setState(() {
+                for (final i in _visibleIssues(oldIssues)) {
+                  _ignoredIssueIds.add((i as Map)['issue_id'] as String? ?? '');
+                }
+              });
+              _showSnack('All issues ignored', _textSec);
+            },
             child: Text('Ignore All', style: TextStyle(color: _textSec)),
           ),
           const SizedBox(width: 12),
@@ -7757,9 +7896,12 @@ class _StatusBadge extends StatelessWidget {
   const _StatusBadge(this.status);
   @override
   Widget build(BuildContext context) {
-    final color = status == 'pass' ? _green : _red;
-    final icon =
-        status == 'pass' ? Icons.check_circle_outline : Icons.cancel_outlined;
+    // final color = status == 'pass' ? _green : _red;
+    // final icon =
+    //     status == 'pass' ? Icons.check_circle_outline : Icons.cancel_outlined;
+    final ok = status == 'pass' || status == 'good';
+    final color = ok ? _green : _red;
+    final icon = ok ? Icons.check_circle_outline : Icons.cancel_outlined;
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [

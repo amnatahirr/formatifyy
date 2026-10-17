@@ -2927,6 +2927,214 @@ async def apply_content_fix(
     }
 
 
+# @app.post("/api/documents/apply-all-fixes/{document_id}", tags=["Documents"])
+# async def apply_all_fixes(
+#     document_id: int,
+#     user_id: int = Query(...),
+#     payload: Dict[str, Any] = Body(default={}),
+# ):
+#     """
+#     Apply ALL fixes on the working document:
+#       - heading style fixes
+#       - grammar/text fixes
+#       - missing bullet / list_formatting groups (deterministic detection)
+#       - template reformatting (H1–H3 numbering only; H4 style-only)
+#       - image formatting + TOC/LOT/LOF when configured
+#     """
+#     conn = get_db()
+#     cursor = conn.cursor()
+#     cursor.execute("SELECT * FROM documents WHERE id = ? AND user_id = ?", (document_id, user_id))
+#     doc = cursor.fetchone()
+#     conn.close()
+
+#     if not doc:
+#         raise HTTPException(status_code=404, detail="Document not found")
+
+#     tmpl = get_template_by_id(doc["template_id"])
+#     if not tmpl:
+#         raise HTTPException(status_code=400, detail="Template not found")
+
+#     working_copy = _ensure_formatted_working_copy(doc, tmpl)
+
+#     text_result = {"applied": 0, "skipped": 0, "errors": []}
+#     bullet_result = {"applied": [], "skipped": [], "groups": 0}
+#     fixes = payload.get("fixes", [])
+
+#     # Split payload fixes into heading / bullets / text
+#     heading_fixes = []
+#     bullet_fix_indices: list = []
+#     text_fixes = []
+#     for fix in fixes:
+#         ftype = (fix.get("fix_type") or "text").lower()
+#         itype = (fix.get("type") or "").lower()
+#         if ftype in ("heading", "heading_style") or itype == "heading_style":
+#             heading_fixes.append(fix)
+#         elif ftype in ("bullets", "apply_section_bullets", "list_formatting") or itype in (
+#             "missing_bullets", "list_formatting",
+#         ):
+#             indices = fix.get("para_indices") or []
+#             if not indices and isinstance(fix.get("fix_details"), dict):
+#                 indices = fix["fix_details"].get("para_indices") or []
+#             if not indices and fix.get("paragraph_id"):
+#                 m = re.match(r"p(\d+)", str(fix.get("paragraph_id", "")))
+#                 if m:
+#                     indices = [int(m.group(1))]
+#             bullet_fix_indices.extend(int(i) for i in indices)
+#         else:
+#             text_fixes.append(fix)
+
+#     if working_copy.endswith(".docx"):
+#         # 1) Heading fixes first (also strips any mistaken bullets on those paras)
+#         for fix in heading_fixes:
+#             ok, msg = apply_heading_fix(
+#                 working_copy,
+#                 fix.get("paragraph_id", ""),
+#                 int(fix.get("heading_level", 1) or 1),
+#                 renumber=False,
+#             )
+#             if ok:
+#                 text_result["applied"] += 1
+#             else:
+#                 text_result["skipped"] += 1
+#                 text_result["errors"].append(msg)
+#         if heading_fixes:
+#             renumber_heading_prefixes(working_copy)
+
+#         # 2) Grammar/text fixes
+#         if text_fixes:
+#             tr = apply_all_text_fixes(working_copy, text_fixes)
+#             text_result["applied"] += tr.get("applied", 0)
+#             text_result["skipped"] += tr.get("skipped", 0)
+#             text_result["errors"].extend(tr.get("errors") or [])
+
+#         # 3) Deterministic list detection — apply high-confidence groups
+#         #    (infinitives / markers / trigger lines) so "To develop…" lists
+#         #    are covered. Ambiguous Label:colon groups only apply when the
+#         #    formatting agent confirmed them in the payload fixes.
+#         try:
+#             from docx import Document as DocxDoc
+#             from docx.oxml.ns import qn
+#             from list_detection import detect_list_groups, groups_needing_numpr
+
+#             _SAFE_APPLY_DETECTIONS = {
+#                 "infinitive",
+#                 "gerund",
+#                 "trigger_line",
+#                 "trigger_follower",
+#                 "marker",
+#                 "bullet_marker",
+#             }
+
+#             docx = DocxDoc(working_copy)
+#             blocks = []
+#             for idx, p in enumerate(docx.paragraphs):
+#                 text = (p.text or "").strip()
+#                 if not text:
+#                     continue
+#                 style_name = (p.style.name or "").lower() if p.style else ""
+#                 has_numpr = p._element.find(f".//{qn('w:numPr')}") is not None
+#                 btype = "paragraph"
+#                 if has_numpr or "list" in style_name:
+#                     btype = "list_item"
+#                 elif "heading" in style_name:
+#                     btype = "heading"
+#                 blocks.append({
+#                     "index": idx,
+#                     "type": btype,
+#                     "text": text,
+#                     "style": style_name,
+#                     "has_numpr": has_numpr,
+#                     "paragraph_id": f"p{idx}",
+#                 })
+#             groups = groups_needing_numpr(detect_list_groups(blocks))
+#             safe_indices = {
+#                 i
+#                 for g in groups
+#                 if (g.detection or "").lower() in _SAFE_APPLY_DETECTIONS
+#                 for i in g.indices
+#             }
+#             all_indices = sorted(safe_indices | set(bullet_fix_indices))
+#             if all_indices:
+#                 applied, skipped = apply_section_bullets_to_file(working_copy, all_indices)
+#                 bullet_result = {
+#                     "applied": applied,
+#                     "skipped": skipped,
+#                     "groups": len(groups),
+#                 }
+#                 print(
+#                     f"[apply-all] bullets: {len(applied)} applied, "
+#                     f"{len(skipped)} skipped across {len(groups)} groups"
+#                 )
+#         except Exception as exc:
+#             print(f"[apply-all] bullet detection error (non-fatal): {exc}")
+#             bullet_result = {"applied": [], "skipped": [], "groups": 0, "error": str(exc)}
+
+#         # 4) Strip bullets from any remaining heading paragraphs
+#         try:
+#             _strip_bullets_from_headings(working_copy)
+#         except Exception as exc:
+#             print(f"[apply-all] strip heading bullets error (non-fatal): {exc}")
+
+#     apply_template_reformat(
+#         working_copy,
+#         tmpl["formatting_rules"],
+#         tmpl.get("required_sections", []),
+#     )
+
+#     # After reformat, headings may reappear with leftover bullets — clean again
+#     if working_copy.endswith(".docx"):
+#         try:
+#             _strip_bullets_from_headings(working_copy)
+#         except Exception:
+#             pass
+
+#     image_result = {"status": "skipped"}
+#     if working_copy.endswith(".docx"):
+#         try:
+#             client = await _get_ai_client()
+#             output_path = os.path.join(OUTPUT_DIR, f"images_formatted_{document_id}.docx")
+#             image_result = await format_document_images(
+#                 working_copy, output_path, client, tmpl.get("formatting_rules", {}),
+#             )
+#             shutil.copy2(output_path, working_copy)
+#         except Exception as exc:
+#             image_result = {"status": "error", "message": str(exc)}
+
+#     lists_result = {"status": "skipped"}
+#     if working_copy.endswith(".docx"):
+#         try:
+#             rules = tmpl.get("formatting_rules", {})
+#             # Prefer explicit UI toggles from payload; fall back to template rules
+#             include_toc = payload.get("include_toc", rules.get("include_toc", True))
+#             include_lot = payload.get("include_lot", rules.get("include_lot", True))
+#             include_lof = payload.get("include_lof", rules.get("include_lof", True))
+#             lists_result = generate_document_lists(
+#                 working_copy,
+#                 rules,
+#                 tmpl.get("required_sections", []),
+#                 include_toc=bool(include_toc),
+#                 include_lot=bool(include_lot),
+#                 include_lof=bool(include_lof),
+#                 toc_levels=str(
+#                     payload.get("toc_levels") or rules.get("toc_levels", "1-3")
+#                 ),
+#             )
+#         except Exception as exc:
+#             lists_result = {"status": "error", "message": str(exc)}
+
+#     commit = _commit_working_document(document_id, working_copy, doc)
+
+#     return {
+#         "status": "success",
+#         "message": "All fixes applied to formatted working document",
+#         "text_fixes": text_result,
+#         "bullet_fixes": bullet_result,
+#         "image_formatting": image_result,
+#         "document_lists": lists_result,
+#         **commit,
+#     }
+
+
 @app.post("/api/documents/apply-all-fixes/{document_id}", tags=["Documents"])
 async def apply_all_fixes(
     document_id: int,
@@ -2939,7 +3147,11 @@ async def apply_all_fixes(
       - grammar/text fixes
       - missing bullet / list_formatting groups (deterministic detection)
       - template reformatting (H1–H3 numbering only; H4 style-only)
+      - table formatting (captions, fonts, header style)
       - image formatting + TOC/LOT/LOF when configured
+
+    The response lists which issue_ids were actually resolved so the UI can
+    clear them from every tab without re-running the (expensive) AI analysis.
     """
     conn = get_db()
     cursor = conn.cursor()
@@ -2960,6 +3172,13 @@ async def apply_all_fixes(
     bullet_result = {"applied": [], "skipped": [], "groups": 0}
     fixes = payload.get("fixes", [])
 
+    # What the UI may clear after this call
+    resolved_issue_ids: List[str] = []
+    resolved_heading_pids: List[str] = []
+    bullet_fix_meta: List[tuple] = []  # (issue_id, [para indices])
+    template_reformat_applied = False
+    table_result: Dict[str, Any] = {"status": "skipped"}
+
     # Split payload fixes into heading / bullets / text
     heading_fixes = []
     bullet_fix_indices: list = []
@@ -2979,7 +3198,9 @@ async def apply_all_fixes(
                 m = re.match(r"p(\d+)", str(fix.get("paragraph_id", "")))
                 if m:
                     indices = [int(m.group(1))]
-            bullet_fix_indices.extend(int(i) for i in indices)
+            int_indices = [int(i) for i in indices]
+            bullet_fix_indices.extend(int_indices)
+            bullet_fix_meta.append((str(fix.get("issue_id") or ""), int_indices))
         else:
             text_fixes.append(fix)
 
@@ -2994,6 +3215,9 @@ async def apply_all_fixes(
             )
             if ok:
                 text_result["applied"] += 1
+                resolved_heading_pids.append(str(fix.get("paragraph_id", "")))
+                if fix.get("issue_id"):
+                    resolved_issue_ids.append(str(fix["issue_id"]))
             else:
                 text_result["skipped"] += 1
                 text_result["errors"].append(msg)
@@ -3006,11 +3230,9 @@ async def apply_all_fixes(
             text_result["applied"] += tr.get("applied", 0)
             text_result["skipped"] += tr.get("skipped", 0)
             text_result["errors"].extend(tr.get("errors") or [])
+            resolved_issue_ids.extend(tr.get("applied_ids") or [])
 
         # 3) Deterministic list detection — apply high-confidence groups
-        #    (infinitives / markers / trigger lines) so "To develop…" lists
-        #    are covered. Ambiguous Label:colon groups only apply when the
-        #    formatting agent confirmed them in the payload fixes.
         try:
             from docx import Document as DocxDoc
             from docx.oxml.ns import qn
@@ -3061,6 +3283,10 @@ async def apply_all_fixes(
                     "skipped": skipped,
                     "groups": len(groups),
                 }
+                applied_set = set(applied)
+                for iid, idxs in bullet_fix_meta:
+                    if iid and applied_set.intersection(idxs):
+                        resolved_issue_ids.append(iid)
                 print(
                     f"[apply-all] bullets: {len(applied)} applied, "
                     f"{len(skipped)} skipped across {len(groups)} groups"
@@ -3075,7 +3301,7 @@ async def apply_all_fixes(
         except Exception as exc:
             print(f"[apply-all] strip heading bullets error (non-fatal): {exc}")
 
-    apply_template_reformat(
+    template_reformat_applied, _reformat_msg = apply_template_reformat(
         working_copy,
         tmpl["formatting_rules"],
         tmpl.get("required_sections", []),
@@ -3087,6 +3313,21 @@ async def apply_all_fixes(
             _strip_bullets_from_headings(working_copy)
         except Exception:
             pass
+
+    # Table formatting (captions, fonts, header style) — same pipeline the
+    # Tables tab uses, so Tables issues clear after Apply All.
+    if working_copy.endswith(".docx"):
+        try:
+            tables_out = os.path.join(OUTPUT_DIR, f"tables_formatted_{document_id}.docx")
+            table_result = run_table_formatting_pipeline(
+                working_copy,
+                tables_out,
+                tmpl.get("formatting_rules", {}) or {},
+            )
+            shutil.copy2(tables_out, working_copy)
+        except Exception as exc:
+            print(f"[apply-all] table formatting error (non-fatal): {exc}")
+            table_result = {"status": "error", "message": str(exc)}
 
     image_result = {"status": "skipped"}
     if working_copy.endswith(".docx"):
@@ -3104,7 +3345,6 @@ async def apply_all_fixes(
     if working_copy.endswith(".docx"):
         try:
             rules = tmpl.get("formatting_rules", {})
-            # Prefer explicit UI toggles from payload; fall back to template rules
             include_toc = payload.get("include_toc", rules.get("include_toc", True))
             include_lot = payload.get("include_lot", rules.get("include_lot", True))
             include_lof = payload.get("include_lof", rules.get("include_lof", True))
@@ -3131,8 +3371,13 @@ async def apply_all_fixes(
         "bullet_fixes": bullet_result,
         "image_formatting": image_result,
         "document_lists": lists_result,
+        "table_formatting": table_result,
+        "resolved_issue_ids": resolved_issue_ids,
+        "resolved_heading_pids": resolved_heading_pids,
+        "template_reformat_applied": bool(template_reformat_applied),
         **commit,
     }
+
 
 
 def _strip_bullets_from_headings(docx_path: str) -> int:
