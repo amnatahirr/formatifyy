@@ -236,6 +236,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
   // Document review preview state
   Map<String, dynamic> _analysisData = {};
   List<Map<String, dynamic>> _previewBlocks = [];
+  int _imageVersion = 0; // replace ke baad image URLs ka cache todne ke liye
   List<Map<String, dynamic>> _pipelineIssues = [];
   final Map<String, String> _appliedFixes = {};
   final Set<String> _ignoredIssueIds = {};
@@ -473,6 +474,18 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
     _resolvedIssueIds.clear();
   }
 
+
+  List<Map<String, dynamic>> _bustImageUrls(List<Map<String, dynamic>> blocks) {
+    if (_imageVersion == 0) return blocks;
+    return blocks.map((b) {
+      if ((b['type'] as String? ?? '') != 'image') return b;
+      final path = (b['image_path'] as String? ?? '').split('?').first;
+      if (path.isEmpty) return b;
+      return {...b, 'image_path': '$path?v=$_imageVersion'};
+    }).toList();
+  }
+
+
   void _mergeWorkingDocumentState(
     Map<String, dynamic> data, {
     String? pid,
@@ -489,9 +502,9 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
       }
       final blocks = data['document_blocks'] as List<dynamic>?;
       if (blocks != null && blocks.isNotEmpty) {
-        _previewBlocks = blocks
-            .map((b) => Map<String, dynamic>.from(b as Map))
-            .toList();
+        _previewBlocks = _bustImageUrls(
+          blocks.map((b) => Map<String, dynamic>.from(b as Map)).toList(),
+        );
       }
       _isFixApplied = true;
     });
@@ -816,11 +829,14 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
     final imageId = result['image_id'] as String? ?? '';
     final newPath = result['image_path'] as String? ?? '';
     final cleared = result['cleared'] == true;
+    final passed = cleared ||
+        (result['is_relevant'] != false && result['is_ethical'] != false);
     final cacheBust = DateTime.now().millisecondsSinceEpoch;
+    _imageVersion = cacheBust;
 
     final blocks = result['document_blocks'] as List<dynamic>?;
     if (blocks != null && blocks.isNotEmpty) {
-      _mergeWorkingDocumentState(result, issueId: issueId);
+      _mergeWorkingDocumentState(result, issueId: passed ? issueId : null);
     }
 
     setState(() {
@@ -842,26 +858,29 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
             if (id.isNotEmpty) _resolvedIssueIds.add(id);
           }
         }
-        // Also resolve the specific card that triggered replace
         if (issueId != null && issueId.isNotEmpty) {
           _resolvedIssueIds.add(issueId);
         }
-      } else if (issueId != null && issueId.isNotEmpty) {
+      } else if (passed && issueId != null && issueId.isNotEmpty) {
         _resolvedIssueIds.add(issueId);
       }
-      for (final block in _previewBlocks) {
-        if (jsonIntOr(block['image_index'], -1) == imageIndex && newPath.isNotEmpty) {
-          block['image_path'] = '$newPath?v=$cacheBust';
+      _previewBlocks = _previewBlocks.map((b) {
+        if (newPath.isNotEmpty && jsonIntOr(b['image_index'], -1) == imageIndex) {
+          return {...b, 'image_path': '$newPath?v=$cacheBust'};
         }
-      }
+        return b;
+      }).toList();
       _isFixApplied = true;
     });
     _showSnack(
-      cleared ? 'Image verified — issue cleared' : 'Image replaced successfully',
-      _green,
+      cleared
+          ? 'Image verified — issue cleared'
+          : passed
+              ? 'Image replaced successfully'
+              : 'Image replaced, but it is still flagged',
+      passed ? _green : _yellow,
     );
   }
-
   bool _isImageIssueFn(String fn) {
     final f = fn.toLowerCase();
     return f.contains('image_relevance') ||
@@ -5137,7 +5156,8 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
         uri != null
             ? '${uri.scheme}://${uri.host}:${uri.port}'
             : _baseUrl.split('/api').first;
-    return '$hostBase/uploads/$cleanPath';
+        return '$hostBase/uploads/$cleanPath'
+        '${_imageVersion > 0 && !cleanPath.contains('?') ? '?v=$_imageVersion' : ''}';
   }
 
   Widget _buildImageFormatterButton() {

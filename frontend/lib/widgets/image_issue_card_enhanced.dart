@@ -71,7 +71,9 @@ class _ImageIssueCardEnhancedState extends State<ImageIssueCardEnhanced> {
         service: _replacementService,
         userId: widget.userId,
         onSuccess: (result) {
-          setState(() => _showReplacedBadge = true);
+          final passed = result['cleared'] == true ||
+              (result['is_relevant'] != false && result['is_ethical'] != false);
+          setState(() => _showReplacedBadge = passed);
           widget.onImageReplaced(result);
         },
         onError: (error) {

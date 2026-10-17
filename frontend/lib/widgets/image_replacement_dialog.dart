@@ -100,9 +100,11 @@ class _ImageReplacementDialogState extends State<ImageReplacementDialog> {
         final isRelevant = result['is_relevant'] ?? true;
         final isEthical = result['is_ethical'] ?? true;
 
+        // Server ne image document mein replace kar di hai -> preview hamesha refresh ho
+        if (mounted) widget.onSuccess(result);
+
         if (cleared || (isRelevant == true && isEthical == true)) {
           if (mounted) {
-            widget.onSuccess(result);
             Navigator.of(context).pop();
           }
           return;
