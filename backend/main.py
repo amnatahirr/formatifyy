@@ -48,7 +48,7 @@ from typing import Any, Dict, List, Optional
 
 import anthropic
 from dotenv import load_dotenv
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile, Query, Body, Request
+from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile, Query, Body, Request
 from services.latex_export import latex_zip_response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
@@ -68,6 +68,12 @@ from middleware.org_middleware import (
     public_org_payload,
 )
 from auth_jwt import create_access_token
+load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
+from crypto_utils import _f
+_f()  # crashes at startup if the key is missing or invalid
+import tempfile
+from starlette.background import BackgroundTasks
+from crypto_utils import encrypt_file, read_file_bytes
 
 
 def _resolve_org_for_auth(org_code: str | None, request: Request) -> dict:
@@ -1028,6 +1034,42 @@ def _export_copy_path(document_id: int) -> str:
 def _saved_formatted_path(document_id: int) -> str:
     """Durable on-disk path for a student-saved formatted DOCX (My Reports)."""
     return os.path.join(UPLOAD_DIR, "formatted", f"doc_{document_id}_formatted.docx")
+
+def _remove_quiet(path: str | None) -> None:
+    """Delete a file or folder, ignoring errors."""
+    if not path:
+        return
+    try:
+        if os.path.isdir(path):
+            shutil.rmtree(path, ignore_errors=True)
+        elif os.path.exists(path):
+            os.remove(path)
+    except OSError:
+        pass
+
+
+def _decrypted_workdir(encrypted_path: str, name: str) -> tuple[str, str]:
+    """Decrypt a saved file into a fresh temp folder. Returns (folder, plaintext_path)."""
+    work = tempfile.mkdtemp(prefix="fmt_")
+    plain = os.path.join(work, name)
+    try:
+        with open(plain, "wb") as fh:
+            fh.write(read_file_bytes(encrypted_path))
+    except Exception:
+        shutil.rmtree(work, ignore_errors=True)
+        raise
+    return work, plain
+
+
+def _cleanup_after(response, *paths: str):
+    """Delete temp files/folders after the response has been sent."""
+    tasks = BackgroundTasks()
+    if getattr(response, "background", None) is not None:
+        tasks.add_task(response.background)
+    for p in paths:
+        tasks.add_task(_remove_quiet, p)
+    response.background = tasks
+    return response
 
 
 def _prepare_formatted_docx(doc: Any, document_id: int) -> str:
@@ -2709,6 +2751,7 @@ def save_formatted_document(document_id: int, user_id: int = Query(...)):
     saved_path = _saved_formatted_path(document_id)
     os.makedirs(os.path.dirname(saved_path), exist_ok=True)
     shutil.copy2(export_path, saved_path)
+    encrypt_file(saved_path)
 
     cursor.execute(
         """
@@ -2849,26 +2892,48 @@ def download_saved_formatted_document(
     stem = os.path.splitext(doc["filename"] or "document")[0]
     base_name = f"formatted_{stem}"
 
+    # Decrypt into a temp folder, keeping the original file name
+    work, plain = _decrypted_workdir(
+        str(formatted_path), os.path.basename(str(formatted_path))
+    )
+
     if export_format == "tex":
-        return latex_zip_response(str(formatted_path))
+        try:
+            resp = latex_zip_response(plain)
+        except Exception:
+            _remove_quiet(work)
+            raise
+        return _cleanup_after(resp, work)
 
     if export_format == "pdf":
-        pdf_path = convert_docx_to_pdf(str(formatted_path))
+        try:
+            pdf_path = convert_docx_to_pdf(plain)
+        except Exception:
+            _remove_quiet(work)
+            raise
         if not pdf_path or not os.path.exists(pdf_path):
+            _remove_quiet(work)
             raise HTTPException(
                 status_code=500,
                 detail="Could not convert document to PDF. Try Word (.docx) instead.",
             )
-        return FileResponse(
-            path=pdf_path,
-            filename=f"{base_name}.pdf",
-            media_type="application/pdf",
+        return _cleanup_after(
+            FileResponse(
+                path=pdf_path,
+                filename=f"{base_name}.pdf",
+                media_type="application/pdf",
+            ),
+            work,
+            pdf_path,
         )
 
-    return FileResponse(
-        path=str(formatted_path),
-        filename=f"{base_name}.docx",
-        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    return _cleanup_after(
+        FileResponse(
+            path=plain,
+            filename=f"{base_name}.docx",
+            media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        ),
+        work,
     )
 
 

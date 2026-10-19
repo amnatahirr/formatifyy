@@ -19,11 +19,10 @@ DEFAULT_EXPIRE_HOURS = 24 * 7  # 7 days
 
 
 def _secret() -> str:
-    # Prefer JWT_SECRET; fall back to a long default for local/dev only.
-    return os.getenv(
-        "JWT_SECRET",
-        os.getenv("SUPER_ADMIN_KEY", "formatify_dev_jwt_secret_change_me_32b!"),
-    )
+    s = os.environ.get("JWT_SECRET")
+    if not s:
+        raise RuntimeError("JWT_SECRET is not set")
+    return s
 
 
 def create_access_token(

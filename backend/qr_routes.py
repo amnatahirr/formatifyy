@@ -36,6 +36,10 @@ from pydantic import BaseModel
 from database import get_db
 from templates import get_template_by_id
 
+import tempfile
+from starlette.background import BackgroundTask
+from crypto_utils import read_file_bytes
+
 router = APIRouter(tags=["QR"])
 
 UPLOAD_DIR = "uploads"
@@ -142,6 +146,19 @@ async def qr_generate(payload: QRGenerateRequest, request: Request):
     }
 
 
+def _rm(*paths) -> None:
+    for p in paths:
+        if not p:
+            continue
+        try:
+            if os.path.isdir(p):
+                shutil.rmtree(p, ignore_errors=True)
+            elif os.path.exists(p):
+                os.remove(p)
+        except OSError:
+            pass
+
+
 @router.get("/qr/download/{token}")
 async def qr_download(token: str):
     _purge_expired()
@@ -156,18 +173,41 @@ async def qr_download(token: str):
     stem = os.path.splitext(doc["filename"] or "document")[0]
     docx_path = _best_docx_for_document(doc)
 
+    # Decrypt into a temp folder (works for encrypted and old plaintext files)
+    work = None
+    if docx_path:
+        work = tempfile.mkdtemp(prefix="qr_")
+        plain = os.path.join(work, os.path.basename(docx_path))
+        try:
+            with open(plain, "wb") as fh:
+                fh.write(read_file_bytes(docx_path))
+        except Exception:
+            _rm(work)
+            raise
+        docx_path = plain
+
     if data["file_type"] == "pdf":
         from reformatter import convert_docx_to_pdf
 
         source = docx_path or doc["file_path"]
-        if source and source.lower().endswith(".pdf"):
-            pdf_path = source
-        else:
-            pdf_path = convert_docx_to_pdf(source) if source else None
+        generated_pdf = None
+        try:
+            if source and source.lower().endswith(".pdf"):
+                pdf_path = source
+            else:
+                pdf_path = convert_docx_to_pdf(source) if source else None
+                generated_pdf = pdf_path
+        except Exception:
+            _rm(work)
+            raise
         if not pdf_path or not os.path.exists(pdf_path):
+            _rm(work, generated_pdf)
             raise HTTPException(status_code=500, detail="Could not create PDF.")
         return FileResponse(
-            pdf_path, filename=f"formatted_{stem}.pdf", media_type="application/pdf"
+            pdf_path,
+            filename=f"formatted_{stem}.pdf",
+            media_type="application/pdf",
+            background=BackgroundTask(_rm, work, generated_pdf),
         )
 
     if not docx_path:
@@ -176,8 +216,8 @@ async def qr_download(token: str):
         docx_path,
         filename=f"formatted_{stem}.docx",
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        background=BackgroundTask(_rm, work),
     )
-
 
 # ── 2) Upload QR ─────────────────────────────────────────────────────────────
 
