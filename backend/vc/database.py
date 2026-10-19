@@ -205,6 +205,13 @@ def init_vc_tables() -> None:
         "org_id",
         "org_id INTEGER DEFAULT 1",
     )
+    # Draft column for auto-save (does not create a version/commit)
+    _ensure_column(
+        cursor,
+        "project_sections",
+        "draft_content",
+        "draft_content TEXT",
+    )
 
     conn.commit()
     conn.close()

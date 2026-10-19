@@ -213,6 +213,14 @@ async def api_commit_section(
     user_id: int = Query(...),
 ):
     commit = create_commit(project_id, section_id, user_id, body.content, body.message)
+    from database import get_db
+    _conn = get_db()
+    _conn.execute(
+        "UPDATE project_sections SET draft_content = NULL WHERE project_id = ? AND section_id = ?",
+        (project_id, section_id),
+    )
+    _conn.commit()
+    _conn.close()
     await vc_manager.broadcast(project_id, {
         "type": "section_updated",
         "project_id": project_id,
@@ -225,6 +233,66 @@ async def api_commit_section(
         "message": commit.get("message", ""),
     })
     return commit
+
+
+@router.patch("/projects/{project_id}/sections/{section_id}/draft")
+async def api_draft_section(
+    project_id: int,
+    section_id: str,
+    body: CommitRequest,
+    user_id: int = Query(...),
+):
+    """
+    Auto-save draft: persist section content without creating a commit or version.
+
+    Overwrites project_sections.draft_content only.
+    Does NOT appear in history, does NOT broadcast to team, does NOT change version_number.
+    """
+    from vc.service import _require_member
+    from database import get_db
+
+    _require_member(project_id, user_id)
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT id FROM project_sections WHERE project_id = ? AND section_id = ?",
+        (project_id, section_id),
+    )
+    if not cursor.fetchone():
+        conn.close()
+        raise HTTPException(status_code=404, detail="Section not found")
+    cursor.execute(
+        """
+        UPDATE project_sections
+        SET draft_content = ?
+        WHERE project_id = ? AND section_id = ?
+        """,
+        (body.content, project_id, section_id),
+    )
+    conn.commit()
+    conn.close()
+    return {"ok": True, "project_id": project_id, "section_id": section_id}
+
+@router.get("/projects/{project_id}/sections/{section_id}/draft")
+async def api_get_section_draft(
+    project_id: int,
+    section_id: str,
+    user_id: int = Query(...),
+):
+    """Return the auto-saved draft for a section (or null if none)."""
+    from vc.service import _require_member
+    from database import get_db
+
+    _require_member(project_id, user_id)
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT draft_content FROM project_sections WHERE project_id = ? AND section_id = ?",
+        (project_id, section_id),
+    )
+    row = cursor.fetchone()
+    conn.close()
+    return {"draft_content": row[0] if row else None}
 
 
 @router.get("/projects/{project_id}/sections/{section_id}/history")

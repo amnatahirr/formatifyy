@@ -1,0 +1,13 @@
+# Formatify conventions — match existing patterns; do not invent a new stack.
+
+Stack: Flutter desktop (`frontend/`) + FastAPI (`backend/`), SQLite via `database.py` / `get_db()`.
+
+State: `provider` ChangeNotifier only (`frontend/lib/providers/`). Wire in `main.dart` MultiProvider. Screens use `context.read` / `Provider.of`. No Riverpod, Bloc, or GetX.
+
+HTTP: `package:http` (not dio). Base URL in `frontend/lib/config/api_config.dart`: `http://<LAN-IP>:8000/api`. Headers via `ApiConfig.getHeaders()` (Bearer JWT). Role APIs live in `frontend/lib/services/*_api_service.dart`; docs/collab often call http from providers.
+
+Backend: no `routers/` package. Mount routers in `main.py` (`*_routes.py`, `vc/`, `qr_routes.py`). Shared models in `models.py`. Domain code in `functions/`, `services/`, `plagiarism/`, `middleware/`, `modules/`. Keep `user_id` query params as existing routes do.
+
+Downloads: live export `GET /api/format-document/export/{id}`; saved `GET /api/documents/{id}/download-formatted`; original `GET /api/documents/{id}/download-original`. Flutter: `DocumentProvider` + Analyze `ExportDialog` / My Reports on `student_dashboard.dart`. Collab: `GET /api/vc/projects/{id}/download`.
+
+Add features next to the matching provider/service/route; reuse analyze → fix → save → export flow.

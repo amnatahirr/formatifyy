@@ -2732,6 +2732,45 @@ def save_formatted_document(document_id: int, user_id: int = Query(...)):
     }
 
 
+@app.patch("/api/documents/{document_id}/draft", tags=["Documents"])
+def save_document_draft(
+    document_id: int,
+    payload: Dict[str, Any] = Body(...),
+    user_id: int = Query(...),
+):
+    """
+    Auto-save draft: persist title/content edits without creating a version.
+
+    Overwrites draft_title / draft_content on the document row only.
+    Does NOT alter file_path, formatted_file_path, or trigger any analysis.
+    """
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT id FROM documents WHERE id = ? AND user_id = ?",
+        (document_id, user_id),
+    )
+    if not cursor.fetchone():
+        conn.close()
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    draft_title = payload.get("title")
+    draft_content = payload.get("content")
+    cursor.execute(
+        """
+        UPDATE documents
+        SET draft_title   = COALESCE(?, draft_title),
+            draft_content = COALESCE(?, draft_content),
+            updated_at    = CURRENT_TIMESTAMP
+        WHERE id = ? AND user_id = ?
+        """,
+        (draft_title, draft_content, document_id, user_id),
+    )
+    conn.commit()
+    conn.close()
+    return {"ok": True, "document_id": document_id}
+
+
 @app.get("/api/documents/{document_id}/download-original", tags=["Documents"])
 def download_original_document(document_id: int, user_id: int = Query(...)):
     """Download the student's original (unformatted) uploaded file."""

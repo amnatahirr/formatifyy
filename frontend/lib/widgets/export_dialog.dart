@@ -43,6 +43,14 @@ class _ExportDialogState extends State<ExportDialog> {
       'color': const Color(0xFFDC2626),
     },
     {
+      'format': 'tex',
+      'label': 'LaTeX (.zip)',
+      'extension': '.zip',
+      'description': 'LaTeX source with extracted media',
+      'icon': Icons.data_object,
+      'color': const Color(0xFF0F766E),
+    },
+    {
       'format': 'txt',
       'label': 'Plain Text',
       'extension': '.txt',

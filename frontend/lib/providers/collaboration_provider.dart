@@ -11,8 +11,10 @@ class CollaborationProvider extends ChangeNotifier {
   List<Map<String, dynamic>> sections = [];
   List<Map<String, dynamic>> history = [];
   List<Map<String, dynamic>> projectHistory = [];
+
   /// Project activity feed (document uploads + section saves/rollbacks).
   List<Map<String, dynamic>> projectActivity = [];
+
   /// Cross-project recent commits for the Collaboration hub summary panel.
   List<Map<String, dynamic>> hubActivity = [];
   Map<String, dynamic>? mergeStatus;
@@ -106,7 +108,9 @@ class CollaborationProvider extends ChangeNotifier {
         body: jsonEncode({'invite_code': inviteCode}),
       );
       if (resp.statusCode == 200) {
-        currentProject = Map<String, dynamic>.from(jsonDecode(resp.body) as Map);
+        currentProject = Map<String, dynamic>.from(
+          jsonDecode(resp.body) as Map,
+        );
         sections = (currentProject!['sections'] as List? ?? [])
             .map((e) => Map<String, dynamic>.from(e as Map))
             .toList();
@@ -128,11 +132,11 @@ class CollaborationProvider extends ChangeNotifier {
     loading = true;
     notifyListeners();
     try {
-      final resp = await http.get(
-        Uri.parse(_base('/vc/projects/$projectId')),
-      );
+      final resp = await http.get(Uri.parse(_base('/vc/projects/$projectId')));
       if (resp.statusCode == 200) {
-        currentProject = Map<String, dynamic>.from(jsonDecode(resp.body) as Map);
+        currentProject = Map<String, dynamic>.from(
+          jsonDecode(resp.body) as Map,
+        );
         sections = (currentProject!['sections'] as List? ?? [])
             .map((e) => Map<String, dynamic>.from(e as Map))
             .toList();
@@ -178,7 +182,8 @@ class CollaborationProvider extends ChangeNotifier {
       }
       return {
         'ok': false,
-        'message': _parseApiDetail(resp.body) ?? 'Invite failed (${resp.statusCode})',
+        'message':
+            _parseApiDetail(resp.body) ?? 'Invite failed (${resp.statusCode})',
       };
     } catch (e) {
       return {'ok': false, 'message': e.toString()};
@@ -258,6 +263,40 @@ class CollaborationProvider extends ChangeNotifier {
     return false;
   }
 
+  /// Auto-save draft: persist section content without creating a commit.
+  /// Silent — no notifyListeners, never throws.
+  Future<bool> saveSectionDraft({
+    required int projectId,
+    required String sectionId,
+    required String content,
+  }) async {
+    try {
+      final resp = await http.patch(
+        Uri.parse(_base('/vc/projects/$projectId/sections/$sectionId/draft')),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'content': content, 'message': ''}),
+      );
+      return resp.statusCode == 200;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Fetch the auto-saved draft for a section, or null if none exists.
+  /// Silent — no notifyListeners, never throws.
+  Future<String?> loadSectionDraft(int projectId, String sectionId) async {
+    try {
+      final resp = await http.get(
+        Uri.parse(_base('/vc/projects/$projectId/sections/$sectionId/draft')),
+      );
+      if (resp.statusCode == 200) {
+        final data = jsonDecode(resp.body) as Map<String, dynamic>;
+        return data['draft_content'] as String?;
+      }
+    } catch (_) {}
+    return null;
+  }
+
   Future<void> loadHistory(int projectId, String sectionId) async {
     final resp = await http.get(
       Uri.parse(_base('/vc/projects/$projectId/sections/$sectionId/history')),
@@ -320,7 +359,10 @@ class CollaborationProvider extends ChangeNotifier {
   }
 
   /// Loads recent commits across the user's projects for the hub preview.
-  Future<void> loadHubActivitySummary({int maxProjects = 5, int maxItems = 12}) async {
+  Future<void> loadHubActivitySummary({
+    int maxProjects = 5,
+    int maxItems = 12,
+  }) async {
     if (projects.isEmpty) {
       hubActivity = [];
       notifyListeners();
@@ -499,7 +541,10 @@ class CollaborationProvider extends ChangeNotifier {
     return null;
   }
 
-  Future<Map<String, dynamic>?> completeMerge(int projectId, int mergeId) async {
+  Future<Map<String, dynamic>?> completeMerge(
+    int projectId,
+    int mergeId,
+  ) async {
     loading = true;
     notifyListeners();
     try {

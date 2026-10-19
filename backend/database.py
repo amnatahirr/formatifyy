@@ -252,6 +252,10 @@ def init_db():
         cursor.execute("ALTER TABLE documents ADD COLUMN is_freeform INTEGER DEFAULT 0")
     if "formatted_file_path" not in document_columns:
         cursor.execute("ALTER TABLE documents ADD COLUMN formatted_file_path TEXT")
+    if "draft_title" not in document_columns:
+        cursor.execute("ALTER TABLE documents ADD COLUMN draft_title TEXT")
+    if "draft_content" not in document_columns:
+        cursor.execute("ALTER TABLE documents ADD COLUMN draft_content TEXT")
 
     # 4c. Google Drive OAuth tokens + sync status
     cursor.execute("""

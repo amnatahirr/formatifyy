@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -22,6 +23,8 @@ class SectionEditorScreen extends StatefulWidget {
   State<SectionEditorScreen> createState() => _SectionEditorScreenState();
 }
 
+enum _SaveStatus { idle, saving, saved, error }
+
 class _SectionEditorScreenState extends State<SectionEditorScreen> {
   late final TextEditingController _content;
   final _message = TextEditingController();
@@ -29,16 +32,75 @@ class _SectionEditorScreenState extends State<SectionEditorScreen> {
   bool _loadingImages = true;
   List<Map<String, dynamic>> _images = [];
 
+  // ── auto-save state ────────────────────────────────────────────────────────
+  _SaveStatus _saveStatus = _SaveStatus.idle;
+  DateTime? _lastSavedAt;
+  Timer? _debounce;
+  Timer? _retryTimer;
+  String? _pendingContent; // latest content waiting to be flushed
+
   @override
   void initState() {
     super.initState();
     _content = TextEditingController(text: widget.initialContent);
+    _content.addListener(_onContentChanged);
     _loadImages();
+    _loadDraft();
+  }
+
+  void _onContentChanged() {
+    _pendingContent = _content.text;
+    _retryTimer?.cancel();
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(seconds: 2), _autoSave);
+  }
+
+  /// If an auto-saved draft exists on the server, show it instead of the
+  /// committed text. The listener is detached while setting the text so that
+  /// loading the draft does not immediately trigger another save.
+  Future<void> _loadDraft() async {
+    final vc = context.read<CollaborationProvider>();
+    final draft = await vc.loadSectionDraft(widget.projectId, widget.sectionId);
+    if (!mounted || draft == null || draft.isEmpty) return;
+    if (draft == widget.initialContent) return;
+    // Don't overwrite anything the user has already started typing.
+    if (_content.text != widget.initialContent) return;
+    _content.removeListener(_onContentChanged);
+    _content.text = draft;
+    _content.addListener(_onContentChanged);
+    setState(() {});
+  }
+
+  Future<void> _autoSave() async {
+    final content = _pendingContent;
+    if (content == null || !mounted) return;
+    setState(() => _saveStatus = _SaveStatus.saving);
+    final vc = context.read<CollaborationProvider>();
+    final ok = await vc.saveSectionDraft(
+      projectId: widget.projectId,
+      sectionId: widget.sectionId,
+      content: content,
+    );
+    if (!mounted) return;
+    setState(() {
+      if (ok) {
+        _saveStatus = _SaveStatus.saved;
+        _lastSavedAt = DateTime.now();
+        _pendingContent = null;
+      } else {
+        _saveStatus = _SaveStatus.error;
+        // retry after 10 s if still on this screen
+        _retryTimer = Timer(const Duration(seconds: 10), _autoSave);
+      }
+    });
   }
 
   Future<void> _loadImages() async {
     final vc = context.read<CollaborationProvider>();
-    final images = await vc.loadSectionImages(widget.projectId, widget.sectionId);
+    final images = await vc.loadSectionImages(
+      widget.projectId,
+      widget.sectionId,
+    );
     if (mounted) {
       setState(() {
         _images = images;
@@ -49,6 +111,18 @@ class _SectionEditorScreenState extends State<SectionEditorScreen> {
 
   @override
   void dispose() {
+    _content.removeListener(_onContentChanged);
+    // Flush pending draft before leaving.
+    if (_pendingContent != null) {
+      final vc = context.read<CollaborationProvider>();
+      vc.saveSectionDraft(
+        projectId: widget.projectId,
+        sectionId: widget.sectionId,
+        content: _pendingContent!,
+      );
+    }
+    _debounce?.cancel();
+    _retryTimer?.cancel();
     _content.dispose();
     _message.dispose();
     super.dispose();
@@ -78,9 +152,9 @@ class _SectionEditorScreenState extends State<SectionEditorScreen> {
         ),
       );
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(vc.error ?? 'Upload failed')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(vc.error ?? 'Upload failed')));
     }
   }
 
@@ -98,6 +172,9 @@ class _SectionEditorScreenState extends State<SectionEditorScreen> {
   }
 
   Future<void> _save() async {
+    // Cancel pending auto-save; the manual commit supersedes it.
+    _debounce?.cancel();
+    _retryTimer?.cancel();
     setState(() => _saving = true);
     final vc = context.read<CollaborationProvider>();
 
@@ -109,19 +186,61 @@ class _SectionEditorScreenState extends State<SectionEditorScreen> {
     );
 
     if (!mounted) return;
-    setState(() => _saving = false);
+    setState(() {
+      _saving = false;
+      if (ok) {
+        _saveStatus = _SaveStatus.saved;
+        _lastSavedAt = DateTime.now();
+        _pendingContent = null;
+      }
+    });
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(ok ? 'Commit saved — broadcast to team' : (vc.error ?? 'Save failed')),
+        content: Text(
+          ok ? 'Commit saved — broadcast to team' : (vc.error ?? 'Save failed'),
+        ),
         backgroundColor: ok ? const Color(0xFF10B981) : const Color(0xFFEF4444),
       ),
     );
     if (ok) Navigator.pop(context);
   }
 
+  String _statusLabel() {
+    switch (_saveStatus) {
+      case _SaveStatus.saving:
+        return 'Saving…';
+      case _SaveStatus.saved:
+        final t = _lastSavedAt;
+        if (t != null) {
+          final hh = t.hour.toString().padLeft(2, '0');
+          final mm = t.minute.toString().padLeft(2, '0');
+          return 'Saved ✓ $hh:$mm';
+        }
+        return 'Saved ✓';
+      case _SaveStatus.error:
+        return 'Save failed, retrying';
+      case _SaveStatus.idle:
+        return '';
+    }
+  }
+
+  Color _statusColor() {
+    switch (_saveStatus) {
+      case _SaveStatus.saving:
+        return const Color(0xFF94A3B8);
+      case _SaveStatus.saved:
+        return const Color(0xFF10B981);
+      case _SaveStatus.error:
+        return const Color(0xFFEF4444);
+      case _SaveStatus.idle:
+        return Colors.transparent;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final vc = context.watch<CollaborationProvider>();
+    final label = _statusLabel();
 
     return Scaffold(
       backgroundColor: const Color(0xFF0F1419),
@@ -129,6 +248,17 @@ class _SectionEditorScreenState extends State<SectionEditorScreen> {
         backgroundColor: const Color(0xFF141B27),
         title: Text(widget.sectionName),
         actions: [
+          // Auto-save status indicator
+          if (label.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+              child: Center(
+                child: Text(
+                  label,
+                  style: TextStyle(fontSize: 12, color: _statusColor()),
+                ),
+              ),
+            ),
           TextButton(
             onPressed: _saving ? null : _save,
             child: _saving
@@ -163,7 +293,9 @@ class _SectionEditorScreenState extends State<SectionEditorScreen> {
                   alignLabelWithHint: true,
                   labelText: 'Section content',
                   hintText: 'Write content for "${widget.sectionName}"...',
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
                 ),
               ),
             ),
@@ -186,7 +318,10 @@ class _SectionEditorScreenState extends State<SectionEditorScreen> {
                   style: OutlinedButton.styleFrom(
                     foregroundColor: const Color(0xFF6366F1),
                     side: const BorderSide(color: Color(0xFF6366F1)),
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
                   ),
                 ),
               ],
@@ -240,7 +375,10 @@ class _SectionEditorScreenState extends State<SectionEditorScreen> {
                               width: 90,
                               height: 90,
                               color: const Color(0xFF2D3748),
-                              child: const Icon(Icons.broken_image, color: Color(0xFF94A3B8)),
+                              child: const Icon(
+                                Icons.broken_image,
+                                color: Color(0xFF94A3B8),
+                              ),
                             ),
                           ),
                         ),
@@ -255,7 +393,11 @@ class _SectionEditorScreenState extends State<SectionEditorScreen> {
                                 color: Color(0xFFEF4444),
                                 shape: BoxShape.circle,
                               ),
-                              child: const Icon(Icons.close, size: 14, color: Colors.white),
+                              child: const Icon(
+                                Icons.close,
+                                size: 14,
+                                color: Colors.white,
+                              ),
                             ),
                           ),
                         ),
@@ -268,7 +410,7 @@ class _SectionEditorScreenState extends State<SectionEditorScreen> {
             const Align(
               alignment: Alignment.centerLeft,
               child: Text(
-                'Every save creates a permanent commit. Images are included when the section is merged.',
+                'Auto-saved as a draft. Save Commit creates a permanent version. Images are included when the section is merged.',
                 style: TextStyle(color: Color(0xFF94A3B8), fontSize: 11),
               ),
             ),

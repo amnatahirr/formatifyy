@@ -670,11 +670,12 @@ class DocumentProvider extends ChangeNotifier {
       );
 
       debugPrint('[v0] Downloading formatted document from: $url');
-      final response = await http.get(url);
+      final response = await http.get(url, headers: ApiConfig.getHeaders());
+      final saveExt = format == 'tex' ? 'zip' : format;
       return await _writeDownloadResponse(
         response,
-        fallbackName: "formatted_document_$documentId.$format",
-        forceExtension: format,
+        fallbackName: "formatted_document_$documentId.$saveExt",
+        forceExtension: saveExt,
       );
     } catch (e) {
       _errorMessage = "Formatted download error: $e";
@@ -728,6 +729,32 @@ class DocumentProvider extends ChangeNotifier {
     }
   }
 
+  /// Auto-save draft: silently persist title/content without creating a version.
+  /// Returns true on HTTP 200; false on any error (caller decides retry logic).
+  Future<bool> saveDraft(
+    int documentId,
+    int userId, {
+    String? title,
+    String? content,
+  }) async {
+    try {
+      final url = Uri.parse(
+        "$baseUrl/$documentId/draft?user_id=$userId",
+      );
+      final response = await http.patch(
+        url,
+        headers: ApiConfig.getHeaders(json: true),
+        body: jsonEncode({
+          if (title != null) 'title': title,
+          if (content != null) 'content': content,
+        }),
+      );
+      return response.statusCode == 200;
+    } catch (_) {
+      return false;
+    }
+  }
+
   /// Download the original uploaded (unformatted) file.
   Future<bool> downloadOriginalDocument(int documentId, int userId) async {
     try {
@@ -758,7 +785,7 @@ class DocumentProvider extends ChangeNotifier {
         "$baseUrl/$documentId/download-formatted?user_id=$userId&format=$format",
       );
       debugPrint('[v0] Downloading saved formatted document from: $url');
-      final response = await http.get(url);
+      final response = await http.get(url, headers: ApiConfig.getHeaders());
       if (response.statusCode == 404) {
         try {
           final body = json.decode(response.body);
@@ -771,10 +798,11 @@ class DocumentProvider extends ChangeNotifier {
         }
         return false;
       }
+      final saveExt = format == 'tex' ? 'zip' : format;
       return await _writeDownloadResponse(
         response,
-        fallbackName: "formatted_document_$documentId.$format",
-        forceExtension: format,
+        fallbackName: "formatted_document_$documentId.$saveExt",
+        forceExtension: saveExt,
       );
     } catch (e) {
       _errorMessage = "Saved formatted download error: $e";
