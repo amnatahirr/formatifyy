@@ -2877,41 +2877,43 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
 
   Widget _buildBody(Map<String, dynamic> data) {
     final structure = data['structure'] as Map<String, dynamic>? ?? {};
-    // final oldIssues = data['issues'] as List<dynamic>? ?? [];
-    // _templateHeadingMatches =
-    //     (data['template_heading_matches'] as List<dynamic>? ?? [])
-    //         .map((m) => Map<String, dynamic>.from(m as Map))
-    //         .toList();
-    // final score =
     final oldIssues = data['issues'] as List<dynamic>? ?? [];
+    final summary = _liveSummary(oldIssues);
+    final openIssues = _visibleIssues(oldIssues);
+  final openCount = openIssues.length;
+  int dynamicScore = (data['compliance_score'] as num?)?.toInt() ?? 
+                     (structure['score'] as num?)?.toInt() ?? 100;
+   if (openCount > 0) {
+    int penalty = (openCount * 2); // har issue par penalty
+    dynamicScore = (100 - penalty).clamp(0, 100);
+  }
+
+  String status = dynamicScore >= 80 ? 'pass' : (dynamicScore >= 50 ? 'warning' : 'poor');
     final score =
         (structure['score'] as num?)?.toInt() ?? (data['compliance_score'] as num?)?.toInt() ?? 0;
-    final status = structure['status'] as String? ?? 'unknown';
+   
     // final summary = structure['summary'] as Map<String, dynamic>? ?? {};
     // _seedPreviewData(data);
-    final summary = _liveSummary(oldIssues);
+    
 
-    final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
-    final formattingIssues = _visibleIssues(_issuesForFunction(oldIssues, 'formatting'));
-    // final formattingTabCount = formattingIssues.length + _fixableTemplateHeadingMatches.length;
-    // Heading fixes are already part of formattingIssues (heading_match_*), so
-    // adding them again double-counted.
-    final formattingTabCount = formattingIssues.length;
-    final imageEthicsIssues = _visibleIssues(_issuesForFunction(oldIssues, 'image_ethics'));
-    final imageIssues = _visibleIssues(_issuesForFunction(oldIssues, 'image_relevance'));
-    final paraRelevanceIssues = _visibleIssues(_issuesForFunction(oldIssues, 'para_relevance'));
-    final plagiarismIssues = _visibleIssues(_issuesForFunction(oldIssues, 'plagiarism'));
+final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
+  final formattingIssues = _visibleIssues(_issuesForFunction(oldIssues, 'formatting'));
+  final formattingTabCount = formattingIssues.length;
+  final imageEthicsIssues = _visibleIssues(_issuesForFunction(oldIssues, 'image_ethics'));
+  final imageIssues = _visibleIssues(_issuesForFunction(oldIssues, 'image_relevance'));
+  final paraRelevanceIssues = _visibleIssues(_issuesForFunction(oldIssues, 'para_relevance'));
+  final plagiarismIssues = _visibleIssues(_issuesForFunction(oldIssues, 'plagiarism'));
     final openIssueCount = _visibleIssues(oldIssues).length;
 
     return Column(
       children: [
         _buildScoreBanner(
-          score,
-          status,
-          summary,
-          imageIssues.length,
-          imageEthicsIssues.length,
-          _calculateTableIssueCount(),
+          dynamicScore,
+        status,
+        summary,
+        imageIssues.length,
+        imageEthicsIssues.length,
+        _calculateTableIssueCount()
         ),
         Container(
           color: _surface,

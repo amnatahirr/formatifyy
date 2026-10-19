@@ -1,11 +1,11 @@
 import 'dart:convert';
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../theme/app_theme.dart';
 import '../models/json_parse.dart';
 import '../services/image_replacement_service.dart';
+import '../config/api_config.dart';
 import 'image_replacement_dialog.dart';
 
 AppPalette _ap = AppPalette.dark;
@@ -21,26 +21,11 @@ const _red = Color(0xFFEF4444);
 const _blue = Color(0xFF4A9EFF);
 const _wordBlue = Color(0xFF2B579A);
 
-// Ribbon (always light, like real Word)
 const _ribbonBg = Color(0xFFF3F2F1);
 const _ribbonLine = Color(0xFFD1D1D1);
 const _ribbonActive = Color(0xFFC7E0F4);
 
 /// Original (plain list) + Corrected (editable Word-style paper preview).
-///
-/// The corrected side behaves like a mini Word:
-///  * A4 pages, 1" margins, real heading sizes / fonts / spacing
-///  * Ribbon: Undo/Redo, Style, Font, Size, Bold/Italic/Underline/Strike,
-///    Font colour, Alignment, Bullets/Numbering, Line spacing,
-///    Add / Delete paragraph
-///  * Click a paragraph to edit it in place. Enter = new paragraph,
-///    Backspace at start = merge with previous / leave list.
-///  * Ctrl/Cmd + B / I / U shortcuts
-///
-/// Formatting is applied per paragraph (block). Every change is reported via
-/// [onBlocksChanged] (edited text is stored in `corrected_text`, formatting in
-/// `font_name`, `font_size`, `bold`, `italic`, `underline`, `strike`,
-/// `text_color`, `alignment`, `line_spacing`, `type`, `level`, `list_style`).
 class DocumentPreviewPanel extends StatefulWidget {
   final List<Map<String, dynamic>> blocks;
   final List<Map<String, dynamic>> issues;
@@ -53,11 +38,8 @@ class DocumentPreviewPanel extends StatefulWidget {
   final void Function(String issueId) onIgnoreIssue;
   final void Function(Map<String, dynamic> result, Map<String, dynamic> issue)? onImageReplaced;
   final void Function(Map<String, dynamic> result, Map<String, dynamic> issue)? onImageRemoved;
-
-  /// Called after every manual edit with the current list of blocks.
   final void Function(List<Map<String, dynamic>> blocks)? onBlocksChanged;
 
-  /// Fallbacks used when a block carries no style info from the backend.
   final String defaultFont;
   final double bodyPt;
   final Map<int, double> headingPt;
@@ -90,29 +72,25 @@ class DocumentPreviewPanel extends StatefulWidget {
 class _DocumentPreviewPanelState extends State<DocumentPreviewPanel> {
   late ImageReplacementService _replacementService;
 
-  // Editable working copy of the blocks
   late List<Map<String, dynamic>> _blocks;
   int _uidSeq = 0;
   String? _selectedUid;
 
-  // Undo / redo (snapshots of _blocks)
   final List<String> _undo = [];
   final List<String> _redo = [];
 
-  // Inline editor
   final TextEditingController _editCtrl = TextEditingController();
   late final FocusNode _editFocus;
   String? _editingUid;
   bool _textUndoPushed = false;
 
-  // Word-view controls
   bool _showOriginal = true;
   bool _showStyleTags = false;
   double _zoom = 1.0;
 
-  static const double _pageW = 794; // A4 @ 96 dpi
+  static const double _pageW = 794;
   static const double _pageH = 1123;
-  static const double _marginPx = 96; // 1 inch
+  static const double _marginPx = 96;
   static const double _ptToPx = 96 / 72;
 
   static const _fonts = <String>[
@@ -173,24 +151,156 @@ class _DocumentPreviewPanelState extends State<DocumentPreviewPanel> {
     super.dispose();
   }
 
+  /// Correctly maps and normalizes blocks preserving exact input sequence.
   void _initBlocks() {
     _blocks = widget.blocks.map((b) {
       final m = Map<String, dynamic>.from(b);
       m['_uid'] = _newUid();
+
+      final rawType = (m['type'] ?? '').toString().toLowerCase();
+      const textTypes = {'paragraph', 'heading', 'list_item', 'toc_item'};
+
+      if (rawType.contains('toc') ||
+          rawType.contains('table_of_contents') ||
+          rawType.contains('list_of_figures') ||
+          rawType.contains('list_of_tables')) {
+        // MUST be checked before 'table' (table_of_contents contains "table").
+        m['type'] = 'toc_item';
+      } else if (rawType.contains('image') ||
+          rawType.contains('figure') ||
+          rawType.contains('picture') ||
+          rawType.contains('drawing')) {
+        m['type'] = 'image';
+      } else if (rawType.contains('table')) {
+        m['type'] = 'table';
+      } else if (!textTypes.contains(rawType)) {
+        // Unknown / empty type: infer from keys, but never override a real text block.
+        if (_rawImagePath(m).isNotEmpty) {
+          m['type'] = 'image';
+        } else if (_rawTableRows(m).isNotEmpty) {
+          m['type'] = 'table';
+        }
+      }
+
+      if (m['type'] == 'image' || m['type'] == 'table') {
+        debugPrint('[preview] ${m['type']} block keys=${m.keys.toList()} '
+            'path=${_rawImagePath(m)} rows=${_rawTableRows(m).length}');
+      }
+
       return m;
     }).toList();
+    _logSummary();
   }
 
   String _newUid() => 'u${_uidSeq++}';
 
-  // ── generic helpers ──────────────────────────────────────────────────────
+  void _logSummary() {
+    final counts = <String, int>{};
+    for (final b in _blocks) {
+      final t = (b['type'] ?? 'null').toString();
+      counts[t] = (counts[t] ?? 0) + 1;
+    }
+    debugPrint('[preview] SUMMARY total=${_blocks.length} types=$counts');
+    debugPrint('[preview] raw types=${widget.blocks.map((b) => b['type']).toSet()}');
+    debugPrint('[preview] all keys=${widget.blocks.expand((b) => b.keys).toSet()}');
+    for (final b in widget.blocks) {
+      final t = (b['type'] ?? '').toString().toLowerCase();
+      if (t != 'paragraph' && t != 'heading' && t != 'list_item') {
+        debugPrint('[preview] NON-TEXT sample: ${jsonEncode(b).substring(0, jsonEncode(b).length.clamp(0, 400))}');
+        break;
+      }
+    }
+  }
+
+  /// First non-empty image path-like value found in the block.
+  String _rawImagePath(Map<String, dynamic> b) {
+    for (final k in const [
+      'image_path', 'path', 'url', 'image_url', 'src', 'file_path',
+      'file', 'filename', 'image', 'media_path', 'relative_path',
+    ]) {
+      var v = b[k];
+      if (v is Map) v = v['path'] ?? v['url'] ?? v['src'];
+      final s = v?.toString() ?? '';
+      if (s.isNotEmpty && s != 'null') return s;
+    }
+    return '';
+  }
+
+  String _cellText(dynamic c) {
+    if (c == null) return '';
+    if (c is Map) {
+      final t = c['text'] ?? c['value'] ?? c['content'];
+      if (t != null) return _cellText(t);
+      final p = c['paragraphs'];
+      if (p is List) return p.map(_cellText).join('\n');
+      return '';
+    }
+    if (c is List) return c.map(_cellText).join('\n');
+    return c.toString();
+  }
+
+  List<List<String>> _rawTableRows(Map<String, dynamic> b) {
+    dynamic raw = b['rows'] ?? b['preview_rows'] ?? b['cells'] ??
+        b['table_data'] ?? b['data'] ?? b['table'];
+    if (raw is Map) raw = raw['rows'] ?? raw['cells'] ?? raw['data'];
+    if (raw is! List || raw.isEmpty) return const [];
+    return raw.map<List<String>>((r) {
+      if (r is List) return r.map(_cellText).toList();
+      if (r is Map) {
+        final cells = r['cells'] ?? r['columns'];
+        if (cells is List) return cells.map(_cellText).toList();
+        return r.values.map(_cellText).toList();
+      }
+      return [_cellText(r)];
+    }).toList();
+  }
+
+  /// Server root without trailing slash or /api. Falls back to ApiConfig when
+  /// the parent passes an empty imageBaseUrl.
+  String get _serverRoot {
+    var b = widget.imageBaseUrl.trim();
+    if (b.isEmpty) b = ApiConfig.getBaseUrl();
+    b = b.replaceFirst(RegExp(r'/+$'), '');
+    return b.replaceFirst(RegExp(r'/api$'), '');
+  }
+
+  List<String> _imageUrls(String rawPath) {
+    if (rawPath.isEmpty) return const [];
+    if (rawPath.startsWith('http://') || rawPath.startsWith('https://')) return [rawPath];
+    var p = rawPath.replaceAll('\\', '/');
+    final up = p.indexOf('uploads/');
+    final rel = (up >= 0 ? p.substring(up + 8) : p).replaceFirst(RegExp(r'^/+'), '');
+    final base = _serverRoot;
+    return {
+      '$base/api/files/$rel',
+      '$base/uploads/$rel',
+      '$base/$rel',
+      '$base/static/$rel',
+      '$base/static/uploads/$rel',
+      '$base/api/files/$rel',
+      '$base/files/$rel',
+    }.toList();
+  }
 
   String _imageUrl(String rawPath) {
     if (rawPath.isEmpty) return '';
-    final clean = rawPath.startsWith('uploads/')
-        ? rawPath.substring('uploads/'.length)
-        : rawPath;
-    return '${widget.imageBaseUrl}/uploads/$clean';
+    if (rawPath.startsWith('http://') || rawPath.startsWith('https://')) {
+      return rawPath;
+    }
+    rawPath = rawPath.replaceAll('\\', '/');
+    // Absolute server paths like /app/uploads/142/img.png -> keep part after uploads/
+    final up = rawPath.indexOf('uploads/');
+    final clean = up >= 0
+        ? rawPath.substring(up + 'uploads/'.length)
+        : rawPath.startsWith('/')
+            ? rawPath.substring(1)
+            : rawPath;
+
+    final base = widget.imageBaseUrl.endsWith('/')
+        ? widget.imageBaseUrl.substring(0, widget.imageBaseUrl.length - 1)
+        : widget.imageBaseUrl;
+        
+    return '$base/uploads/$clean';
   }
 
   double? _num(dynamic v) {
@@ -234,39 +344,23 @@ class _DocumentPreviewPanelState extends State<DocumentPreviewPanel> {
     return hasMajor ? _red.withOpacity(0.6) : _yellow.withOpacity(0.6);
   }
 
-  /// Text after backend fixes (grammar suggestion / applied fix).
   String _correctedText(Map<String, dynamic> block, List<Map<String, dynamic>> blockIssues) {
     final pid = block['paragraph_id'] as String? ?? '';
     if (pid.isNotEmpty && widget.appliedFixes.containsKey(pid)) {
       return widget.appliedFixes[pid]!;
     }
-    final original = block['text'] as String? ?? '';
-    final grammar = blockIssues.firstWhere(
-      (i) => (i['function'] as String? ?? '') == 'grammar' && (i['suggestion'] as String? ?? '').isNotEmpty,
-      orElse: () => {},
-    );
-    if (grammar.isNotEmpty) {
-      final suggestion = grammar['suggestion'] as String? ?? '';
-      final snippet = grammar['original'] as String? ?? grammar['current'] as String? ?? '';
-      if (snippet.isNotEmpty && original.contains(snippet)) {
-        return original.replaceFirst(snippet, suggestion);
-      }
-      if (suggestion.isNotEmpty) return suggestion;
-    }
-    return original;
+    return block['text'] as String? ?? block['title'] as String? ?? '';
   }
 
-  /// What is actually shown: manual edit wins over backend correction.
   String _displayText(Map<String, dynamic> block, List<Map<String, dynamic>> blockIssues) {
     final o = block['corrected_text'];
     if (o is String) return o;
     return _correctedText(block, blockIssues);
   }
 
-  // ── block style resolution ───────────────────────────────────────────────
-
   String _type(Map<String, dynamic> b) =>
       (b['type'] as String? ?? 'paragraph').toLowerCase();
+      
   bool _isTextual(Map<String, dynamic> b) {
     final t = _type(b);
     return t != 'image' && t != 'table';
@@ -294,6 +388,12 @@ class _DocumentPreviewPanelState extends State<DocumentPreviewPanel> {
         return 'Heading ${_level(b)}';
       case 'list_item':
         return b['list_style'] == 'number' ? 'List Number' : 'List Bullet';
+      case 'toc_item':
+        return 'Table of Contents';
+      case 'table':
+        return 'Table';
+      case 'image':
+        return 'Figure / Image';
       default:
         return 'Normal';
     }
@@ -312,19 +412,6 @@ class _DocumentPreviewPanelState extends State<DocumentPreviewPanel> {
         return TextAlign.left;
       default:
         return fallback;
-    }
-  }
-
-  String _alignName(TextAlign a) {
-    switch (a) {
-      case TextAlign.center:
-        return 'center';
-      case TextAlign.right:
-        return 'right';
-      case TextAlign.justify:
-        return 'justify';
-      default:
-        return 'left';
     }
   }
 
@@ -362,8 +449,6 @@ class _DocumentPreviewPanelState extends State<DocumentPreviewPanel> {
       decoration: deco.isEmpty ? TextDecoration.none : TextDecoration.combine(deco),
     );
   }
-
-  // ── selection / editing engine ───────────────────────────────────────────
 
   Map<String, dynamic>? get _sel {
     final uid = _selectedUid;
@@ -445,7 +530,6 @@ class _DocumentPreviewPanelState extends State<DocumentPreviewPanel> {
     _restore(_redo.removeLast());
   }
 
-  /// Apply a formatting change to the selected paragraph.
   void _apply(void Function(Map<String, dynamic> b) change) {
     final b = _sel;
     if (b == null || !_isTextual(b)) return;
@@ -599,7 +683,6 @@ class _DocumentPreviewPanelState extends State<DocumentPreviewPanel> {
     _pushUndo();
     final lines = v.split(RegExp(r'\r?\n'));
 
-    // Enter on an empty list item leaves the list (like Word)
     if (_type(b) == 'list_item' && lines.length == 2 && lines[0].isEmpty) {
       setState(() {
         b['type'] = 'paragraph';
@@ -684,8 +767,6 @@ class _DocumentPreviewPanelState extends State<DocumentPreviewPanel> {
     return true;
   }
 
-  // ── dialogs / sheets ─────────────────────────────────────────────────────
-
   void _openFixPanel(Map<String, dynamic> block, List<Map<String, dynamic>> blockIssues) {
     if (blockIssues.isEmpty) return;
     final issue = blockIssues.first;
@@ -719,24 +800,6 @@ class _DocumentPreviewPanelState extends State<DocumentPreviewPanel> {
               issue['description'] as String? ?? issue['reason'] as String? ?? '',
               style: TextStyle(color: _textPri, fontSize: 14),
             ),
-            if ((issue['suggestion'] as String? ?? '').isNotEmpty) ...[
-              const SizedBox(height: 12),
-              Text('Suggestion', style: TextStyle(color: _textSec, fontSize: 11)),
-              const SizedBox(height: 4),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: _green.withOpacity(0.08),
-                  borderRadius: BorderRadius.circular(6),
-                  border: Border.all(color: _green.withOpacity(0.3)),
-                ),
-                child: Text(
-                  issue['suggestion'] as String,
-                  style: const TextStyle(color: _green, fontSize: 13),
-                ),
-              ),
-            ],
             const SizedBox(height: 20),
             Row(
               children: [
@@ -757,7 +820,6 @@ class _DocumentPreviewPanelState extends State<DocumentPreviewPanel> {
                       final corrected = _correctedText(block, blockIssues);
                       if (pid.isNotEmpty) {
                         _pushUndo();
-                        // the applied fix replaces any manual text of this paragraph
                         setState(() => block.remove('corrected_text'));
                         widget.onApplyFix(issueId, corrected);
                         WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -786,7 +848,7 @@ class _DocumentPreviewPanelState extends State<DocumentPreviewPanel> {
       builder: (ctx) => ImageReplacementDialog(
         documentId: widget.documentId,
         imageIndex: jsonIntOr(issue['image_index'], jsonIntOr(block['image_index'], 0)),
-        currentImagePath: block['image_path'] as String? ?? '',
+        currentImagePath: block['image_path'] as String? ?? block['path'] as String? ?? '',
         service: _replacementService,
         onSuccess: (result) {
           widget.onImageReplaced?.call(result, issue);
@@ -807,8 +869,7 @@ class _DocumentPreviewPanelState extends State<DocumentPreviewPanel> {
         backgroundColor: _surface,
         title: Text('Remove Image?', style: TextStyle(color: _textPri)),
         content: Text(
-          'This permanently deletes the image from the document. '
-          'A nearby figure caption will also be removed if present.',
+          'This permanently deletes the image from the document.',
           style: TextStyle(color: _textSec, fontSize: 13),
         ),
         actions: [
@@ -855,10 +916,6 @@ class _DocumentPreviewPanelState extends State<DocumentPreviewPanel> {
     );
   }
 
-  // ───────────────────────────────────────────────────────────────────────
-  // LEFT: Original (simple list)
-  // ───────────────────────────────────────────────────────────────────────
-
   Widget _buildOriginalColumn() {
     return Expanded(
       flex: 4,
@@ -878,14 +935,22 @@ class _DocumentPreviewPanelState extends State<DocumentPreviewPanel> {
           Expanded(
             child: ListView.builder(
               padding: const EdgeInsets.all(12),
-              itemCount: widget.blocks.length,
+              itemCount: _blocks.length,
               itemBuilder: (ctx, i) {
-                final block = Map<String, dynamic>.from(widget.blocks[i]);
-                final type = block['type'] as String? ?? 'paragraph';
+                final block = Map<String, dynamic>.from(_blocks[i]);
+                final type = _type(block);
                 if (type == 'image') {
                   return _buildSimpleImage(block);
                 }
-                final text = block['text'] as String? ?? '';
+                if (type == 'table') {
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 6),
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(color: _surface, borderRadius: BorderRadius.circular(6), border: Border.all(color: _border)),
+                    child: Text('[Table: ${_rawTableRows(block).length} rows]', style: TextStyle(color: _textSec, fontSize: 11, fontStyle: FontStyle.italic)),
+                  );
+                }
+                final text = block['text'] as String? ?? block['title'] as String? ?? '';
                 return Container(
                   margin: const EdgeInsets.only(bottom: 6),
                   padding: const EdgeInsets.all(10),
@@ -912,7 +977,8 @@ class _DocumentPreviewPanelState extends State<DocumentPreviewPanel> {
   }
 
   Widget _buildSimpleImage(Map<String, dynamic> block) {
-    final url = _imageUrl(block['image_path'] as String? ?? '');
+    final rawPath = _rawImagePath(block);
+    final url = _imageUrl(rawPath);
     return Container(
       height: 120,
       margin: const EdgeInsets.only(bottom: 10),
@@ -924,18 +990,9 @@ class _DocumentPreviewPanelState extends State<DocumentPreviewPanel> {
       clipBehavior: Clip.antiAlias,
       child: url.isEmpty
           ? Center(child: Icon(Icons.broken_image, color: _textSec))
-          : Image.network(
-              url,
-              fit: BoxFit.contain,
-              errorBuilder: (_, __, ___) =>
-                  Center(child: Icon(Icons.broken_image, color: _textSec)),
-            ),
+          : _FallbackImage(urls: _imageUrls(rawPath.toString()), height: 120),
     );
   }
-
-  // ───────────────────────────────────────────────────────────────────────
-  // RIGHT: Corrected — editable Word-style paper
-  // ───────────────────────────────────────────────────────────────────────
 
   Map<int, List<Map<String, dynamic>>> _groupByPage() {
     final map = <int, List<Map<String, dynamic>>>{};
@@ -966,7 +1023,7 @@ class _DocumentPreviewPanelState extends State<DocumentPreviewPanel> {
                   behavior: HitTestBehavior.opaque,
                   onTap: () => _select(null),
                   child: Container(
-                    color: const Color(0xFFE5E7EB), // Word's grey desk
+                    color: const Color(0xFFE5E7EB),
                     child: SingleChildScrollView(
                       padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 20),
                       child: SingleChildScrollView(
@@ -1051,8 +1108,6 @@ class _DocumentPreviewPanelState extends State<DocumentPreviewPanel> {
       ),
     );
   }
-
-  // ── Ribbon ───────────────────────────────────────────────────────────────
 
   Widget _rb(
     IconData icon,
@@ -1209,58 +1264,6 @@ class _DocumentPreviewPanelState extends State<DocumentPreviewPanel> {
                 active: ok && _underlineOf(t)),
             _rb(Icons.strikethrough_s, 'Strikethrough', ok ? _toggleStrike : null,
                 active: ok && _strikeOf(t)),
-            PopupMenuButton<int>(
-              enabled: ok,
-              tooltip: 'Font colour',
-              padding: EdgeInsets.zero,
-              onSelected: (v) => _apply((x) {
-                if (v == 0xFF000000) {
-                  x.remove('text_color');
-                } else {
-                  x['text_color'] = v;
-                }
-              }),
-              itemBuilder: (_) => [
-                for (final e in _palette)
-                  PopupMenuItem<int>(
-                    value: e.value,
-                    height: 32,
-                    child: Row(
-                      children: [
-                        Container(
-                          width: 16,
-                          height: 16,
-                          decoration: BoxDecoration(
-                            color: Color(e.value),
-                            shape: BoxShape.circle,
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        Text(e.key, style: const TextStyle(fontSize: 13)),
-                      ],
-                    ),
-                  ),
-              ],
-              child: Opacity(
-                opacity: ok ? 1 : 0.4,
-                child: SizedBox(
-                  width: 30,
-                  height: 30,
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Icon(Icons.format_color_text, size: 17, color: Colors.black87),
-                      Container(
-                        width: 16,
-                        height: 3,
-                        margin: const EdgeInsets.only(top: 1),
-                        color: ok ? _colorOf(t) : Colors.black,
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
             sep,
             _rb(Icons.format_align_left, 'Align left',
                 ok ? () => _apply((x) => x['alignment'] = 'left') : null,
@@ -1281,24 +1284,6 @@ class _DocumentPreviewPanelState extends State<DocumentPreviewPanel> {
             _rb(Icons.format_list_numbered, 'Numbering',
                 ok ? () => _toggleList('number') : null,
                 active: isList && listStyle == 'number'),
-            PopupMenuButton<double>(
-              enabled: ok,
-              tooltip: 'Line spacing',
-              padding: EdgeInsets.zero,
-              icon: const Icon(Icons.format_line_spacing, size: 18, color: Colors.black87),
-              onSelected: (v) => _apply((x) => x['line_spacing'] = v),
-              itemBuilder: (_) => [
-                for (final v in _spacings)
-                  PopupMenuItem<double>(
-                    value: v,
-                    height: 34,
-                    child: Text(
-                      _fmt(v) == '1' ? '1.0' : _fmt(v),
-                      style: const TextStyle(fontSize: 13),
-                    ),
-                  ),
-              ],
-            ),
             sep,
             _rb(Icons.playlist_add, 'Add paragraph below', _insertParagraph),
             _rb(
@@ -1346,8 +1331,6 @@ class _DocumentPreviewPanelState extends State<DocumentPreviewPanel> {
       ),
     );
   }
-
-  // ── Paper ────────────────────────────────────────────────────────────────
 
   Widget _buildPaper(
     int number,
@@ -1430,6 +1413,51 @@ class _DocumentPreviewPanelState extends State<DocumentPreviewPanel> {
     if (type == 'image') {
       return _buildWordImage(block, blockIssues, s);
     }
+    if (type == 'table') {
+      return _buildWordTable(block, _fontOf(block), s);
+    }
+    if (type == 'toc_item') {
+      final title = block['text'] ?? block['title'] ?? block['heading'] ?? '';
+      final pageNum = block['page'] ?? block['page_number'] ?? '';
+      if (title.toString().toLowerCase().contains('table of contents') ||
+          title.toString().toLowerCase().contains('list of figures') ||
+          title.toString().toLowerCase().contains('list of tables')) {
+        return Padding(
+          padding: EdgeInsets.only(top: 14 * s, bottom: 6 * s),
+          child: Text(
+            title.toString(),
+            style: _wordStyle(_fontOf(block), 14, s, bold: true),
+          ),
+        );
+      }
+      return Padding(
+        padding: EdgeInsets.symmetric(vertical: 4 * s),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                title.toString(),
+                style: _wordStyle(widget.defaultFont, widget.bodyPt, s),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            if (pageNum.toString().isNotEmpty) ...[
+              Padding(
+                padding: EdgeInsets.symmetric(horizontal: 8 * s),
+                child: Text(
+                  '. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .',
+                  style: TextStyle(color: Colors.black38, fontSize: 10 * s),
+                ),
+              ),
+              Text(
+                pageNum.toString(),
+                style: _wordStyle(widget.defaultFont, widget.bodyPt, s, bold: true),
+              ),
+            ],
+          ],
+        ),
+      );
+    }
 
     final uid = block['_uid'] as String;
     final pid = block['paragraph_id'] as String? ?? '';
@@ -1492,10 +1520,6 @@ class _DocumentPreviewPanelState extends State<DocumentPreviewPanel> {
               '${isNum ? 'List Number' : 'List Bullet'} · $font · ${_fmt(pt)}pt$flagText';
           break;
         }
-      case 'table':
-        content = _buildWordTable(block, font, s);
-        styleLabel = 'Table · $font · ${_fmt(_num(block['font_size']) ?? 11)}pt';
-        break;
       default:
         content = Padding(
           padding: EdgeInsets.only(bottom: 8 * s),
@@ -1524,42 +1548,6 @@ class _DocumentPreviewPanelState extends State<DocumentPreviewPanel> {
       left: BorderSide(color: bar ?? (isSelected ? _blue.withOpacity(0.6) : Colors.transparent), width: 3),
     );
 
-    final issueBanner = (isSelected && hasIssue)
-        ? Container(
-            margin: const EdgeInsets.only(top: 4, bottom: 4),
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: BoxDecoration(
-              color: const Color(0xFFFFF8E1),
-              borderRadius: BorderRadius.circular(4),
-              border: Border.all(color: const Color(0xFFFFE082)),
-            ),
-            child: Row(
-              children: [
-                const Icon(Icons.error_outline, size: 15, color: Color(0xFFB45309)),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: Text(
-                    blockIssues.first['description'] as String? ??
-                        blockIssues.first['reason'] as String? ??
-                        'Issue found in this paragraph',
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(color: Colors.black87, fontSize: 11),
-                  ),
-                ),
-                TextButton(
-                  style: TextButton.styleFrom(
-                    visualDensity: VisualDensity.compact,
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
-                  ),
-                  onPressed: () => _openFixPanel(block, blockIssues),
-                  child: const Text('Review fix', style: TextStyle(fontSize: 11)),
-                ),
-              ],
-            ),
-          )
-        : const SizedBox.shrink();
-
     return MouseRegion(
       cursor: SystemMouseCursors.text,
       child: GestureDetector(
@@ -1580,7 +1568,6 @@ class _DocumentPreviewPanelState extends State<DocumentPreviewPanel> {
                   ),
                 ),
               content,
-              issueBanner,
             ],
           ),
         ),
@@ -1605,15 +1592,20 @@ class _DocumentPreviewPanelState extends State<DocumentPreviewPanel> {
   }
 
   Widget _buildWordTable(Map<String, dynamic> block, String font, double s) {
-    final raw = (block['rows'] ?? block['preview_rows'] ?? block['cells']) as List? ?? [];
-    final rows = raw
-        .map((r) => (r as List).map((c) => c.toString()).toList())
-        .toList();
+    final rows = _rawTableRows(block);
     if (rows.isEmpty) {
       return Padding(
         padding: EdgeInsets.symmetric(vertical: 8 * s),
-        child: Text('[Table]', style: _wordStyle(font, 11, s, italic: true)),
+        child: Text('[Table — no cell data received from server]',
+            style: _wordStyle(font, 10, s, italic: true)),
       );
+    }
+    // Pad ragged rows so Table doesn't throw.
+    final cols = rows.map((r) => r.length).reduce((a, b) => a > b ? a : b);
+    for (final r in rows) {
+      while (r.length < cols) {
+        r.add('');
+      }
     }
     final pt = _num(block['font_size']) ?? 11;
     return Padding(
@@ -1624,12 +1616,12 @@ class _DocumentPreviewPanelState extends State<DocumentPreviewPanel> {
           for (var i = 0; i < rows.length; i++)
             TableRow(
               decoration: BoxDecoration(
-                color: i == 0 ? const Color(0xFFF3F4F6) : null,
+                color: i == 0 ? const Color(0xFFF3F4F6) : Colors.white,
               ),
               children: [
                 for (final cell in rows[i])
                   Padding(
-                    padding: EdgeInsets.all(5 * s),
+                    padding: EdgeInsets.all(6 * s),
                     child: Text(
                       cell,
                       textAlign: i == 0 ? TextAlign.center : TextAlign.left,
@@ -1648,7 +1640,8 @@ class _DocumentPreviewPanelState extends State<DocumentPreviewPanel> {
     List<Map<String, dynamic>> blockIssues,
     double s,
   ) {
-    final imageUrl = _imageUrl(block['image_path'] as String? ?? '');
+    final rawPath = _rawImagePath(block);
+    final imageUrl = _imageUrl(rawPath);
     final caption = block['caption'] as String? ?? '';
     final ethics = blockIssues.where((i) => (i['function'] as String? ?? '') == 'image_ethics').toList();
     final irrelevant = blockIssues.where((i) => (i['function'] as String? ?? '') == 'image_relevance').toList();
@@ -1673,9 +1666,7 @@ class _DocumentPreviewPanelState extends State<DocumentPreviewPanel> {
             Padding(
               padding: const EdgeInsets.only(bottom: 6),
               child: Text(
-                isUnethical
-                    ? 'Flagged — unethical image (shown for review)'
-                    : 'Warning — irrelevant image',
+                isUnethical ? 'Flagged — unethical image' : 'Warning — irrelevant image',
                 style: TextStyle(
                   color: isUnethical ? _red : const Color(0xFFB45309),
                   fontSize: 11,
@@ -1687,13 +1678,27 @@ class _DocumentPreviewPanelState extends State<DocumentPreviewPanel> {
             child: ConstrainedBox(
               constraints: BoxConstraints(maxHeight: 320 * s),
               child: imageUrl.isEmpty
-                  ? const Icon(Icons.broken_image, color: Colors.black38, size: 40)
-                  : Image.network(
-                      imageUrl,
-                      fit: BoxFit.contain,
-                      errorBuilder: (_, __, ___) =>
-                          const Icon(Icons.broken_image, color: Colors.black38, size: 40),
-                    ),
+                  ? Container(
+                      height: 160,
+                      width: double.infinity,
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade100,
+                        border: Border.all(color: Colors.grey.shade300),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: const [
+                          Icon(Icons.image_outlined, color: Colors.black45, size: 48),
+                          SizedBox(height: 8),
+                          Text(
+                            '[Figure / Image Placeholder]',
+                            style: TextStyle(color: Colors.black54, fontSize: 12, fontStyle: FontStyle.italic),
+                          ),
+                        ],
+                      ),
+                    )
+                  : _FallbackImage(urls: _imageUrls(rawPath.toString()), height: 160),
             ),
           ),
           if (caption.isNotEmpty)
@@ -1741,8 +1746,6 @@ class _DocumentPreviewPanelState extends State<DocumentPreviewPanel> {
     );
   }
 
-  // ───────────────────────────────────────────────────────────────────────
-
   @override
   Widget build(BuildContext context) {
     _ap = context.watch<ThemeProvider>().palette;
@@ -1774,6 +1777,45 @@ class _DocumentPreviewPanelState extends State<DocumentPreviewPanel> {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// Tries each candidate URL in order until one loads; logs which one worked.
+class _FallbackImage extends StatefulWidget {
+  final List<String> urls;
+  final double height;
+  const _FallbackImage({required this.urls, required this.height});
+  @override
+  State<_FallbackImage> createState() => _FallbackImageState();
+}
+
+class _FallbackImageState extends State<_FallbackImage> {
+  int _i = 0;
+  @override
+  Widget build(BuildContext context) {
+    if (_i >= widget.urls.length) {
+      return Container(
+        height: widget.height,
+        color: Colors.grey.shade100,
+        child: const Center(child: Icon(Icons.broken_image, color: Colors.black38, size: 40)),
+      );
+    }
+    final url = widget.urls[_i];
+    return Image.network(
+      url,
+      fit: BoxFit.contain,
+      frameBuilder: (c, child, frame, sync) {
+        if (frame != null && (sync || frame == 0)) debugPrint('[preview] image OK: $url');
+        return child;
+      },
+      errorBuilder: (_, e, __) {
+        debugPrint('[preview] image FAILED: $url');
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) setState(() => _i++);
+        });
+        return SizedBox(height: widget.height);
+      },
     );
   }
 }

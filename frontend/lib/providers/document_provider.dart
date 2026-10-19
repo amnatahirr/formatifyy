@@ -399,13 +399,19 @@ class DocumentProvider extends ChangeNotifier {
         final elements = List<Map<String, dynamic>>.from(
           data['formatted_elements'] ?? const [],
         );
+        debugPrint('[v0] Preview element keys: '
+            '${elements.expand((e) => e.keys).toSet()} '
+            'types: ${elements.map((e) => e['type']).toSet()} '
+            'top-level: ${data.keys.toList()}');
         return {
           'document_id': documentId,
           'formatted_content': elements.map((e) => e['text']).join('\n'),
+          // Keep EVERY field the backend sends (images, tables, page, fonts…).
           'formatted_lines': elements
               .map(
-                (e) => {
-                  'text': e['text'],
+                (e) => <String, dynamic>{
+                  ...e,
+                  'text': e['text'] ?? '',
                   'type': e['type'] ?? 'paragraph',
                 },
               )

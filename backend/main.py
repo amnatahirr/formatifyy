@@ -75,7 +75,7 @@ import tempfile
 from starlette.background import BackgroundTasks
 from crypto_utils import encrypt_file, read_file_bytes
 
-
+from preview_elements import build_preview_elements
 def _resolve_org_for_auth(org_code: str | None, request: Request) -> dict:
     """Login/signup: prefer explicit org_code body field over headers."""
     code = (org_code or "").strip().upper()
@@ -2624,53 +2624,45 @@ async def analyze_bullets_in_document(document_id: int, user_id: int = Query(...
 
 @app.get("/api/format-document/from-document/{document_id}", tags=["Documents"])
 async def preview_document(document_id: int, user_id: int = Query(...)):
-    """Return list of formatted elements (text + paragraph/heading type) for previewing."""
+    """Formatted elements in body order: heading/paragraph/list_item/image/table."""
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM documents WHERE id = ? AND user_id = ?", (document_id, user_id))
     doc = cursor.fetchone()
     conn.close()
-    
+ 
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
-        
+ 
     working_copy = os.path.join(UPLOAD_DIR, "working", f"doc_{document_id}_working.docx")
     file_path = working_copy if os.path.exists(working_copy) else doc["file_path"]
-    
+ 
     elements = []
     try:
         if file_path.endswith(".docx"):
-            from docx import Document as DocxDoc
-            docx = DocxDoc(file_path)
-            for idx, p in enumerate(docx.paragraphs):
-                text = p.text.strip()
-                if not text:
-                    continue
-                style_name = (p.style.name or "").lower()
-                btype = "heading" if "heading" in style_name else "paragraph"
-                elements.append({
-                    "text": p.text,
-                    "type": btype
-                })
+            images_dir = os.path.join(UPLOAD_DIR, "images", f"doc_{document_id}")
+            elements = build_preview_elements(file_path, document_id, images_dir)
         else:
             with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
-                lines = f.read().splitlines()
-                for line in lines:
+                for line in f.read().splitlines():
                     if line.strip():
-                        elements.append({
-                            "text": line,
-                            "type": "paragraph"
-                        })
-    except Exception:
-        pass
-        
+                        elements.append({"text": line, "type": "paragraph"})
+    except Exception as e:
+        import traceback; traceback.print_exc()      # don't swallow errors silently any more
+        print(f"[preview] failed for doc {document_id}: {e}")
+ 
     return {
         "formatted_elements": elements,
-        "summary": {
-            "total_elements": len(elements),
-            "applied_rules": {}
-        }
+        "summary": {"total_elements": len(elements), "applied_rules": {}},
     }
+from fastapi.responses import FileResponse
+ 
+@app.get("/api/files/{rel_path:path}", tags=["Documents"])
+async def serve_upload_file(rel_path: str):
+    full = os.path.realpath(os.path.join(UPLOAD_DIR, rel_path))
+    if not full.startswith(os.path.realpath(UPLOAD_DIR) + os.sep) or not os.path.isfile(full):
+        raise HTTPException(status_code=404, detail="File not found")
+    return FileResponse(full)
 
 
 @app.get("/api/format-document/export/{document_id}", tags=["Documents"])

@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
-
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:frontend/providers/qr_service.dart';
 import 'package:frontend/widgets/qr_dialog.dart';
@@ -34,6 +34,7 @@ import '../widgets/student/mobile_status_summary_card.dart';
 import '../widgets/student/desktop_semester_deadline_card.dart';
 import '../utils/responsive.dart';
 import 'mobile_companion_screen.dart';
+import '../widgets/document_preview_panel.dart'; 
 
 /// Mobile bottom-nav → existing `_selectedIndex` targets.
 /// Notifications has no desktop sidebar entry; uses [kNotificationsTabIndex].
@@ -3019,7 +3020,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
     );
   }
 
-  void _showPreview(Map<String, dynamic> doc) {
+void _showPreview(Map<String, dynamic> doc) {
     final auth = context.read<AuthProvider>();
     final docProvider = context.read<DocumentProvider>();
     final isTemplate = doc['formatting_rules'] != null;
@@ -3028,8 +3029,10 @@ class _StudentDashboardState extends State<StudentDashboard> {
       context: context,
       builder: (context) => Dialog(
         backgroundColor: _p.surfaceAlt,
-        insetPadding: EdgeInsets.all(32),
+        insetPadding: EdgeInsets.all(24),
         child: Container(
+          width: MediaQuery.of(context).size.width * 0.85,
+          height: MediaQuery.of(context).size.height * 0.85,
           decoration: BoxDecoration(
             color: _p.surfaceAlt,
             borderRadius: BorderRadius.circular(
@@ -3044,7 +3047,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
             children: [
               // Header
               Container(
-                padding: EdgeInsets.all(20),
+                padding: EdgeInsets.symmetric(horizontal: 20, vertical: 16),
                 decoration: BoxDecoration(
                   border: Border(
                     bottom: BorderSide(
@@ -3059,16 +3062,16 @@ class _StudentDashboardState extends State<StudentDashboard> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          isTemplate ? 'Template Preview' : 'Document Preview',
+                          isTemplate ? 'Template Preview' : (doc['filename'] ?? 'Document Preview'),
                           style: TextStyle(
-                            fontSize: 18,
+                            fontSize: 16,
                             fontWeight: FontWeight.w600,
                             color: _p.textPrimary,
                           ),
                         ),
                         if (isTemplate)
                           Padding(
-                            padding: EdgeInsets.only(top: 4),
+                            padding: EdgeInsets.only(top: 2),
                             child: Text(
                               doc['name'] ?? 'Template',
                               style: TextStyle(
@@ -3079,123 +3082,100 @@ class _StudentDashboardState extends State<StudentDashboard> {
                           ),
                       ],
                     ),
-                    GestureDetector(
-                      onTap: () => Navigator.pop(context),
-                      child: Icon(
-                        Icons.close,
-                        color: _p.textSecondary,
-                      ),
+                    IconButton(
+                      icon: Icon(Icons.close, color: _p.textSecondary),
+                      onPressed: () => Navigator.pop(context),
                     ),
                   ],
                 ),
               ),
-              // Content
+              // Content - Word-like DocumentPreviewPanel Integration
               Expanded(
                 child: isTemplate
-                    ? _buildTemplatePreviewContent(doc)
+                    ? DocumentPreviewPanel(
+                        blocks: [
+                          {'type': 'heading', 'level': 1, 'text': 'Sample Heading 1'},
+                          {
+                            'type': 'paragraph',
+                            'text': 'This is a sample paragraph showing how your documents will be formatted using this template with all applied styles, font selections, and correct margins.'
+                          },
+                          {'type': 'heading', 'level': 2, 'text': 'Sample Heading 2'},
+                          {'type': 'list_item', 'list_style': 'bullet', 'text': 'First point to demonstrate bullet formatting'},
+                          {'type': 'list_item', 'list_style': 'bullet', 'text': 'Second point with consistent spacing'},
+                          {
+                            'type': 'paragraph',
+                            'text': 'Conclusion paragraph showing body text formatting with proper line spacing and font selection.'
+                          },
+                        ],
+                        issues: const [],
+                        imageBaseUrl: '',
+                        documentId: 0,
+                        appliedFixes: const {},
+                        ignoredIssueIds: const {},
+                        onApplyFix: (_, __) {},
+                        onIgnoreIssue: (_) {},
+                        defaultFont: doc['formatting_rules']?['body_font'] ?? 'Times New Roman',
+                        bodyPt: (doc['formatting_rules']?['body_size'] ?? 12).toDouble(),
+                      )
                     : FutureBuilder<Map<String, dynamic>?>(
                         future: docProvider.getPreview(doc['id'], auth.userId!),
                         builder: (context, snapshot) {
                           if (snapshot.connectionState == ConnectionState.waiting) {
                             return Center(
-                              child: CircularProgressIndicator(),
+                              child: CircularProgressIndicator(color: _p.accent),
                             );
                           }
 
                           if (snapshot.hasError || !snapshot.hasData) {
                             return Center(
                               child: Text(
-                                'Failed to load preview',
-                                style: TextStyle(
-                                  color: _p.textSecondary,
-                                ),
+                                'Failed to load preview or document empty',
+                                style: TextStyle(color: _p.textSecondary),
                               ),
                             );
                           }
 
                           final previewData = snapshot.data!;
-                          final content = previewData['formatted_content'] ?? '';
-                          final formattingRules = previewData['formatting_rules'] ?? {};
-                          final formattedLines = previewData['formatted_lines'] ?? [];
+                          final rawLines = previewData['formatted_lines'] ?? previewData['blocks'];
+                          
+                          // Normalize content into standard block maps expected by DocumentPreviewPanel
+                          List<Map<String, dynamic>> blocks = [];
+                          if (rawLines is List) {
+                            blocks = rawLines.map<Map<String, dynamic>>((line) {
+                              if (line is Map) {
+                                return Map<String, dynamic>.from(line);
+                              }
+                              return {
+                                'type': 'paragraph',
+                                'text': line.toString(),
+                              };
+                            }).toList();
+                          }
 
-                          final pageSize = formattingRules['page_size'] ?? 'A4';
+                          if (blocks.isEmpty) {
+                            blocks = [
+                              {
+                                'type': 'paragraph',
+                                'text': previewData['formatted_content'] ?? 'No content available.',
+                              }
+                            ];
+                          }
 
-                          return SingleChildScrollView(
-                            padding: EdgeInsets.all(32),
-                            child: Container(
-                              decoration: BoxDecoration(
-                                // Document page is always white so template text stays readable
-                                color: Colors.white,
-                                borderRadius: BorderRadius.circular(8),
-                                border: Border.all(color: _p.border),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.black.withOpacity(0.12),
-                                    blurRadius: 8,
-                                  ),
-                                ],
-                              ),
-                              padding: EdgeInsets.all(40),
-                              width: pageSize == 'A4' ? 600 : 612,
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  // Show formatted content with template styles
-                                  if (formattedLines.isNotEmpty)
-                                    Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: formattedLines.map<Widget>((lineData) {
-                                        final lineType = lineData['type'] ?? 'paragraph';
-                                        final lineText = lineData['text'] ?? '';
-                                        
-                                        return _buildStyledLine(
-                                          lineText,
-                                          lineType,
-                                          formattingRules,
-                                        );
-                                      }).toList(),
-                                    )
-                                  else
-                                    Text(
-                                      content,
-                                      style: TextStyle(
-                                        fontSize: (formattingRules['body_size'] ?? 11).toDouble(),
-                                        color: Colors.black87,
-                                        height: (formattingRules['line_spacing'] ?? 1.5).toDouble(),
-                                        fontFamily: formattingRules['body_font'] ?? 'Calibri',
-                                      ),
-                                    ),
-                                ],
-                              ),
-                            ),
+                          return DocumentPreviewPanel(
+                            blocks: blocks,
+                            issues: const [],
+                            imageBaseUrl: '',
+                            documentId: doc['id'] ?? 0,
+                            appliedFixes: const {},
+                            ignoredIssueIds: const {},
+                            onApplyFix: (_, __) {},
+                            onIgnoreIssue: (_) {},
+                            onBlocksChanged: (updatedBlocks) {
+                              // Optional: handle block updates live if needed
+                            },
                           );
                         },
                       ),
-              ),
-              // Footer buttons
-              Container(
-                padding: EdgeInsets.all(20),
-                decoration: BoxDecoration(
-                  border: Border(
-                    top: BorderSide(
-                      color: _p.border,
-                    ),
-                  ),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [
-                    TextButton(
-                      onPressed: () => Navigator.pop(context),
-                      child: Text(
-                        'Close',
-                        style: TextStyle(
-                          color: _p.textPrimary,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
               ),
             ],
           ),
@@ -4371,39 +4351,48 @@ class _StudentDashboardState extends State<StudentDashboard> {
     );
   }
 
-   String _getTimeAgo(dynamic dateTime) {
-    DateTime parsedDateTime;
-    
-    if (dateTime is String) {
-      // Backend sends UTC timestamps with 'Z' suffix — parse and convert to local time
-      final parsed = DateTime.tryParse(dateTime);
-      parsedDateTime = parsed != null
-          ? (parsed.isUtc ? parsed.toLocal() : parsed)
-          : DateTime.now();
-    } else if (dateTime is DateTime) {
-      parsedDateTime = dateTime.isUtc ? dateTime.toLocal() : dateTime;
-    } else {
-      return 'Unknown time';
-    }
+ String _getTimeAgo(dynamic dateTime) {
+  if (dateTime == null) return 'just now';
 
-    final now = DateTime.now();
-    final difference = now.difference(parsedDateTime);
+  DateTime parsedDateTime;
 
-    if (difference.inDays > 7) {
-      return '${(difference.inDays / 7).toStringAsFixed(0)} weeks ago';
-    } else if (difference.inDays > 0) {
-      return '${difference.inDays} day${difference.inDays > 1 ? 's' : ''} ago';
-    } else if (difference.inHours > 0) {
-      return '${difference.inHours} hour${difference.inHours > 1 ? 's' : ''} ago';
-    } else if (difference.inMinutes > 0) {
-      return '${difference.inMinutes} minute${difference.inMinutes > 1 ? 's' : ''} ago';
-    } else if (difference.inSeconds > 0) {
-      return '${difference.inSeconds} second${difference.inSeconds > 1 ? 's' : ''} ago';
-    } else {
-      return 'just now';
+  if (dateTime is Timestamp) {
+    // 1. Firebase Timestamp handling
+    parsedDateTime = dateTime.toDate().toLocal();
+  } else if (dateTime is String) {
+    // 2. String handling (Ensures string is parsed as UTC if not specified)
+    String dateStr = dateTime.trim();
+    if (!dateStr.endsWith('Z') && !dateStr.contains('+')) {
+      dateStr += 'Z'; // Force UTC parsing if missing
     }
+    final parsed = DateTime.tryParse(dateStr);
+    parsedDateTime = parsed != null ? parsed.toLocal() : DateTime.now();
+  } else if (dateTime is DateTime) {
+    // 3. DateTime object handling
+    parsedDateTime = dateTime.isUtc ? dateTime.toLocal() : dateTime;
+  } else {
+    return 'just now';
   }
 
+  final now = DateTime.now();
+  final difference = now.difference(parsedDateTime);
+
+  // Future timestamp prevention (Server latency check)
+  if (difference.isNegative || difference.inSeconds < 30) {
+    return 'just now';
+  } else if (difference.inDays >= 7) {
+    final weeks = (difference.inDays / 7).floor();
+    return '$weeks week${weeks > 1 ? 's' : ''} ago';
+  } else if (difference.inDays > 0) {
+    return '${difference.inDays} day${difference.inDays > 1 ? 's' : ''} ago';
+  } else if (difference.inHours > 0) {
+    return '${difference.inHours} hour${difference.inHours > 1 ? 's' : ''} ago';
+  } else if (difference.inMinutes > 0) {
+    return '${difference.inMinutes} minute${difference.inMinutes > 1 ? 's' : ''} ago';
+  } else {
+    return '${difference.inSeconds} second${difference.inSeconds > 1 ? 's' : ''} ago';
+  }
+}
   void _showFormattedMissingHint() {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
