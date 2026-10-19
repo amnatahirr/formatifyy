@@ -49,6 +49,7 @@ from typing import Any, Dict, List, Optional
 import anthropic
 from dotenv import load_dotenv
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile, Query, Body, Request
+from services.latex_export import latex_zip_response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -2636,10 +2637,10 @@ def export_formatted_document(
     user_id: int = Query(...),
     format: str = Query(default="docx"),
 ):
-    """Download the formatted document as DOCX or PDF."""
+    """Download the formatted document as DOCX, PDF, or LaTeX zip."""
     export_format = (format or "docx").strip().lower()
-    if export_format not in {"docx", "pdf"}:
-        raise HTTPException(status_code=400, detail="format must be 'docx' or 'pdf'")
+    if export_format not in {"docx", "pdf", "tex"}:
+        raise HTTPException(status_code=400, detail="format must be 'docx', 'pdf', or 'tex'")
 
     conn = get_db()
     cursor = conn.cursor()
@@ -2656,7 +2657,12 @@ def export_formatted_document(
         raise HTTPException(status_code=400, detail="Document has no valid template assigned.")
 
     output_path = _prepare_formatted_docx(doc, document_id)
+    if not output_path or not os.path.exists(output_path):
+        raise HTTPException(status_code=404, detail="No formatted file")
     base_name = f"formatted_{os.path.splitext(doc['filename'] or 'document')[0]}"
+
+    if export_format == "tex":
+        return latex_zip_response(output_path)
 
     if export_format == "pdf":
         pdf_path = convert_docx_to_pdf(output_path)
@@ -2766,8 +2772,8 @@ def download_saved_formatted_document(
     reformat — that keeps Unformatted vs Formatted clearly distinct.
     """
     export_format = (format or "docx").strip().lower()
-    if export_format not in {"docx", "pdf"}:
-        raise HTTPException(status_code=400, detail="format must be 'docx' or 'pdf'")
+    if export_format not in {"docx", "pdf", "tex"}:
+        raise HTTPException(status_code=400, detail="format must be 'docx', 'pdf', or 'tex'")
 
     conn = get_db()
     cursor = conn.cursor()
@@ -2803,6 +2809,9 @@ def download_saved_formatted_document(
 
     stem = os.path.splitext(doc["filename"] or "document")[0]
     base_name = f"formatted_{stem}"
+
+    if export_format == "tex":
+        return latex_zip_response(str(formatted_path))
 
     if export_format == "pdf":
         pdf_path = convert_docx_to_pdf(str(formatted_path))
