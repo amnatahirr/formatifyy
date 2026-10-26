@@ -4,6 +4,7 @@ import '../providers/auth_provider.dart';
 import '../theme/app_theme.dart';
 import '../utils/logout_confirm.dart';
 import '../providers/analysis_job_provider.dart';
+import 'analysis_jobs_sidebar_item.dart';
 class AppSidebar extends StatelessWidget {
   final int selectedIndex;
   final Function(int) onItemSelected;
@@ -77,6 +78,7 @@ class AppSidebar extends StatelessWidget {
                 _buildSidebarItem(
                     context, p, 1, Icons.add_circle_outline, 'New Report'),
                 _buildSidebarItem(context, p, 2, Icons.folder, 'My Reports'),
+                 AnalysisJobsSidebarItem(),
                 _buildAnalysisItem(context, p),
                 _buildSidebarItem(
                     context, p, 3, Icons.people_outline, 'Collaboration'),

@@ -6,6 +6,8 @@ import 'package:frontend/providers/qr_service.dart';
 import 'package:frontend/widgets/qr_dialog.dart';
 import 'package:provider/provider.dart';
 import 'dart:io';
+import '../widgets/analysis_jobs_sidebar_item.dart';
+
 import 'package:file_picker/file_picker.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:open_file_plus/open_file_plus.dart';
@@ -320,6 +322,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
                   Icons.folder,
                   'My Reports',
                 ),
+                const AnalysisJobsSidebarItem(),
                 _buildSidebarItem(
                   3,
                   Icons.people_outline,

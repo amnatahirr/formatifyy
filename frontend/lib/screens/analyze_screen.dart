@@ -1552,9 +1552,9 @@ late final AnalysisJobProvider _jobs;
     name: name,
     freeform: freeform,
     force: force,
-   onOpen: () {
+  onOpen: () {
   final nav = navigatorKey.currentState;
-  debugPrint('[AnalysisJob] VIEW tapped, navigator available: ${nav != null}');
+  debugPrint('[AnalysisJob] VIEW tapped, navigator: ${nav != null}');
   nav?.push(MaterialPageRoute(
     builder: (_) => AnalyzeScreen(
       documentId: id,
