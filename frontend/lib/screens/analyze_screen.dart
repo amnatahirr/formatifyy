@@ -19,6 +19,8 @@ import '../models/json_parse.dart';
 import '../services/image_replacement_service.dart';
 import ' image_formatter_screen.dart';
 import '../widgets/reference_formatter_widget.dart';
+import '../providers/analysis_job_provider.dart';
+import '../main.dart' show navigatorKey; // apni file ka path
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Color palette — follows ThemeProvider (light / dark)
@@ -234,6 +236,9 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
   List<Map<String, dynamic>> _freeformSuggestedFixes = [];
   List<Map<String, dynamic>> _freeformManualNotes = [];
 
+late final AnalysisJobProvider _jobs;
+
+
   // Document review preview state
   Map<String, dynamic> _analysisData = {};
   List<Map<String, dynamic>> _previewBlocks = [];
@@ -307,6 +312,8 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
   @override
   void initState() {
     super.initState();
+    _jobs = context.read<AnalysisJobProvider>();
+  _jobs.activeDocId = widget.documentId;
     _tabController = TabController(length: 9, vsync: this);
     _tabController.addListener(_onAnalysisTabChanged);
     _baseUrl = ApiConfig.getBaseUrl();
@@ -327,27 +334,25 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
 
 
     /// Runs analysis while the staged progress panel advances through named steps.
-  Future<Map<String, dynamic>> _runAnalysisWithProgress() async {
-    _analysisComplete = false;
-    _analyzeProgressGen++;
-    try {
-      final data = await _fetchAnalysis();
-      if (mounted) {
-        setState(() {
-          _seedFromAnalysis(data);
-          _analysisComplete = true;
-        });
-        // After analyze finishes (it rebuilds the working copy), not in parallel.
-        _loadTables();
-        // Let the user see "Finalizing" before swapping to results.
-        await Future.delayed(const Duration(milliseconds: 500));
-      }
-      return data;
-    } catch (_) {
-      if (mounted) setState(() => _analysisComplete = false);
-      rethrow;
+ Future<Map<String, dynamic>> _runAnalysisWithProgress({bool force = false}) async {
+  _analysisComplete = false;
+  _analyzeProgressGen++;
+  try {
+    final data = await _fetchAnalysis(force: force);
+    if (mounted) {
+      setState(() {
+        _seedFromAnalysis(data);
+        _analysisComplete = true;
+      });
+      _loadTables();
+      await Future.delayed(const Duration(milliseconds: 500));
     }
+    return data;
+  } catch (_) {
+    if (mounted) setState(() => _analysisComplete = false);
+    rethrow;
   }
+}
 
   void _onAnalysisTabChanged() {
     if (_tabController.indexIsChanging) return;
@@ -366,6 +371,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
 
   @override
   void dispose() {
+     if (_jobs.activeDocId == widget.documentId) _jobs.activeDocId = null;
     _tabController.removeListener(_onAnalysisTabChanged);
     _tabController.dispose();
     super.dispose();
@@ -1528,52 +1534,56 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
     }
   }
 
-  // ── API — analysis ────────────────────────────────────────────────────────
+ Future<Map<String, dynamic>> _fetchAnalysis({bool force = false}) async {
+  _styleIssuesInitialized = false;
+  final userId = context.read<AuthProvider>().userId!;
+  final docProvider = context.read<DocumentProvider>();
 
-  Future<Map<String, dynamic>> _fetchAnalysis() async {
-    // Reset so _buildBody re-seeds _styleIssues from fresh server data
-    _styleIssuesInitialized = false;
-    final auth = context.read<AuthProvider>();
-    final path = widget.freeformAnalysis
-        ? '$_baseUrl/documents/analyze-freeform/${widget.documentId}'
-        : '$_baseUrl/documents/analyze/${widget.documentId}';
-    final resp = await http.get(
-      Uri.parse('$path?user_id=${auth.userId}'),
-      headers: ApiConfig.getHeaders(),
+  // Closure captures plain values only (screen may be gone when it runs).
+  final id = widget.documentId;
+  final name = widget.documentName;
+  final tId = widget.templateId;
+  final tName = widget.templateName;
+  final freeform = widget.freeformAnalysis;
+
+  final data = await _jobs.startOrAttach(
+    documentId: id,
+    userId: userId,
+    name: name,
+    freeform: freeform,
+    force: force,
+   onOpen: () {
+  final nav = navigatorKey.currentState;
+  debugPrint('[AnalysisJob] VIEW tapped, navigator available: ${nav != null}');
+  nav?.push(MaterialPageRoute(
+    builder: (_) => AnalyzeScreen(
+      documentId: id,
+      documentName: name,
+      templateId: tId,
+      templateName: tName,
+      freeformAnalysis: freeform,
+    ),
+  ));
+},
+  );
+
+  if (freeform) {
+    _freeformSuggestedFixes = List<Map<String, dynamic>>.from(
+      ((data['suggested_fixes'] as List?) ?? const [])
+          .map((e) => Map<String, dynamic>.from(e as Map)),
     );
-    if (resp.statusCode != 200) {
-      throw Exception('Analysis failed (${resp.statusCode}): ${resp.body}');
-    }
-    final data = jsonDecode(resp.body) as Map<String, dynamic>;
-    debugPrint(
-      '[AnalyzeScreen] structure score : ${(data["structure"] as Map?)?["score"]}',
+    _freeformManualNotes = List<Map<String, dynamic>>.from(
+      ((data['suggested_manual_notes'] as List?) ?? const [])
+          .map((e) => Map<String, dynamic>.from(e as Map)),
     );
-    debugPrint(
-      '[AnalyzeScreen] table_issues    : ${(data["table_issues"] as List?)?.length}',
-    );
-    if (widget.freeformAnalysis) {
-      _freeformSuggestedFixes = List<Map<String, dynamic>>.from(
-        ((data['suggested_fixes'] as List?) ?? const []).map(
-          (e) => Map<String, dynamic>.from(e as Map),
-        ),
-      );
-      _freeformManualNotes = List<Map<String, dynamic>>.from(
-        ((data['suggested_manual_notes'] as List?) ?? const []).map(
-          (e) => Map<String, dynamic>.from(e as Map),
-        ),
-      );
-    }
-    // Persist slim report on DocumentProvider for final_submissions (no recompute).
-    try {
-      context.read<DocumentProvider>().cacheAnalysisReport(
-        widget.documentId,
-        data,
-      );
-    } catch (e) {
-      debugPrint('[AnalyzeScreen] cacheAnalysisReport skipped: $e');
-    }
-    return data;
   }
+  try {
+    docProvider.cacheAnalysisReport(id, data);
+  } catch (e) {
+    debugPrint('[AnalyzeScreen] cacheAnalysisReport skipped: $e');
+  }
+  return data;
+}
 
   // ── API — heading style check ─────────────────────────────────────────────
 
@@ -2818,17 +2828,31 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
     );
   }
 
-  Widget _buildLoading() => AnalyzeProgressPanel(
-        key: ValueKey('analyze_progress_$_analyzeProgressGen'),
-        documentName: widget.documentName,
-        accent: _blue,
-        textPrimary: _textPri,
-        textSecondary: _textSec,
-        surface: _surface,
-        border: _border,
-        track: _surface2,
-        isComplete: _analysisComplete,
-      );
+ Widget _buildLoading() => Stack(
+  children: [
+    AnalyzeProgressPanel(
+      key: ValueKey('analyze_progress_$_analyzeProgressGen'),
+      documentName: widget.documentName,
+      accent: _blue,
+      textPrimary: _textPri,
+      textSecondary: _textSec,
+      surface: _surface,
+      border: _border,
+      track: _surface2,
+      isComplete: _analysisComplete,
+    ),
+    Positioned(
+      left: 0, right: 0, bottom: 24,
+      child: Center(
+        child: OutlinedButton.icon(
+          icon: const Icon(Icons.open_in_new, size: 16),
+          label: const Text('Continue in background'),
+          onPressed: () => _handleSidebarSelection(0), // dashboard par jao
+        ),
+      ),
+    ),
+  ],
+);
 
   Widget _buildError(String msg) => Center(
     child: Column(
@@ -2847,7 +2871,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
         const SizedBox(height: 16),
         ElevatedButton(
           onPressed: () => setState(() {
-            _analysisFuture = _runAnalysisWithProgress();
+            _analysisFuture = _runAnalysisWithProgress(force:true);
           }),
           child: const Text('Retry'),
         ),

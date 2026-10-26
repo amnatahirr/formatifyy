@@ -2107,6 +2107,7 @@ def delete_document(document_id: int, user_id: int = Query(...)):
                 os.remove(str(path))
             except Exception:
                 pass
+    _remove_quiet(_analysis_result_path(document_id))
 
     cursor.execute("DELETE FROM documents WHERE id = ?", (document_id,))
     conn.commit()
@@ -2296,6 +2297,96 @@ async def analyze_document_endpoint(document_id: int, user_id: int = Query(...))
         "critical_issues": critical_count,
         "warning_issues": warning_count,
     }
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# BACKGROUND ANALYSIS JOBS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+ANALYSIS_CACHE_DIR = os.path.join(UPLOAD_DIR, "analysis")
+os.makedirs(ANALYSIS_CACHE_DIR, exist_ok=True)
+
+# document_id -> {status, error, started_at, finished_at}
+_analysis_jobs: Dict[int, Dict[str, Any]] = {}
+
+
+def _analysis_result_path(document_id: int) -> str:
+    return os.path.join(ANALYSIS_CACHE_DIR, f"doc_{document_id}.json")
+
+
+def _assert_doc_owner(document_id: int, user_id: int) -> None:
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT id FROM documents WHERE id = ? AND user_id = ?", (document_id, user_id))
+    row = cur.fetchone()
+    conn.close()
+    if not row:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+
+def _analysis_in_thread(document_id: int, user_id: int, freeform: bool) -> Dict[str, Any]:
+    """Own event loop in a worker thread so blocking parse/reformat calls
+    never freeze the main server loop (status polling keeps working)."""
+    fn = analyze_document_freeform_endpoint if freeform else analyze_document_endpoint
+    return asyncio.run(fn(document_id, user_id))
+
+
+async def _analysis_worker(document_id: int, user_id: int, freeform: bool) -> None:
+    job = _analysis_jobs[document_id]
+    try:
+        result = await asyncio.to_thread(_analysis_in_thread, document_id, user_id, freeform)
+        path = _analysis_result_path(document_id)
+        tmp = path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(result, f, default=str)
+        os.replace(tmp, path)  # atomic auto-save
+        job.update(status="completed", error=None, finished_at=datetime.datetime.utcnow().isoformat())
+    except HTTPException as exc:
+        job.update(status="failed", error=str(exc.detail))
+    except Exception as exc:
+        job.update(status="failed", error=str(exc))
+
+
+@app.post("/api/documents/analyze-start/{document_id}", tags=["Documents"])
+async def analyze_start(
+    document_id: int,
+    user_id: int = Query(...),
+    freeform: bool = Query(False),
+):
+    """Kick off analysis in the background and return immediately."""
+    _assert_doc_owner(document_id, user_id)
+    job = _analysis_jobs.get(document_id)
+    if job and job["status"] == "processing":
+        return {"status": "processing", "already_running": True}
+
+    _analysis_jobs[document_id] = {
+        "status": "processing",
+        "error": None,
+        "started_at": datetime.datetime.utcnow().isoformat(),
+        "finished_at": None,
+    }
+    asyncio.create_task(_analysis_worker(document_id, user_id, freeform))
+    return {"status": "processing", "already_running": False}
+
+
+@app.get("/api/documents/analyze-status/{document_id}", tags=["Documents"])
+async def analyze_status(document_id: int, user_id: int = Query(...)):
+    _assert_doc_owner(document_id, user_id)
+    job = _analysis_jobs.get(document_id)
+    if job:
+        return {"status": job["status"], "error": job["error"],
+                "started_at": job["started_at"], "finished_at": job["finished_at"]}
+    if os.path.exists(_analysis_result_path(document_id)):
+        return {"status": "completed", "error": None}  # survives server restart
+    return {"status": "none", "error": None}
+
+
+@app.get("/api/documents/analyze-result/{document_id}", tags=["Documents"])
+async def analyze_result(document_id: int, user_id: int = Query(...)):
+    _assert_doc_owner(document_id, user_id)
+    path = _analysis_result_path(document_id)
+    if not os.path.exists(path):
+        raise HTTPException(status_code=404, detail="No saved analysis result yet.")
+    return FileResponse(path, media_type="application/json")
 
 
 class HeadingAnalysisRequest(BaseModel):

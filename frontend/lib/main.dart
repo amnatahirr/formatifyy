@@ -20,6 +20,7 @@ import 'providers/image_formatter_provider.dart';
 import 'providers/collaboration_provider.dart';
 import 'providers/fyp_provider.dart';
 import 'theme/app_theme.dart';
+import 'providers/analysis_job_provider.dart';
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
@@ -55,6 +56,8 @@ class MyApp extends StatefulWidget {
 class _MyAppState extends State<MyApp> {
   late final AppLinks _appLinks;
   StreamSubscription<Uri>? _linkSubscription;
+  final navigatorKey = GlobalKey<NavigatorState>();
+final messengerKey = GlobalKey<ScaffoldMessengerState>();
 
   @override
   void initState() {
@@ -135,10 +138,14 @@ class _MyAppState extends State<MyApp> {
         ChangeNotifierProvider(create: (_) => CollaborationProvider()),
         ChangeNotifierProvider(create: (_) => FypProvider()),
         ChangeNotifierProvider(create: (_) => ThemeProvider()),
+        ChangeNotifierProvider(
+  create: (_) => AnalysisJobProvider()..messengerKey = messengerKey,
+),
       ],
       child: Consumer<ThemeProvider>(
         builder: (context, themeProvider, _) {
           return MaterialApp(
+  scaffoldMessengerKey: messengerKey,
             navigatorKey: navigatorKey,
             debugShowCheckedModeBanner: false,
             title: 'FORMATIFY',
