@@ -209,7 +209,7 @@ def _normalize_block(raw: Any, fallback_index: int) -> Dict[str, Any]:
         "paragraph_id": pid,
         "text": text,
         "style": style,
-        "has_numpr": False,
+         "has_numpr": bool(getattr(raw, "has_numpr", False)) or style.lower().startswith("list"),
         "known_heading": bool(style and _HEADING_STYLE_RE.search(style)),
     }
 

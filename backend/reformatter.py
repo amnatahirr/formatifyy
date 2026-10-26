@@ -660,6 +660,69 @@ def _apply_pagination_rules(doc, body_start=None) -> None:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# LIST DETECTION + REAL BULLETS (for documents that arrive with plain-text lists)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Same high-confidence detections that formatting.py auto-seeds. "label_colon"
+# groups are deliberately excluded (too many false positives on prose).
+_SAFE_LIST_DETECTIONS = frozenset({
+    "infinitive", "gerund", "trigger_line", "trigger_follower",
+    "marker", "bullet_marker",
+})
+
+
+def _apply_detected_lists(doc, body_start=None) -> int:
+    """
+    Detect parallel lists in the document (list_detection.py) and convert them to
+    REAL Word bullets (docx_lists.make_bullet). Idempotent: items that already have
+    numbering are skipped. Returns the number of paragraphs converted.
+    """
+    from list_detection import detect_list_groups
+    from docx_lists import apply_bullets_to_indices, has_numbering
+
+    skip_before = None
+    if body_start is not None:
+        try:
+            from docx_fields import _paragraph_is_before_body_start
+            skip_before = _paragraph_is_before_body_start
+        except Exception:
+            skip_before = None
+
+    blocks = []
+    for i, p in enumerate(doc.paragraphs):
+        try:
+            style_name = (p.style.name or "") if p.style is not None else ""
+        except Exception:
+            style_name = ""
+        in_cover = bool(skip_before and body_start is not None and skip_before(doc, p, body_start))
+        blocks.append({
+            "index": i,
+            "paragraph_id": f"p{i}",
+            # cover/info pages are hidden from detection so they are never touched
+            "text": "" if in_cover else (p.text or "").strip(),
+            "style": style_name,
+            "has_numpr": has_numbering(p),
+            "type": "heading" if style_name.lower().startswith(("heading", "title")) else "",
+        })
+
+    total = 0
+    for group in detect_list_groups(blocks):
+        if (group.detection or "").lower() not in _SAFE_LIST_DETECTIONS:
+            continue
+        idx = [it.index for it in group.items if not it.has_numpr]
+        if len(idx) < 2:
+            continue
+        total += apply_bullets_to_indices(doc, idx, level=0)
+        # keep the intro line ("... are:") attached to its first bullet
+        if group.trigger_index is not None and 0 <= group.trigger_index < len(doc.paragraphs):
+            try:
+                doc.paragraphs[group.trigger_index].paragraph_format.keep_with_next = True
+            except Exception:
+                pass
+    return total
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # REFORMAT DOCUMENT
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -819,6 +882,13 @@ def _reformat_docx(
             spec = dict(styles["body"])
             if prev_was_heading:
                 spec["first_line_indent"] = 0
+            # Typed bullet glyph ("• text") -> real Word bullet (numPr + hanging indent)
+            try:
+                from docx_lists import make_bullet, has_numbering
+                if (not has_numbering(para)) and re.match(r"^\s*[•●○◦▪■‣⁃·]\s*", text):
+                    make_bullet(doc, para, 0)
+            except Exception as exc:
+                print(f"[reformatter] typed-bullet conversion skipped: {exc}")
             _apply_style(para, spec, ALIGN_MAP)
 
         prev_was_heading = is_heading
@@ -828,6 +898,14 @@ def _reformat_docx(
         strip_accidental_body_outline_numbering(doc)
     except Exception as exc:
         print(f"[reformatter] outline cleanup skipped: {exc}")
+
+    # NEW: detect plain-text lists and convert them to real Word bullets.
+    try:
+        n_lists = _apply_detected_lists(doc, body_start)
+        if n_lists:
+            print(f"[reformatter] converted {n_lists} paragraph(s) to real bullets")
+    except Exception as exc:
+        print(f"[reformatter] list conversion skipped (non-fatal): {exc}")
 
     # NEW: generic pagination rules (heading -> intro -> image/table -> caption).
     # Must run AFTER all style work so the keep flags are not overwritten.
@@ -1132,12 +1210,32 @@ def _apply_style(para, spec: dict, align_map: dict) -> None:
         pf.space_after = Pt(spec["space_after"])
     if spec.get("alignment") in align_map:
         pf.alignment = align_map[spec["alignment"]]
+    # Real Word list items (numPr / List styles) own their indent via the numbering
+    # level (hanging indent). Applying the body first-line indent here is what
+    # breaks bullets: bullet floats at 0.5" and wrapped lines return to the margin.
+    if _is_real_list_paragraph(para):
+        pf.first_line_indent = None
+        pf.left_indent = None
+        return
+
     if spec.get("first_line_indent") is not None:
         indent = float(spec["first_line_indent"])
         if indent > 0:
             pf.first_line_indent = Inches(indent)
         else:
             pf.first_line_indent = None
+
+
+def _is_real_list_paragraph(para) -> bool:
+    """True when the paragraph is a genuine Word list item (numPr or List style)."""
+    try:
+        p_pr = para._element.pPr
+        if p_pr is not None and p_pr.numPr is not None:
+            return True
+        name = (para.style.name or "").lower() if para.style is not None else ""
+        return name.startswith("list bullet") or name.startswith("list number") or name == "list paragraph"
+    except Exception:
+        return False
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
