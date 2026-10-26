@@ -9,6 +9,8 @@ Supports:
   - Heading style correction (font, size, bold, spacing)
   - Body text style normalisation
   - Section ordering awareness
+  - Generic pagination rules (heading -> intro -> figure/table -> caption
+    stay together; tables never split rows; oversized images are scaled)
   - Downloadable DOCX output
   - Optional PDF export (if LibreOffice is available)
 """
@@ -264,6 +266,7 @@ def _apply_word_heading(doc, para, level: int, spec: dict, align_map: dict) -> N
     pf.left_indent = None
     try:
         pf.keep_with_next = True
+        pf.keep_together = True
     except Exception:
         pass
 
@@ -390,6 +393,270 @@ def parse_template_styles(rules_input: str | Dict[str, Any]) -> Dict[str, Dict[s
             styles["margins"]["right"] = val
 
     return styles
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PAGINATION RULES (generic, content-agnostic)
+#
+# Goal: heading -> intro paragraph -> figure/table -> caption behave as ONE
+# unbreakable unit. If the unit does not fit on the current page, Word /
+# LibreOffice moves the WHOLE unit to the next page.
+#
+# This runs AFTER all style work so nothing overwrites the keep flags.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+_CAPTION_RE = re.compile(r"^\s*(figure|fig\.?|table|chart|diagram)\s*\d+", re.IGNORECASE)
+
+# An image taller than this share of the usable page height is scaled down so
+# heading + intro + image + caption can still fit on a single page.
+_MAX_IMAGE_HEIGHT_RATIO = 0.55
+_MIN_IMAGE_SCALE = 0.5          # never shrink below 50% of original size
+_SHORT_TABLE_MAX_ROWS = 12      # tables up to this size are kept on one page
+_MAX_INTRO_PARAS_PULLED = 3     # how many paragraphs above a figure join its chain
+
+
+def _w_tag(name: str) -> str:
+    from docx.oxml.ns import qn
+    return qn(f"w:{name}")
+
+
+def _para_has_drawing(para) -> bool:
+    """True if the paragraph holds an inline image / drawing."""
+    try:
+        return any(_run_contains_drawing(r) for r in para.runs)
+    except Exception:
+        return False
+
+
+def _is_heading_style(para) -> bool:
+    try:
+        name = (para.style.name or "").lower() if para.style is not None else ""
+    except Exception:
+        return False
+    return name.startswith("heading") or name == "title"
+
+
+def _is_caption_para(para) -> bool:
+    text = (para.text or "").strip()
+    try:
+        style_name = (para.style.name or "").lower() if para.style is not None else ""
+    except Exception:
+        style_name = ""
+    return "caption" in style_name or bool(_CAPTION_RE.match(text))
+
+
+def _set_keep(para, with_next: Optional[bool] = None, together: Optional[bool] = None) -> None:
+    pf = para.paragraph_format
+    try:
+        if with_next is not None:
+            pf.keep_with_next = with_next
+        if together is not None:
+            pf.keep_together = together
+    except Exception:
+        pass
+
+
+def _usable_page_height_inches(doc) -> float:
+    """Usable body height (page height minus top/bottom margins) of the last section."""
+    try:
+        sec = doc.sections[-1]
+        page_h = sec.page_height.inches if sec.page_height else 11.69
+        top = sec.top_margin.inches if sec.top_margin else 1.0
+        bottom = sec.bottom_margin.inches if sec.bottom_margin else 1.0
+        return max(3.0, page_h - top - bottom)
+    except Exception:
+        return 9.0
+
+
+def _limit_oversized_images(doc, body_start=None) -> int:
+    """
+    Scale down any inline image taller than _MAX_IMAGE_HEIGHT_RATIO of the
+    usable page height (aspect ratio preserved, never below _MIN_IMAGE_SCALE).
+    Returns the number of images scaled.
+    """
+    max_h = _usable_page_height_inches(doc) * _MAX_IMAGE_HEIGHT_RATIO
+    scaled = 0
+    try:
+        shapes = list(doc.inline_shapes)
+    except Exception:
+        return 0
+
+    for shape in shapes:
+        try:
+            h_in = shape.height.inches
+            w_in = shape.width.inches
+            if h_in <= max_h or h_in <= 0:
+                continue
+            ratio = max(_MIN_IMAGE_SCALE, max_h / h_in)
+            shape.width = int(shape.width * ratio)
+            shape.height = int(shape.height * ratio)
+            scaled += 1
+        except Exception:
+            continue
+    return scaled
+
+
+def _make_table_pagination_safe(table) -> None:
+    """Rows never split, header repeats, short tables stay together, captions stay attached."""
+    from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
+    from docx.text.paragraph import Paragraph
+
+    n_rows = len(table.rows)
+    for r_idx, row in enumerate(table.rows):
+        try:
+            tr_pr = row._tr.get_or_add_trPr()
+            if tr_pr.find(qn("w:cantSplit")) is None:
+                tr_pr.append(OxmlElement("w:cantSplit"))
+            if r_idx == 0 and tr_pr.find(qn("w:tblHeader")) is None:
+                tr_pr.append(OxmlElement("w:tblHeader"))
+        except Exception:
+            pass
+
+        # Header row always stays with the next row; short tables chain every row.
+        chain_row = (r_idx == 0 and n_rows > 1) or (
+            n_rows <= _SHORT_TABLE_MAX_ROWS and r_idx < n_rows - 1
+        )
+        if chain_row:
+            for cell in row.cells:
+                for p in cell.paragraphs:
+                    _set_keep(p, with_next=True)
+
+    # Caption BELOW the table: last row must stay with it.
+    try:
+        nxt = table._tbl.getnext()
+        if nxt is not None and nxt.tag == _w_tag("p"):
+            nxt_para = Paragraph(nxt, table._parent)
+            if _is_caption_para(nxt_para):
+                for cell in table.rows[-1].cells:
+                    for p in cell.paragraphs:
+                        _set_keep(p, with_next=True)
+                _set_keep(nxt_para, together=True)
+    except Exception:
+        pass
+
+
+def _apply_pagination_rules(doc, body_start=None) -> None:
+    """
+    Generic keep-with-next chains.
+
+      heading          -> keep_with_next + keep_together
+      image paragraph  -> keep_with_next (stays with its caption below)
+      intro paragraphs directly above an image (up to 3) and their heading
+                       -> keep_with_next (chain: heading -> intro -> image -> caption)
+      caption          -> keep_together; keep_with_next only when it sits ABOVE
+                          an image or table
+      tables           -> rows can't split, header repeats, caption attached
+      oversized images -> scaled down so the whole chain can fit one page
+    """
+    skip_before_body = None
+    if body_start is not None:
+        try:
+            from docx_fields import _paragraph_is_before_body_start
+            skip_before_body = _paragraph_is_before_body_start
+        except Exception:
+            skip_before_body = None
+
+    def _in_cover(p) -> bool:
+        if skip_before_body is None or body_start is None:
+            return False
+        try:
+            return bool(skip_before_body(doc, p, body_start))
+        except Exception:
+            return False
+
+    try:
+        n_scaled = _limit_oversized_images(doc, body_start)
+        if n_scaled:
+            print(f"[reformatter] pagination: scaled down {n_scaled} oversized image(s)")
+    except Exception as exc:
+        print(f"[reformatter] image scaling skipped: {exc}")
+
+    paras = list(doc.paragraphs)
+    n = len(paras)
+
+    for i, para in enumerate(paras):
+        if _in_cover(para):
+            continue
+
+        has_img = _para_has_drawing(para)
+        is_caption = _is_caption_para(para)
+
+        # Headings always keep with next (reinforces _apply_word_heading).
+        if _is_heading_style(para):
+            _set_keep(para, with_next=True, together=True)
+
+        if has_img:
+            _set_keep(para, with_next=True, together=True)
+
+            # Pull the intro paragraph(s) and the heading above into the chain.
+            j = i - 1
+            pulled = 0
+            while j >= 0 and pulled < _MAX_INTRO_PARAS_PULLED:
+                prev = paras[j]
+                prev_text = (prev.text or "").strip()
+
+                if _para_has_drawing(prev):
+                    break                                   # another figure — stop
+
+                if not prev_text:                           # empty spacer paragraph
+                    _set_keep(prev, with_next=True)
+                    j -= 1
+                    continue
+
+                if _is_caption_para(prev):
+                    # Caption BELOW the previous image belongs to that figure -> stop.
+                    # Caption ABOVE this image belongs to this figure -> keep chaining.
+                    below_prev_image = j - 1 >= 0 and _para_has_drawing(paras[j - 1])
+                    if below_prev_image:
+                        break
+
+                _set_keep(prev, with_next=True, together=True)
+                pulled += 1
+                if _is_heading_style(prev):
+                    break                                   # heading reached — chain complete
+                j -= 1
+
+        elif is_caption:
+            _set_keep(para, together=True)
+
+            # Caption ABOVE an image or table must stay with it.
+            above_media = False
+            nxt_el = para._element.getnext()
+            if nxt_el is not None and nxt_el.tag == _w_tag("tbl"):
+                above_media = True
+            elif i + 1 < n and _para_has_drawing(paras[i + 1]):
+                above_media = True
+
+            if above_media:
+                _set_keep(para, with_next=True)
+                # Intro/heading above a table caption join the chain too.
+                if nxt_el is not None and nxt_el.tag == _w_tag("tbl"):
+                    j = i - 1
+                    pulled = 0
+                    while j >= 0 and pulled < _MAX_INTRO_PARAS_PULLED:
+                        prev = paras[j]
+                        if not (prev.text or "").strip():
+                            _set_keep(prev, with_next=True)
+                            j -= 1
+                            continue
+                        if _para_has_drawing(prev) or _is_caption_para(prev):
+                            break
+                        _set_keep(prev, with_next=True, together=True)
+                        pulled += 1
+                        if _is_heading_style(prev):
+                            break
+                        j -= 1
+            else:
+                # Caption below its media: do NOT chain it to the next block.
+                _set_keep(para, with_next=False)
+
+    # Tables: rows must not split, header repeats, captions stay attached.
+    for tbl in doc.tables:
+        try:
+            _make_table_pagination_safe(tbl)
+        except Exception as exc:
+            print(f"[reformatter] table pagination skipped: {exc}")
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -562,6 +829,13 @@ def _reformat_docx(
     except Exception as exc:
         print(f"[reformatter] outline cleanup skipped: {exc}")
 
+    # NEW: generic pagination rules (heading -> intro -> image/table -> caption).
+    # Must run AFTER all style work so the keep flags are not overwritten.
+    try:
+        _apply_pagination_rules(doc, body_start)
+    except Exception as exc:
+        print(f"[reformatter] pagination rules skipped (non-fatal): {exc}")
+
     doc.save(output_path)
     return output_path
 
@@ -653,6 +927,7 @@ def _create_formatted_docx(
             if getattr(block, "caption", None):
                 cap = doc.add_paragraph()
                 cap.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                cap.paragraph_format.keep_together = True          # NEW
                 run = cap.add_run(block.caption)
                 run.italic = True
                 try:
@@ -670,6 +945,8 @@ def _create_formatted_docx(
             try:
                 para = doc.add_paragraph()
                 para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                para.paragraph_format.keep_with_next = True        # NEW: image stays with caption
+                para.paragraph_format.keep_together = True         # NEW
                 run = para.add_run()
                 width_in = usable_width_in * 0.85
                 if block.width_pt and block.width_pt > 0:
@@ -680,6 +957,7 @@ def _create_formatted_docx(
                 if caption_text:
                     cap = doc.add_paragraph()
                     cap.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                    cap.paragraph_format.keep_together = True      # NEW
                     try:
                         cap.style = doc.styles["Caption"]
                     except Exception:
@@ -714,6 +992,7 @@ def _create_formatted_docx(
             # Orphan caption (no image bound) — still center it
             para = doc.add_paragraph()
             para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            para.paragraph_format.keep_together = True             # NEW
             run = para.add_run(text)
             run.italic = True
             n_para += 1
@@ -771,6 +1050,7 @@ def _create_formatted_docx(
                 force_heading_style(para, doc, heading_level)
             except Exception:
                 pass
+            _set_keep(para, with_next=True, together=True)         # NEW
         prev_was_heading = heading_level > 0
         n_para += 1
 
@@ -778,6 +1058,13 @@ def _create_formatted_docx(
         f"[reformatter] PDF→DOCX: {n_para} paragraphs, "
         f"{n_table} tables, {n_image} images"
     )
+
+    # NEW: generic pagination rules (heading -> intro -> image/table -> caption)
+    try:
+        _apply_pagination_rules(doc)
+    except Exception as exc:
+        print(f"[reformatter] pagination rules skipped (non-fatal): {exc}")
+
     doc.save(output_path)
     return output_path
 
