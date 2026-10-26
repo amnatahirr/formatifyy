@@ -315,6 +315,9 @@ late final AnalysisJobProvider _jobs;
   @override
   void initState() {
     super.initState();
+     if (!widget.embedded) {
+    debugPrint('!!! AnalyzeScreen opened NON-embedded. Caller:\n${StackTrace.current}');
+  }
     _jobs = context.read<AnalysisJobProvider>();
   _jobs.activeDocId = widget.documentId;
     _tabController = TabController(length: 9, vsync: this);

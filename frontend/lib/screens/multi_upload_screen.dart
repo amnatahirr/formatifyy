@@ -11,6 +11,8 @@ import '../widgets/google_drive_browser_widget.dart';
 import '../widgets/admin/admin_ui.dart';
 import '../widgets/freeform_analyze_dialogs.dart';
 import 'analyze_screen.dart';
+import '../utils/analysis_nav.dart';
+
 
 class MultiUploadScreen extends StatefulWidget {
   const MultiUploadScreen({Key? key}) : super(key: key);
@@ -410,18 +412,13 @@ class _MultiUploadScreenState extends State<MultiUploadScreen> {
       return;
     }
 
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => AnalyzeScreen(
-          documentId: response['document_id'] as int,
-          documentName: (response['filename'] ?? 'Document').toString(),
-          templateId: 0,
-          templateName: 'AI general analysis — no template applied',
-          freeformAnalysis: true,
-        ),
-      ),
-    );
+   AnalysisNav.open(AnalysisRequest(
+  documentId: response['document_id'] as int,
+  documentName: (response['filename'] ?? 'Document').toString(),
+  templateId: 0,
+  templateName: 'AI general analysis — no template applied',
+  freeform: true,
+));
   }
 
   // ============ MY UPLOADS TAB ============

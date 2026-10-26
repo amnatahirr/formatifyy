@@ -5,6 +5,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:provider/provider.dart';
+import '../utils/analysis_nav.dart';
 
 import '../config/api_config.dart';
 import '../providers/auth_provider.dart';
@@ -110,17 +111,12 @@ class _AdminVerifyScreenState extends State<AdminVerifyScreen> {
       final filename = (data['filename'] ?? file.path.split('/').last).toString();
 
       if (!mounted || documentId == null) return;
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => AnalyzeScreen(
-            documentId: documentId,
-            documentName: filename,
-            templateId: templateId,
-            templateName: (template['name'] ?? 'Template').toString(),
-          ),
-        ),
-      );
+      AnalysisNav.open(AnalysisRequest(
+  documentId: documentId,
+  documentName: filename,
+  templateId: templateId,
+  templateName: (template['name'] ?? 'Template').toString(),
+));
     } catch (e) {
       setState(() => _error = 'Verification failed: $e');
     } finally {

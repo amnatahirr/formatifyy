@@ -97,23 +97,33 @@ class _StudentDashboardState extends State<StudentDashboard> {
   AnalysisRequest? _activeAnalysis;
   void _onAnalysisRequest() {
   if (!mounted) return;
+  final req = AnalysisNav.request.value;
   setState(() {
-    _activeAnalysis = AnalysisNav.request.value;
-    if (_activeAnalysis != null) _selectedIndex = 2; // My Reports highlight
+    _activeAnalysis = req;
+    if (req != null) _selectedIndex = 2;
   });
+  if (req == null) {
+    final uid = context.read<AuthProvider>().userId;
+    if (uid != null) context.read<DocumentProvider>().fetchDocuments(uid);
+  }
 }
+@override
+void initState() {
+  super.initState();
+  _selectedIndex = widget.initialIndex.clamp(0, kNotificationsTabIndex);
+  _activeProjectId = widget.initialProjectId;
+  _projectDetailTab = widget.initialProjectTab;
 
-  @override
-  void initState() {
-    super.initState();
-    _selectedIndex = widget.initialIndex.clamp(0, kNotificationsTabIndex);
-    _activeProjectId = widget.initialProjectId;
-    _projectDetailTab = widget.initialProjectTab;
-    AnalysisNav.hostAttached = true;
-AnalysisNav.request.addListener(_onAnalysisRequest);
-    _loadInitialData();
+  final pending = AnalysisNav.request.value;
+  if (pending != null) {
+    _activeAnalysis = pending;
+    _selectedIndex = 2;
   }
 
+  AnalysisNav.attach(this);
+  AnalysisNav.request.addListener(_onAnalysisRequest);
+  _loadInitialData();
+}
   void _loadInitialData() {
     Future.microtask(() {
       final auth = context.read<AuthProvider>();
@@ -143,7 +153,7 @@ AnalysisNav.request.addListener(_onAnalysisRequest);
 
   @override
   void dispose() {
-    AnalysisNav.hostAttached = false;
+    AnalysisNav.detach(this);
 AnalysisNav.request.removeListener(_onAnalysisRequest);
    _refreshTimer?.cancel();
     super.dispose();
@@ -679,6 +689,18 @@ AnalysisNav.request.removeListener(_onAnalysisRequest);
   }
 
   Widget _buildBody() {
+    if (_activeAnalysis != null) {
+    final r = _activeAnalysis!;
+    return AnalyzeScreen(
+      key: ValueKey('analysis-${r.documentId}-${r.freeform}'),
+      documentId: r.documentId,
+      documentName: r.documentName,
+      templateId: r.templateId,
+      templateName: r.templateName,
+      freeformAnalysis: r.freeform,
+      embedded: true,
+    );
+  }
     if (_activeProjectId != null) {
       return ProjectDetailScreen(
         key: ValueKey('project-$_activeProjectId-$_projectDetailTab'),
@@ -1761,36 +1783,26 @@ AnalysisNav.request.removeListener(_onAnalysisRequest);
     );
   }
 
-  void _openAnalyzeScreen(Map<String, dynamic> doc) {
-    final docId = doc['id'] as int?;
-    final templateId = doc['template_id'] as int?;
-    if (docId == null || templateId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Cannot analyze — document info is missing'),
-          backgroundColor: Color(0xFFEF4444),
-        ),
-      );
-      return;
-    }
-
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => AnalyzeScreen(
-          documentId: docId,
-          documentName: doc['filename'] as String? ?? 'Document',
-          templateId: templateId,
-          templateName: doc['template_name'] as String? ?? 'Template',
-        ),
+void _openAnalyzeScreen(Map<String, dynamic> doc) {
+  final docId = doc['id'] as int?;
+  final templateId = doc['template_id'] as int?;
+  if (docId == null || templateId == null) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Cannot analyze — document info is missing'),
+        backgroundColor: Color(0xFFEF4444),
       ),
-    ).then((_) {
-      final auth = context.read<AuthProvider>();
-      if (auth.userId != null) {
-        context.read<DocumentProvider>().fetchDocuments(auth.userId!);
-      }
-    });
+    );
+    return;
   }
+
+  AnalysisNav.open(AnalysisRequest(
+    documentId: docId,
+    documentName: doc['filename'] as String? ?? 'Document',
+    templateId: templateId,
+    templateName: doc['template_name'] as String? ?? 'Template',
+  ));
+}
 
   Widget _buildMyReportsPage() {
     final auth = context.read<AuthProvider>();

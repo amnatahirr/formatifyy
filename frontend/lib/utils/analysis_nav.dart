@@ -21,24 +21,26 @@ class AnalysisNav {
   /// Dashboard ke content area mein dikhne wali analysis.
   static final ValueNotifier<AnalysisRequest?> request = ValueNotifier(null);
 
-  /// StudentDashboard mounted ho to true.
-  static bool hostAttached = false;
 
-  static void open(AnalysisRequest r) {
-    if (hostAttached) {
-      request.value = r; // dashboard ke andar, sidebar wahi rahegi
-    } else {
-      navigatorKey.currentState?.push(MaterialPageRoute(
-        builder: (_) => AnalyzeScreen(
-          documentId: r.documentId,
-          documentName: r.documentName,
-          templateId: r.templateId,
-          templateName: r.templateName,
-          freeformAnalysis: r.freeform,
-        ),
-      ));
-    }
+  static Object? _host;
+  static bool get hostAttached => _host != null;
+    static void attach(Object host) => _host = host;
+     static void detach(Object host) {
+    if (identical(_host, host)) _host = null;
   }
+
+
+static void open(AnalysisRequest r) {
+  request.value = r; // hamesha request save karo
+
+  if (!hostAttached) {
+    debugPrint('AnalysisNav.open with no host. Caller:\n${StackTrace.current}');
+    navigatorKey.currentState?.pushNamedAndRemoveUntil(
+      '/student-dashboard',
+      (_) => false,
+    );
+  }
+}
 
   static void close() => request.value = null;
 }

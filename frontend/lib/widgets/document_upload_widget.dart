@@ -2,7 +2,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:provider/provider.dart';
-
+import '../utils/analysis_nav.dart';
 import '../providers/document_provider.dart';
 import '../providers/template_provider.dart';
 import '../providers/auth_provider.dart';
@@ -555,17 +555,12 @@ class _DocumentUploadWidgetState extends State<DocumentUploadWidget> {
       return;
     }
 
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => AnalyzeScreen(
-          documentId: response!['document_id'] as int,
-          documentName: (response['filename'] ?? 'Document').toString(),
-          templateId: 0,
-          templateName: 'AI general analysis — no template applied',
-          freeformAnalysis: true,
-        ),
-      ),
-    );
+  AnalysisNav.open(AnalysisRequest(
+  documentId: response!['document_id'] as int,
+  documentName: (response['filename'] ?? 'Document').toString(),
+  templateId: 0,
+  templateName: 'AI general analysis — no template applied',
+  freeform: true,
+));
   }
 }
