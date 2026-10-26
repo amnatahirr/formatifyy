@@ -7,7 +7,7 @@ import 'package:frontend/widgets/qr_dialog.dart';
 import 'package:provider/provider.dart';
 import 'dart:io';
 import '../widgets/analysis_jobs_sidebar_item.dart';
-
+import '../utils/analysis_nav.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:open_file_plus/open_file_plus.dart';
@@ -94,6 +94,14 @@ class _StudentDashboardState extends State<StudentDashboard> {
   int _currentPage = 1;
   int _itemsPerPage = 9;
   Timer? _refreshTimer;
+  AnalysisRequest? _activeAnalysis;
+  void _onAnalysisRequest() {
+  if (!mounted) return;
+  setState(() {
+    _activeAnalysis = AnalysisNav.request.value;
+    if (_activeAnalysis != null) _selectedIndex = 2; // My Reports highlight
+  });
+}
 
   @override
   void initState() {
@@ -101,6 +109,8 @@ class _StudentDashboardState extends State<StudentDashboard> {
     _selectedIndex = widget.initialIndex.clamp(0, kNotificationsTabIndex);
     _activeProjectId = widget.initialProjectId;
     _projectDetailTab = widget.initialProjectTab;
+    AnalysisNav.hostAttached = true;
+AnalysisNav.request.addListener(_onAnalysisRequest);
     _loadInitialData();
   }
 
@@ -133,6 +143,8 @@ class _StudentDashboardState extends State<StudentDashboard> {
 
   @override
   void dispose() {
+    AnalysisNav.hostAttached = false;
+AnalysisNav.request.removeListener(_onAnalysisRequest);
    _refreshTimer?.cancel();
     super.dispose();
   }
@@ -484,11 +496,13 @@ class _StudentDashboardState extends State<StudentDashboard> {
       child: InkWell(
         borderRadius: BorderRadius.circular(10),
         onTap: () {
-          setState(() {
-            _selectedIndex = index;
-            _activeProjectId = null;
-          });
-        },
+  AnalysisNav.request.value = null;   // analysis band, job chalti rehti hai
+  setState(() {
+    _selectedIndex = index;
+    _activeProjectId = null;
+    _activeAnalysis = null;
+  });
+},
         child: Padding(
           padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           child: Row(

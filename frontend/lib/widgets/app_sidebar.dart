@@ -79,7 +79,7 @@ class AppSidebar extends StatelessWidget {
                     context, p, 1, Icons.add_circle_outline, 'New Report'),
                 _buildSidebarItem(context, p, 2, Icons.folder, 'My Reports'),
                  AnalysisJobsSidebarItem(),
-                _buildAnalysisItem(context, p),
+                
                 _buildSidebarItem(
                     context, p, 3, Icons.people_outline, 'Collaboration'),
                 _buildSidebarItem(context, p, 5, Icons.layers, 'Templates'),

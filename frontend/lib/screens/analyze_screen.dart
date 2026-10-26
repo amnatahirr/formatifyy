@@ -20,7 +20,8 @@ import '../services/image_replacement_service.dart';
 import ' image_formatter_screen.dart';
 import '../widgets/reference_formatter_widget.dart';
 import '../providers/analysis_job_provider.dart';
-import '../main.dart' show navigatorKey; // apni file ka path
+import '../main.dart' show navigatorKey; 
+import '../utils/analysis_nav.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Color palette — follows ThemeProvider (light / dark)
@@ -193,6 +194,7 @@ class AnalyzeScreen extends StatefulWidget {
   final String templateName;
   /// When true, uses /documents/analyze-freeform and AI-guided export UI.
   final bool freeformAnalysis;
+  final bool embedded;
 
   const AnalyzeScreen({
     Key? key,
@@ -201,6 +203,7 @@ class AnalyzeScreen extends StatefulWidget {
     required this.templateId,
     required this.templateName,
     this.freeformAnalysis = false,
+    this.embedded = false,
   }) : super(key: key);
 
   @override
@@ -1552,19 +1555,13 @@ late final AnalysisJobProvider _jobs;
     name: name,
     freeform: freeform,
     force: force,
-  onOpen: () {
-  final nav = navigatorKey.currentState;
-  debugPrint('[AnalysisJob] VIEW tapped, navigator: ${nav != null}');
-  nav?.push(MaterialPageRoute(
-    builder: (_) => AnalyzeScreen(
-      documentId: id,
-      documentName: name,
-      templateId: tId,
-      templateName: tName,
-      freeformAnalysis: freeform,
-    ),
-  ));
-},
+  onOpen: () => AnalysisNav.open(AnalysisRequest(
+  documentId: id,
+  documentName: name,
+  templateId: tId,
+  templateName: tName,
+  freeform: freeform,
+)),
   );
 
   if (freeform) {
@@ -2702,42 +2699,44 @@ late final AnalysisJobProvider _jobs;
 
   // ── Build ─────────────────────────────────────────────────────────────────
 
-  @override
-  Widget build(BuildContext context) {
-    _ap = context.watch<ThemeProvider>().palette;
-    return Scaffold(
-      backgroundColor: Colors.transparent,
-      body: _ap.ambientGlowBackdrop(
-        child: Row(
-          children: [
-            AppSidebar(
-              selectedIndex: _selectedSidebarIndex,
-              onItemSelected: _handleSidebarSelection,
-            ),
-            Expanded(
-              child: Column(
-                children: [
-                  _buildTopBar(),
-                  Expanded(
-                    child: FutureBuilder<Map<String, dynamic>>(
-                      future: _analysisFuture,
-                      builder: (ctx, snap) {
-                        if (snap.connectionState == ConnectionState.waiting)
-                          return _buildLoading();
-                        if (snap.hasError)
-                          return _buildError(snap.error.toString());
-                        return _buildBody(snap.data ?? {});
-                      },
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
+  Widget _buildMain() => Column(
+  children: [
+    _buildTopBar(),
+    Expanded(
+      child: FutureBuilder<Map<String, dynamic>>(
+        future: _analysisFuture,
+        builder: (ctx, snap) {
+          if (snap.connectionState == ConnectionState.waiting) return _buildLoading();
+          if (snap.hasError) return _buildError(snap.error.toString());
+          return _buildBody(snap.data ?? {});
+        },
       ),
-    );
+    ),
+  ],
+);
+
+@override
+Widget build(BuildContext context) {
+  _ap = context.watch<ThemeProvider>().palette;
+  if (widget.embedded) {
+    return Material(color: Colors.transparent, child: _buildMain());
   }
+  return Scaffold(
+    backgroundColor: Colors.transparent,
+    body: _ap.ambientGlowBackdrop(
+      child: Row(
+        children: [
+          AppSidebar(
+            selectedIndex: _selectedSidebarIndex,
+            onItemSelected: _handleSidebarSelection,
+          ),
+          Expanded(child: _buildMain()),
+        ],
+      ),
+    ),
+  );
+}
+           
 
   // ── Top bar ───────────────────────────────────────────────────────────────
 
@@ -2752,7 +2751,7 @@ late final AnalysisJobProvider _jobs;
         children: [
           IconButton(
             icon: Icon(Icons.arrow_back, color: _textPri),
-            onPressed: () => Navigator.pop(context),
+           onPressed: () => widget.embedded ? AnalysisNav.close() : Navigator.pop(context),
           ),
           const SizedBox(width: 10),
           Column(
@@ -2847,7 +2846,9 @@ late final AnalysisJobProvider _jobs;
         child: OutlinedButton.icon(
           icon: const Icon(Icons.open_in_new, size: 16),
           label: const Text('Continue in background'),
-          onPressed: () => _handleSidebarSelection(0), // dashboard par jao
+         onPressed: () => widget.embedded
+    ? AnalysisNav.close()
+    : _handleSidebarSelection(0),
         ),
       ),
     ),
