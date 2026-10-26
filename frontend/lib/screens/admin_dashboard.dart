@@ -20,6 +20,7 @@ import '../utils/responsive.dart';
 import '../theme/app_theme.dart';
 import '../widgets/admin/admin_ui.dart';
 
+import '../widgets/tr.dart';
 class _AdminNavItem {
   final int id;
   final String label;
@@ -287,8 +288,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text(
-                          'Admin Panel',
+                        const Tr('Admin Panel',
                           style: TextStyle(
                             fontSize: 14,
                             fontWeight: FontWeight.w700,
@@ -327,7 +327,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                   confirmAndLogout(context);
                 },
                 icon: const Icon(Icons.logout_rounded, size: 18),
-                label: const Text('Logout'),
+                label: const Tr('Logout'),
                 style: OutlinedButton.styleFrom(
                   foregroundColor: Colors.white70,
                   side: BorderSide(color: AdminColors.border.withOpacity(0.8)),
@@ -378,8 +378,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
-                        'Admin Panel',
+                      const Tr('Admin Panel',
                         style: TextStyle(
                           fontSize: 14,
                           fontWeight: FontWeight.w700,

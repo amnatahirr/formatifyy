@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'common_widgets.dart';
 
+import '../tr.dart';
 /// Admin settings for Phase 1 image formatting (stored in template formatting_rules).
 class ImageFormattingRulesCard extends StatelessWidget {
   final TextEditingController captionPatternController;
@@ -52,11 +53,11 @@ class ImageFormattingRulesCard extends StatelessWidget {
                 items: const [
                   DropdownMenuItem(
                     value: 'global',
-                    child: Text('Global sequential (Figure 1, Figure 2, …)'),
+                    child: Tr('Global sequential (Figure 1, Figure 2, …)'),
                   ),
                   DropdownMenuItem(
                     value: 'chapter',
-                    child: Text('Chapter-wise (Figure 3.1, Figure 3.2, …)'),
+                    child: Tr('Chapter-wise (Figure 3.1, Figure 3.2, …)'),
                   ),
                 ],
                 onChanged: (v) {
@@ -75,8 +76,8 @@ class ImageFormattingRulesCard extends StatelessWidget {
                 dropdownColor: const Color(0xFF1A1F2E),
                 style: const TextStyle(color: Colors.white, fontSize: 13),
                 items: const [
-                  DropdownMenuItem(value: 'below', child: Text('Below image')),
-                  DropdownMenuItem(value: 'above', child: Text('Above image')),
+                  DropdownMenuItem(value: 'below', child: Tr('Below image')),
+                  DropdownMenuItem(value: 'above', child: Tr('Above image')),
                 ],
                 onChanged: (v) {
                   if (v != null) onCaptionPositionChanged(v);
@@ -99,8 +100,7 @@ class ImageFormattingRulesCard extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 6),
-          Text(
-            'Placeholders: {n}, {chapter}, {caption}',
+          Tr('Placeholders: {n}, {chapter}, {caption}',
             style: TextStyle(fontSize: 11, color: Colors.white.withOpacity(0.45)),
           ),
           const SizedBox(height: 12),
@@ -122,12 +122,10 @@ class ImageFormattingRulesCard extends StatelessWidget {
           SwitchListTile(
             contentPadding: EdgeInsets.zero,
             dense: true,
-            title: const Text(
-              'Include List of Figures',
+            title: const Tr('Include List of Figures',
               style: TextStyle(color: Colors.white, fontSize: 13),
             ),
-            subtitle: Text(
-              'Regenerate LOF when image formatting runs',
+            subtitle: Tr('Regenerate LOF when image formatting runs',
               style: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 11),
             ),
             value: includeLof,
@@ -137,8 +135,7 @@ class ImageFormattingRulesCard extends StatelessWidget {
           SwitchListTile(
             contentPadding: EdgeInsets.zero,
             dense: true,
-            title: const Text(
-              'Require caption',
+            title: const Tr('Require caption',
               style: TextStyle(color: Colors.white, fontSize: 13),
             ),
             value: requireCaption,
@@ -148,12 +145,10 @@ class ImageFormattingRulesCard extends StatelessWidget {
           SwitchListTile(
             contentPadding: EdgeInsets.zero,
             dense: true,
-            title: const Text(
-              'Require in-text reference',
+            title: const Tr('Require in-text reference',
               style: TextStyle(color: Colors.white, fontSize: 13),
             ),
-            subtitle: Text(
-              'Flag figures never cited as “Figure N” in body text',
+            subtitle: Tr('Flag figures never cited as “Figure N” in body text',
               style: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 11),
             ),
             value: requireIntextReference,

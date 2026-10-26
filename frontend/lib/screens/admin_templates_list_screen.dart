@@ -5,6 +5,7 @@ import '../providers/auth_provider.dart';
 import '../providers/template_provider.dart';
 import '../widgets/admin/admin_ui.dart';
 
+import '../widgets/tr.dart';
 class AdminTemplatesListScreen extends StatefulWidget {
   const AdminTemplatesListScreen({super.key});
 
@@ -41,7 +42,7 @@ class _AdminTemplatesListScreenState extends State<AdminTemplatesListScreen> {
             trailing: OutlinedButton.icon(
               onPressed: _loadTemplates,
               icon: const Icon(Icons.refresh),
-              label: const Text('Refresh'),
+              label: const Tr('Refresh'),
             ),
           ),
           const SizedBox(height: 20),

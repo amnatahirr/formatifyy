@@ -7,6 +7,7 @@ import 'dart:convert';
 import 'mobile_qr_upload_screen.dart';
 import 'mobile_qr_download_screen.dart';
 
+import '../widgets/tr.dart';
 class MobileCompanionScreen extends StatefulWidget {
   const MobileCompanionScreen({Key? key}) : super(key: key);
 
@@ -92,8 +93,7 @@ class _MobileCompanionScreenState extends State<MobileCompanionScreen>
               backgroundColor: const Color(0xFF161B22),
               foregroundColor: Colors.white,
               elevation: 0,
-              title: const Text(
-                'Quick Access',
+              title: const Tr('Quick Access',
                 style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
               ),
             )
@@ -145,8 +145,7 @@ class _MobileCompanionScreenState extends State<MobileCompanionScreen>
           const Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                'Formatify',
+              Tr('Formatify',
                 style: TextStyle(
                   color: Colors.white,
                   fontSize: 20,
@@ -154,8 +153,7 @@ class _MobileCompanionScreenState extends State<MobileCompanionScreen>
                   letterSpacing: -0.3,
                 ),
               ),
-              Text(
-                'Mobile Companion',
+              Tr('Mobile Companion',
                 style: TextStyle(
                   color: Color(0xFF8B5CF6),
                   fontSize: 12,
@@ -200,8 +198,7 @@ class _MobileCompanionScreenState extends State<MobileCompanionScreen>
             ),
           ),
           const SizedBox(height: 28),
-          const Text(
-            'Quick Access',
+          const Tr('Quick Access',
             style: TextStyle(
               color: Colors.white,
               fontSize: 28,
@@ -210,8 +207,7 @@ class _MobileCompanionScreenState extends State<MobileCompanionScreen>
             ),
           ),
           const SizedBox(height: 8),
-          Text(
-            'Scan a QR code from your desktop or upload files directly from your phone',
+          Tr('Scan a QR code from your desktop or upload files directly from your phone',
             textAlign: TextAlign.center,
             style: TextStyle(
               color: Colors.white.withOpacity(0.5),
@@ -235,8 +231,7 @@ class _MobileCompanionScreenState extends State<MobileCompanionScreen>
               Expanded(child: Container(height: 1, color: Colors.white.withOpacity(0.06))),
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Text(
-                  'OR UPLOAD DIRECTLY',
+                child: Tr('OR UPLOAD DIRECTLY',
                   style: TextStyle(
                     color: Colors.white.withOpacity(0.3),
                     fontSize: 11,
@@ -294,8 +289,7 @@ class _MobileCompanionScreenState extends State<MobileCompanionScreen>
                 ),
                 const SizedBox(width: 14),
                 Expanded(
-                  child: Text(
-                    'Make sure your phone and computer are on the same Wi-Fi network for uploads to work.',
+                  child: Tr('Make sure your phone and computer are on the same Wi-Fi network for uploads to work.',
                     style: TextStyle(
                       color: Colors.white.withOpacity(0.45),
                       fontSize: 12,
@@ -516,8 +510,7 @@ class _QrScannerPageState extends State<_QrScannerPage> {
                       ),
                     ),
                     const SizedBox(width: 16),
-                    const Text(
-                      'Scan QR Code',
+                    const Tr('Scan QR Code',
                       style: TextStyle(
                         color: Colors.white,
                         fontSize: 18,
@@ -549,8 +542,7 @@ class _QrScannerPageState extends State<_QrScannerPage> {
                     children: [
                       const Icon(Icons.qr_code_rounded, color: Color(0xFF8B5CF6), size: 20),
                       const SizedBox(width: 10),
-                      Text(
-                        'Point at a Formatify QR code',
+                      Tr('Point at a Formatify QR code',
                         style: TextStyle(
                           color: Colors.white.withOpacity(0.8),
                           fontSize: 14,
@@ -698,7 +690,7 @@ class _StandaloneUploadPageState extends State<_StandaloneUploadPage> {
       backgroundColor: const Color(0xFF0D1117),
       appBar: AppBar(
         backgroundColor: const Color(0xFF161B22),
-        title: const Text('Upload File', style: TextStyle(fontWeight: FontWeight.w700)),
+        title: const Tr('Upload File', style: TextStyle(fontWeight: FontWeight.w700)),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_rounded),
           onPressed: () => Navigator.of(context).pop(),
@@ -780,8 +772,7 @@ class _StandaloneUploadPageState extends State<_StandaloneUploadPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  'Desktop Server',
+                Tr('Desktop Server',
                   style: TextStyle(
                     color: Colors.white.withOpacity(0.6),
                     fontSize: 12,
@@ -823,8 +814,7 @@ class _StandaloneUploadPageState extends State<_StandaloneUploadPage> {
             child: ElevatedButton.icon(
               onPressed: _upload,
               icon: const Icon(Icons.cloud_upload_rounded, size: 20),
-              label: const Text(
-                'Upload to Desktop',
+              label: const Tr('Upload to Desktop',
                 style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
               ),
               style: ElevatedButton.styleFrom(
@@ -857,7 +847,7 @@ class _StandaloneUploadPageState extends State<_StandaloneUploadPage> {
             ),
           ),
           const SizedBox(height: 24),
-          const Text('Uploading...', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w700)),
+          const Tr('Uploading...', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w700)),
           const SizedBox(height: 8),
           Text(widget.filename, style: const TextStyle(color: Color(0xFF64748B), fontSize: 13)),
         ],
@@ -882,8 +872,7 @@ class _StandaloneUploadPageState extends State<_StandaloneUploadPage> {
               child: const Icon(Icons.check_rounded, color: Color(0xFF10B981), size: 48),
             ),
             const SizedBox(height: 24),
-            const Text(
-              'Upload Successful!',
+            const Tr('Upload Successful!',
               style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w700),
             ),
             const SizedBox(height: 12),
@@ -899,7 +888,7 @@ class _StandaloneUploadPageState extends State<_StandaloneUploadPage> {
               child: ElevatedButton.icon(
                 onPressed: () => Navigator.of(context).pop(),
                 icon: const Icon(Icons.check_rounded, size: 18),
-                label: const Text('Done', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+                label: const Tr('Done', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF10B981),
                   foregroundColor: Colors.white,
@@ -930,8 +919,7 @@ class _StandaloneUploadPageState extends State<_StandaloneUploadPage> {
               child: const Icon(Icons.error_outline_rounded, color: Color(0xFFEF4444), size: 44),
             ),
             const SizedBox(height: 24),
-            const Text(
-              'Upload Failed',
+            const Tr('Upload Failed',
               style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w700),
             ),
             const SizedBox(height: 12),
@@ -955,7 +943,7 @@ class _StandaloneUploadPageState extends State<_StandaloneUploadPage> {
               child: ElevatedButton.icon(
                 onPressed: () => setState(() => _state = _StandaloneState.preview),
                 icon: const Icon(Icons.refresh_rounded, size: 18),
-                label: const Text('Try Again', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+                label: const Tr('Try Again', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF3B82F6),
                   foregroundColor: Colors.white,

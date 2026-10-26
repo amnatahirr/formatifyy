@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/responsive.dart';
 
+import '../tr.dart';
 class AdminColors {
   // Aligned with AppPalette.dark (admin/supervisor/super-admin are dark-only) so
   // these consoles share the student side's visual language.
@@ -416,8 +417,7 @@ class AdminSubPage extends StatelessWidget {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              const Text(
-                                'FORMATIFY',
+                              const Tr('FORMATIFY',
                                 style: TextStyle(
                                   fontSize: 13.5,
                                   fontWeight: FontWeight.w700,
@@ -425,8 +425,7 @@ class AdminSubPage extends StatelessWidget {
                                   letterSpacing: 0.4,
                                 ),
                               ),
-                              Text(
-                                'Admin Panel',
+                              Tr('Admin Panel',
                                 style: TextStyle(
                                   fontSize: 10,
                                   color: Colors.white.withOpacity(0.5),
@@ -464,8 +463,7 @@ class AdminSubPage extends StatelessWidget {
                             ),
                             const SizedBox(width: 10),
                             Expanded(
-                              child: Text(
-                                'Back',
+                              child: Tr('Back',
                                 style: TextStyle(
                                   fontSize: 12.5,
                                   fontWeight: FontWeight.w600,
@@ -518,8 +516,7 @@ class AdminSubPage extends StatelessWidget {
                           ),
                         ),
                         const SizedBox(width: 8),
-                        Text(
-                          'Live backend data',
+                        Tr('Live backend data',
                           style: TextStyle(
                             fontSize: 11,
                             color: Colors.white.withOpacity(0.45),
@@ -1125,7 +1122,7 @@ class AdminErrorView extends StatelessWidget {
       action: ElevatedButton.icon(
         onPressed: onRetry,
         icon: const Icon(Icons.refresh_rounded, size: 16),
-        label: const Text('Retry'),
+        label: const Tr('Retry'),
       ),
     );
   }
@@ -1308,7 +1305,7 @@ Future<void> showSupervisorCredentialsDialog({
               children: [
                 Icon(Icons.check_circle_rounded, color: AdminColors.success),
                 SizedBox(width: 10),
-                Text('Supervisor Added!'),
+                Tr('Supervisor Added!'),
               ],
             ),
             content: SizedBox(
@@ -1321,7 +1318,7 @@ Future<void> showSupervisorCredentialsDialog({
                   const SizedBox(height: 6),
                   Text('Email: $email', style: const TextStyle(color: Colors.white)),
                   const SizedBox(height: 18),
-                  Text('Temporary Password:', style: TextStyle(color: Colors.white.withOpacity(0.7))),
+                  Tr('Temporary Password:', style: TextStyle(color: Colors.white.withOpacity(0.7))),
                   const SizedBox(height: 8),
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -1357,8 +1354,7 @@ Future<void> showSupervisorCredentialsDialog({
                     ),
                   ),
                   const SizedBox(height: 16),
-                  Text(
-                    'Share this password with the supervisor. The password is also sent by email to that supervisor. They will be asked to change it on first login.',
+                  Tr('Share this password with the supervisor. The password is also sent by email to that supervisor. They will be asked to change it on first login.',
                     style: TextStyle(color: Colors.white.withOpacity(0.7), height: 1.4),
                   ),
                 ],
@@ -1367,7 +1363,7 @@ Future<void> showSupervisorCredentialsDialog({
             actions: [
               TextButton(
                 onPressed: sending ? null : () => Navigator.pop(dialogContext),
-                child: const Text('Close'),
+                child: const Tr('Close'),
               ),
                       ElevatedButton.icon(
                 onPressed: sending

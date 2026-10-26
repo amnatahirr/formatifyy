@@ -5,6 +5,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/fyp_provider.dart';
 import '../../theme/app_theme.dart';
 
+import '../tr.dart';
 /// Desktop Dashboard semester deadline strip (admin-managed global deadline).
 class DesktopSemesterDeadlineCard extends StatefulWidget {
   const DesktopSemesterDeadlineCard({super.key});
@@ -87,8 +88,7 @@ class _DesktopSemesterDeadlineCardState
         children: [
           Icon(Icons.event_outlined, color: p.iconMuted, size: 20),
           const SizedBox(width: 12),
-          Text(
-            'Semester deadline not set',
+          Tr('Semester deadline not set',
             style: TextStyle(color: p.textMuted, fontSize: 14),
           ),
         ],

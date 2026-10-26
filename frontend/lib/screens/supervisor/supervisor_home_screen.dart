@@ -7,6 +7,7 @@ import '../../services/supervisor_api_service.dart';
 import '../../utils/responsive.dart';
 import '../../widgets/admin/admin_ui.dart';
 
+import '../../widgets/tr.dart';
 class SupervisorHomeScreen extends StatefulWidget {
   final VoidCallback? onOpenAssignmentRequests;
   final VoidCallback? onOpenMyGroups;
@@ -115,8 +116,7 @@ class _SupervisorHomeScreenState extends State<SupervisorHomeScreen> {
           overflow: TextOverflow.ellipsis,
         ),
         const SizedBox(height: 4),
-        Text(
-          'Your pending work',
+        Tr('Your pending work',
           style: TextStyle(fontSize: 13, color: Colors.white.withOpacity(0.55)),
         ),
         const SizedBox(height: 16),
@@ -175,8 +175,7 @@ class _SupervisorHomeScreenState extends State<SupervisorHomeScreen> {
             width: double.infinity,
             padding: const EdgeInsets.all(16),
             decoration: adminCardDecoration(),
-            child: Text(
-              'No accepted groups yet. New requests appear under Requests.',
+            child: Tr('No accepted groups yet. New requests appear under Requests.',
               style: TextStyle(color: Colors.white.withOpacity(0.6), height: 1.4, fontSize: 13),
             ),
           )
@@ -195,7 +194,7 @@ class _SupervisorHomeScreenState extends State<SupervisorHomeScreen> {
           const SizedBox(height: 4),
           TextButton(
             onPressed: widget.onOpenMyGroups,
-            child: const Text('View all groups'),
+            child: const Tr('View all groups'),
           ),
         ],
       ],
@@ -271,7 +270,7 @@ class _SupervisorHomeScreenState extends State<SupervisorHomeScreen> {
               : TextButton.icon(
                   onPressed: widget.onOpenMyGroups,
                   icon: const Icon(Icons.arrow_forward_rounded, size: 15),
-                  label: const Text('View My Groups'),
+                  label: const Tr('View My Groups'),
                   style: TextButton.styleFrom(
                     foregroundColor: AdminColors.accentBright,
                     textStyle: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
@@ -283,8 +282,7 @@ class _SupervisorHomeScreenState extends State<SupervisorHomeScreen> {
           AdminSectionCard(
             title: 'No groups yet',
             icon: Icons.groups_outlined,
-            child: Text(
-              'Accepted groups will appear here with their progress.',
+            child: Tr('Accepted groups will appear here with their progress.',
               style: TextStyle(color: Colors.white.withOpacity(0.65), height: 1.45),
             ),
           )

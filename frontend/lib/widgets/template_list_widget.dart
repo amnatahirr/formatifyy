@@ -8,6 +8,7 @@ import '../providers/template_provider.dart';
 import '../providers/auth_provider.dart';
 import '../config/api_config.dart';
 
+import 'tr.dart';
 class TemplateListWidget extends StatefulWidget {
   const TemplateListWidget({Key? key}) : super(key: key);
 
@@ -31,17 +32,17 @@ class _TemplateListWidgetState extends State<TemplateListWidget> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Delete Template'),
-        content: const Text('Are you sure you want to delete this template?'),
+        title: const Tr('Delete Template'),
+        content: const Tr('Are you sure you want to delete this template?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
+            child: const Tr('Cancel'),
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
             style: TextButton.styleFrom(foregroundColor: Colors.red),
-            child: const Text('Delete'),
+            child: const Tr('Delete'),
           ),
         ],
       ),
@@ -64,7 +65,7 @@ class _TemplateListWidgetState extends State<TemplateListWidget> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('Template deleted successfully!'),
+              content: Tr('Template deleted successfully!'),
               backgroundColor: Colors.green,
             ),
           );
@@ -142,8 +143,7 @@ class _TemplateListWidgetState extends State<TemplateListWidget> {
                   color: Colors.grey[300],
                 ),
                 const SizedBox(height: 16),
-                Text(
-                  'No templates created yet',
+                Tr('No templates created yet',
                   style: TextStyle(
                     fontSize: 16,
                     color: Colors.grey[600],
@@ -197,8 +197,7 @@ class _TemplateListWidgetState extends State<TemplateListWidget> {
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text(
-                            'Required Sections:',
+                          const Tr('Required Sections:',
                             style: TextStyle(
                               fontWeight: FontWeight.w600,
                               color: Colors.grey,
@@ -239,7 +238,7 @@ class _TemplateListWidgetState extends State<TemplateListWidget> {
                     // Formatting rules preview
                     if (rules != null && rules.isNotEmpty)
                       ExpansionTile(
-                        title: const Text('Formatting Rules'),
+                        title: const Tr('Formatting Rules'),
                         children: [
                           Padding(
                             padding: const EdgeInsets.all(12),

@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../providers/analysis_job_provider.dart';
 import '../theme/app_theme.dart';
 
+import 'tr.dart';
 class AnalysisJobsSidebarItem extends StatelessWidget {
   const AnalysisJobsSidebarItem({Key? key}) : super(key: key);
 
@@ -73,7 +74,7 @@ class AnalysisJobsSidebarItem extends StatelessWidget {
     showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Analyses'),
+        title: const Tr('Analyses'),
         content: SizedBox(
           width: 360,
           child: ListView(

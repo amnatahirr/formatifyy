@@ -8,6 +8,7 @@ import '../services/image_replacement_service.dart';
 import '../config/api_config.dart';
 import 'image_replacement_dialog.dart';
 
+import 'tr.dart';
 AppPalette _ap = AppPalette.dark;
 
 Color get _bg => _ap.scaffold;
@@ -809,7 +810,7 @@ class _DocumentPreviewPanelState extends State<DocumentPreviewPanel> {
                       widget.onIgnoreIssue(issueId);
                       Navigator.pop(ctx);
                     },
-                    child: const Text('Ignore'),
+                    child: const Tr('Ignore'),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -831,7 +832,7 @@ class _DocumentPreviewPanelState extends State<DocumentPreviewPanel> {
                       }
                       Navigator.pop(ctx);
                     },
-                    child: const Text('Apply Fix'),
+                    child: const Tr('Apply Fix'),
                   ),
                 ),
               ],
@@ -867,15 +868,14 @@ class _DocumentPreviewPanelState extends State<DocumentPreviewPanel> {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: _surface,
-        title: Text('Remove Image?', style: TextStyle(color: _textPri)),
-        content: Text(
-          'This permanently deletes the image from the document.',
+        title: Tr('Remove Image?', style: TextStyle(color: _textPri)),
+        content: Tr('This permanently deletes the image from the document.',
           style: TextStyle(color: _textSec, fontSize: 13),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: Text('Cancel', style: TextStyle(color: _textSec)),
+            child: Tr('Cancel', style: TextStyle(color: _textSec)),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
@@ -883,7 +883,7 @@ class _DocumentPreviewPanelState extends State<DocumentPreviewPanel> {
               foregroundColor: Colors.white,
             ),
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Remove'),
+            child: const Tr('Remove'),
           ),
         ],
       ),
@@ -927,8 +927,7 @@ class _DocumentPreviewPanelState extends State<DocumentPreviewPanel> {
             padding: const EdgeInsets.symmetric(horizontal: 14),
             alignment: Alignment.centerLeft,
             color: _textSec.withOpacity(0.12),
-            child: Text(
-              'Original',
+            child: Tr('Original',
               style: TextStyle(color: _textSec, fontWeight: FontWeight.w700, fontSize: 13),
             ),
           ),
@@ -1061,8 +1060,7 @@ class _DocumentPreviewPanelState extends State<DocumentPreviewPanel> {
           const Icon(Icons.description, color: Colors.white, size: 18),
           const SizedBox(width: 8),
           Expanded(
-            child: Text(
-              'Corrected — Word preview',
+            child: Tr('Corrected — Word preview',
               style: const TextStyle(
                 color: Colors.white,
                 fontWeight: FontWeight.w700,
@@ -1084,7 +1082,7 @@ class _DocumentPreviewPanelState extends State<DocumentPreviewPanel> {
             ),
           ),
           const SizedBox(width: 4),
-          const Text('Styles', style: white),
+          const Tr('Styles', style: white),
           Transform.scale(
             scale: 0.8,
             child: Switch(
@@ -1444,8 +1442,7 @@ class _DocumentPreviewPanelState extends State<DocumentPreviewPanel> {
             if (pageNum.toString().isNotEmpty) ...[
               Padding(
                 padding: EdgeInsets.symmetric(horizontal: 8 * s),
-                child: Text(
-                  '. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .',
+                child: Tr('. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .',
                   style: TextStyle(color: Colors.black38, fontSize: 10 * s),
                 ),
               ),
@@ -1596,7 +1593,7 @@ class _DocumentPreviewPanelState extends State<DocumentPreviewPanel> {
     if (rows.isEmpty) {
       return Padding(
         padding: EdgeInsets.symmetric(vertical: 8 * s),
-        child: Text('[Table — no cell data received from server]',
+        child: Tr('[Table — no cell data received from server]',
             style: _wordStyle(font, 10, s, italic: true)),
       );
     }
@@ -1691,8 +1688,7 @@ class _DocumentPreviewPanelState extends State<DocumentPreviewPanel> {
                         children: const [
                           Icon(Icons.image_outlined, color: Colors.black45, size: 48),
                           SizedBox(height: 8),
-                          Text(
-                            '[Figure / Image Placeholder]',
+                          Tr('[Figure / Image Placeholder]',
                             style: TextStyle(color: Colors.black54, fontSize: 12, fontStyle: FontStyle.italic),
                           ),
                         ],
@@ -1719,7 +1715,7 @@ class _DocumentPreviewPanelState extends State<DocumentPreviewPanel> {
                     child: ElevatedButton.icon(
                       onPressed: () => _showReplaceDialog(block, issue),
                       icon: const Icon(Icons.image_search, size: 15),
-                      label: const Text('Replace', style: TextStyle(fontSize: 12)),
+                      label: const Tr('Replace', style: TextStyle(fontSize: 12)),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: _blue,
                         foregroundColor: Colors.white,
@@ -1731,7 +1727,7 @@ class _DocumentPreviewPanelState extends State<DocumentPreviewPanel> {
                     child: OutlinedButton.icon(
                       onPressed: () => _confirmAndRemove(block, issue),
                       icon: const Icon(Icons.delete_outline, size: 15),
-                      label: const Text('Remove', style: TextStyle(fontSize: 12)),
+                      label: const Tr('Remove', style: TextStyle(fontSize: 12)),
                       style: OutlinedButton.styleFrom(
                         foregroundColor: _red,
                         side: BorderSide(color: _red.withOpacity(0.55)),
@@ -1751,7 +1747,7 @@ class _DocumentPreviewPanelState extends State<DocumentPreviewPanel> {
     _ap = context.watch<ThemeProvider>().palette;
     if (_blocks.isEmpty && widget.blocks.isEmpty) {
       return Center(
-        child: Text('No document content available for preview.', style: TextStyle(color: _textSec)),
+        child: Tr('No document content available for preview.', style: TextStyle(color: _textSec)),
       );
     }
 

@@ -7,6 +7,7 @@ import '../../providers/fyp_provider.dart';
 import '../../theme/app_theme.dart';
 import 'document_feedback_screen.dart';
 
+import '../../widgets/tr.dart';
 /// Status Tracker — reads final_submissions (not remarks).
 class StatusTrackerScreen extends StatefulWidget {
   final VoidCallback? onChooseSupervisor;
@@ -123,7 +124,7 @@ class _StatusTrackerScreenState extends State<StatusTrackerScreen> {
     if (groupId == null || documentId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('No review document linked to this submission yet.'),
+          content: Tr('No review document linked to this submission yet.'),
         ),
       );
       return;
@@ -156,7 +157,7 @@ class _StatusTrackerScreenState extends State<StatusTrackerScreen> {
           if (widget.onOpenMySupervisor != null)
             OutlinedButton(
               onPressed: widget.onOpenMySupervisor,
-              child: const Text('My Supervisor'),
+              child: const Tr('My Supervisor'),
             ),
           if (widget.onChooseSupervisor != null)
             ElevatedButton(
@@ -165,7 +166,7 @@ class _StatusTrackerScreenState extends State<StatusTrackerScreen> {
                 backgroundColor: _p.accent,
                 foregroundColor: Colors.white,
               ),
-              child: const Text('Choose Supervisor'),
+              child: const Tr('Choose Supervisor'),
             ),
         ],
       );
@@ -184,7 +185,7 @@ class _StatusTrackerScreenState extends State<StatusTrackerScreen> {
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 16),
-              TextButton(onPressed: _load, child: const Text('Retry')),
+              TextButton(onPressed: _load, child: const Tr('Retry')),
             ],
           ),
         ),
@@ -201,8 +202,7 @@ class _StatusTrackerScreenState extends State<StatusTrackerScreen> {
       child: ListView(
         padding: const EdgeInsets.all(32),
         children: [
-          Text(
-            'Tracks your final submissions to the supervisor (approve / revision / reject).',
+          Tr('Tracks your final submissions to the supervisor (approve / revision / reject).',
             style: TextStyle(color: _p.textSecondary, fontSize: 13),
           ),
           const SizedBox(height: 20),
@@ -217,8 +217,7 @@ class _StatusTrackerScreenState extends State<StatusTrackerScreen> {
             _latestCard(latest),
             if (history.length > 1) ...[
               const SizedBox(height: 28),
-              Text(
-                'History',
+              Tr('History',
                 style: TextStyle(
                   color: _p.textSecondary,
                   fontWeight: FontWeight.w700,
@@ -286,8 +285,7 @@ class _StatusTrackerScreenState extends State<StatusTrackerScreen> {
           ),
           if (note.isNotEmpty) ...[
             const SizedBox(height: 16),
-            Text(
-              'Supervisor note',
+            Tr('Supervisor note',
               style: TextStyle(
                 color: _p.textSecondary,
                 fontSize: 12,
@@ -323,7 +321,7 @@ class _StatusTrackerScreenState extends State<StatusTrackerScreen> {
                     ? null
                     : () => _uploadNewVersion(s),
                 icon: const Icon(Icons.upload_file, size: 18),
-                label: const Text('Upload New Version'),
+                label: const Tr('Upload New Version'),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: _warn,
                   foregroundColor: Colors.black,

@@ -8,6 +8,7 @@ import '../config/api_config.dart';
 import '../providers/auth_provider.dart';
 import '../providers/template_provider.dart';
 
+import 'tr.dart';
 class TemplateFormWidget extends StatefulWidget {
   final int universityId;
   final Function()? onTemplateCreated;
@@ -374,7 +375,7 @@ class _TemplateFormWidgetState extends State<TemplateFormWidget> {
       if (response.statusCode == 200) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Template created successfully!'),
+            content: Tr('Template created successfully!'),
             backgroundColor: Colors.green,
           ),
         );
@@ -430,15 +431,13 @@ class _TemplateFormWidgetState extends State<TemplateFormWidget> {
             const SizedBox(height: 20),
 
             // Header
-            Text(
-              'Create New Template',
+            Tr('Create New Template',
               style: theme.textTheme.headlineSmall?.copyWith(
                 fontWeight: FontWeight.bold,
               ),
             ),
             const SizedBox(height: 8),
-            Text(
-              'Define your formatting rules and document structure',
+            Tr('Define your formatting rules and document structure',
               style: theme.textTheme.bodySmall?.copyWith(color: Colors.white70),
             ),
             const SizedBox(height: 32),
@@ -502,7 +501,7 @@ class _TemplateFormWidgetState extends State<TemplateFormWidget> {
                         child: _buildStyleRow(
                           label: 'Size',
                           controller: _heading1SizeController,
-                          suffix: const Text('pt'),
+                          suffix: const Tr('pt'),
                         ),
                       ),
                       const SizedBox(width: 12),
@@ -539,7 +538,7 @@ class _TemplateFormWidgetState extends State<TemplateFormWidget> {
                         child: _buildStyleRow(
                           label: 'Space Before',
                           controller: _heading1SpaceBeforeController,
-                          suffix: const Text('pt'),
+                          suffix: const Tr('pt'),
                         ),
                       ),
                     ],
@@ -548,7 +547,7 @@ class _TemplateFormWidgetState extends State<TemplateFormWidget> {
                   _buildStyleRow(
                     label: 'Space After',
                     controller: _heading1SpaceAfterController,
-                    suffix: const Text('pt'),
+                    suffix: const Tr('pt'),
                   ),
                 ],
               ),
@@ -572,7 +571,7 @@ class _TemplateFormWidgetState extends State<TemplateFormWidget> {
                         child: _buildStyleRow(
                           label: 'Size',
                           controller: _heading2SizeController,
-                          suffix: const Text('pt'),
+                          suffix: const Tr('pt'),
                         ),
                       ),
                       const SizedBox(width: 12),
@@ -609,7 +608,7 @@ class _TemplateFormWidgetState extends State<TemplateFormWidget> {
                         child: _buildStyleRow(
                           label: 'Space Before',
                           controller: _heading2SpaceBeforeController,
-                          suffix: const Text('pt'),
+                          suffix: const Tr('pt'),
                         ),
                       ),
                     ],
@@ -618,7 +617,7 @@ class _TemplateFormWidgetState extends State<TemplateFormWidget> {
                   _buildStyleRow(
                     label: 'Space After',
                     controller: _heading2SpaceAfterController,
-                    suffix: const Text('pt'),
+                    suffix: const Tr('pt'),
                   ),
                 ],
               ),
@@ -642,7 +641,7 @@ class _TemplateFormWidgetState extends State<TemplateFormWidget> {
                         child: _buildStyleRow(
                           label: 'Size',
                           controller: _heading3SizeController,
-                          suffix: const Text('pt'),
+                          suffix: const Tr('pt'),
                         ),
                       ),
                       const SizedBox(width: 12),
@@ -679,7 +678,7 @@ class _TemplateFormWidgetState extends State<TemplateFormWidget> {
                         child: _buildStyleRow(
                           label: 'Space Before',
                           controller: _heading3SpaceBeforeController,
-                          suffix: const Text('pt'),
+                          suffix: const Tr('pt'),
                         ),
                       ),
                     ],
@@ -688,7 +687,7 @@ class _TemplateFormWidgetState extends State<TemplateFormWidget> {
                   _buildStyleRow(
                     label: 'Space After',
                     controller: _heading3SpaceAfterController,
-                    suffix: const Text('pt'),
+                    suffix: const Tr('pt'),
                   ),
                 ],
               ),
@@ -708,7 +707,7 @@ class _TemplateFormWidgetState extends State<TemplateFormWidget> {
                         child: _buildStyleRow(
                           label: 'Size',
                           controller: _bodySizeController,
-                          suffix: const Text('pt'),
+                          suffix: const Tr('pt'),
                         ),
                       ),
                       const SizedBox(width: 12),
@@ -727,7 +726,7 @@ class _TemplateFormWidgetState extends State<TemplateFormWidget> {
                         child: _buildStyleRow(
                           label: 'First Line Indent',
                           controller: _firstLineIndentController,
-                          suffix: const Text('in'),
+                          suffix: const Tr('in'),
                         ),
                       ),
                       const SizedBox(width: 12),
@@ -735,7 +734,7 @@ class _TemplateFormWidgetState extends State<TemplateFormWidget> {
                         child: _buildStyleRow(
                           label: 'Bullet Indent',
                           controller: _bulletIndentController,
-                          suffix: const Text('in'),
+                          suffix: const Tr('in'),
                         ),
                       ),
                     ],
@@ -748,7 +747,7 @@ class _TemplateFormWidgetState extends State<TemplateFormWidget> {
                         onChanged: (v) =>
                             setState(() => _bodyJustified = v ?? false),
                       ),
-                      const Text('Justified'),
+                      const Tr('Justified'),
                     ],
                   ),
                   const SizedBox(height: 12),
@@ -766,7 +765,7 @@ class _TemplateFormWidgetState extends State<TemplateFormWidget> {
                         child: _buildStyleRow(
                           label: 'Space Before',
                           controller: _bodySpaceBeforeController,
-                          suffix: const Text('pt'),
+                          suffix: const Tr('pt'),
                         ),
                       ),
                     ],
@@ -775,7 +774,7 @@ class _TemplateFormWidgetState extends State<TemplateFormWidget> {
                   _buildStyleRow(
                     label: 'Space After',
                     controller: _bodySpaceAfterController,
-                    suffix: const Text('pt'),
+                    suffix: const Tr('pt'),
                   ),
                 ],
               ),
@@ -799,7 +798,7 @@ class _TemplateFormWidgetState extends State<TemplateFormWidget> {
                         child: _buildStyleRow(
                           label: 'Size',
                           controller: _bulletSizeController,
-                          suffix: const Text('pt'),
+                          suffix: const Tr('pt'),
                         ),
                       ),
                       const SizedBox(width: 12),
@@ -827,12 +826,12 @@ class _TemplateFormWidgetState extends State<TemplateFormWidget> {
                     items: const [
                       DropdownMenuItem(
                         value: 'bullet',
-                        child: Text('Bullet (•)'),
+                        child: Tr('Bullet (•)'),
                       ),
-                      DropdownMenuItem(value: 'dash', child: Text('Dash (–)')),
+                      DropdownMenuItem(value: 'dash', child: Tr('Dash (–)')),
                       DropdownMenuItem(
                         value: 'asterisk',
-                        child: Text('Asterisk (*)'),
+                        child: Tr('Asterisk (*)'),
                       ),
                     ],
                     onChanged: (value) {
@@ -856,7 +855,7 @@ class _TemplateFormWidgetState extends State<TemplateFormWidget> {
                         child: _buildStyleRow(
                           label: 'Space Before',
                           controller: _bulletSpaceBeforeController,
-                          suffix: const Text('pt'),
+                          suffix: const Tr('pt'),
                         ),
                       ),
                     ],
@@ -865,7 +864,7 @@ class _TemplateFormWidgetState extends State<TemplateFormWidget> {
                   _buildStyleRow(
                     label: 'Space After',
                     controller: _bulletSpaceAfterController,
-                    suffix: const Text('pt'),
+                    suffix: const Tr('pt'),
                   ),
                 ],
               ),
@@ -889,7 +888,7 @@ class _TemplateFormWidgetState extends State<TemplateFormWidget> {
                         child: _buildStyleRow(
                           label: 'Size',
                           controller: _numberedSizeController,
-                          suffix: const Text('pt'),
+                          suffix: const Tr('pt'),
                         ),
                       ),
                       const SizedBox(width: 12),
@@ -915,12 +914,12 @@ class _TemplateFormWidgetState extends State<TemplateFormWidget> {
                       ),
                     ),
                     items: const [
-                      DropdownMenuItem(value: '1,2,3', child: Text('1, 2, 3')),
-                      DropdownMenuItem(value: 'A,B,C', child: Text('A, B, C')),
-                      DropdownMenuItem(value: 'a,b,c', child: Text('a, b, c')),
+                      DropdownMenuItem(value: '1,2,3', child: Tr('1, 2, 3')),
+                      DropdownMenuItem(value: 'A,B,C', child: Tr('A, B, C')),
+                      DropdownMenuItem(value: 'a,b,c', child: Tr('a, b, c')),
                       DropdownMenuItem(
                         value: 'i,ii,iii',
-                        child: Text('i, ii, iii'),
+                        child: Tr('i, ii, iii'),
                       ),
                     ],
                     onChanged: (value) {
@@ -944,7 +943,7 @@ class _TemplateFormWidgetState extends State<TemplateFormWidget> {
                         child: _buildStyleRow(
                           label: 'Space Before',
                           controller: _numberedSpaceBeforeController,
-                          suffix: const Text('pt'),
+                          suffix: const Tr('pt'),
                         ),
                       ),
                     ],
@@ -953,7 +952,7 @@ class _TemplateFormWidgetState extends State<TemplateFormWidget> {
                   _buildStyleRow(
                     label: 'Space After',
                     controller: _numberedSpaceAfterController,
-                    suffix: const Text('pt'),
+                    suffix: const Tr('pt'),
                   ),
                 ],
               ),
@@ -1004,7 +1003,7 @@ class _TemplateFormWidgetState extends State<TemplateFormWidget> {
                         child: _buildStyleRow(
                           label: 'Top Margin',
                           controller: _marginTopController,
-                          suffix: const Text('in'),
+                          suffix: const Tr('in'),
                         ),
                       ),
                       const SizedBox(width: 12),
@@ -1012,7 +1011,7 @@ class _TemplateFormWidgetState extends State<TemplateFormWidget> {
                         child: _buildStyleRow(
                           label: 'Bottom Margin',
                           controller: _marginBottomController,
-                          suffix: const Text('in'),
+                          suffix: const Tr('in'),
                         ),
                       ),
                     ],
@@ -1024,7 +1023,7 @@ class _TemplateFormWidgetState extends State<TemplateFormWidget> {
                         child: _buildStyleRow(
                           label: 'Left Margin',
                           controller: _marginLeftController,
-                          suffix: const Text('in'),
+                          suffix: const Tr('in'),
                         ),
                       ),
                       const SizedBox(width: 12),
@@ -1032,7 +1031,7 @@ class _TemplateFormWidgetState extends State<TemplateFormWidget> {
                         child: _buildStyleRow(
                           label: 'Right Margin',
                           controller: _marginRightController,
-                          suffix: const Text('in'),
+                          suffix: const Tr('in'),
                         ),
                       ),
                     ],
@@ -1041,7 +1040,7 @@ class _TemplateFormWidgetState extends State<TemplateFormWidget> {
                   _buildStyleRow(
                     label: 'Bullet Indent',
                     controller: _bulletIndentController,
-                    suffix: const Text('in'),
+                    suffix: const Tr('in'),
                   ),
                   const SizedBox(height: 12),
                   Row(
@@ -1051,7 +1050,7 @@ class _TemplateFormWidgetState extends State<TemplateFormWidget> {
                         onChanged: (v) =>
                             setState(() => _lineNumberEnabled = v ?? false),
                       ),
-                      const Text('Enable Line Numbers'),
+                      const Tr('Enable Line Numbers'),
                     ],
                   ),
                 ],
@@ -1084,8 +1083,7 @@ class _TemplateFormWidgetState extends State<TemplateFormWidget> {
                           ),
                         ),
                       )
-                    : const Text(
-                        'Create Template',
+                    : const Tr('Create Template',
                         style: TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.w600,
@@ -1226,7 +1224,7 @@ class _TemplateFormWidgetState extends State<TemplateFormWidget> {
               context: context,
               builder: (BuildContext context) {
                 return AlertDialog(
-                  title: const Text('Select Color'),
+                  title: const Tr('Select Color'),
                   content: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
@@ -1309,7 +1307,7 @@ class _TemplateFormWidgetState extends State<TemplateFormWidget> {
         Expanded(
           child: CheckboxListTile(
             contentPadding: EdgeInsets.zero,
-            title: const Text('Bold'),
+            title: const Tr('Bold'),
             value: bold,
             onChanged: (v) => onBoldChanged(v ?? false),
           ),
@@ -1317,7 +1315,7 @@ class _TemplateFormWidgetState extends State<TemplateFormWidget> {
         Expanded(
           child: CheckboxListTile(
             contentPadding: EdgeInsets.zero,
-            title: const Text('Italic'),
+            title: const Tr('Italic'),
             value: italic,
             onChanged: (v) => onItalicChanged(v ?? false),
           ),
@@ -1325,7 +1323,7 @@ class _TemplateFormWidgetState extends State<TemplateFormWidget> {
         Expanded(
           child: CheckboxListTile(
             contentPadding: EdgeInsets.zero,
-            title: const Text('Underline'),
+            title: const Tr('Underline'),
             value: underline,
             onChanged: (v) => onUnderlineChanged(v ?? false),
           ),

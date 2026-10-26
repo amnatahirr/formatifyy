@@ -6,6 +6,7 @@ import '../../providers/fyp_provider.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/responsive.dart';
 
+import '../../widgets/tr.dart';
 /// Student form to request an FYP supervisor (creates assignment_requests row).
 class SupervisorSelectionScreen extends StatefulWidget {
   /// Called after a request is submitted successfully (e.g. switch to My Supervisor).
@@ -156,7 +157,7 @@ class _SupervisorSelectionScreenState extends State<SupervisorSelectionScreen> {
     if (_supervisorId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Select a supervisor'),
+          content: Tr('Select a supervisor'),
           backgroundColor: Color(0xFFEF4444),
         ),
       );
@@ -192,7 +193,7 @@ class _SupervisorSelectionScreenState extends State<SupervisorSelectionScreen> {
     if (result != null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Request sent — waiting for supervisor approval'),
+          content: Tr('Request sent — waiting for supervisor approval'),
           backgroundColor: Color(0xFF10B981),
         ),
       );
@@ -280,8 +281,7 @@ class _SupervisorSelectionScreenState extends State<SupervisorSelectionScreen> {
           compact ? 100 : 40,
         ),
         children: [
-          Text(
-            'Request an FYP supervisor for your group. Your request stays pending until they accept.',
+          Tr('Request an FYP supervisor for your group. Your request stays pending until they accept.',
             style: TextStyle(
               color: _p.textSecondary,
               fontSize: 13,
@@ -375,7 +375,7 @@ class _SupervisorSelectionScreenState extends State<SupervisorSelectionScreen> {
                       TextButton.icon(
                         onPressed: _addMember,
                         icon: const Icon(Icons.person_add_alt_1, size: 18),
-                        label: const Text('Add'),
+                        label: const Tr('Add'),
                         style: TextButton.styleFrom(
                           foregroundColor: _p.accent,
                         ),
@@ -396,8 +396,7 @@ class _SupervisorSelectionScreenState extends State<SupervisorSelectionScreen> {
                           color: _p.isDark ? _p.borderStrong : _p.border,
                         ),
                       ),
-                      child: Text(
-                        'Optional — add other members with their university emails. Leader is included automatically.',
+                      child: Tr('Optional — add other members with their university emails. Leader is included automatically.',
                         style: TextStyle(
                           color: _p.textSecondary,
                           fontSize: 12,
@@ -497,7 +496,7 @@ class _SupervisorSelectionScreenState extends State<SupervisorSelectionScreen> {
                     items: [
                       const DropdownMenuItem<int>(
                         value: null,
-                        child: Text('All departments'),
+                        child: Tr('All departments'),
                       ),
                       ...fyp.departments.map(
                         (d) {
@@ -581,7 +580,7 @@ class _SupervisorSelectionScreenState extends State<SupervisorSelectionScreen> {
                     items: [
                       const DropdownMenuItem<int>(
                         value: null,
-                        child: Text('None'),
+                        child: Tr('None'),
                       ),
                       ...coOptions.map((s) {
                         final id = s['id'] is int
@@ -602,8 +601,7 @@ class _SupervisorSelectionScreenState extends State<SupervisorSelectionScreen> {
                   ),
                   if (filteredSupervisors.isEmpty) ...[
                     const SizedBox(height: 8),
-                    Text(
-                      'No active supervisors for this department.',
+                    Tr('No active supervisors for this department.',
                       style: TextStyle(
                         color: _p.textSecondary,
                         fontSize: 12,
@@ -644,8 +642,7 @@ class _SupervisorSelectionScreenState extends State<SupervisorSelectionScreen> {
             ),
           ),
           const SizedBox(height: 24),
-          Text(
-            'Your requests',
+          Tr('Your requests',
             style: TextStyle(
               color: _p.textPrimary,
               fontSize: 16,
@@ -666,8 +663,7 @@ class _SupervisorSelectionScreenState extends State<SupervisorSelectionScreen> {
                 ),
                 boxShadow: _p.isDark ? _p.cardShadow : null,
               ),
-              child: Text(
-                'No assignment requests yet.',
+              child: Tr('No assignment requests yet.',
                 style: TextStyle(color: _p.textSecondary),
               ),
             )

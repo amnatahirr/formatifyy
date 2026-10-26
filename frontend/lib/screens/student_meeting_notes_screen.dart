@@ -7,6 +7,7 @@ import '../models/supervisor_models.dart';
 import '../providers/auth_provider.dart';
 import '../services/student_api_service.dart';
 
+import '../widgets/tr.dart';
 /// Read-only meeting notes for the logged-in student (linked via group contact email).
 class StudentMeetingNotesScreen extends StatefulWidget {
   const StudentMeetingNotesScreen({super.key});
@@ -83,7 +84,7 @@ class _StudentMeetingNotesScreenState extends State<StudentMeetingNotesScreen> {
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 16),
-              TextButton(onPressed: _load, child: const Text('Retry')),
+              TextButton(onPressed: _load, child: const Tr('Retry')),
             ],
           ),
         ),
@@ -98,8 +99,7 @@ class _StudentMeetingNotesScreenState extends State<StudentMeetingNotesScreen> {
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.all(32),
         children: [
-          Text(
-            'Meeting notes from your supervisor — read only.',
+          Tr('Meeting notes from your supervisor — read only.',
             style: TextStyle(color: _p.textSecondary, fontSize: 14),
           ),
           const SizedBox(height: 22),
@@ -116,8 +116,7 @@ class _StudentMeetingNotesScreenState extends State<StudentMeetingNotesScreen> {
                 ),
                 boxShadow: _p.isDark ? _p.cardShadow : null,
               ),
-              child: Text(
-                'No meeting notes yet for your FYP group. When your supervisor adds notes, they will appear here.',
+              child: Tr('No meeting notes yet for your FYP group. When your supervisor adds notes, they will appear here.',
                 style: TextStyle(
                   color: _p.textSecondary,
                   height: 1.45,
@@ -195,8 +194,7 @@ class _StudentMeetingNotesScreenState extends State<StudentMeetingNotesScreen> {
             ),
             if (note.actionItems.isNotEmpty) ...[
               const SizedBox(height: 14),
-              Text(
-                'Action items',
+              Tr('Action items',
                 style: TextStyle(
                   color: _p.textSecondary,
                   fontWeight: FontWeight.w600,

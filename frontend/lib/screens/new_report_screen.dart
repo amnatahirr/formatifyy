@@ -19,6 +19,7 @@ import '../widgets/admin/admin_ui.dart';
 import '../widgets/freeform_analyze_dialogs.dart';
 import '../utils/analysis_nav.dart';
 
+import '../widgets/tr.dart';
 class NewReportScreen extends StatefulWidget {
   final Map<String, dynamic>? selectedTemplate;
   /// When true, renders inside StudentDashboard (no outer Scaffold).
@@ -376,15 +377,13 @@ AnalysisNav.open(AnalysisRequest(
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: _p.surface,
-        title: Text(
-          'Connect Google Drive',
+        title: Tr('Connect Google Drive',
           style: TextStyle(color: _p.textPrimary),
         ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(
-              'Enter your Google email to authorize access:',
+            Tr('Enter your Google email to authorize access:',
               style: TextStyle(
                 fontSize: 13,
                 color: _p.textSecondary,
@@ -409,8 +408,7 @@ AnalysisNav.open(AnalysisRequest(
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: Text(
-              'Cancel',
+            child: Tr('Cancel',
               style: TextStyle(color: _p.textSecondary),
             ),
           ),
@@ -419,7 +417,7 @@ AnalysisNav.open(AnalysisRequest(
               Navigator.pop(context);
               await _connectGoogleDrive();
             },
-            child: const Text('Connect via OAuth'),
+            child: const Tr('Connect via OAuth'),
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xFF10B981),
             ),
@@ -501,8 +499,7 @@ AnalysisNav.open(AnalysisRequest(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  'Select File from Google Drive',
+                Tr('Select File from Google Drive',
                   style: TextStyle(
                     color: _p.textPrimary,
                     fontSize: 18,
@@ -513,8 +510,7 @@ AnalysisNav.open(AnalysisRequest(
                 Expanded(
                   child: _driveFiles.isEmpty
                       ? Center(
-                          child: Text(
-                            'No files found',
+                          child: Tr('No files found',
                             style: TextStyle(color: _p.textSecondary),
                           ),
                         )
@@ -556,7 +552,7 @@ AnalysisNav.open(AnalysisRequest(
                   alignment: Alignment.centerRight,
                   child: TextButton(
                     onPressed: () => Navigator.pop(context),
-                    child: const Text('Cancel'),
+                    child: const Tr('Cancel'),
                   ),
                 ),
               ],
@@ -772,8 +768,7 @@ void _showSuccess(String message) {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'Uploading a new version',
+          const Tr('Uploading a new version',
             style: TextStyle(
               color: Color(0xFFF59E0B),
               fontWeight: FontWeight.w700,
@@ -818,8 +813,7 @@ void _showSuccess(String message) {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'Ready for supervisor review',
+          Tr('Ready for supervisor review',
             style: TextStyle(
               color: _p.textPrimary,
               fontSize: 15,
@@ -917,8 +911,7 @@ void _showSuccess(String message) {
         builder: (ctx) => AlertDialog(
           backgroundColor:
               _p.isDark ? _p.surfaceElevated : const Color(0xFF161B22),
-          title: const Text(
-            'Submissions closed',
+          title: const Tr('Submissions closed',
             style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
           ),
           content: Text(
@@ -929,7 +922,7 @@ void _showSuccess(String message) {
           actions: [
             TextButton(
               onPressed: () => Navigator.of(ctx).pop(),
-              child: const Text('OK'),
+              child: const Tr('OK'),
             ),
           ],
         ),
@@ -974,8 +967,7 @@ void _showSuccess(String message) {
                       ),
                     ),
                     const SizedBox(width: 12),
-                    Text(
-                      'Upload from Phone',
+                    Tr('Upload from Phone',
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w600,
@@ -985,8 +977,7 @@ void _showSuccess(String message) {
                   ],
                 ),
                 const SizedBox(height: 24),
-                Text(
-                  'Scan QR code using your phone to upload a document.',
+                Tr('Scan QR code using your phone to upload a document.',
                   style: TextStyle(color: _p.textSecondary),
                 ),
                 const SizedBox(height: 24),
@@ -995,7 +986,7 @@ void _showSuccess(String message) {
                   height: 48,
                   child: ElevatedButton.icon(
                     icon: const Icon(Icons.qr_code),
-                    label: const Text('Generate QR Code'),
+                    label: const Tr('Generate QR Code'),
                     onPressed:
                         (_selectedTemplate != null && auth.userId != null)
                         ? () => _handleUploadFromPhone(auth.userId!)
@@ -1008,8 +999,7 @@ void _showSuccess(String message) {
                 if (_selectedTemplate == null)
                   Padding(
                     padding: const EdgeInsets.only(top: 8),
-                    child: Text(
-                      'Please select a template first',
+                    child: Tr('Please select a template first',
                       style: TextStyle(color: Colors.orange.withOpacity(0.8)),
                     ),
                   ),
@@ -1095,8 +1085,7 @@ Future<void> _handleUploadFromPhone(int userId) async {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Text(
-                'Scan to Upload from Phone',
+              const Tr('Scan to Upload from Phone',
                 style: TextStyle(fontWeight: FontWeight.bold, color: Colors.black),
               ),
               const SizedBox(height: 16),
@@ -1150,8 +1139,7 @@ Future<void> _handleUploadFromPhone(int userId) async {
                       ),
                     ),
                     const SizedBox(width: 12),
-                    Text(
-                      'Upload File',
+                    Tr('Upload File',
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w600,
@@ -1186,8 +1174,7 @@ Future<void> _handleUploadFromPhone(int userId) async {
                             color: _p.textMuted,
                           ),
                           const SizedBox(height: 16),
-                          Text(
-                            'Click to upload or drag files',
+                          Tr('Click to upload or drag files',
                             style: TextStyle(
                               fontSize: 14,
                               fontWeight: FontWeight.w500,
@@ -1195,8 +1182,7 @@ Future<void> _handleUploadFromPhone(int userId) async {
                             ),
                           ),
                           const SizedBox(height: 6),
-                          Text(
-                            'Supported: DOC, DOCX, PDF, TXT',
+                          Tr('Supported: DOC, DOCX, PDF, TXT',
                             style: TextStyle(
                               fontSize: 12,
                               color: _p.textMuted,
@@ -1228,8 +1214,7 @@ Future<void> _handleUploadFromPhone(int userId) async {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(
-                                'File selected',
+                              Tr('File selected',
                                 style: TextStyle(
                                   fontSize: 12,
                                   color: _p.textSecondary,
@@ -1338,8 +1323,7 @@ Future<void> _handleUploadFromPhone(int userId) async {
                       ),
                     ),
                     const SizedBox(width: 12),
-                    Text(
-                      'Paste Content',
+                    Tr('Paste Content',
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w600,
@@ -1448,8 +1432,7 @@ Future<void> _handleUploadFromPhone(int userId) async {
                 if (_selectedTemplate == null)
                   Padding(
                     padding: const EdgeInsets.only(top: 8),
-                    child: Text(
-                      'Select a template on the right to enable this button',
+                    child: Tr('Select a template on the right to enable this button',
                       style: TextStyle(
                         fontSize: 12,
                         color: Colors.orange.withOpacity(0.8),
@@ -1504,8 +1487,7 @@ Future<void> _handleUploadFromPhone(int userId) async {
                       ),
                     ),
                     const SizedBox(width: 12),
-                    Text(
-                      'Google Drive',
+                    Tr('Google Drive',
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w600,
@@ -1561,7 +1543,7 @@ Future<void> _handleUploadFromPhone(int userId) async {
                     child: ElevatedButton.icon(
                       onPressed: _showGoogleDriveOptions,
                       icon: const Icon(Icons.link),
-                      label: const Text('Connect Google Drive'),
+                      label: const Tr('Connect Google Drive'),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFF10B981),
                         foregroundColor: Colors.white,
@@ -1611,8 +1593,7 @@ Future<void> _handleUploadFromPhone(int userId) async {
                 if (_selectedTemplate == null && _isGoogleDriveConnected)
                   Padding(
                     padding: const EdgeInsets.only(top: 8),
-                    child: Text(
-                      'Please select a template first',
+                    child: Tr('Please select a template first',
                       style: TextStyle(
                         fontSize: 12,
                         color: Colors.orange.withOpacity(0.8),
@@ -1656,8 +1637,7 @@ Future<void> _handleUploadFromPhone(int userId) async {
                 ),
               ),
               const SizedBox(width: 12),
-              Text(
-                'Select Template',
+              Tr('Select Template',
                 style: TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.w600,
@@ -1695,8 +1675,7 @@ Future<void> _handleUploadFromPhone(int userId) async {
                         color: _p.textMuted,
                       ),
                       const SizedBox(height: 12),
-                      Text(
-                        'No templates available',
+                      Tr('No templates available',
                         style: TextStyle(color: _p.textSecondary),
                       ),
                     ],
@@ -1812,7 +1791,7 @@ Future<void> _handleUploadFromPhone(int userId) async {
               child: OutlinedButton.icon(
                 onPressed: _isProcessing ? null : _analyzeWithoutTemplate,
                 icon: const Icon(Icons.auto_awesome, size: 18),
-                label: const Text('Analyze without template'),
+                label: const Tr('Analyze without template'),
                 style: OutlinedButton.styleFrom(
                   foregroundColor: AdminColors.primary,
                   side: BorderSide(color: AdminColors.primary.withOpacity(0.7)),

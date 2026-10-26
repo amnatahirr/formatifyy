@@ -11,6 +11,7 @@ import 'widgets/hub_version_summary.dart';
 import 'widgets/join_project_dialog.dart';
 import '../../theme/app_theme.dart';
 
+import '../../widgets/tr.dart';
 /// Collaboration hub — Create / Join actions + full project list.
 class ProjectDashboardScreen extends StatefulWidget {
   final bool embedded;
@@ -117,7 +118,7 @@ class _ProjectDashboardScreenState extends State<ProjectDashboardScreen> {
               ElevatedButton.icon(
                 onPressed: _showCreateDialog,
                 icon: const Icon(Icons.add, size: 18, color: Colors.white),
-                label: const Text('Create Project', style: TextStyle(color: Colors.white)),
+                label: const Tr('Create Project', style: TextStyle(color: Colors.white)),
                 style: ElevatedButton.styleFrom(
                   foregroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
@@ -127,7 +128,7 @@ class _ProjectDashboardScreenState extends State<ProjectDashboardScreen> {
               OutlinedButton.icon(
                 onPressed: _showJoinDialog,
                 icon: const Icon(Icons.group_add, size: 18),
-                label: const Text('Join Project'),
+                label: const Tr('Join Project'),
                 style: OutlinedButton.styleFrom(
                   foregroundColor: const Color(0xFF10B981),
                   side: const BorderSide(color: Color(0xFF10B981)),
@@ -161,8 +162,7 @@ class _ProjectDashboardScreenState extends State<ProjectDashboardScreen> {
                 border: Border.all(color: p.isDark ? p.borderStrong : p.border),
                 boxShadow: p.cardShadow,
               ),
-              child: Text(
-                'No projects yet — create or join one to get started.',
+              child: Tr('No projects yet — create or join one to get started.',
                 style: TextStyle(color: p.textSecondary, fontSize: 13),
               ),
             )

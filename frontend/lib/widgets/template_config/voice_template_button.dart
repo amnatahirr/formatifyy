@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import 'package:record/record.dart';
 import '../../config/api_config.dart';
 
+import '../tr.dart';
 class VoiceTemplateButton extends StatefulWidget {
   final bool enabled;
   final String baseUrl;
@@ -160,7 +161,7 @@ class _VoiceTemplateButtonState extends State<VoiceTemplateButton> {
     return showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
-        title: const Text('Voice command'),
+        title: const Tr('Voice command'),
         content: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -169,7 +170,7 @@ class _VoiceTemplateButtonState extends State<VoiceTemplateButton> {
               Text('tanscript: "$transcript"',
                   style: const TextStyle(fontStyle: FontStyle.italic)),
               const SizedBox(height: 12),
-              if (patch.isEmpty) const Text('Koi change samajh nahi aaya.'),
+              if (patch.isEmpty) const Tr('Koi change samajh nahi aaya.'),
               ...patch.entries.map((e) => Text('• ${e.key}: ${e.value}')),
               if (unclear.isNotEmpty) ...[
                 const SizedBox(height: 12),
@@ -182,11 +183,11 @@ class _VoiceTemplateButtonState extends State<VoiceTemplateButton> {
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(context, false),
-              child: const Text('Cancel')),
+              child: const Tr('Cancel')),
           if (patch.isNotEmpty)
             ElevatedButton(
                 onPressed: () => Navigator.pop(context, true),
-                child: const Text('Apply to form')),
+                child: const Tr('Apply to form')),
         ],
       ),
     );

@@ -7,6 +7,7 @@ import '../../services/admin_api_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/admin/admin_ui.dart';
 
+import '../../widgets/tr.dart';
 /// Admin UI for global Semester 6 / 7 FYP submission deadlines.
 class SemesterDeadlinesScreen extends StatefulWidget {
   final bool embedded;
@@ -144,7 +145,7 @@ class _SemesterDeadlinesScreenState extends State<SemesterDeadlinesScreen> {
     return Scaffold(
       backgroundColor: Colors.transparent,
       appBar: AppBar(
-        title: const Text('Semester Deadlines'),
+        title: const Tr('Semester Deadlines'),
         backgroundColor: AdminColors.surface,
       ),
       body: AppPalette.dark.ambientGlowBackdrop(child: body),

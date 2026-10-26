@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/collaboration_provider.dart';
 
+import '../../widgets/tr.dart';
 class VersionHistoryScreen extends StatefulWidget {
   final int projectId;
   final String sectionId;
@@ -39,13 +40,12 @@ class _VersionHistoryScreenState extends State<VersionHistoryScreen> {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
-        title: const Text('Rollback?'),
-        content: const Text(
-          'This creates a new commit restoring the selected version. The rollback is tracked in history.',
+        title: const Tr('Rollback?'),
+        content: const Tr('This creates a new commit restoring the selected version. The rollback is tracked in history.',
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
-          ElevatedButton(onPressed: () => Navigator.pop(context, true), child: const Text('Rollback')),
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Tr('Cancel')),
+          ElevatedButton(onPressed: () => Navigator.pop(context, true), child: const Tr('Rollback')),
         ],
       ),
     );
@@ -74,7 +74,7 @@ class _VersionHistoryScreenState extends State<VersionHistoryScreen> {
           ? const Center(child: CircularProgressIndicator())
           : history.isEmpty
               ? const Center(
-                  child: Text('No commits yet', style: TextStyle(color: Color(0xFF94A3B8))))
+                  child: Tr('No commits yet', style: TextStyle(color: Color(0xFF94A3B8))))
               : ListView.builder(
                   padding: const EdgeInsets.all(16),
                   itemCount: history.length,
@@ -106,7 +106,7 @@ class _VersionHistoryScreenState extends State<VersionHistoryScreen> {
                             child: TextButton.icon(
                               onPressed: () => _rollback(c['id'] as int),
                               icon: const Icon(Icons.restore, size: 16),
-                              label: const Text('Rollback to this'),
+                              label: const Tr('Rollback to this'),
                             ),
                           ),
                         ],

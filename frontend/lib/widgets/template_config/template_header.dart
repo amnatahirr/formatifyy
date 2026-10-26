@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../tr.dart';
 class TemplateHeader extends StatelessWidget {
   final Map<String, dynamic>? selectedTemplate;
 
@@ -13,8 +14,7 @@ class TemplateHeader extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
-          'Template Configuration',
+        const Tr('Template Configuration',
           style: TextStyle(
             fontSize: 28,
             fontWeight: FontWeight.w700,

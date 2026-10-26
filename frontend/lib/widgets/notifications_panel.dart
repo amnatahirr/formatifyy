@@ -6,6 +6,7 @@ import '../services/student_api_service.dart';
 import '../screens/student/document_feedback_screen.dart';
 import '../theme/app_theme.dart';
 
+import 'tr.dart';
 /// Full-page notifications inbox (mobile student bottom-nav tab).
 ///
 /// Reuses the same API + list tiles as [NotificationsPanelButton]; shell only —
@@ -112,8 +113,7 @@ class _StudentNotificationsPageState extends State<StudentNotificationsPage> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text(
-            'Could not open feedback — missing document link on this notification.',
+          content: Tr('Could not open feedback — missing document link on this notification.',
           ),
         ),
       );
@@ -157,7 +157,7 @@ class _StudentNotificationsPageState extends State<StudentNotificationsPage> {
               const SizedBox(height: 12),
               TextButton(
                 onPressed: _refresh,
-                child: const Text('Retry'),
+                child: const Tr('Retry'),
               ),
             ],
           ),
@@ -166,8 +166,7 @@ class _StudentNotificationsPageState extends State<StudentNotificationsPage> {
     }
     if (_notifications.isEmpty) {
       return Center(
-        child: Text(
-          'No notifications yet.',
+        child: Tr('No notifications yet.',
           style: TextStyle(
             color: Colors.white.withOpacity(0.5),
             fontSize: 14,
@@ -496,8 +495,7 @@ class _NotificationsDropdown extends StatelessWidget {
             child: Row(
               children: [
                 Expanded(
-                  child: Text(
-                    'Notifications',
+                  child: Tr('Notifications',
                     style: TextStyle(
                       color: p.textPrimary,
                       fontWeight: FontWeight.w700,
@@ -550,8 +548,7 @@ class _NotificationsDropdown extends StatelessWidget {
                         ? Center(
                             child: Padding(
                               padding: const EdgeInsets.all(24),
-                              child: Text(
-                                'No notifications yet.',
+                              child: Tr('No notifications yet.',
                                 style: TextStyle(
                                   color: p.textMuted,
                                   fontSize: 13,

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../providers/collaboration_provider.dart';
 
+import '../../../widgets/tr.dart';
 /// Members tab — roster, roles, and invite-by-email.
 class ProjectMembersTab extends StatefulWidget {
   final int projectId;
@@ -73,8 +74,7 @@ class _ProjectMembersTabState extends State<ProjectMembersTab> {
           ),
         ),
         const SizedBox(height: 8),
-        const Text(
-          'Invite teammates with the Invite button, or add a registered user by email below.',
+        const Tr('Invite teammates with the Invite button, or add a registered user by email below.',
           style: TextStyle(color: Color(0xFF94A3B8), fontSize: 12),
         ),
         const SizedBox(height: 16),
@@ -87,8 +87,7 @@ class _ProjectMembersTabState extends State<ProjectMembersTab> {
         ),
         const SizedBox(height: 20),
         if (members.isEmpty)
-          const Text(
-            'No members loaded',
+          const Tr('No members loaded',
             style: TextStyle(color: Color(0xFF94A3B8)),
           )
         else
@@ -129,8 +128,7 @@ class _InviteByEmailCard extends StatelessWidget {
             children: [
               Icon(Icons.mail_outline, size: 18, color: Color(0xFFA5B4FC)),
               SizedBox(width: 8),
-              Text(
-                'Invite by email',
+              Tr('Invite by email',
                 style: TextStyle(
                   color: Colors.white,
                   fontWeight: FontWeight.w600,
@@ -140,8 +138,7 @@ class _InviteByEmailCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 6),
-          const Text(
-            'We email them the project invite code. They join via Collaboration → Join Project.',
+          const Tr('We email them the project invite code. They join via Collaboration → Join Project.',
             style: TextStyle(color: Color(0xFF94A3B8), fontSize: 12),
           ),
           const SizedBox(height: 12),
@@ -191,7 +188,7 @@ class _InviteByEmailCard extends StatelessWidget {
                               color: Colors.white,
                             ),
                           )
-                        : const Text('Invite'),
+                        : const Tr('Invite'),
                   ),
                 ),
               ],

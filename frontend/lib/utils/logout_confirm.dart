@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../theme/app_theme.dart';
 
+import '../widgets/tr.dart';
 /// Shows "Do you want to Logout?" with Cancel / Logout.
 /// Returns `true` only if the user confirms Logout.
 Future<bool> showLogoutConfirmation(BuildContext context) async {
@@ -20,16 +21,14 @@ Future<bool> showLogoutConfirmation(BuildContext context) async {
           borderRadius: BorderRadius.circular(12),
           side: BorderSide(color: p.border),
         ),
-        title: Text(
-          'Logout',
+        title: Tr('Logout',
           style: TextStyle(
             color: p.textPrimary,
             fontSize: 18,
             fontWeight: FontWeight.w600,
           ),
         ),
-        content: Text(
-          'Do you want to Logout?',
+        content: Tr('Do you want to Logout?',
           style: TextStyle(
             color: p.textSecondary,
             fontSize: 14,
@@ -39,14 +38,14 @@ Future<bool> showLogoutConfirmation(BuildContext context) async {
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(false),
             style: TextButton.styleFrom(foregroundColor: p.textSecondary),
-            child: const Text('Cancel'),
+            child: const Tr('Cancel'),
           ),
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(true),
             style: TextButton.styleFrom(
               foregroundColor: const Color(0xFFEF4444),
             ),
-            child: const Text('Logout'),
+            child: const Tr('Logout'),
           ),
         ],
       );

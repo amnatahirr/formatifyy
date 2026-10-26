@@ -5,6 +5,7 @@ import '../../providers/auth_provider.dart';
 import '../../utils/logout_confirm.dart';
 import '../../widgets/admin/admin_ui.dart';
 
+import '../../widgets/tr.dart';
 /// Mobile "More" hub — secondary supervisor tools + account.
 class SupervisorMoreScreen extends StatelessWidget {
   final VoidCallback onOpenNotifications;
@@ -70,7 +71,7 @@ class SupervisorMoreScreen extends StatelessWidget {
             child: OutlinedButton.icon(
               onPressed: () => confirmAndLogout(context),
               icon: const Icon(Icons.logout_rounded, size: 18),
-              label: const Text('Log out'),
+              label: const Tr('Log out'),
               style: OutlinedButton.styleFrom(
                 foregroundColor: AdminColors.danger,
                 side: BorderSide(color: AdminColors.danger.withOpacity(0.55)),

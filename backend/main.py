@@ -150,6 +150,7 @@ from templates import (
 )
 from vc.routes import router as vc_router, set_analysis_runner
 from vc.reports_sync import sync_analysis_to_project_members
+from translate_routes import router as translate_router
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # CONFIG
@@ -197,6 +198,7 @@ from middleware.org_middleware import OrganizationMiddleware, get_organization
 from template_sample_preview import router as template_sample_router
 app.include_router(template_sample_router)
 app.add_middleware(OrganizationMiddleware)
+app.include_router(translate_router)
 
 app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 from qr_routes import router as qr_router

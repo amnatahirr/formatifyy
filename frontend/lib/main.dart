@@ -21,6 +21,8 @@ import 'providers/collaboration_provider.dart';
 import 'providers/fyp_provider.dart';
 import 'theme/app_theme.dart';
 import 'providers/analysis_job_provider.dart';
+import 'providers/lang_provider.dart';
+import 'package:provider/provider.dart'; 
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
@@ -137,6 +139,7 @@ final messengerKey = GlobalKey<ScaffoldMessengerState>();
         ChangeNotifierProvider(create: (_) => CollaborationProvider()),
         ChangeNotifierProvider(create: (_) => FypProvider()),
         ChangeNotifierProvider(create: (_) => ThemeProvider()),
+        ChangeNotifierProvider(create: (_) => LangProvider()..load()),
         ChangeNotifierProvider(
   create: (_) => AnalysisJobProvider()..messengerKey = messengerKey,
 ),
@@ -151,6 +154,13 @@ final messengerKey = GlobalKey<ScaffoldMessengerState>();
             theme: AppPalette.light.themeData,
             darkTheme: AppPalette.dark.themeData,
             themeMode: themeProvider.themeMode,
+            builder: (context, child) {
+    final lang = context.watch<LangProvider>();
+    return Directionality(
+      textDirection: lang.isRtl ? TextDirection.rtl : TextDirection.ltr,
+      child: child!,
+    );
+  },
             // Same auth gate on mobile and desktop — Quick Access is reached from
             // the authenticated student dashboard, not as the app landing screen.
             home: const AuthCheck(),

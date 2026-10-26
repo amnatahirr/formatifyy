@@ -5,6 +5,7 @@ import '../theme/app_theme.dart';
 import '../utils/logout_confirm.dart';
 import '../providers/analysis_job_provider.dart';
 import 'analysis_jobs_sidebar_item.dart';
+import 'tr.dart';
 class AppSidebar extends StatelessWidget {
   final int selectedIndex;
   final Function(int) onItemSelected;
@@ -49,16 +50,14 @@ class AppSidebar extends StatelessWidget {
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      'FORMATIFY',
+                    Tr('FORMATIFY',
                       style: TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.w700,
                         color: p.textPrimary,
                       ),
                     ),
-                    Text(
-                      'Academic Edition',
+                    Tr('Academic Edition',
                       style: TextStyle(
                         fontSize: 10,
                         color: p.textSecondary,
@@ -158,8 +157,7 @@ class AppSidebar extends StatelessWidget {
                               );
                             },
                             icon: const Icon(Icons.logout, size: 14, color: Colors.white),
-                            label: const Text(
-                              'Logout',
+                            label: const Tr('Logout',
                               style: TextStyle(
                                 fontSize: 11,
                                 color: Colors.white,
@@ -246,7 +244,7 @@ void _showJobsDialog(BuildContext context, AnalysisJobProvider jp) {
   showDialog<void>(
     context: context,
     builder: (ctx) => AlertDialog(
-      title: const Text('Analyses'),
+      title: const Tr('Analyses'),
       content: SizedBox(
         width: 360,
         child: ListView(

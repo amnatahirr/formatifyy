@@ -14,6 +14,7 @@ import 'supervisor/supervisor_home_screen.dart';
 import 'supervisor/supervisor_more_screen.dart';
 import 'supervisor/supervisor_notifications_screen.dart';
 
+import '../widgets/tr.dart';
 class _MobileNavItem {
   final int tabIndex;
   final IconData icon;
@@ -286,8 +287,7 @@ class _SupervisorDashboardState extends State<SupervisorDashboard> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        'FORMATIFY',
+                      Tr('FORMATIFY',
                         style: TextStyle(
                           fontSize: 14,
                           fontWeight: FontWeight.w700,
@@ -295,8 +295,7 @@ class _SupervisorDashboardState extends State<SupervisorDashboard> {
                           letterSpacing: 0.4,
                         ),
                       ),
-                      Text(
-                        'Supervisor Console',
+                      Tr('Supervisor Console',
                         style: TextStyle(fontSize: 10.5, color: Color(0x8CFFFFFF)),
                       ),
                     ],
@@ -391,7 +390,7 @@ class _SupervisorDashboardState extends State<SupervisorDashboard> {
                         child: OutlinedButton.icon(
                           onPressed: () => confirmAndLogout(context),
                           icon: const Icon(Icons.logout_rounded, size: 14),
-                          label: const Text('Logout', style: TextStyle(fontSize: 11.5)),
+                          label: const Tr('Logout', style: TextStyle(fontSize: 11.5)),
                           style: OutlinedButton.styleFrom(
                             foregroundColor: Colors.white.withOpacity(0.85),
                             side: const BorderSide(color: AdminColors.borderStrong),

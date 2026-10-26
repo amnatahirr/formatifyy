@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/upload_provider.dart';
 
+import 'tr.dart';
 class GoogleDriveFileSelector extends StatefulWidget {
   final int templateId;
   final Function(String) onFileSelected;
@@ -48,8 +49,7 @@ class _GoogleDrivFileSelectorState extends State<GoogleDriveFileSelector> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
-                    'Select from Google Drive',
+                  const Tr('Select from Google Drive',
                     style: TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.bold,
@@ -69,8 +69,8 @@ class _GoogleDrivFileSelectorState extends State<GoogleDriveFileSelector> {
                           : () => _openGoogleDrive(context, authProvider, uploadProvider),
                       icon: const Icon(Icons.cloud),
                       label: uploadProvider.isUploading
-                          ? const Text('Opening Google Drive...')
-                          : const Text('Open Google Drive'),
+                          ? const Tr('Opening Google Drive...')
+                          : const Tr('Open Google Drive'),
                       style: ElevatedButton.styleFrom(
                         padding: const EdgeInsets.symmetric(vertical: 12),
                         backgroundColor: Colors.blue,
@@ -102,8 +102,7 @@ class _GoogleDrivFileSelectorState extends State<GoogleDriveFileSelector> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
-                      'Paste File Details',
+                    const Tr('Paste File Details',
                       style: TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.bold,
@@ -153,8 +152,8 @@ class _GoogleDrivFileSelectorState extends State<GoogleDriveFileSelector> {
                               )
                             : const Icon(Icons.download),
                         label: uploadProvider.isUploading
-                            ? const Text('Downloading...')
-                            : const Text('Download & Load'),
+                            ? const Tr('Downloading...')
+                            : const Tr('Download & Load'),
                         style: ElevatedButton.styleFrom(
                           padding: const EdgeInsets.symmetric(vertical: 12),
                           backgroundColor: Colors.green,
@@ -227,7 +226,7 @@ class _GoogleDrivFileSelectorState extends State<GoogleDriveFileSelector> {
   ) async {
     if (authProvider.userId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please login first')),
+        const SnackBar(content: Tr('Please login first')),
       );
       return;
     }
@@ -259,14 +258,14 @@ class _GoogleDrivFileSelectorState extends State<GoogleDriveFileSelector> {
   ) async {
     if (_fileIdController.text.isEmpty || _filenameController.text.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter file ID and filename')),
+        const SnackBar(content: Tr('Please enter file ID and filename')),
       );
       return;
     }
 
     if (authProvider.userId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please login first')),
+        const SnackBar(content: Tr('Please login first')),
       );
       return;
     }
@@ -280,7 +279,7 @@ class _GoogleDrivFileSelectorState extends State<GoogleDriveFileSelector> {
 
     if (success && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('File downloaded successfully')),
+        const SnackBar(content: Tr('File downloaded successfully')),
       );
       widget.onFileSelected(_filenameController.text.trim());
       Navigator.of(context).pop();

@@ -7,6 +7,7 @@ import '../../utils/responsive.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/admin/admin_ui.dart';
 
+import '../../widgets/tr.dart';
 /// Platform Super Admin — manage organizations (multi-tenancy).
 /// Access with [DevUserConfig.superAdminKey] matching backend SUPER_ADMIN_KEY.
 class SuperAdminScreen extends StatefulWidget {
@@ -182,7 +183,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen> {
             horizontal: compact ? 16 : 40,
             vertical: compact ? 24 : 40,
           ),
-          title: const Text('Create Organization'),
+          title: const Tr('Create Organization'),
           content: SizedBox(
             width: compact ? double.maxFinite : 460,
             child: SingleChildScrollView(
@@ -209,15 +210,15 @@ class _SuperAdminScreenState extends State<SuperAdminScreen> {
                     items: const [
                       DropdownMenuItem(
                         value: 'university',
-                        child: Text('university'),
+                        child: Tr('university'),
                       ),
                       DropdownMenuItem(
                         value: 'enterprise',
-                        child: Text('enterprise (company)'),
+                        child: Tr('enterprise (company)'),
                       ),
                       DropdownMenuItem(
                         value: 'starter',
-                        child: Text('starter'),
+                        child: Tr('starter'),
                       ),
                     ],
                     onChanged: (v) => setLocal(() {
@@ -232,20 +233,19 @@ class _SuperAdminScreenState extends State<SuperAdminScreen> {
                   CheckboxListTile(
                     value: hasCore,
                     onChanged: (v) => setLocal(() => hasCore = v ?? true),
-                    title: const Text('core module'),
+                    title: const Tr('core module'),
                     dense: true,
                     contentPadding: EdgeInsets.zero,
                   ),
                   CheckboxListTile(
                     value: hasFyp,
                     onChanged: (v) => setLocal(() => hasFyp = v ?? true),
-                    title: const Text('fyp module'),
+                    title: const Tr('fyp module'),
                     dense: true,
                     contentPadding: EdgeInsets.zero,
                   ),
                   const SizedBox(height: 12),
-                  Text(
-                    'First Admin Account',
+                  Tr('First Admin Account',
                     style: TextStyle(
                       color: Colors.white.withOpacity(0.85),
                       fontWeight: FontWeight.w700,
@@ -267,7 +267,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen> {
                   CheckboxListTile(
                     value: autoPassword,
                     onChanged: (v) => setLocal(() => autoPassword = v ?? true),
-                    title: const Text('Auto-generate password'),
+                    title: const Tr('Auto-generate password'),
                     dense: true,
                     contentPadding: EdgeInsets.zero,
                   ),
@@ -286,7 +286,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen> {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Cancel'),
+              child: const Tr('Cancel'),
             ),
             ElevatedButton(
               onPressed: () => Navigator.pop(ctx, true),
@@ -389,7 +389,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen> {
       barrierDismissible: false,
       builder: (ctx) => AlertDialog(
         backgroundColor: AdminColors.surface,
-        title: const Text('Organization ready'),
+        title: const Tr('Organization ready'),
         content: SizedBox(
           width: 460,
           child: Column(
@@ -438,11 +438,11 @@ class _SuperAdminScreenState extends State<SuperAdminScreen> {
               Clipboard.setData(ClipboardData(text: buf.toString()));
               showAdminSnackBar(context, 'Credentials copied.');
             },
-            child: const Text('Copy all'),
+            child: const Tr('Copy all'),
           ),
           ElevatedButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('Done'),
+            child: const Tr('Done'),
           ),
         ],
       ),
@@ -494,17 +494,17 @@ class _SuperAdminScreenState extends State<SuperAdminScreen> {
             value: plan,
             decoration: const InputDecoration(labelText: 'Plan'),
             items: const [
-              DropdownMenuItem(value: 'university', child: Text('university')),
-              DropdownMenuItem(value: 'enterprise', child: Text('enterprise (company)')),
-              DropdownMenuItem(value: 'starter', child: Text('starter')),
+              DropdownMenuItem(value: 'university', child: Tr('university')),
+              DropdownMenuItem(value: 'enterprise', child: Tr('enterprise (company)')),
+              DropdownMenuItem(value: 'starter', child: Tr('starter')),
             ],
             onChanged: (v) => setLocal(() => plan = v ?? 'university'),
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Tr('Cancel')),
             ElevatedButton(
               onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('Save'),
+              child: const Tr('Save'),
             ),
           ],
         ),
@@ -559,24 +559,24 @@ class _SuperAdminScreenState extends State<SuperAdminScreen> {
               CheckboxListTile(
                 value: hasCore,
                 onChanged: (v) => setLocal(() => hasCore = v ?? true),
-                title: const Text('core module'),
+                title: const Tr('core module'),
                 dense: true,
                 contentPadding: EdgeInsets.zero,
               ),
               CheckboxListTile(
                 value: hasFyp,
                 onChanged: (v) => setLocal(() => hasFyp = v ?? false),
-                title: const Text('fyp module'),
+                title: const Tr('fyp module'),
                 dense: true,
                 contentPadding: EdgeInsets.zero,
               ),
             ],
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Tr('Cancel')),
             ElevatedButton(
               onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('Save'),
+              child: const Tr('Save'),
             ),
           ],
         ),
@@ -633,13 +633,12 @@ class _SuperAdminScreenState extends State<SuperAdminScreen> {
                 style: TextStyle(color: Colors.white.withOpacity(0.55)),
               ),
               const SizedBox(height: 12),
-              Text(
-                'Distribute org code + admin credentials only. API keys stay server-side.',
+              Tr('Distribute org code + admin credentials only. API keys stay server-side.',
                 style: TextStyle(color: Colors.white.withOpacity(0.55), fontSize: 12, height: 1.35),
               ),
               if (stats != null) ...[
                 const SizedBox(height: 16),
-                Text('Usage', style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 12)),
+                Tr('Usage', style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 12)),
                 const SizedBox(height: 8),
                 Text(
                   'Users ${(stats['stats'] as Map?)?['users'] ?? 0} · '
@@ -662,7 +661,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen> {
                     if (changed == true && ctx.mounted) Navigator.pop(ctx);
                   },
                   icon: const Icon(Icons.swap_horiz_rounded, size: 18),
-                  label: const Text('Change plan'),
+                  label: const Tr('Change plan'),
                 ),
               ),
               const SizedBox(height: 10),
@@ -679,13 +678,12 @@ class _SuperAdminScreenState extends State<SuperAdminScreen> {
                     if (changed == true && ctx.mounted) Navigator.pop(ctx);
                   },
                   icon: const Icon(Icons.extension_rounded, size: 18),
-                  label: const Text('Edit modules'),
+                  label: const Tr('Edit modules'),
                 ),
               ),
               const SizedBox(height: 10),
               if (id == 1)
-                Text(
-                  'Default organization (id=1) cannot be deleted.',
+                Tr('Default organization (id=1) cannot be deleted.',
                   style: TextStyle(color: Colors.white.withOpacity(0.45), fontSize: 12),
                 )
               else
@@ -702,7 +700,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen> {
                         context: ctx,
                         builder: (dCtx) => AlertDialog(
                           backgroundColor: AdminColors.surface,
-                          title: const Text('Delete organization?'),
+                          title: const Tr('Delete organization?'),
                           content: Text(
                             'Permanently delete "${org['name']}" (${org['code']})?\n'
                             'This cannot be undone.',
@@ -711,7 +709,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen> {
                           actions: [
                             TextButton(
                               onPressed: () => Navigator.pop(dCtx, false),
-                              child: const Text('Cancel'),
+                              child: const Tr('Cancel'),
                             ),
                             ElevatedButton(
                               style: ElevatedButton.styleFrom(
@@ -719,7 +717,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen> {
                                 foregroundColor: Colors.white,
                               ),
                               onPressed: () => Navigator.pop(dCtx, true),
-                              child: const Text('Delete'),
+                              child: const Tr('Delete'),
                             ),
                           ],
                         ),
@@ -739,7 +737,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen> {
                       }
                     },
                     icon: const Icon(Icons.delete_outline_rounded),
-                    label: const Text('Delete organization'),
+                    label: const Tr('Delete organization'),
                   ),
                 ),
             ],
@@ -756,7 +754,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen> {
         backgroundColor: Colors.transparent,
         appBar: AppBar(
           backgroundColor: AdminColors.surface,
-          title: const Text('Super Admin'),
+          title: const Tr('Super Admin'),
         ),
         body: AppPalette.dark.ambientGlowBackdrop(child: _buildGate()),
       );
@@ -840,8 +838,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen> {
                     ),
                   ),
                   const SizedBox(width: 9),
-                  const Text(
-                    'Super Admin',
+                  const Tr('Super Admin',
                     style: TextStyle(
                       color: Colors.white,
                       fontWeight: FontWeight.w600,
@@ -868,7 +865,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen> {
                   Navigator.of(context).maybePop();
                 },
                 icon: const Icon(Icons.arrow_back_rounded, size: 18),
-                label: const Text('Back to login'),
+                label: const Tr('Back to login'),
                 style: OutlinedButton.styleFrom(
                   foregroundColor: Colors.white70,
                   side: BorderSide(color: AdminColors.border.withOpacity(0.8)),
@@ -907,8 +904,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen> {
                   child: const Icon(Icons.shield_outlined, size: 14, color: Colors.white),
                 ),
                 const SizedBox(width: 9),
-                const Text(
-                  'Super Admin',
+                const Tr('Super Admin',
                   style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14.5),
                 ),
               ],
@@ -930,8 +926,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen> {
                   decoration: const BoxDecoration(color: AdminColors.success, shape: BoxShape.circle),
                 ),
                 const SizedBox(width: 6),
-                Text(
-                  'Platform operational',
+                Tr('Platform operational',
                   style: TextStyle(fontSize: 11, color: Colors.white.withOpacity(0.4)),
                 ),
               ],
@@ -1046,8 +1041,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen> {
                             : Colors.white.withOpacity(0.35),
                       ),
                       const SizedBox(height: 4),
-                      Text(
-                        'Menu',
+                      Tr('Menu',
                         style: TextStyle(
                           fontSize: 10,
                           fontWeight: showMoreSelected
@@ -1158,7 +1152,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen> {
             ElevatedButton.icon(
               onPressed: _showCreateDialog,
               icon: const Icon(Icons.add, size: 16),
-              label: const Text('Add Organization'),
+              label: const Tr('Add Organization'),
               style: ElevatedButton.styleFrom(
                 backgroundColor: AdminColors.primary,
                 foregroundColor: Colors.white,
@@ -1326,8 +1320,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
-                        'Organization growth',
+                      const Tr('Organization growth',
                         style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600, color: Colors.white),
                       ),
                       const SizedBox(height: 18),
@@ -1345,8 +1338,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
-                        'Recent activity',
+                      const Tr('Recent activity',
                         style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600, color: Colors.white),
                       ),
                       const SizedBox(height: 16),
@@ -1574,13 +1566,11 @@ class _SuperAdminScreenState extends State<SuperAdminScreen> {
             children: [
               const Icon(Icons.admin_panel_settings_rounded, size: 48, color: AdminColors.primary),
               const SizedBox(height: 16),
-              const Text(
-                'Enter Super Admin key',
+              const Tr('Enter Super Admin key',
                 style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: Colors.white),
               ),
               const SizedBox(height: 8),
-              Text(
-                'Must match backend SUPER_ADMIN_KEY',
+              Tr('Must match backend SUPER_ADMIN_KEY',
                 style: TextStyle(color: Colors.white.withOpacity(0.55), fontSize: 13),
               ),
               const SizedBox(height: 20),
@@ -1918,8 +1908,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        'Platform total',
+                      Tr('Platform total',
                         style: TextStyle(fontSize: 12, color: AdminColors.primary.withOpacity(0.9)),
                       ),
                       const SizedBox(height: 8),
@@ -1932,8 +1921,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen> {
                         ),
                       ),
                       const SizedBox(height: 4),
-                      Text(
-                        'estimated recurring',
+                      Tr('estimated recurring',
                         style: TextStyle(fontSize: 11.5, color: AdminColors.primary.withOpacity(0.75)),
                       ),
                     ],
@@ -1951,8 +1939,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen> {
                 if (_orgs.isEmpty)
                   Padding(
                     padding: const EdgeInsets.all(18),
-                    child: Text(
-                      'No organizations yet.',
+                    child: Tr('No organizations yet.',
                       style: TextStyle(fontSize: 12.5, color: Colors.white.withOpacity(0.4)),
                     ),
                   )
@@ -2057,8 +2044,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  'Module catalog',
+                const Tr('Module catalog',
                   style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.white),
                 ),
                 const SizedBox(height: 14),
@@ -2101,8 +2087,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  'Plans',
+                const Tr('Plans',
                   style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.white),
                 ),
                 const SizedBox(height: 14),

@@ -62,7 +62,7 @@
 //       if (!mounted) return;
 //       ScaffoldMessenger.of(context).showSnackBar(
 //         const SnackBar(
-//           content: Text('Document downloaded'),
+//           content: Tr('Document downloaded'),
 //           backgroundColor: Color(0xFF10B981),
 //         ),
 //       );
@@ -103,12 +103,12 @@
 //         actions: [
 //           TextButton(
 //             onPressed: () => Navigator.pop(context, false),
-//             child: const Text('Cancel'),
+//             child: const Tr('Cancel'),
 //           ),
 //           ElevatedButton(
 //             onPressed: () => Navigator.pop(context, true),
 //             style: ElevatedButton.styleFrom(),
-//             child: const Text('Upload'),
+//             child: const Tr('Upload'),
 //           ),
 //         ],
 //       ),
@@ -226,7 +226,7 @@
 //                             ),
 //                           )
 //                         : const Icon(Icons.download, size: 16),
-//                     label: const Text('Download'),
+//                     label: const Tr('Download'),
 //                     style: ElevatedButton.styleFrom(),
 //                   ),
 //                   OutlinedButton.icon(
@@ -250,7 +250,7 @@
 //                             child: CircularProgressIndicator(strokeWidth: 2),
 //                           )
 //                         : const Icon(Icons.upload_file, size: 16),
-//                     label: const Text('Upload new version'),
+//                     label: const Tr('Upload new version'),
 //                     style: OutlinedButton.styleFrom(
 //                       foregroundColor: const Color(0xFF10B981),
 //                       side: const BorderSide(color: Color(0xFF10B981)),
@@ -569,6 +569,7 @@ import '../../../providers/document_provider.dart';
 import '../../../theme/app_theme.dart';
 import '../section_editor_screen.dart';
 
+import '../../../widgets/tr.dart';
 /// Document tab — preview by default, download / edit / upload new version.
 class ProjectEditorTab extends StatefulWidget {
   final int projectId;
@@ -619,7 +620,7 @@ class _ProjectEditorTabState extends State<ProjectEditorTab> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Document downloaded'),
+          content: Tr('Document downloaded'),
           backgroundColor: Color(0xFF10B981),
         ),
       );
@@ -647,8 +648,7 @@ class _ProjectEditorTabState extends State<ProjectEditorTab> {
       builder: (_) => AlertDialog(
         backgroundColor:
             p.isDark ? p.surfaceElevated : const Color(0xFF1A1F2E),
-        title: const Text(
-          'Upload new version?',
+        title: const Tr('Upload new version?',
           style: TextStyle(color: Colors.white),
         ),
         content: const Text(
@@ -660,12 +660,12 @@ class _ProjectEditorTabState extends State<ProjectEditorTab> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
+            child: const Tr('Cancel'),
           ),
           ElevatedButton(
             onPressed: () => Navigator.pop(context, true),
             style: ElevatedButton.styleFrom(),
-            child: const Text('Upload'),
+            child: const Tr('Upload'),
           ),
         ],
       ),
@@ -791,7 +791,7 @@ class _ProjectEditorTabState extends State<ProjectEditorTab> {
                             ),
                           )
                         : const Icon(Icons.download, size: 16),
-                    label: const Text('Download'),
+                    label: const Tr('Download'),
                     style: ElevatedButton.styleFrom(),
                   ),
                   OutlinedButton.icon(
@@ -815,7 +815,7 @@ class _ProjectEditorTabState extends State<ProjectEditorTab> {
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
                         : const Icon(Icons.upload_file, size: 16),
-                    label: const Text('Upload new version'),
+                    label: const Tr('Upload new version'),
                     style: OutlinedButton.styleFrom(
                       foregroundColor: const Color(0xFF10B981),
                       side: const BorderSide(color: Color(0xFF10B981)),
@@ -824,8 +824,7 @@ class _ProjectEditorTabState extends State<ProjectEditorTab> {
                 ],
               ),
               const SizedBox(height: 14),
-              const Text(
-                'Active now',
+              const Tr('Active now',
                 style: TextStyle(
                   color: Colors.white,
                   fontWeight: FontWeight.w600,
@@ -849,8 +848,7 @@ class _ProjectEditorTabState extends State<ProjectEditorTab> {
         ),
         const SizedBox(height: 20),
         if (_editMode) ...[
-          const Text(
-            'Edit sections',
+          const Tr('Edit sections',
             style: TextStyle(
               color: Colors.white,
               fontSize: 16,
@@ -866,8 +864,7 @@ class _ProjectEditorTabState extends State<ProjectEditorTab> {
             ),
           ),
         ] else ...[
-          const Text(
-            'Document preview',
+          const Tr('Document preview',
             style: TextStyle(
               color: Colors.white,
               fontSize: 16,
@@ -875,8 +872,7 @@ class _ProjectEditorTabState extends State<ProjectEditorTab> {
             ),
           ),
           const SizedBox(height: 4),
-          const Text(
-            'Read-only view. Use Download for full .docx fidelity.',
+          const Tr('Read-only view. Use Download for full .docx fidelity.',
             style: TextStyle(color: Color(0xFF94A3B8), fontSize: 12),
           ),
           const SizedBox(height: 12),
@@ -893,8 +889,7 @@ class _ProjectEditorTabState extends State<ProjectEditorTab> {
                 borderRadius: BorderRadius.circular(panelRadius),
                 border: Border.all(color: panelBorder),
               ),
-              child: const Text(
-                'Nothing to preview yet. Upload a document or use Edit here to add content.',
+              child: const Tr('Nothing to preview yet. Upload a document or use Edit here to add content.',
                 style: TextStyle(color: Color(0xFF94A3B8), fontSize: 13),
               ),
             ),
@@ -1016,8 +1011,7 @@ class _PresenceRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (onlineUserIds.isEmpty) {
-      return Text(
-        'No one else is connected',
+      return Tr('No one else is connected',
         style: TextStyle(color: Colors.white.withOpacity(0.4), fontSize: 12),
       );
     }

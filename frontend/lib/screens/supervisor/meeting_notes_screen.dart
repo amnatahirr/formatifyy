@@ -7,6 +7,7 @@ import '../../services/supervisor_api_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/admin/admin_ui.dart';
 
+import '../../widgets/tr.dart';
 class MeetingNotesScreen extends StatefulWidget {
   final int groupId;
   final String? groupTitle;
@@ -124,8 +125,7 @@ class _MeetingNotesScreenState extends State<MeetingNotesScreen> {
                           overflow: TextOverflow.ellipsis,
                         ),
                         const SizedBox(height: 2),
-                        Text(
-                          'Meeting log',
+                        Tr('Meeting log',
                           style: TextStyle(fontSize: 12, color: Colors.white.withOpacity(0.5)),
                         ),
                       ],
@@ -251,7 +251,7 @@ class _AddMeetingNoteDialogState extends State<_AddMeetingNoteDialog> {
     return AlertDialog(
       backgroundColor: AdminColors.surface,
       shape: adminDialogShape(),
-      title: const Text('Add Note'),
+      title: const Tr('Add Note'),
       content: SizedBox(
         width: 460,
         child: Form(
@@ -305,11 +305,11 @@ class _AddMeetingNoteDialogState extends State<_AddMeetingNoteDialog> {
       actions: [
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
+          child: const Tr('Cancel'),
         ),
         ElevatedButton(
           onPressed: _onSave,
-          child: const Text('Save'),
+          child: const Tr('Save'),
         ),
       ],
     );
@@ -369,8 +369,7 @@ class _MeetingNoteCard extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    'ACTION ITEMS',
+                  Tr('ACTION ITEMS',
                     style: TextStyle(
                       color: AdminColors.accent.withOpacity(0.9),
                       fontWeight: FontWeight.w700,

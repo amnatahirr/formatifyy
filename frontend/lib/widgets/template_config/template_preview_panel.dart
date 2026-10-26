@@ -2,6 +2,7 @@
 import 'package:flutter/material.dart';
 import '../../models/template_preview_data.dart';
 
+import '../tr.dart';
 /// Live, Word-like preview of the template being configured.
 /// Pure presentation: give it a [TemplatePreviewData] and it renders a paper
 /// page (true A4/Letter proportions) using the admin's current settings.
@@ -69,8 +70,7 @@ class _TemplatePreviewPanelState extends State<TemplatePreviewPanel> {
           const Divider(height: 1, color: _border),
           const Padding(
             padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            child: Text(
-              'Approximate preview - the generated .docx may differ slightly.',
+            child: Tr('Approximate preview - the generated .docx may differ slightly.',
               style: TextStyle(fontSize: 10.5, color: Color(0xFF8B949E)),
             ),
           ),
@@ -88,8 +88,7 @@ class _TemplatePreviewPanelState extends State<TemplatePreviewPanel> {
               size: 18, color: Color(0xFF6366F1)),
           const SizedBox(width: 8),
           const Expanded(
-            child: Text(
-              'Live Preview',
+            child: Tr('Live Preview',
               style: TextStyle(
                   color: Colors.white,
                   fontSize: 14,
@@ -117,7 +116,7 @@ class _TemplatePreviewPanelState extends State<TemplatePreviewPanel> {
               child: OutlinedButton.icon(
                 onPressed: widget.onOpenWordPreview,
                 icon: const Icon(Icons.description_outlined, size: 16),
-                label: const Text('Word preview'),
+                label: const Tr('Word preview'),
                 style: OutlinedButton.styleFrom(
                   foregroundColor: const Color(0xFF6366F1),
                   side: const BorderSide(color: Color(0xFF6366F1)),
@@ -547,8 +546,7 @@ class _Paper extends StatelessWidget {
                     if (sections.isNotEmpty) ...[
                       SizedBox(
                         width: double.infinity,
-                        child: Text(
-                          'TABLE OF CONTENTS',
+                        child: Tr('TABLE OF CONTENTS',
                           textAlign: TextAlign.center,
                           style: _style(data.bodySize + 1,
                               bold: true, height: 1.6),

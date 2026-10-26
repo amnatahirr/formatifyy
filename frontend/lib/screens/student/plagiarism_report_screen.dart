@@ -5,6 +5,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/fyp_provider.dart';
 import '../../theme/app_theme.dart';
 
+import '../../widgets/tr.dart';
 /// Read-only plagiarism report from final_submissions.analysis_report (no recompute).
 class PlagiarismReportScreen extends StatefulWidget {
   final VoidCallback? onChooseSupervisor;
@@ -107,7 +108,7 @@ class _PlagiarismReportScreenState extends State<PlagiarismReportScreen> {
           if (widget.onOpenMySupervisor != null)
             OutlinedButton(
               onPressed: widget.onOpenMySupervisor,
-              child: const Text('My Supervisor'),
+              child: const Tr('My Supervisor'),
             ),
           if (widget.onChooseSupervisor != null)
             ElevatedButton(
@@ -116,7 +117,7 @@ class _PlagiarismReportScreenState extends State<PlagiarismReportScreen> {
                 backgroundColor: _p.accent,
                 foregroundColor: Colors.white,
               ),
-              child: const Text('Choose Supervisor'),
+              child: const Tr('Choose Supervisor'),
             ),
         ],
       );
@@ -135,7 +136,7 @@ class _PlagiarismReportScreenState extends State<PlagiarismReportScreen> {
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 16),
-              TextButton(onPressed: _load, child: const Text('Retry')),
+              TextButton(onPressed: _load, child: const Tr('Retry')),
             ],
           ),
         ),
@@ -162,8 +163,7 @@ class _PlagiarismReportScreenState extends State<PlagiarismReportScreen> {
       child: ListView(
         padding: const EdgeInsets.all(32),
         children: [
-          Text(
-            'From your latest supervisor submission (AI Tools analysis snapshot — not recomputed).',
+          Tr('From your latest supervisor submission (AI Tools analysis snapshot — not recomputed).',
             style: TextStyle(color: _p.textSecondary, fontSize: 13),
           ),
           const SizedBox(height: 18),
@@ -185,8 +185,7 @@ class _PlagiarismReportScreenState extends State<PlagiarismReportScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text(
-                          'Flagged by supervisor',
+                        const Tr('Flagged by supervisor',
                           style: TextStyle(
                             color: _high,
                             fontWeight: FontWeight.w700,
@@ -245,8 +244,7 @@ class _PlagiarismReportScreenState extends State<PlagiarismReportScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        'Plagiarism score',
+                      Tr('Plagiarism score',
                         style: TextStyle(
                           color: _p.textSecondary,
                           fontSize: 12,
@@ -292,13 +290,12 @@ class _PlagiarismReportScreenState extends State<PlagiarismReportScreen> {
                     backgroundColor: _p.accent,
                     foregroundColor: Colors.white,
                   ),
-                  child: const Text('Go to New Report'),
+                  child: const Tr('Go to New Report'),
                 ),
               ),
           ],
           const SizedBox(height: 24),
-          Text(
-            'Matched sources',
+          Tr('Matched sources',
             style: TextStyle(
               color: _p.textSecondary,
               fontWeight: FontWeight.w700,

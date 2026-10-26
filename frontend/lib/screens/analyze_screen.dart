@@ -23,6 +23,7 @@ import '../providers/analysis_job_provider.dart';
 import '../main.dart' show navigatorKey; 
 import '../utils/analysis_nav.dart';
 
+import '../widgets/tr.dart';
 // ─────────────────────────────────────────────────────────────────────────────
 // Color palette — follows ThemeProvider (light / dark)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1499,7 +1500,7 @@ late final AnalysisJobProvider _jobs;
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: _surface,
-        title: Text('Remove Image?', style: TextStyle(color: _textPri)),
+        title: Tr('Remove Image?', style: TextStyle(color: _textPri)),
         content: Text(
           'This permanently deletes the image from the document. '
           'A nearby figure caption will also be removed if present.',
@@ -1508,7 +1509,7 @@ late final AnalysisJobProvider _jobs;
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: Text('Cancel', style: TextStyle(color: _textSec)),
+            child: Tr('Cancel', style: TextStyle(color: _textSec)),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
@@ -1516,7 +1517,7 @@ late final AnalysisJobProvider _jobs;
               foregroundColor: Colors.white,
             ),
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Remove'),
+            child: const Tr('Remove'),
           ),
         ],
       ),
@@ -2003,8 +2004,7 @@ late final AnalysisJobProvider _jobs;
       builder: (ctx) {
         return AlertDialog(
           backgroundColor: _surface,
-          title: Text(
-            'Fill empty cell',
+          title: Tr('Fill empty cell',
             style: TextStyle(color: _textPri, fontSize: 16, fontWeight: FontWeight.w700),
           ),
           content: Column(
@@ -2046,7 +2046,7 @@ late final AnalysisJobProvider _jobs;
           actions: [
             TextButton(
               onPressed: () => Navigator.of(ctx).pop(),
-              child: Text('Cancel', style: TextStyle(color: _textSec)),
+              child: Tr('Cancel', style: TextStyle(color: _textSec)),
             ),
             ElevatedButton(
               onPressed: () => Navigator.of(ctx).pop(controller.text.trim()),
@@ -2054,7 +2054,7 @@ late final AnalysisJobProvider _jobs;
                 backgroundColor: _blue,
                 foregroundColor: Colors.white,
               ),
-              child: const Text('Save to cell'),
+              child: const Tr('Save to cell'),
             ),
           ],
         );
@@ -2558,7 +2558,7 @@ late final AnalysisJobProvider _jobs;
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: _surface,
-        title: Text('Rename Report', style: TextStyle(color: _textPri)),
+        title: Tr('Rename Report', style: TextStyle(color: _textPri)),
         content: TextField(
           controller: controller,
           autofocus: true,
@@ -2573,11 +2573,11 @@ late final AnalysisJobProvider _jobs;
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: Text('Cancel', style: TextStyle(color: _textSec)),
+            child: Tr('Cancel', style: TextStyle(color: _textSec)),
           ),
           ElevatedButton(
             onPressed: () => Navigator.pop(ctx, controller.text.trim()),
-            child: const Text('Save'),
+            child: const Tr('Save'),
           ),
         ],
       ),
@@ -2760,8 +2760,7 @@ Widget build(BuildContext context) {
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                'Analysis Report',
+              Tr('Analysis Report',
                 style: TextStyle(
                   color: _textPri,
                   fontSize: 17,
@@ -2848,7 +2847,7 @@ Widget build(BuildContext context) {
       child: Center(
         child: OutlinedButton.icon(
           icon: const Icon(Icons.open_in_new, size: 16),
-          label: const Text('Continue in background'),
+          label: const Tr('Continue in background'),
          onPressed: () => widget.embedded
     ? AnalysisNav.close()
     : _handleSidebarSelection(0),
@@ -2877,7 +2876,7 @@ Widget build(BuildContext context) {
           onPressed: () => setState(() {
             _analysisFuture = _runAnalysisWithProgress(force:true);
           }),
-          child: const Text('Retry'),
+          child: const Tr('Retry'),
         ),
       ],
     ),
@@ -3261,7 +3260,7 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
                             ? null
                             : () => _decideExtraHeading(match, 'discard'),
                         icon: const Icon(Icons.close, size: 16),
-                        label: const Text('Discard'),
+                        label: const Tr('Discard'),
                         style: OutlinedButton.styleFrom(
                           foregroundColor: _textSec,
                           side: BorderSide(color: _textSec.withOpacity(0.4)),
@@ -3304,8 +3303,7 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
                 !isUnnumberedSub &&
                 !isClaudeExtra) ...[
               const SizedBox(height: 8),
-              Text(
-                'This heading is not in your template outline. No automatic rename is applied.',
+              Tr('This heading is not in your template outline. No automatic rename is applied.',
                 style: TextStyle(color: _yellow.withOpacity(0.9), fontSize: 11),
               ),
             ],
@@ -3400,8 +3398,7 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
                   children: [
                     _StatusBadge(status),
                     const SizedBox(width: 12),
-                    Text(
-                      'Structure Score',
+                    Tr('Structure Score',
                       style: TextStyle(
                         color: _textPri,
                         fontSize: 15,
@@ -3544,8 +3541,7 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
           children: [
             const Icon(Icons.format_size, color: _blue, size: 18),
             const SizedBox(width: 8),
-            Text(
-              'Heading Style Compliance',
+            Tr('Heading Style Compliance',
               style: TextStyle(
                 color: _textPri,
                 fontSize: 15,
@@ -3566,14 +3562,13 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
                   _loadHeadingStyleCheck();
                 },
                 icon: const Icon(Icons.refresh, size: 13),
-                label: const Text('Refresh', style: TextStyle(fontSize: 11)),
+                label: const Tr('Refresh', style: TextStyle(fontSize: 11)),
                 style: TextButton.styleFrom(foregroundColor: _textSec),
               ),
           ],
         ),
         const SizedBox(height: 4),
-        Text(
-          'Checks if each required heading exists and has the correct font, size, and bold settings per the template.',
+        Tr('Checks if each required heading exists and has the correct font, size, and bold settings per the template.',
           style: TextStyle(color: _textSec, fontSize: 11, height: 1.4),
         ),
         const SizedBox(height: 12),
@@ -3602,8 +3597,7 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
                     Icon(Icons.info_outline, color: _blue, size: 16),
                     SizedBox(width: 8),
                     Expanded(
-                      child: Text(
-                        'Heading styles have not been applied yet.',
+                      child: Tr('Heading styles have not been applied yet.',
                         style: TextStyle(
                           color: _blue,
                           fontSize: 13,
@@ -3614,8 +3608,7 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
                   ],
                 ),
                 const SizedBox(height: 6),
-                Text(
-                  'Apply template heading styles first so the compliance check can accurately report PASS/FAIL for each section.',
+                Tr('Apply template heading styles first so the compliance check can accurately report PASS/FAIL for each section.',
                   style: TextStyle(color: _textSec, fontSize: 11, height: 1.4),
                 ),
                 const SizedBox(height: 14),
@@ -3673,8 +3666,7 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
               children: [
                 Icon(Icons.check_circle_outline, color: _green, size: 16),
                 SizedBox(width: 10),
-                Text(
-                  'All headings have correct template styling  ✓',
+                Tr('All headings have correct template styling  ✓',
                   style: TextStyle(color: _green, fontSize: 13),
                 ),
               ],
@@ -3762,8 +3754,7 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
                       ),
                       const SizedBox(height: 3),
                       if (status == 'missing')
-                        Text(
-                          'Heading not found in document',
+                        Tr('Heading not found in document',
                           style: TextStyle(
                             color: _red.withOpacity(0.8),
                             fontSize: 11,
@@ -3809,8 +3800,7 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Text(
-                              'EXPECTED',
+                            const Tr('EXPECTED',
                               style: TextStyle(
                                 color: _green,
                                 fontSize: 9,
@@ -3856,8 +3846,7 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Text(
-                              'ACTUAL',
+                            const Tr('ACTUAL',
                               style: TextStyle(
                                 color: _red,
                                 fontSize: 9,
@@ -3918,8 +3907,7 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
                           children: [
                             Icon(Icons.check, color: _green, size: 14),
                             SizedBox(width: 8),
-                            Text(
-                              'Heading styling matches template',
+                            Tr('Heading styling matches template',
                               style: TextStyle(
                                 color: _green,
                                 fontSize: 12,
@@ -3995,8 +3983,7 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
           children: [
             const Icon(Icons.article_outlined, color: _purple, size: 18),
             const SizedBox(width: 8),
-            Text(
-              'Paragraph Style Compliance',
+            Tr('Paragraph Style Compliance',
               style: TextStyle(
                 color: _textPri,
                 fontSize: 15,
@@ -4039,14 +4026,13 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
                   _loadParagraphStyleCheck();
                 },
                 icon: const Icon(Icons.refresh, size: 13),
-                label: const Text('Refresh', style: TextStyle(fontSize: 11)),
+                label: const Tr('Refresh', style: TextStyle(fontSize: 11)),
                 style: TextButton.styleFrom(foregroundColor: _textSec),
               ),
           ],
         ),
         const SizedBox(height: 4),
-        Text(
-          'Scans all body paragraphs for font, size, alignment, and line-spacing compliance.',
+        Tr('Scans all body paragraphs for font, size, alignment, and line-spacing compliance.',
           style: TextStyle(color: _textSec, fontSize: 11, height: 1.4),
         ),
         const SizedBox(height: 12),
@@ -4070,8 +4056,7 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
               children: [
                 Icon(Icons.check_circle_outline, color: _green, size: 16),
                 SizedBox(width: 10),
-                Text(
-                  'All paragraphs match template styling  ✓',
+                Tr('All paragraphs match template styling  ✓',
                   style: TextStyle(color: _green, fontSize: 13),
                 ),
               ],
@@ -4432,8 +4417,7 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'Layer 2 — Heading Match Method',
+          Tr('Layer 2 — Heading Match Method',
             style: TextStyle(
               color: _textSec,
               fontSize: 11,
@@ -4676,8 +4660,7 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
           const SizedBox(height: 10),
           Row(
             children: [
-              Text(
-                'Mismatch confidence: ',
+              Tr('Mismatch confidence: ',
                 style: TextStyle(color: _textSec, fontSize: 10),
               ),
               Expanded(
@@ -4808,7 +4791,7 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
                     setState(() => _ignoredIssueIds.add(issueId));
                     _showSnack('Issue ignored', _textSec);
                   },
-                  child: const Text('Ignore'),
+                  child: const Tr('Ignore'),
                 ),
               ),
               const SizedBox(width: 10),
@@ -5289,16 +5272,14 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      'FYP Image Formatter',
+                    Tr('FYP Image Formatter',
                       style: TextStyle(
                         color: _textPri,
                         fontSize: 14,
                         fontWeight: FontWeight.w700,
                       ),
                     ),
-                    Text(
-                      'Academic-standard formatting for all images',
+                    Tr('Academic-standard formatting for all images',
                       style: TextStyle(color: _textSec, fontSize: 11),
                     ),
                   ],
@@ -5335,7 +5316,7 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
                     ),
                   ),
               icon: const Icon(Icons.auto_fix_high, size: 16),
-              label: const Text('Open Image Formatter'),
+              label: const Tr('Open Image Formatter'),
             ),
           ),
         ],
@@ -5499,8 +5480,7 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
               children: [
                 const Icon(Icons.block, color: _red, size: 16),
                 const SizedBox(width: 8),
-                const Text(
-                  '🚫  Unethical Image Detected',
+                const Tr('🚫  Unethical Image Detected',
                   style: TextStyle(
                     color: _red,
                     fontSize: 13,
@@ -5523,8 +5503,7 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
               children: [
                 Icon(Icons.label_outline, color: _textSec, size: 13),
                 const SizedBox(width: 6),
-                Text(
-                  'Category: ',
+                Tr('Category: ',
                   style: TextStyle(color: _textSec, fontSize: 11),
                 ),
                 _Tag(category, _red),
@@ -5541,8 +5520,7 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
                       children: [
                         Icon(Icons.broken_image, color: _textSec, size: 40),
                         const SizedBox(height: 8),
-                        Text(
-                          'Image preview unavailable',
+                        Tr('Image preview unavailable',
                           style: TextStyle(color: _textSec, fontSize: 12),
                         ),
                       ],
@@ -5573,8 +5551,7 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
                             children: [
                               Icon(Icons.broken_image, color: _textSec, size: 28),
                               const SizedBox(height: 6),
-                              Text(
-                                'Failed to load image',
+                              Tr('Failed to load image',
                                 style: TextStyle(color: _textSec, fontSize: 11),
                               ),
                             ],
@@ -5591,8 +5568,7 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
                             horizontal: 10,
                             vertical: 6,
                           ),
-                          child: const Text(
-                            'Unethical — review and replace this image',
+                          child: const Tr('Unethical — review and replace this image',
                             textAlign: TextAlign.center,
                             style: TextStyle(
                               color: Colors.white,
@@ -5639,8 +5615,7 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
                 const SizedBox(height: 10),
                 Row(
                   children: [
-                    Text(
-                      'Detection confidence: ',
+                    Tr('Detection confidence: ',
                       style: TextStyle(color: _textSec, fontSize: 11),
                     ),
                     Expanded(
@@ -5676,7 +5651,7 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
                   width: double.infinity,
                   child: ElevatedButton.icon(
                     icon: const Icon(Icons.image_search, size: 16),
-                    label: const Text('Replace Image'),
+                    label: const Tr('Replace Image'),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: _blue,
                       foregroundColor: Colors.white,
@@ -5689,7 +5664,7 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
                   width: double.infinity,
                   child: OutlinedButton.icon(
                     icon: const Icon(Icons.delete_outline, size: 16),
-                    label: const Text('Remove Image'),
+                    label: const Tr('Remove Image'),
                     style: OutlinedButton.styleFrom(
                       foregroundColor: _red,
                       side: BorderSide(color: _red.withOpacity(0.55)),
@@ -5706,7 +5681,7 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
                       setState(() => _ignoredIssueIds.add(issueId));
                       _showSnack('Issue ignored', _textSec);
                     },
-                    child: const Text('Ignore'),
+                    child: const Tr('Ignore'),
                   ),
                 ),
               ],
@@ -5740,8 +5715,7 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
           children: [
             CircularProgressIndicator(color: _blue),
             SizedBox(height: 16),
-            Text(
-              'Scanning document for tables…',
+            Tr('Scanning document for tables…',
               style: TextStyle(color: _textSec, fontSize: 13),
             ),
           ],
@@ -5761,7 +5735,7 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
               style: const TextStyle(color: _red, fontSize: 13),
             ),
             const SizedBox(height: 16),
-            ElevatedButton(onPressed: _loadTables, child: const Text('Retry')),
+            ElevatedButton(onPressed: _loadTables, child: const Tr('Retry')),
           ],
         ),
       );
@@ -5994,8 +5968,7 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
                             if (table.hasHeaderRow) ...[
                               const Icon(Icons.title, color: _green, size: 11),
                               const SizedBox(width: 3),
-                              const Text(
-                                'Header row',
+                              const Tr('Header row',
                                 style: TextStyle(color: _green, fontSize: 10),
                               ),
                               const SizedBox(width: 8),
@@ -6006,8 +5979,7 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
                                 size: 11,
                               ),
                               const SizedBox(width: 3),
-                              const Text(
-                                'No header',
+                              const Tr('No header',
                                 style: TextStyle(color: _yellow, fontSize: 10),
                               ),
                               const SizedBox(width: 8),
@@ -6066,8 +6038,7 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
                   if (table.previewRows.isNotEmpty) ...[
                     Padding(
                       padding: EdgeInsets.fromLTRB(14, 12, 14, 6),
-                      child: Text(
-                        'PREVIEW',
+                      child: Tr('PREVIEW',
                         style: TextStyle(
                           color: _textSec,
                           fontSize: 10,
@@ -6148,8 +6119,7 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
                   if (table.issues.isNotEmpty) ...[
                     Padding(
                       padding: EdgeInsets.fromLTRB(14, 0, 14, 6),
-                      child: Text(
-                        'ISSUES',
+                      child: Tr('ISSUES',
                         style: TextStyle(
                           color: _textSec,
                           fontSize: 10,
@@ -6218,8 +6188,7 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
                                           Icons.edit_note,
                                           size: 14,
                                         ),
-                                        label: const Text(
-                                          'Fill empty cell',
+                                        label: const Tr('Fill empty cell',
                                           style: TextStyle(fontSize: 11),
                                         ),
                                         style: OutlinedButton.styleFrom(
@@ -6246,8 +6215,7 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
                                           Icons.font_download_outlined,
                                           size: 14,
                                         ),
-                                        label: const Text(
-                                          'Normalize font',
+                                        label: const Tr('Normalize font',
                                           style: TextStyle(fontSize: 11),
                                         ),
                                         style: OutlinedButton.styleFrom(
@@ -6283,8 +6251,7 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
                             size: 14,
                           ),
                           SizedBox(width: 6),
-                          Text(
-                            'No issues detected',
+                          Tr('No issues detected',
                             style: TextStyle(color: _green, fontSize: 12),
                           ),
                         ],
@@ -6321,8 +6288,7 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // ── Header ────────────────────────────────────────────────────────
-            Text(
-              'TEMPLATE STYLE',
+            Tr('TEMPLATE STYLE',
               style: TextStyle(
                 color: _textSec,
                 fontSize: 10,
@@ -6371,8 +6337,7 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
                           ),
                           overflow: TextOverflow.ellipsis,
                         ),
-                        Text(
-                          'Configured by admin',
+                        Tr('Configured by admin',
                           style: TextStyle(color: _textSec, fontSize: 10),
                         ),
                       ],
@@ -6388,8 +6353,7 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
                       color: _purple.withOpacity(0.18),
                       borderRadius: BorderRadius.circular(10),
                     ),
-                    child: const Text(
-                      'ACTIVE',
+                    child: const Tr('ACTIVE',
                       style: TextStyle(
                         color: _purple,
                         fontSize: 9,
@@ -6405,8 +6369,7 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
             const SizedBox(height: 16),
 
             // ── What will be applied ──────────────────────────────────────────
-            Text(
-              'WHAT GETS APPLIED',
+            Tr('WHAT GETS APPLIED',
               style: TextStyle(
                 color: _textSec,
                 fontSize: 10,
@@ -6562,7 +6525,7 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
           TextButton.icon(
             onPressed: _tablesLoading ? null : _loadTables,
             icon: const Icon(Icons.refresh, size: 14),
-            label: const Text('Re-scan', style: TextStyle(fontSize: 12)),
+            label: const Tr('Re-scan', style: TextStyle(fontSize: 12)),
             style: TextButton.styleFrom(foregroundColor: _textSec),
           ),
           const SizedBox(width: 12),
@@ -6618,8 +6581,7 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
           children: [
             CircularProgressIndicator(color: _blue),
             SizedBox(height: 14),
-            Text(
-              'Scanning document structure…',
+            Tr('Scanning document structure…',
               style: TextStyle(color: _textSec, fontSize: 12),
             ),
           ],
@@ -6638,7 +6600,7 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
             const SizedBox(height: 14),
             ElevatedButton(
               onPressed: _loadTocCheck,
-              child: const Text('Retry'),
+              child: const Tr('Retry'),
             ),
           ],
         ),
@@ -6686,16 +6648,14 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
-                            'Document Lists',
+                          Tr('Document Lists',
                             style: TextStyle(
                               color: _textPri,
                               fontSize: 16,
                               fontWeight: FontWeight.w700,
                             ),
                           ),
-                          Text(
-                            'Generate dynamic Word fields for TOC, tables, and figures',
+                          Tr('Generate dynamic Word fields for TOC, tables, and figures',
                             style: TextStyle(color: _textSec, fontSize: 12),
                           ),
                         ],
@@ -6783,8 +6743,7 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
                 ),
                 if (headings.isNotEmpty) ...[
                   const SizedBox(height: 24),
-                  Text(
-                    'Detected Headings',
+                  Tr('Detected Headings',
                     style: TextStyle(
                       color: _textPri,
                       fontSize: 13,
@@ -6981,8 +6940,7 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
                   fontWeight: FontWeight.w600,
                 ),
               ),
-              Text(
-                'Fields update page numbers in Microsoft Word',
+              Tr('Fields update page numbers in Microsoft Word',
                 style: TextStyle(color: _textSec, fontSize: 11),
               ),
             ],
@@ -6991,7 +6949,7 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
           TextButton.icon(
             onPressed: _tocLoading ? null : _loadTocCheck,
             icon: const Icon(Icons.refresh, size: 14),
-            label: const Text('Re-scan', style: TextStyle(fontSize: 12)),
+            label: const Tr('Re-scan', style: TextStyle(fontSize: 12)),
             style: TextButton.styleFrom(foregroundColor: _textSec),
           ),
           const SizedBox(width: 12),
@@ -7157,16 +7115,14 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    'Reference Formatter',
+                  Tr('Reference Formatter',
                     style: TextStyle(
                       color: _textPri,
                       fontSize: 16,
                       fontWeight: FontWeight.w700,
                     ),
                   ),
-                  Text(
-                    'Detect, clean and reformat your References section',
+                  Tr('Detect, clean and reformat your References section',
                     style: TextStyle(color: _textSec, fontSize: 12),
                   ),
                 ],
@@ -7252,8 +7208,7 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
                         ),
                       ],
                     )
-                  : Text(
-                      'Review highlights, apply fixes, then download',
+                  : Tr('Review highlights, apply fixes, then download',
                       style: TextStyle(color: _textSec, fontSize: 11),
                     ),
             ],
@@ -7268,7 +7223,7 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
               });
               _showSnack('All issues ignored', _textSec);
             },
-            child: Text('Ignore All', style: TextStyle(color: _textSec)),
+            child: Tr('Ignore All', style: TextStyle(color: _textSec)),
           ),
           const SizedBox(width: 12),
           _isFixApplied
@@ -7433,7 +7388,7 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
                 _contentLoaded = false;
                 _loadContentCheck();
               },
-              child: const Text('Retry'),
+              child: const Tr('Retry'),
             ),
           ],
         ),
@@ -7444,7 +7399,7 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
         child: ElevatedButton.icon(
           onPressed: _loadContentCheck,
           icon: const Icon(Icons.search),
-          label: const Text('Run Content Check'),
+          label: const Tr('Run Content Check'),
         ),
       );
     }
@@ -7500,15 +7455,13 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
       const SizedBox(height: 32),
       Icon(Icons.check_circle_outline, color: Colors.green.shade400, size: 52),
       const SizedBox(height: 12),
-      Text(
-        'Content looks good!',
+      Tr('Content looks good!',
         style: Theme.of(
           context,
         ).textTheme.titleMedium?.copyWith(color: Colors.green.shade400),
       ),
       const SizedBox(height: 6),
-      Text(
-        'No content mismatches or synonym headings detected.',
+      Tr('No content mismatches or synonym headings detected.',
         textAlign: TextAlign.center,
         style: Theme.of(context).textTheme.bodySmall,
       ),
@@ -7630,8 +7583,7 @@ class _BulletsTabContentState extends State<_BulletsTabContent> {
               children: [
                 const Icon(Icons.error_outline, size: 48, color: _red),
                 const SizedBox(height: 12),
-                Text(
-                  'Error analyzing bullets',
+                Tr('Error analyzing bullets',
                   style: TextStyle(color: _textPri, fontSize: 14),
                 ),
               ],
@@ -7722,8 +7674,7 @@ class _BulletsTabContentState extends State<_BulletsTabContent> {
                       size: 18,
                     ),
                     const SizedBox(width: 8),
-                    Text(
-                      'Detected Bullet Groups',
+                    Tr('Detected Bullet Groups',
                       style: TextStyle(
                         color: _textPri,
                         fontSize: 16,
@@ -8395,8 +8346,7 @@ class _ContentIssueCard extends StatelessWidget {
               const SizedBox(height: 8),
               Row(
                 children: [
-                  Text(
-                    'Confidence: ',
+                  Tr('Confidence: ',
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                   Text(

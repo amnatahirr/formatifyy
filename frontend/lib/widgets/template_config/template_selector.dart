@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/template_provider.dart';
 
+import '../tr.dart';
 class TemplateSelector extends StatelessWidget {
   final int? selectedTemplateId;
   final Function(int?) onTemplateChanged;
@@ -19,8 +20,7 @@ class TemplateSelector extends StatelessWidget {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              'Select Template',
+            const Tr('Select Template',
               style: TextStyle(
                 fontSize: 14,
                 fontWeight: FontWeight.w600,
@@ -28,8 +28,7 @@ class TemplateSelector extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 8),
-            const Text(
-              'Choose an existing template to modify, or leave blank to create a new one',
+            const Tr('Choose an existing template to modify, or leave blank to create a new one',
               style: TextStyle(fontSize: 12, color: Colors.white54),
             ),
             const SizedBox(height: 12),
@@ -46,8 +45,7 @@ class TemplateSelector extends StatelessWidget {
                 dropdownColor: const Color(0xFF1A1F2E),
                 hint: const Padding(
                   padding: EdgeInsets.symmetric(horizontal: 12),
-                  child: Text(
-                    'Select a template...',
+                  child: Tr('Select a template...',
                     style: TextStyle(color: Colors.white54),
                   ),
                 ),
@@ -56,8 +54,7 @@ class TemplateSelector extends StatelessWidget {
                     value: null,
                     child: Padding(
                       padding: EdgeInsets.symmetric(horizontal: 12),
-                      child: Text(
-                        'Create New Template',
+                      child: Tr('Create New Template',
                         style: TextStyle(color: Colors.white54),
                       ),
                     ),

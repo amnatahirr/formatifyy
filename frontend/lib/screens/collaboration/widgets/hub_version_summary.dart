@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../../../providers/collaboration_provider.dart';
 import '../../../theme/app_theme.dart';
 
+import '../../../widgets/tr.dart';
 /// Compact cross-project version activity for the Collaboration hub.
 class HubVersionSummary extends StatelessWidget {
   final void Function(int projectId, {int tab})? onOpenProject;
@@ -18,8 +19,7 @@ class HubVersionSummary extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          'Recent version activity',
+        Tr('Recent version activity',
           style: TextStyle(
             color: p.textPrimary,
             fontSize: 18,
@@ -27,8 +27,7 @@ class HubVersionSummary extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 4),
-        Text(
-          'Latest changes across your projects',
+        Tr('Latest changes across your projects',
           style: TextStyle(color: p.textSecondary, fontSize: 12),
         ),
         const SizedBox(height: 12),
@@ -42,8 +41,7 @@ class HubVersionSummary extends StatelessWidget {
               border: Border.all(color: p.border),
               boxShadow: p.cardShadow,
             ),
-            child: Text(
-              'No version history yet. Edits in shared projects will show up here.',
+            child: Tr('No version history yet. Edits in shared projects will show up here.',
               style: TextStyle(color: p.textSecondary, fontSize: 13),
             ),
           )

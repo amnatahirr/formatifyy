@@ -13,6 +13,7 @@ import '../services/admin_api_service.dart';
 import '../services/super_admin_api_service.dart';
 import '../widgets/admin/admin_ui.dart';
 
+import '../widgets/tr.dart';
 class AdminOverviewScreen extends StatefulWidget {
   final VoidCallback? onOrgUpdated;
 
@@ -176,7 +177,7 @@ class _AdminOverviewScreenState extends State<AdminOverviewScreen> {
             },
           ),
           const SizedBox(height: 28),
-          Text('Quick Actions', style: TextStyle(color: Colors.white.withOpacity(0.8), fontWeight: FontWeight.w600)),
+          Tr('Quick Actions', style: TextStyle(color: Colors.white.withOpacity(0.8), fontWeight: FontWeight.w600)),
           const SizedBox(height: 14),
           Wrap(
             spacing: 14,
@@ -225,7 +226,7 @@ class _AdminOverviewScreenState extends State<AdminOverviewScreen> {
               final activity = AdminSectionCard(
                 title: 'Recent Activity',
                 child: activeDays.isEmpty
-                    ? Text('No documents were processed in the last 7 days.', style: TextStyle(color: Colors.white.withOpacity(0.6)))
+                    ? Tr('No documents were processed in the last 7 days.', style: TextStyle(color: Colors.white.withOpacity(0.6)))
                     : Column(
                         children: activeDays.map((day) {
                           return Padding(
@@ -262,10 +263,10 @@ class _AdminOverviewScreenState extends State<AdminOverviewScreen> {
                     const SizedBox(height: 12),
                     _quickStatRow('Templates Used', '${overview.topTemplates.length} active'),
                     const SizedBox(height: 16),
-                    Text('Top Templates', style: TextStyle(color: Colors.white.withOpacity(0.75), fontWeight: FontWeight.w600, fontSize: 12)),
+                    Tr('Top Templates', style: TextStyle(color: Colors.white.withOpacity(0.75), fontWeight: FontWeight.w600, fontSize: 12)),
                     const SizedBox(height: 8),
                     if (overview.topTemplates.isEmpty)
-                      Text('No template usage recorded yet.', style: TextStyle(color: Colors.white.withOpacity(0.55), fontSize: 12))
+                      Tr('No template usage recorded yet.', style: TextStyle(color: Colors.white.withOpacity(0.55), fontSize: 12))
                     else
                       ...overview.topTemplates.take(3).map(
                             (template) => Padding(

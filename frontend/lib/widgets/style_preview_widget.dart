@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'tr.dart';
 class StylePreviewWidget extends StatelessWidget {
   final Map<String, dynamic> formattingRules;
 
@@ -21,8 +22,7 @@ class StylePreviewWidget extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              'Preview',
+            const Tr('Preview',
               style: TextStyle(
                 fontSize: 20,
                 fontWeight: FontWeight.bold,
@@ -30,26 +30,22 @@ class StylePreviewWidget extends StatelessWidget {
             ),
             const SizedBox(height: 24),
             // Heading 1 Preview
-            Text(
-              'Heading 1 Example',
+            Tr('Heading 1 Example',
               style: _getHeading1Style(),
             ),
             const SizedBox(height: 16),
             // Heading 2 Preview
-            Text(
-              'Heading 2 Example',
+            Tr('Heading 2 Example',
               style: _getHeading2Style(),
             ),
             const SizedBox(height: 16),
             // Heading 3 Preview
-            Text(
-              'Heading 3 Example',
+            Tr('Heading 3 Example',
               style: _getHeading3Style(),
             ),
             const SizedBox(height: 16),
             // Body Text Preview
-            Text(
-              'This is body text example. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.',
+            Tr('This is body text example. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.',
               style: _getBodyStyle(),
             ),
             const SizedBox(height: 24),
@@ -69,8 +65,7 @@ class StylePreviewWidget extends StatelessWidget {
                 child: Container(
                   color: Colors.grey[100],
                   padding: const EdgeInsets.all(8),
-                  child: const Text(
-                    'Content Area',
+                  child: const Tr('Content Area',
                     style: TextStyle(
                       fontSize: 12,
                       color: Colors.grey,
@@ -81,8 +76,7 @@ class StylePreviewWidget extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 8),
-            Text(
-              'Blue border = Page edges, Red border = Margins',
+            Tr('Blue border = Page edges, Red border = Margins',
               style: TextStyle(
                 fontSize: 10,
                 color: Colors.grey[600],

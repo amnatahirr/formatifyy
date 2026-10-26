@@ -6,6 +6,7 @@ import '../../providers/auth_provider.dart';
 import '../../services/admin_api_service.dart';
 import '../../widgets/admin/admin_ui.dart';
 
+import '../../widgets/tr.dart';
 class DeadlinesScreen extends StatefulWidget {
   final bool embedded;
 
@@ -164,7 +165,7 @@ class _DeadlinesScreenState extends State<DeadlinesScreen> {
                     prefixIcon: Icons.apartment_rounded,
                   ),
                   items: [
-                    const DropdownMenuItem<int?>(value: null, child: Text('All Departments')),
+                    const DropdownMenuItem<int?>(value: null, child: Tr('All Departments')),
                     ..._departments.map((d) => DropdownMenuItem<int?>(value: d.id, child: Text(d.name))),
                   ],
                   onChanged: (value) => setSheetState(() => selectedDepartmentId = value),
@@ -196,7 +197,7 @@ class _DeadlinesScreenState extends State<DeadlinesScreen> {
                           side: const BorderSide(color: AdminColors.border),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                         ),
-                        child: const Text('Cancel'),
+                        child: const Tr('Cancel'),
                       ),
                     ),
                     const SizedBox(width: 12),
@@ -271,11 +272,11 @@ class _DeadlinesScreenState extends State<DeadlinesScreen> {
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: AdminColors.surface,
-        title: const Text('Delete Deadline'),
+        title: const Tr('Delete Deadline'),
         content: Text('Delete "${item.title}"?'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
-          TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('Delete')),
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Tr('Cancel')),
+          TextButton(onPressed: () => Navigator.pop(context, true), child: const Tr('Delete')),
         ],
       ),
     );
@@ -377,7 +378,7 @@ class _DeadlinesScreenState extends State<DeadlinesScreen> {
                   child: ElevatedButton.icon(
                     onPressed: () => _openDeadlineSheet(),
                     icon: const Icon(Icons.add),
-                    label: const Text('Add Deadline'),
+                    label: const Tr('Add Deadline'),
                   ),
                 ),
                 const SizedBox(height: 16),
@@ -397,7 +398,7 @@ class _DeadlinesScreenState extends State<DeadlinesScreen> {
         onPressed: () => _openDeadlineSheet(),
         backgroundColor: AdminColors.primary,
         icon: const Icon(Icons.add),
-        label: const Text('Add Deadline'),
+        label: const Tr('Add Deadline'),
       ),
       child: _buildList(),
     );

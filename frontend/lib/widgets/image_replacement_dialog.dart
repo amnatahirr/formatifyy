@@ -6,6 +6,7 @@ import 'package:file_picker/file_picker.dart';
 import '../models/json_parse.dart';
 import '../services/image_replacement_service.dart';
 
+import 'tr.dart';
 AppPalette _ap = AppPalette.dark;
 
 Color get _bg => _ap.scaffold;
@@ -157,8 +158,7 @@ class _ImageReplacementDialogState extends State<ImageReplacementDialog> {
                   const Icon(Icons.image_search, color: _yellow, size: 20),
                   const SizedBox(width: 8),
                   Expanded(
-                    child: Text(
-                      'Replace Image',
+                    child: Tr('Replace Image',
                       style: TextStyle(
                         color: _textPri,
                         fontSize: 16,
@@ -189,15 +189,13 @@ class _ImageReplacementDialogState extends State<ImageReplacementDialog> {
                       border: Border.all(color: _border, width: 1),
                       borderRadius: BorderRadius.circular(6),
                     ),
-                    child: Text(
-                      'Select a new image. It will be embedded in your document and checked for relevance.',
+                    child: Tr('Select a new image. It will be embedded in your document and checked for relevance.',
                       style: TextStyle(color: _textSec, fontSize: 12),
                     ),
                   ),
                   const SizedBox(height: 16),
                   if (_showPreview && _selectedImage != null) ...[
-                    Text(
-                      'New Image',
+                    Tr('New Image',
                       style: TextStyle(
                         color: _textPri,
                         fontSize: 12,
@@ -252,13 +250,13 @@ class _ImageReplacementDialogState extends State<ImageReplacementDialog> {
                   if (!_isLoading)
                     TextButton(
                       onPressed: () => Navigator.pop(context),
-                      child: Text('Cancel', style: TextStyle(color: _textSec)),
+                      child: Tr('Cancel', style: TextStyle(color: _textSec)),
                     ),
                   const SizedBox(width: 8),
                   if (_selectedImage == null)
                     ElevatedButton.icon(
                       icon: const Icon(Icons.upload_file, size: 16),
-                      label: const Text('Select Image'),
+                      label: const Tr('Select Image'),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: _blue,
                         foregroundColor: _textPri,

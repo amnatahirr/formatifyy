@@ -8,6 +8,7 @@ import '../../providers/auth_provider.dart';
 import '../../services/admin_api_service.dart';
 import 'common_widgets.dart';
 
+import '../tr.dart';
 /// Logo + cover / project-info DOCX template uploads for frontmatter generation.
 class FrontmatterAssetsCard extends StatefulWidget {
   const FrontmatterAssetsCard({super.key});
@@ -164,14 +165,13 @@ class _FrontmatterAssetsCardState extends State<FrontmatterAssetsCard> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(_error!, style: const TextStyle(color: Color(0xFFEF4444), fontSize: 12)),
-                    TextButton(onPressed: _load, child: const Text('Retry')),
+                    TextButton(onPressed: _load, child: const Tr('Retry')),
                   ],
                 )
               : Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      'Organization logo',
+                    Tr('Organization logo',
                       style: TextStyle(fontSize: 12, color: Colors.white.withOpacity(0.7)),
                     ),
                     const SizedBox(height: 8),
@@ -235,8 +235,7 @@ class _FrontmatterAssetsCardState extends State<FrontmatterAssetsCard> {
                       onUpload: () => _uploadTemplate('info'),
                     ),
                     const SizedBox(height: 8),
-                    Text(
-                      'Use Jinja placeholders like {{ project_title }}, {{ university_name }}, {%p for member in members %}.',
+                    Tr('Use Jinja placeholders like {{ project_title }}, {{ university_name }}, {%p for member in members %}.',
                       style: TextStyle(fontSize: 11, color: Colors.white.withOpacity(0.45)),
                     ),
                   ],
@@ -299,7 +298,7 @@ class _FrontmatterAssetsCardState extends State<FrontmatterAssetsCard> {
                     height: 14,
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
-                : const Text('Replace'),
+                : const Tr('Replace'),
           ),
         ],
       ),

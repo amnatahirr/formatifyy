@@ -15,6 +15,7 @@ import '../services/super_admin_api_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/responsive.dart';
 
+import '../widgets/tr.dart';
 /// Auth palette for the dark two-panel login / signup experience.
 class _AuthColors {
   static const navy = Color(0xFF0B0F2E);
@@ -341,8 +342,7 @@ class _LoginScreenState extends State<LoginScreen> {
           child: const Icon(Icons.auto_awesome, color: Colors.white, size: 24),
         ),
         const SizedBox(width: 14),
-        const Text(
-          'FORMATIFY',
+        const Tr('FORMATIFY',
           style: TextStyle(
             fontSize: 20,
             fontWeight: FontWeight.w800,
@@ -423,8 +423,7 @@ class _LoginScreenState extends State<LoginScreen> {
           _buildBrandMark(centered: true),
           const SizedBox(height: 28),
         ],
-        const Text(
-          'Welcome to Formatify',
+        const Tr('Welcome to Formatify',
           style: TextStyle(
             fontSize: 26,
             fontWeight: FontWeight.w800,
@@ -433,8 +432,7 @@ class _LoginScreenState extends State<LoginScreen> {
           ),
         ),
         const SizedBox(height: 8),
-        const Text(
-          'Enter your organization code to continue.',
+        const Tr('Enter your organization code to continue.',
           style: TextStyle(fontSize: 14, color: _AuthColors.muted, height: 1.4),
         ),
         const SizedBox(height: 28),
@@ -513,8 +511,7 @@ Widget _buildLoginFields({required bool showCompactBrand}) {
           const SizedBox(height: 28),
         ],
 
-        const Text(
-          'Welcome Back',
+        const Tr('Welcome Back',
           style: TextStyle(
             fontSize: 26,
             fontWeight: FontWeight.w800,
@@ -559,8 +556,7 @@ Widget _buildLoginFields({required bool showCompactBrand}) {
                 minimumSize: Size.zero,
                 tapTargetSize: MaterialTapTargetSize.shrinkWrap,
               ),
-              child: const Text(
-                'Change',
+              child: const Tr('Change',
                 style: TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.w600,
@@ -572,8 +568,7 @@ Widget _buildLoginFields({required bool showCompactBrand}) {
 
         const SizedBox(height: 8),
 
-        const Text(
-          'Enter your details to access your dashboard.',
+        const Tr('Enter your details to access your dashboard.',
           style: TextStyle(
             fontSize: 14,
             color: _AuthColors.muted,
@@ -632,8 +627,7 @@ Widget _buildLoginFields({required bool showCompactBrand}) {
               ),
             ),
             const SizedBox(width: 8),
-            const Text(
-              'Remember me',
+            const Tr('Remember me',
               style: TextStyle(
                 fontSize: 13,
                 color: _AuthColors.muted,
@@ -649,8 +643,7 @@ Widget _buildLoginFields({required bool showCompactBrand}) {
                 minimumSize: Size.zero,
                 tapTargetSize: MaterialTapTargetSize.shrinkWrap,
               ),
-              child: const Text(
-                'Forgot password?',
+              child: const Tr('Forgot password?',
                 style: TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w600,
@@ -700,8 +693,7 @@ Widget _buildLoginFields({required bool showCompactBrand}) {
           _buildBrandMark(centered: true),
           const SizedBox(height: 28),
         ],
-        const Text(
-          'Create Account',
+        const Tr('Create Account',
           style: TextStyle(
             fontSize: 26,
             fontWeight: FontWeight.w800,
@@ -802,7 +794,7 @@ Widget _buildLoginFields({required bool showCompactBrand}) {
             ),
             TextButton(
               onPressed: _loadDepartments,
-              child: const Text('Retry', style: TextStyle(fontSize: 12)),
+              child: const Tr('Retry', style: TextStyle(fontSize: 12)),
             ),
           ],
         ),
@@ -819,8 +811,7 @@ Widget _buildLoginFields({required bool showCompactBrand}) {
         hint: 'Department',
         icon: Icons.apartment_outlined,
       ),
-      hint: const Text(
-        'Department',
+      hint: const Tr('Department',
         style: TextStyle(color: _AuthColors.mutedSoft, fontSize: 14),
       ),
       items: _departments
@@ -849,13 +840,12 @@ Widget _buildLoginFields({required bool showCompactBrand}) {
         hint: 'Current semester',
         icon: Icons.school_outlined,
       ),
-      hint: const Text(
-        'Current semester',
+      hint: const Tr('Current semester',
         style: TextStyle(color: _AuthColors.mutedSoft, fontSize: 14),
       ),
       items: const [
-        DropdownMenuItem(value: 6, child: Text('Semester 6')),
-        DropdownMenuItem(value: 7, child: Text('Semester 7')),
+        DropdownMenuItem(value: 6, child: Tr('Semester 6')),
+        DropdownMenuItem(value: 7, child: Tr('Semester 7')),
       ],
       onChanged: (v) => setState(() => _selectedSemester = v),
     );
@@ -1197,8 +1187,7 @@ Widget _buildTextField({
         ),
         const Padding(
           padding: EdgeInsets.symmetric(horizontal: 14),
-          child: Text(
-            'OR',
+          child: Tr('OR',
             style: TextStyle(
               fontSize: 12,
               fontWeight: FontWeight.w600,
@@ -1232,8 +1221,7 @@ Widget _buildTextField({
           children: [
             const _GoogleGIcon(size: 18),
             const SizedBox(width: 10),
-            Text(
-              'Continue with Google',
+            Tr('Continue with Google',
               style: TextStyle(
                 fontSize: 14,
                 fontWeight: FontWeight.w600,
@@ -1253,8 +1241,7 @@ Widget _buildTextField({
         onPressed: () {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text(
-                'Microsoft sign-in is not wired up yet — ask if you want it next.',
+              content: Tr('Microsoft sign-in is not wired up yet — ask if you want it next.',
               ),
             ),
           );
@@ -1272,8 +1259,7 @@ Widget _buildTextField({
           children: [
             _MicrosoftLogo(size: 16),
             SizedBox(width: 10),
-            Text(
-              'Continue with Microsoft',
+            Tr('Continue with Microsoft',
               style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
             ),
           ],
@@ -1354,7 +1340,7 @@ Widget _buildTextField({
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('Login successful!')));
+      ).showSnackBar(const SnackBar(content: Tr('Login successful!')));
     }
   }
 
@@ -1364,14 +1350,14 @@ Widget _buildTextField({
 
     if (_selectedDepartmentId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please select your department.')),
+        const SnackBar(content: Tr('Please select your department.')),
       );
       return;
     }
     final requiresSemester = DevUserConfig.requiresSemesterOnSignup;
     if (requiresSemester && _selectedSemester == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please select your current semester.')),
+        const SnackBar(content: Tr('Please select your current semester.')),
       );
       return;
     }
@@ -1398,7 +1384,7 @@ Widget _buildTextField({
       await theme.bindToUser(auth.userId);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Signup successful!')),
+        const SnackBar(content: Tr('Signup successful!')),
       );
     }
   }
@@ -1412,7 +1398,7 @@ Widget _buildTextField({
       await theme.bindToUser(auth.userId);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Google Sign-In successful!')),
+        const SnackBar(content: Tr('Google Sign-In successful!')),
       );
     }
   }
@@ -1429,7 +1415,7 @@ Widget _buildTextField({
       await theme.bindToUser(auth.userId);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('GitHub Sign-In successful!')),
+        const SnackBar(content: Tr('GitHub Sign-In successful!')),
       );
     }
   }

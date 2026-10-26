@@ -6,6 +6,7 @@ import '../../providers/auth_provider.dart';
 import '../../services/supervisor_api_service.dart';
 import '../../widgets/admin/admin_ui.dart';
 
+import '../../widgets/tr.dart';
 class AssignmentRequestsScreen extends StatefulWidget {
   const AssignmentRequestsScreen({super.key});
 
@@ -103,7 +104,7 @@ class _AssignmentRequestsScreenState extends State<AssignmentRequestsScreen> {
             return AlertDialog(
               backgroundColor: AdminColors.surface,
               shape: adminDialogShape(),
-              title: const Text('Reject request'),
+              title: const Tr('Reject request'),
               content: SizedBox(
                 width: 420,
                 child: Column(
@@ -131,7 +132,7 @@ class _AssignmentRequestsScreenState extends State<AssignmentRequestsScreen> {
               actions: [
                 TextButton(
                   onPressed: () => Navigator.pop(dialogContext),
-                  child: const Text('Cancel'),
+                  child: const Tr('Cancel'),
                 ),
                 ElevatedButton(
                   style: ElevatedButton.styleFrom(backgroundColor: AdminColors.danger),
@@ -143,7 +144,7 @@ class _AssignmentRequestsScreenState extends State<AssignmentRequestsScreen> {
                     }
                     Navigator.pop(dialogContext, text);
                   },
-                  child: const Text('Confirm Reject'),
+                  child: const Tr('Confirm Reject'),
                 ),
               ],
             );
@@ -238,8 +239,7 @@ class _ProfileMismatchBanner extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  'Profile mismatch notice',
+                const Tr('Profile mismatch notice',
                   style: TextStyle(
                     color: AdminColors.warning,
                     fontWeight: FontWeight.w700,
@@ -347,7 +347,7 @@ class _AssignmentRequestCard extends StatelessWidget {
                     ),
                   ),
                   icon: const Icon(Icons.close_rounded, size: 18),
-                  label: const Text('Reject'),
+                  label: const Tr('Reject'),
                 ),
               ),
               const SizedBox(width: 12),

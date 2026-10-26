@@ -7,6 +7,7 @@ import '../../services/supervisor_api_service.dart';
 import '../../widgets/admin/admin_ui.dart';
 import 'group_detail_screen.dart';
 
+import '../../widgets/tr.dart';
 class MyGroupsScreen extends StatefulWidget {
   const MyGroupsScreen({super.key});
 
@@ -69,7 +70,7 @@ class _MyGroupsScreenState extends State<MyGroupsScreen> {
         return AlertDialog(
           backgroundColor: AdminColors.surface,
           shape: adminDialogShape(),
-          title: const Text('Discard group?'),
+          title: const Tr('Discard group?'),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -93,7 +94,7 @@ class _MyGroupsScreenState extends State<MyGroupsScreen> {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(dialogContext, false),
-              child: const Text('Cancel'),
+              child: const Tr('Cancel'),
             ),
             ElevatedButton(
               style: ElevatedButton.styleFrom(
@@ -101,7 +102,7 @@ class _MyGroupsScreenState extends State<MyGroupsScreen> {
                 foregroundColor: Colors.white,
               ),
               onPressed: () => Navigator.pop(dialogContext, true),
-              child: const Text('Discard'),
+              child: const Tr('Discard'),
             ),
           ],
         );
@@ -279,7 +280,7 @@ class _MyGroupCard extends StatelessWidget {
                     itemBuilder: (context) => const [
                       PopupMenuItem(
                         value: 'discard',
-                        child: Text('Discard group'),
+                        child: Tr('Discard group'),
                       ),
                     ],
                     icon: Icon(Icons.more_vert_rounded, color: Colors.white.withOpacity(0.65)),

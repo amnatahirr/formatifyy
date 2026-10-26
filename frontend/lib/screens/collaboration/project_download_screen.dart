@@ -7,6 +7,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 import '../../providers/collaboration_provider.dart';
 
+import '../../widgets/tr.dart';
 class ProjectDownloadScreen extends StatefulWidget {
   final int projectId;
   final int? mergeId;
@@ -48,7 +49,7 @@ class _ProjectDownloadScreenState extends State<ProjectDownloadScreen> {
       if (kIsWeb) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Document ready on server — use export from reports tab')),
+          const SnackBar(content: Tr('Document ready on server — use export from reports tab')),
         );
         return;
       }
@@ -82,7 +83,7 @@ class _ProjectDownloadScreenState extends State<ProjectDownloadScreen> {
       backgroundColor: const Color(0xFF0F1419),
       appBar: AppBar(
         backgroundColor: const Color(0xFF141B27),
-        title: const Text('Merged Document'),
+        title: const Tr('Merged Document'),
       ),
       body: Padding(
         padding: const EdgeInsets.all(24),
@@ -102,8 +103,7 @@ class _ProjectDownloadScreenState extends State<ProjectDownloadScreen> {
                 children: [
                   Icon(Icons.check_circle, color: Color(0xFF10B981), size: 40),
                   SizedBox(height: 12),
-                  Text(
-                    'Merge completed successfully',
+                  Tr('Merge completed successfully',
                     style: TextStyle(
                       color: Colors.white,
                       fontSize: 18,
@@ -111,8 +111,7 @@ class _ProjectDownloadScreenState extends State<ProjectDownloadScreen> {
                     ),
                   ),
                   SizedBox(height: 6),
-                  Text(
-                    'The final document was assembled in template section order and analyzed with the Formatify 6-function pipeline.',
+                  Tr('The final document was assembled in template section order and analyzed with the Formatify 6-function pipeline.',
                     style: TextStyle(color: Color(0xFF94A3B8), fontSize: 12, height: 1.4),
                   ),
                 ],
@@ -120,7 +119,7 @@ class _ProjectDownloadScreenState extends State<ProjectDownloadScreen> {
             ),
             const SizedBox(height: 24),
             if (report != null && report['error'] == null) ...[
-              const Text('Analysis Summary',
+              const Tr('Analysis Summary',
                   style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
               const SizedBox(height: 8),
               Text('Total issues found: $totalIssues',
@@ -148,7 +147,7 @@ class _ProjectDownloadScreenState extends State<ProjectDownloadScreen> {
                         child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
                       )
                     : const Icon(Icons.download),
-                label: const Text('Download Merged DOCX'),
+                label: const Tr('Download Merged DOCX'),
                 style: ElevatedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 14),
                 ),

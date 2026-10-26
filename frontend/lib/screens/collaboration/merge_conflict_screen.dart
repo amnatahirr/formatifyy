@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../../providers/collaboration_provider.dart';
 import 'project_download_screen.dart';
 
+import '../../widgets/tr.dart';
 class MergeConflictScreen extends StatefulWidget {
   final int projectId;
   final int mergeId;
@@ -101,7 +102,7 @@ class _MergeConflictScreenState extends State<MergeConflictScreen> {
     if (_pendingCount <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('All conflicts resolved!'),
+          content: Tr('All conflicts resolved!'),
           backgroundColor: Color(0xFF10B981),
         ),
       );
@@ -148,7 +149,7 @@ class _MergeConflictScreenState extends State<MergeConflictScreen> {
       backgroundColor: const Color(0xFF0F1419),
       appBar: AppBar(
         backgroundColor: const Color(0xFF141B27),
-        title: const Text('Merge & Conflict Resolution'),
+        title: const Tr('Merge & Conflict Resolution'),
       ),
       body: _initialLoad && vc.loading
           ? const Center(child: CircularProgressIndicator())
@@ -158,8 +159,7 @@ class _MergeConflictScreenState extends State<MergeConflictScreen> {
                 if (allResolved) _allResolvedBanner() else _statusBanner(mergeState, _pendingCount, totalConflicts),
                 const SizedBox(height: 16),
                 if (totalConflicts == 0)
-                  const Text(
-                    'No conflicts detected. Ready to assemble the final document in template order.',
+                  const Tr('No conflicts detected. Ready to assemble the final document in template order.',
                     style: TextStyle(color: Color(0xFF10B981)),
                   )
                 else if (_visibleConflicts.isEmpty && allResolved)
@@ -238,8 +238,7 @@ class _MergeConflictScreenState extends State<MergeConflictScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  'All conflicts resolved',
+                Tr('All conflicts resolved',
                   style: TextStyle(
                     color: Color(0xFF10B981),
                     fontWeight: FontWeight.w700,
@@ -247,8 +246,7 @@ class _MergeConflictScreenState extends State<MergeConflictScreen> {
                   ),
                 ),
                 SizedBox(height: 4),
-                Text(
-                  'You can now complete the merge and generate the final document.',
+                Tr('You can now complete the merge and generate the final document.',
                   style: TextStyle(color: Color(0xFF94A3B8), fontSize: 12),
                 ),
               ],
@@ -309,8 +307,7 @@ class _MergeConflictScreenState extends State<MergeConflictScreen> {
               children: [
                 _typeChip(type),
                 const Spacer(),
-                const Text(
-                  'PENDING',
+                const Tr('PENDING',
                   style: TextStyle(
                     color: Color(0xFFF59E0B),
                     fontWeight: FontWeight.w700,
@@ -342,7 +339,7 @@ class _MergeConflictScreenState extends State<MergeConflictScreen> {
               alignment: Alignment.centerRight,
               child: ElevatedButton(
                 onPressed: removing ? null : () => _resolve(id, listIndex),
-                child: const Text('Save Resolution'),
+                child: const Tr('Save Resolution'),
               ),
             ),
           ],
@@ -415,7 +412,7 @@ class _MergeConflictScreenState extends State<MergeConflictScreen> {
                 ),
                 TextButton(
                   onPressed: () => _useVariant(conflictId, content),
-                  child: const Text('Use this', style: TextStyle(fontSize: 10)),
+                  child: const Tr('Use this', style: TextStyle(fontSize: 10)),
                 ),
               ],
             ),

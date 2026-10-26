@@ -15,6 +15,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import '../config/api_config.dart';
 
+import '../widgets/tr.dart';
 class AdminReferenceSettingsScreen extends StatefulWidget {
   final int templateId;
   final int userId;
@@ -215,7 +216,7 @@ class _AdminReferenceSettingsScreenState
         // Show success and then return
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Reference rules saved successfully!'),
+            content: Tr('Reference rules saved successfully!'),
             backgroundColor: Colors.green,
             duration: Duration(seconds: 2),
           ),
@@ -266,8 +267,7 @@ class _AdminReferenceSettingsScreenState
       backgroundColor: const Color(0xFF0F1419),
       appBar: AppBar(
         backgroundColor: const Color(0xFF141B27),
-        title: const Text(
-          'Reference Formatting Rules',
+        title: const Tr('Reference Formatting Rules',
           style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w600),
         ),
         iconTheme: const IconThemeData(color: Colors.white),
@@ -289,7 +289,7 @@ class _AdminReferenceSettingsScreenState
                     _saveRules();
                   },
                   icon: const Icon(Icons.save, color: Color(0xFF6366F1)),
-                  label: const Text('Save', style: TextStyle(color: Color(0xFF6366F1))),
+                  label: const Tr('Save', style: TextStyle(color: Color(0xFF6366F1))),
                 ),
         ],
       ),

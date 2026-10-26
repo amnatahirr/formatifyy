@@ -8,6 +8,7 @@ import '../../providers/auth_provider.dart';
 import '../../services/admin_api_service.dart';
 import '../../widgets/admin/admin_ui.dart';
 
+import '../../widgets/tr.dart';
 class AnalyticsScreen extends StatefulWidget {
   final bool embedded;
 
@@ -136,7 +137,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
         child: SizedBox(
           height: 220,
           child: analytics.documentsLast7Days.isEmpty
-              ? Text('No recent document activity yet.', style: TextStyle(color: Colors.white.withOpacity(0.65)))
+              ? Tr('No recent document activity yet.', style: TextStyle(color: Colors.white.withOpacity(0.65)))
               : LineChart(
                   LineChartData(
                     minY: 0,
@@ -200,7 +201,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
         child: SizedBox(
           height: 240,
           child: analytics.issueBreakdown.every((e) => e.count == 0)
-              ? Text('No issue breakdown yet — analyze documents to populate this chart.', style: TextStyle(color: Colors.white.withOpacity(0.65)))
+              ? Tr('No issue breakdown yet — analyze documents to populate this chart.', style: TextStyle(color: Colors.white.withOpacity(0.65)))
               : BarChart(
                   BarChartData(
                     alignment: BarChartAlignment.spaceAround,
@@ -262,7 +263,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
         child: SizedBox(
           height: 260,
           child: analytics.departmentScores.isEmpty
-              ? Text('No departments found yet.', style: TextStyle(color: Colors.white.withOpacity(0.65)))
+              ? Tr('No departments found yet.', style: TextStyle(color: Colors.white.withOpacity(0.65)))
               : BarChart(
                   BarChartData(
                     alignment: BarChartAlignment.spaceAround,
@@ -323,7 +324,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
         child: SizedBox(
           height: 240,
           child: analytics.monthlyDocuments.isEmpty
-              ? Text('No monthly document trend yet.', style: TextStyle(color: Colors.white.withOpacity(0.65)))
+              ? Tr('No monthly document trend yet.', style: TextStyle(color: Colors.white.withOpacity(0.65)))
               : LineChart(
                   LineChartData(
                     minY: 0,
@@ -385,7 +386,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
       AdminSectionCard(
         title: 'Top Templates',
         child: analytics.topTemplates.isEmpty
-            ? Text('No template usage recorded yet.', style: TextStyle(color: Colors.white.withOpacity(0.65)))
+            ? Tr('No template usage recorded yet.', style: TextStyle(color: Colors.white.withOpacity(0.65)))
             : Column(
                 children: analytics.topTemplates.map((template) {
                   return Padding(

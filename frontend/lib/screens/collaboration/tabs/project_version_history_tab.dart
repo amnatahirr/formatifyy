@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../providers/collaboration_provider.dart';
 
+import '../../../widgets/tr.dart';
 /// Version History tab — chronological commits with restore confirmation.
 class ProjectVersionHistoryTab extends StatefulWidget {
   final int projectId;
@@ -58,8 +59,7 @@ class _ProjectVersionHistoryTabState extends State<ProjectVersionHistoryTab> {
       context: context,
       builder: (_) => AlertDialog(
         backgroundColor: const Color(0xFF1A1F2E),
-        title: const Text(
-          'Restore this version?',
+        title: const Tr('Restore this version?',
           style: TextStyle(color: Colors.white),
         ),
         content: Text(
@@ -70,12 +70,12 @@ class _ProjectVersionHistoryTabState extends State<ProjectVersionHistoryTab> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
+            child: const Tr('Cancel'),
           ),
           ElevatedButton(
             onPressed: () => Navigator.pop(context, true),
             style: ElevatedButton.styleFrom(),
-            child: const Text('Restore this version'),
+            child: const Tr('Restore this version'),
           ),
         ],
       ),
@@ -119,8 +119,7 @@ class _ProjectVersionHistoryTabState extends State<ProjectVersionHistoryTab> {
     }
     if (history.isEmpty) {
       return const Center(
-        child: Text(
-          'No versions yet',
+        child: Tr('No versions yet',
           style: TextStyle(color: Color(0xFF94A3B8)),
         ),
       );
@@ -212,8 +211,7 @@ class _ProjectVersionHistoryTabState extends State<ProjectVersionHistoryTab> {
                     child: ElevatedButton.icon(
                       onPressed: () => _restore(c),
                       icon: const Icon(Icons.restore, size: 14),
-                      label: const Text(
-                        'Restore this version',
+                      label: const Tr('Restore this version',
                         style: TextStyle(fontSize: 12),
                       ),
                       style: ElevatedButton.styleFrom(

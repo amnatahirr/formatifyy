@@ -6,6 +6,7 @@ import '../../providers/auth_provider.dart';
 import '../../services/admin_api_service.dart';
 import '../../widgets/admin/admin_ui.dart';
 
+import '../../widgets/tr.dart';
 class SupervisorListScreen extends StatefulWidget {
   final DepartmentSummary department;
 
@@ -96,11 +97,11 @@ class _SupervisorListScreenState extends State<SupervisorListScreen> {
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: AdminColors.surface,
-        title: const Text('Delete Supervisor'),
+        title: const Tr('Delete Supervisor'),
         content: Text('Are you sure you want to delete ${item.name}?'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
-          TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('Delete')),
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Tr('Cancel')),
+          TextButton(onPressed: () => Navigator.pop(context, true), child: const Tr('Delete')),
         ],
       ),
     );
@@ -213,8 +214,7 @@ class _SupervisorListScreenState extends State<SupervisorListScreen> {
                       borderRadius: BorderRadius.circular(12),
                       border: Border.all(color: AdminColors.primary.withOpacity(0.25)),
                     ),
-                    child: Text(
-                      'A temporary password will be generated. You can copy it or email it to the supervisor after saving.',
+                    child: Tr('A temporary password will be generated. You can copy it or email it to the supervisor after saving.',
                       style: TextStyle(color: Colors.white.withOpacity(0.78), height: 1.4, fontSize: 13),
                     ),
                   ),
@@ -230,7 +230,7 @@ class _SupervisorListScreenState extends State<SupervisorListScreen> {
                           side: const BorderSide(color: AdminColors.border),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                         ),
-                        child: const Text('Cancel'),
+                        child: const Tr('Cancel'),
                       ),
                     ),
                     const SizedBox(width: 12),
@@ -339,7 +339,7 @@ class _SupervisorListScreenState extends State<SupervisorListScreen> {
         floatingActionButton: FloatingActionButton.extended(
           onPressed: () => _openSupervisorSheet(),
           backgroundColor: AdminColors.primary,
-          label: const Text('Add Supervisor'),
+          label: const Tr('Add Supervisor'),
           icon: const Icon(Icons.add),
         ),
         child: Column(

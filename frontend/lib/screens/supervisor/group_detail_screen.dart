@@ -11,6 +11,7 @@ import 'document_review_screen.dart';
 import 'meeting_notes_screen.dart';
 import 'plagiarism_monitor_detail_screen.dart';
 
+import '../../widgets/tr.dart';
 class GroupDetailScreen extends StatefulWidget {
   final int groupId;
   final String? groupTitle;
@@ -66,7 +67,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
         return AlertDialog(
           backgroundColor: AdminColors.surface,
           shape: adminDialogShape(),
-          title: const Text('Discard group?'),
+          title: const Tr('Discard group?'),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -87,7 +88,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(dialogContext, false),
-              child: const Text('Cancel'),
+              child: const Tr('Cancel'),
             ),
             ElevatedButton(
               style: ElevatedButton.styleFrom(
@@ -95,7 +96,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
                 foregroundColor: Colors.white,
               ),
               onPressed: () => Navigator.pop(dialogContext, true),
-              child: const Text('Discard'),
+              child: const Tr('Discard'),
             ),
           ],
         );
@@ -224,8 +225,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
                           overflow: TextOverflow.ellipsis,
                         ),
                         const SizedBox(height: 2),
-                        Text(
-                          'Group overview',
+                        Tr('Group overview',
                           style: TextStyle(fontSize: 12, color: Colors.white.withOpacity(0.5)),
                         ),
                       ],
@@ -240,7 +240,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
                             child: CircularProgressIndicator(strokeWidth: 2, color: AdminColors.danger),
                           )
                         : const Icon(Icons.delete_outline_rounded, size: 18),
-                    label: const Text('Discard'),
+                    label: const Tr('Discard'),
                     style: TextButton.styleFrom(foregroundColor: AdminColors.danger),
                   ),
                 ],
@@ -302,8 +302,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
             icon: Icons.description_outlined,
             accent: AdminColors.accent,
             child: doc == null
-                ? Text(
-                    'No document has been submitted yet.',
+                ? Tr('No document has been submitted yet.',
                     style: TextStyle(color: Colors.white.withOpacity(0.65), height: 1.45),
                   )
                 : Row(
@@ -354,7 +353,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
               child: ElevatedButton.icon(
                 onPressed: _openDocumentReview,
                 icon: const Icon(Icons.rate_review_outlined, size: 18),
-                label: const Text('Document Review'),
+                label: const Tr('Document Review'),
                 style: ElevatedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 14),
                 ),
@@ -366,7 +365,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
               child: OutlinedButton.icon(
                 onPressed: _openMeetingNotes,
                 icon: const Icon(Icons.sticky_note_2_outlined, size: 18),
-                label: const Text('Meeting Notes'),
+                label: const Tr('Meeting Notes'),
                 style: OutlinedButton.styleFrom(
                   foregroundColor: Colors.white,
                   side: const BorderSide(color: AdminColors.borderStrong),
@@ -380,7 +379,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
               child: OutlinedButton.icon(
                 onPressed: _openPlagiarismMonitor,
                 icon: const Icon(Icons.policy_rounded, size: 18),
-                label: const Text('Plagiarism Monitor'),
+                label: const Tr('Plagiarism Monitor'),
                 style: OutlinedButton.styleFrom(
                   foregroundColor: AdminColors.warning,
                   side: BorderSide(color: AdminColors.warning.withOpacity(0.55)),
@@ -395,7 +394,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
                   child: ElevatedButton.icon(
                     onPressed: _openDocumentReview,
                     icon: const Icon(Icons.rate_review_outlined, size: 18),
-                    label: const Text('Document Review'),
+                    label: const Tr('Document Review'),
                     style: ElevatedButton.styleFrom(
                       padding: const EdgeInsets.symmetric(vertical: 14),
                     ),
@@ -406,7 +405,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
                   child: OutlinedButton.icon(
                     onPressed: _openMeetingNotes,
                     icon: const Icon(Icons.sticky_note_2_outlined, size: 18),
-                    label: const Text('Meeting Notes'),
+                    label: const Tr('Meeting Notes'),
                     style: OutlinedButton.styleFrom(
                       foregroundColor: Colors.white,
                       side: const BorderSide(color: AdminColors.borderStrong),
@@ -422,7 +421,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
               child: OutlinedButton.icon(
                 onPressed: _openPlagiarismMonitor,
                 icon: const Icon(Icons.policy_rounded, size: 18),
-                label: const Text('Plagiarism Monitor'),
+                label: const Tr('Plagiarism Monitor'),
                 style: OutlinedButton.styleFrom(
                   foregroundColor: AdminColors.warning,
                   side: BorderSide(color: AdminColors.warning.withOpacity(0.55)),

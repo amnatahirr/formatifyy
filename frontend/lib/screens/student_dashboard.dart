@@ -37,6 +37,8 @@ import '../widgets/student/desktop_semester_deadline_card.dart';
 import '../utils/responsive.dart';
 import 'mobile_companion_screen.dart';
 import '../widgets/document_preview_panel.dart'; 
+import '../providers/lang_provider.dart';
+import '../widgets/tr.dart';
 
 /// Mobile bottom-nav → existing `_selectedIndex` targets.
 /// Notifications has no desktop sidebar entry; uses [kNotificationsTabIndex].
@@ -256,7 +258,7 @@ AnalysisNav.request.removeListener(_onAnalysisRequest);
         children: [
           Icon(item.icon, size: 22, color: color),
           SizedBox(height: 4),
-          Text(
+          Tr(
             item.label,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
@@ -304,7 +306,7 @@ AnalysisNav.request.removeListener(_onAnalysisRequest);
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
+                    Tr(
                       'FORMATIFY',
                       style: TextStyle(
                         fontSize: 14,
@@ -312,7 +314,7 @@ AnalysisNav.request.removeListener(_onAnalysisRequest);
                         color: _p.textPrimary,
                       ),
                     ),
-                    Text(
+                    Tr(
                       'Academic Edition',
                       style: TextStyle(
                         fontSize: 10,
@@ -465,7 +467,7 @@ AnalysisNav.request.removeListener(_onAnalysisRequest);
                           child: ElevatedButton.icon(
                             onPressed: () => _logout(context),
                             icon: Icon(Icons.logout, size: 14, color: Colors.white),
-                            label: Text(
+                            label: Tr(
                               'Logout',
                               style: TextStyle(
                                 fontSize: 11,
@@ -525,7 +527,7 @@ AnalysisNav.request.removeListener(_onAnalysisRequest);
                     : _p.textSecondary,
               ),
               SizedBox(width: 12),
-              Text(
+              Tr(
                 label,
                 style: TextStyle(
                   fontSize: 13,
@@ -618,7 +620,7 @@ AnalysisNav.request.removeListener(_onAnalysisRequest);
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
+                Tr(
                   title,
                   style: TextStyle(
                     fontSize: compact ? 20 : 28,
@@ -627,7 +629,7 @@ AnalysisNav.request.removeListener(_onAnalysisRequest);
                   ),
                 ),
                 if (!compact || _selectedIndex == 0)
-                  Text(
+                  Tr(
                     description,
                     maxLines: compact ? 1 : 3,
                     overflow: TextOverflow.ellipsis,
@@ -662,7 +664,7 @@ AnalysisNav.request.removeListener(_onAnalysisRequest);
                       children: [
                         Icon(Icons.add, size: 18, color: Colors.white),
                         SizedBox(width: 6),
-                        Text(
+                        Tr(
                           'New Report',
                           style: TextStyle(
                             fontSize: 12,
@@ -966,7 +968,7 @@ AnalysisNav.request.removeListener(_onAnalysisRequest);
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
+                    Tr(
                       'Send Document from Phone',
                       style: TextStyle(
                         color: _p.textPrimary,
@@ -975,7 +977,7 @@ AnalysisNav.request.removeListener(_onAnalysisRequest);
                       ),
                     ),
                     SizedBox(height: 4),
-                    Text(
+                    Tr(
                       'Scan QR, camera, or gallery upload',
                       style: TextStyle(
                         color: _p.textSecondary,
@@ -1125,7 +1127,7 @@ AnalysisNav.request.removeListener(_onAnalysisRequest);
             ),
           ),
           SizedBox(height: compact ? 2 : 4),
-          Text(
+          Tr(
             title,
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
@@ -1152,7 +1154,7 @@ AnalysisNav.request.removeListener(_onAnalysisRequest);
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
+              Tr(
                 'Recent Reports',
                 style: TextStyle(
                   fontSize: 16,
@@ -1167,7 +1169,7 @@ AnalysisNav.request.removeListener(_onAnalysisRequest);
                     _activeProjectId = null;
                   });
                 },
-                child: Text(
+                child: Tr(
                   'View All',
                   style: TextStyle(
                     fontSize: 12,
@@ -1183,7 +1185,7 @@ AnalysisNav.request.removeListener(_onAnalysisRequest);
             Center(
               child: Padding(
                 padding: EdgeInsets.symmetric(vertical: 24),
-                child: Text(
+                child: Tr(
                   'No reports yet',
                   style: TextStyle(
                     fontSize: 13,
@@ -1242,7 +1244,7 @@ AnalysisNav.request.removeListener(_onAnalysisRequest);
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
+              Tr(
                 title,
                 style: TextStyle(
                   fontSize: 13,
@@ -1250,7 +1252,7 @@ AnalysisNav.request.removeListener(_onAnalysisRequest);
                   color: _p.textPrimary,
                 ),
               ),
-              Text(
+              Tr(
                 subtitle,
                 style: TextStyle(
                   fontSize: 11,
@@ -1267,7 +1269,7 @@ AnalysisNav.request.removeListener(_onAnalysisRequest);
             color: statusColor.withOpacity(0.15),
             borderRadius: BorderRadius.circular(6),
           ),
-          child: Text(
+          child: Tr(
             status,
             style: TextStyle(
               fontSize: 11,
@@ -1313,7 +1315,7 @@ AnalysisNav.request.removeListener(_onAnalysisRequest);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
+        Tr(
           'AI Formatting Tools',
           style: TextStyle(
             fontSize: 16,
@@ -1391,7 +1393,7 @@ AnalysisNav.request.removeListener(_onAnalysisRequest);
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
+                  Tr(
                     title,
                     style: TextStyle(
                       fontSize: 14,
@@ -1400,7 +1402,7 @@ AnalysisNav.request.removeListener(_onAnalysisRequest);
                     ),
                   ),
                   SizedBox(height: 2),
-                  Text(
+                  Tr(
                     description,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
@@ -1447,7 +1449,7 @@ AnalysisNav.request.removeListener(_onAnalysisRequest);
               ),
               SizedBox(width: 12),
               Expanded(
-                child: Text(
+                child: Tr(
                   title,
                   style: TextStyle(
                     fontSize: 14,
@@ -1459,7 +1461,7 @@ AnalysisNav.request.removeListener(_onAnalysisRequest);
             ],
           ),
           SizedBox(height: 8),
-          Text(
+          Tr(
             description,
             style: TextStyle(
               fontSize: 12,
@@ -1480,7 +1482,7 @@ AnalysisNav.request.removeListener(_onAnalysisRequest);
                   borderRadius: BorderRadius.circular(6),
                 ),
               ),
-              child: Text(
+              child: Tr(
                 'Use Tool',
                 style: TextStyle(
                   fontSize: 11,
@@ -1527,7 +1529,7 @@ AnalysisNav.request.removeListener(_onAnalysisRequest);
           children: [
             Row(
               children: [
-                Text(
+                Tr(
                   'Recent collaborations',
                   style: TextStyle(
                     fontSize: 16,
@@ -1559,7 +1561,7 @@ AnalysisNav.request.removeListener(_onAnalysisRequest);
                     foregroundColor: Color(0xFF6366F1),
                     padding: EdgeInsets.symmetric(horizontal: 8),
                   ),
-                  child: Text('View all'),
+                  child: Tr('View all'),
                 ),
               ],
             ),
@@ -1580,12 +1582,12 @@ AnalysisNav.request.removeListener(_onAnalysisRequest);
                   children: [
                     Icon(Icons.people_outline, size: 32, color: _p.textMuted),
                     SizedBox(height: 8),
-                    Text(
+                    Tr(
                       'No collaborations yet',
                       style: TextStyle(color: _p.textSecondary, fontSize: 13),
                     ),
                     SizedBox(height: 4),
-                    Text(
+                    Tr(
                       'Create or join a project from Collaboration',
                       style: TextStyle(color: _p.textMuted, fontSize: 12),
                     ),
@@ -1596,7 +1598,7 @@ AnalysisNav.request.removeListener(_onAnalysisRequest);
                         foregroundColor: Color(0xFF10B981),
                         side: BorderSide(color: Color(0xFF10B981)),
                       ),
-                      child: Text('Open Collaboration'),
+                      child: Tr('Open Collaboration'),
                     ),
                   ],
                 ),
@@ -1664,7 +1666,7 @@ AnalysisNav.request.removeListener(_onAnalysisRequest);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
+        Tr(
           'Quick Actions',
           style: TextStyle(
             fontSize: 16,
@@ -1747,7 +1749,7 @@ AnalysisNav.request.removeListener(_onAnalysisRequest);
                 child: Icon(icon, color: color, size: compact ? 18 : 20),
               ),
               SizedBox(height: compact ? 10 : 12),
-              Text(
+              Tr(
                 title,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
@@ -1758,7 +1760,7 @@ AnalysisNav.request.removeListener(_onAnalysisRequest);
                 ),
               ),
               SizedBox(height: 4),
-              Text(
+              Tr(
                 description,
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
@@ -1789,7 +1791,7 @@ void _openAnalyzeScreen(Map<String, dynamic> doc) {
   if (docId == null || templateId == null) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('Cannot analyze — document info is missing'),
+        content: Tr('Cannot analyze — document info is missing'),
         backgroundColor: Color(0xFFEF4444),
       ),
     );
@@ -1889,8 +1891,8 @@ void _openAnalyzeScreen(Map<String, dynamic> doc) {
                   icon: Icons.swap_vert,
                   label: _sortBy == 'name' ? 'Name A-Z' : 'Most Recent',
                   items: const [
-                    PopupMenuItem(value: 'recent', child: Text('Most Recent')),
-                    PopupMenuItem(value: 'name', child: Text('Name A-Z')),
+                    PopupMenuItem(value: 'recent', child: Tr('Most Recent')),
+                    PopupMenuItem(value: 'name', child: Tr('Name A-Z')),
                   ],
                   onSelected: (value) {
                     setState(() {
@@ -1955,14 +1957,14 @@ void _openAnalyzeScreen(Map<String, dynamic> doc) {
                         });
                       },
                       itemBuilder: (context) => [
-                        const PopupMenuItem(value: 'recent', child: Text('Most Recent')),
-                        const PopupMenuItem(value: 'name', child: Text('Name A-Z')),
+                        const PopupMenuItem(value: 'recent', child: Tr('Most Recent')),
+                        const PopupMenuItem(value: 'name', child: Tr('Name A-Z')),
                       ],
                       child: Row(
                         children: [
                           Icon(Icons.swap_vert, color: _p.textSecondary, size: 18),
                           SizedBox(width: 8),
-                          Text(
+                          Tr(
                             _sortBy == 'name' ? 'Name A-Z' : 'Most Recent',
                             style: TextStyle(
                               color: _p.textSecondary,
@@ -1991,7 +1993,7 @@ void _openAnalyzeScreen(Map<String, dynamic> doc) {
                           color: _p.textMuted,
                         ),
                         SizedBox(height: 16),
-                        Text(
+                        Tr(
                           'No reports found',
                           style: TextStyle(
                             fontSize: 14,
@@ -2066,7 +2068,7 @@ void _openAnalyzeScreen(Map<String, dynamic> doc) {
                                       color: statusColor.withOpacity(0.8),
                                       borderRadius: BorderRadius.circular(6),
                                     ),
-                                    child: Text(
+                                    child: Tr(
                                       statusLabel,
                                       style: TextStyle(
                                         fontSize: 10,
@@ -2120,7 +2122,7 @@ void _openAnalyzeScreen(Map<String, dynamic> doc) {
                                         color: Color(0xFF10B981).withOpacity(0.12),
                                         borderRadius: BorderRadius.circular(6),
                                       ),
-                                      child: Text(
+                                      child: Tr(
                                         'Formatted + Unformatted available',
                                         style: TextStyle(
                                           fontSize: 10,
@@ -2148,7 +2150,7 @@ void _openAnalyzeScreen(Map<String, dynamic> doc) {
                                               borderRadius: BorderRadius.circular(6),
                                             ),
                                           ),
-                                          child: Text(
+                                          child: Tr(
                                             'Unformatted',
                                             style: TextStyle(
                                               fontSize: 10,
@@ -2180,7 +2182,7 @@ void _openAnalyzeScreen(Map<String, dynamic> doc) {
                                               borderRadius: BorderRadius.circular(6),
                                             ),
                                           ),
-                                          child: Text(
+                                          child: Tr(
                                             'Formatted',
                                             style: TextStyle(
                                               fontSize: 10,
@@ -2214,7 +2216,7 @@ void _openAnalyzeScreen(Map<String, dynamic> doc) {
                                               children: [
                                                 Icon(Icons.analytics_outlined, size: 16, color: Color(0xFF10B981)),
                                                 SizedBox(width: 8),
-                                                Text('Analyze'),
+                                                Tr('Analyze'),
                                               ],
                                             ),
                                           ),
@@ -2225,7 +2227,7 @@ void _openAnalyzeScreen(Map<String, dynamic> doc) {
                                                 children: [
                                                   Icon(Icons.send_rounded, size: 16, color: Color(0xFF10B981)),
                                                   SizedBox(width: 8),
-                                                  Text('Send to Supervisor'),
+                                                  Tr('Send to Supervisor'),
                                                 ],
                                               ),
                                             ),
@@ -2235,7 +2237,7 @@ void _openAnalyzeScreen(Map<String, dynamic> doc) {
                                               children: [
                                                 Icon(Icons.preview, size: 16),
                                                 SizedBox(width: 8),
-                                                Text('Preview'),
+                                                Tr('Preview'),
                                               ],
                                             ),
                                           ),
@@ -2245,7 +2247,7 @@ void _openAnalyzeScreen(Map<String, dynamic> doc) {
                                               children: [
                                                 Icon(Icons.drive_file_rename_outline, size: 16),
                                                 SizedBox(width: 8),
-                                                Text('Rename'),
+                                                Tr('Rename'),
                                               ],
                                             ),
                                           ),
@@ -2255,7 +2257,7 @@ void _openAnalyzeScreen(Map<String, dynamic> doc) {
                                               children: [
                                                 Icon(Icons.edit_outlined, size: 16),
                                                 SizedBox(width: 8),
-                                                Text('Edit'),
+                                                Tr('Edit'),
                                               ],
                                             ),
                                           ),
@@ -2265,7 +2267,7 @@ void _openAnalyzeScreen(Map<String, dynamic> doc) {
                                               children: [
                                                 Icon(Icons.delete, size: 16, color: Colors.red),
                                                 SizedBox(width: 8),
-                                                Text('Delete', style: TextStyle(color: Colors.red)),
+                                                Tr('Delete', style: TextStyle(color: Colors.red)),
                                               ],
                                             ),
                                           ),
@@ -2333,7 +2335,7 @@ void _openAnalyzeScreen(Map<String, dynamic> doc) {
                           ),
                         ),
                       if (totalPages > 3)
-                        Text(
+                        Tr(
                           '...',
                           style: TextStyle(
                             color: _p.textSecondary,
@@ -2398,7 +2400,7 @@ void _openAnalyzeScreen(Map<String, dynamic> doc) {
     if (userId == null || email.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Please sign in again to send'),
+          content: Tr('Please sign in again to send'),
           backgroundColor: Color(0xFFEF4444),
         ),
       );
@@ -2413,7 +2415,7 @@ void _openAnalyzeScreen(Map<String, dynamic> doc) {
     if (groupId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(
+          content: Tr(
             'No accepted supervisor yet. Choose a supervisor and wait for acceptance first.',
           ),
           backgroundColor: Color(0xFFEF4444),
@@ -2426,7 +2428,7 @@ void _openAnalyzeScreen(Map<String, dynamic> doc) {
     if (docId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Invalid document'),
+          content: Tr('Invalid document'),
           backgroundColor: Color(0xFFEF4444),
         ),
       );
@@ -2437,7 +2439,7 @@ void _openAnalyzeScreen(Map<String, dynamic> doc) {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: _p.surface,
-        title: Text(
+        title: Tr(
           'Send to Supervisor?',
           style: TextStyle(color: _p.textPrimary),
         ),
@@ -2448,7 +2450,7 @@ void _openAnalyzeScreen(Map<String, dynamic> doc) {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: Text('Cancel'),
+            child: Tr('Cancel'),
           ),
           ElevatedButton(
             onPressed: () => Navigator.pop(ctx, true),
@@ -2456,7 +2458,7 @@ void _openAnalyzeScreen(Map<String, dynamic> doc) {
               backgroundColor: Color(0xFF10B981),
               foregroundColor: Colors.white,
             ),
-            child: Text('Send'),
+            child: Tr('Send'),
           ),
         ],
       ),
@@ -2489,7 +2491,7 @@ void _openAnalyzeScreen(Map<String, dynamic> doc) {
     if (result != null) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Sent to supervisor for review'),
+          content: Tr('Sent to supervisor for review'),
           backgroundColor: Color(0xFF10B981),
         ),
       );
@@ -2524,7 +2526,7 @@ void _openAnalyzeScreen(Map<String, dynamic> doc) {
           children: [
             Icon(icon, color: _p.textSecondary, size: 18),
             SizedBox(width: 8),
-            Text(
+            Tr(
               label,
               style: TextStyle(
                 color: _p.textSecondary,
@@ -2596,7 +2598,7 @@ void _openAnalyzeScreen(Map<String, dynamic> doc) {
                   color: statusColor.withOpacity(0.15),
                   borderRadius: BorderRadius.circular(6),
                 ),
-                child: Text(
+                child: Tr(
                   statusLabel,
                   style: TextStyle(
                     fontSize: 10,
@@ -2626,7 +2628,7 @@ void _openAnalyzeScreen(Map<String, dynamic> doc) {
                   color: Color(0xFF10B981).withOpacity(0.12),
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: Text(
+                child: Tr(
                   'Formatted + Unformatted available',
                   style: TextStyle(
                     fontSize: 11,
@@ -2643,7 +2645,7 @@ void _openAnalyzeScreen(Map<String, dynamic> doc) {
               child: ElevatedButton.icon(
                 onPressed: () => _sendReportToSupervisor(doc),
                 icon: Icon(Icons.send_rounded, size: 16),
-                label: Text(
+                label: Tr(
                   'Send to Supervisor',
                   style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
                 ),
@@ -2663,7 +2665,7 @@ void _openAnalyzeScreen(Map<String, dynamic> doc) {
             child: TextButton.icon(
               onPressed: () => _showRenameDialog(doc),
               icon: Icon(Icons.drive_file_rename_outline, size: 16),
-              label: Text('Rename', style: TextStyle(fontSize: 12)),
+              label: Tr('Rename', style: TextStyle(fontSize: 12)),
               style: TextButton.styleFrom(
                 foregroundColor: _p.textSecondary,
                 padding: EdgeInsets.zero,
@@ -2688,7 +2690,7 @@ void _openAnalyzeScreen(Map<String, dynamic> doc) {
                         borderRadius: BorderRadius.circular(10),
                       ),
                     ),
-                    child: Text(
+                    child: Tr(
                       'Unformatted',
                       style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12),
                     ),
@@ -2719,7 +2721,7 @@ void _openAnalyzeScreen(Map<String, dynamic> doc) {
                         borderRadius: BorderRadius.circular(10),
                       ),
                     ),
-                    child: Text(
+                    child: Tr(
                       'Formatted',
                       style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12),
                     ),
@@ -2797,7 +2799,7 @@ void _openAnalyzeScreen(Map<String, dynamic> doc) {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: _p.surface,
-        title: Text('Rename Report', style: TextStyle(color: _p.textPrimary)),
+        title: Tr('Rename Report', style: TextStyle(color: _p.textPrimary)),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -2825,11 +2827,11 @@ void _openAnalyzeScreen(Map<String, dynamic> doc) {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: Text('Cancel'),
+            child: Tr('Cancel'),
           ),
           ElevatedButton(
             onPressed: () => Navigator.pop(ctx, controller.text.trim()),
-            child: Text('Save'),
+            child: Tr('Save'),
           ),
         ],
       ),
@@ -2902,7 +2904,7 @@ void _openAnalyzeScreen(Map<String, dynamic> doc) {
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Text(
+                        Tr(
                           'Edit Document',
                           style: TextStyle(
                             fontSize: 18,
@@ -2996,7 +2998,7 @@ void _openAnalyzeScreen(Map<String, dynamic> doc) {
                       children: [
                         TextButton(
                           onPressed: () => Navigator.pop(context),
-                          child: Text(
+                          child: Tr(
                             'Cancel',
                             style: TextStyle(
                               color: _p.textPrimary,
@@ -3016,7 +3018,7 @@ void _openAnalyzeScreen(Map<String, dynamic> doc) {
                                   if (!mounted) return;
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     SnackBar(
-                                      content: Text(
+                                      content: Tr(
                                         success
                                             ? 'Document saved successfully'
                                             : 'Failed to save document',
@@ -3029,7 +3031,7 @@ void _openAnalyzeScreen(Map<String, dynamic> doc) {
                                   if (success) Navigator.pop(context);
                                 },
                           style: ElevatedButton.styleFrom(),
-                          child: Text(
+                          child: Tr(
                             'Save Changes',
                             style: TextStyle(
                               fontSize: 13,
@@ -3157,7 +3159,7 @@ void _showPreview(Map<String, dynamic> doc) {
 
                           if (snapshot.hasError || !snapshot.hasData) {
                             return Center(
-                              child: Text(
+                              child: Tr(
                                 'Failed to load preview or document empty',
                                 style: TextStyle(color: _p.textSecondary),
                               ),
@@ -3285,11 +3287,11 @@ void _showPreview(Map<String, dynamic> doc) {
                   ElevatedButton.icon(
                     onPressed: () {
                       ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('Request Template feature coming soon')),
+                        SnackBar(content: Tr('Request Template feature coming soon')),
                       );
                     },
                     icon: Icon(Icons.add, size: 18),
-                    label: Text('Request Template'),
+                    label: Tr('Request Template'),
                     style: ElevatedButton.styleFrom(
                       foregroundColor: Colors.white,
                       padding: EdgeInsets.symmetric(horizontal: 24, vertical: 12),
@@ -3348,11 +3350,11 @@ void _showPreview(Map<String, dynamic> doc) {
                         }
                       },
                       items: [
-                        const DropdownMenuItem(value: 'all', child: Text('All Categories')),
-                        const DropdownMenuItem(value: 'engineering', child: Text('Engineering')),
-                        const DropdownMenuItem(value: 'sciences', child: Text('Sciences')),
-                        const DropdownMenuItem(value: 'business', child: Text('Business')),
-                        const DropdownMenuItem(value: 'humanities', child: Text('Humanities')),
+                        const DropdownMenuItem(value: 'all', child: Tr('All Categories')),
+                        const DropdownMenuItem(value: 'engineering', child: Tr('Engineering')),
+                        const DropdownMenuItem(value: 'sciences', child: Tr('Sciences')),
+                        const DropdownMenuItem(value: 'business', child: Tr('Business')),
+                        const DropdownMenuItem(value: 'humanities', child: Tr('Humanities')),
                       ],
                     ),
                   ),
@@ -3375,9 +3377,9 @@ void _showPreview(Map<String, dynamic> doc) {
                         }
                       },
                       items: [
-                        const DropdownMenuItem(value: 'popular', child: Text('Most Popular')),
-                        const DropdownMenuItem(value: 'recent', child: Text('Most Recent')),
-                        const DropdownMenuItem(value: 'name', child: Text('Name (A-Z)')),
+                        const DropdownMenuItem(value: 'popular', child: Tr('Most Popular')),
+                        const DropdownMenuItem(value: 'recent', child: Tr('Most Recent')),
+                        const DropdownMenuItem(value: 'name', child: Tr('Name (A-Z)')),
                       ],
                     ),
                   ),
@@ -3424,7 +3426,7 @@ void _showPreview(Map<String, dynamic> doc) {
                               ),
                             ),
                             SizedBox(height: 4),
-                            Text(
+                            Tr(
                               'This template is applied to your current document. You can switch templates anytime.',
                               style: TextStyle(
                                 fontSize: 13,
@@ -3443,7 +3445,7 @@ void _showPreview(Map<String, dynamic> doc) {
                             borderRadius: BorderRadius.circular(6),
                           ),
                         ),
-                        child: Text('View Details'),
+                        child: Tr('View Details'),
                       ),
                     ],
                   ),
@@ -3475,7 +3477,7 @@ void _showPreview(Map<String, dynamic> doc) {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(
+                            Tr(
                               'No Template Selected',
                               style: TextStyle(
                                 fontSize: 15,
@@ -3484,7 +3486,7 @@ void _showPreview(Map<String, dynamic> doc) {
                               ),
                             ),
                             SizedBox(height: 4),
-                            Text(
+                            Tr(
                               'Select a template below to get started with your document formatting.',
                               style: TextStyle(
                                 fontSize: 13,
@@ -3500,7 +3502,7 @@ void _showPreview(Map<String, dynamic> doc) {
               SizedBox(height: 48),
 
               // Templates from database only
-              Text(
+              Tr(
                 'Available Templates',
                 style: TextStyle(
                   fontSize: 20,
@@ -3509,7 +3511,7 @@ void _showPreview(Map<String, dynamic> doc) {
                 ),
               ),
               SizedBox(height: 8),
-              Text(
+              Tr(
                 DevUserConfig.hasFypModule
                     ? 'Loaded from your university database'
                     : 'Templates configured for your organization',
@@ -3543,7 +3545,7 @@ void _showPreview(Map<String, dynamic> doc) {
                               templateProvider.fetchUserTemplates(userId);
                             }
                           },
-                          child: Text('Retry'),
+                          child: Tr('Retry'),
                         ),
                       ],
                     ),
@@ -3553,7 +3555,7 @@ void _showPreview(Map<String, dynamic> doc) {
                 Center(
                   child: Padding(
                     padding: EdgeInsets.symmetric(vertical: 48),
-                    child: Text(
+                    child: Tr(
                       'No templates yet. Ask your admin to add templates in Template Manager.',
                       style: TextStyle(
                         fontSize: 14,
@@ -3599,7 +3601,7 @@ void _showPreview(Map<String, dynamic> doc) {
                         child: Icon(Icons.help_outline, color: _p.accent, size: 28),
                       ),
                       SizedBox(height: 16),
-                      Text(
+                      Tr(
                         DevUserConfig.hasFypModule
                             ? 'Can\'t find your university template?'
                             : 'Need a custom template?',
@@ -3610,7 +3612,7 @@ void _showPreview(Map<String, dynamic> doc) {
                         ),
                       ),
                       SizedBox(height: 8),
-                      Text(
+                      Tr(
                         'Request a custom template and we\'ll add it within 48 hours',
                         textAlign: TextAlign.center,
                         style: TextStyle(
@@ -3622,7 +3624,7 @@ void _showPreview(Map<String, dynamic> doc) {
                       ElevatedButton(
                         onPressed: () {
                           ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text('Custom template request submitted')),
+                            SnackBar(content: Tr('Custom template request submitted')),
                           );
                         },
                         style: ElevatedButton.styleFrom(
@@ -3632,7 +3634,7 @@ void _showPreview(Map<String, dynamic> doc) {
                             borderRadius: BorderRadius.circular(8),
                           ),
                         ),
-                        child: Text('Request Custom Template'),
+                        child: Tr('Request Custom Template'),
                       ),
                     ],
                   ),
@@ -3646,128 +3648,151 @@ void _showPreview(Map<String, dynamic> doc) {
     );
   }
 
-  Widget _buildSettingsPage() {
-    return Consumer2<AuthProvider, ThemeProvider>(
-      builder: (context, auth, theme, _) {
-        return SingleChildScrollView(
-          padding: EdgeInsets.all(32),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              
-              Container(
-                decoration: _cardDeco(),
-                padding: EdgeInsets.all(20),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Account Information',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                        color: _p.textPrimary,
-                      ),
+ Widget _buildSettingsPage() {
+  return Consumer2<AuthProvider, ThemeProvider>(
+    builder: (context, auth, theme, _) {
+      final lang = context.watch<LangProvider>();
+
+      return SingleChildScrollView(
+        padding: EdgeInsets.all(32),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              decoration: _cardDeco(),
+              padding: EdgeInsets.all(20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Tr(
+                    'Account Information',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                      color: _p.textPrimary,
                     ),
-                    SizedBox(height: 16),
-                    _buildSettingsItem('Username', auth.currentUser ?? 'N/A'),
-                    SizedBox(height: 12),
-                    _buildSettingsItem('Email', auth.email ?? 'N/A'),
-                    SizedBox(height: 12),
-                    _buildSettingsItem(
-                      'Account Type',
-                      DevUserConfig.displayRoleLabel(auth.userRole),
-                    ),
-                  ],
-                ),
-              ),
-              SizedBox(height: 24),
-              Container(
-                decoration: _cardDeco(),
-                padding: EdgeInsets.all(20),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Preferences',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                        color: _p.textPrimary,
-                      ),
-                    ),
-                    SizedBox(height: 16),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          'Email Notifications',
-                          style: TextStyle(
-                            fontSize: 13,
-                            color: _p.textPrimary,
-                          ),
-                        ),
-                        Switch(
-                          value: true,
-                          onChanged: (value) {},
-                          activeColor: _p.accent,
-                        ),
-                      ],
-                    ),
-                    SizedBox(height: 12),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Dark Mode',
-                              style: TextStyle(
-                                fontSize: 13,
-                                color: _p.textPrimary,
-                              ),
-                            ),
-                            SizedBox(height: 2),
-                            Text(
-                              theme.isDarkMode ? 'On' : 'Off — Light Mode',
-                              style: TextStyle(
-                                fontSize: 11,
-                                color: _p.textSecondary,
-                              ),
-                            ),
-                          ],
-                        ),
-                        Switch(
-                          value: theme.isDarkMode,
-                          onChanged: (value) => theme.setDarkMode(value),
-                          activeColor: _p.accent,
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-              SizedBox(height: 24),
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton.icon(
-                  onPressed: () => _logout(context),
-                  icon: Icon(Icons.logout_rounded),
-                  label: Text('Sign Out'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: _p.textPrimary,
-                    side: BorderSide(color: _p.borderStrong),
-                    padding: EdgeInsets.symmetric(vertical: 14),
                   ),
+                  SizedBox(height: 16),
+                  _buildSettingsItem('Username', auth.currentUser ?? 'N/A'),
+                  SizedBox(height: 12),
+                  _buildSettingsItem('Email', auth.email ?? 'N/A'),
+                  SizedBox(height: 12),
+                  _buildSettingsItem(
+                    'Account Type',
+                    DevUserConfig.displayRoleLabel(auth.userRole),
+                  ),
+                ],
+              ),
+            ),
+            SizedBox(height: 24),
+            Container(
+              decoration: _cardDeco(),
+              padding: EdgeInsets.all(20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Tr(
+                    'Preferences',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                      color: _p.textPrimary,
+                    ),
+                  ),
+                  SizedBox(height: 16),
+
+                  // ---------- NEW: Language ----------
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Tr(
+                        'Language',
+                        style: TextStyle(fontSize: 13, color: _p.textPrimary),
+                      ),
+                      DropdownButton<String>(
+                        value: lang.code,
+                        dropdownColor: _p.surface,
+                        underline: SizedBox(),
+                        style: TextStyle(fontSize: 13, color: _p.textPrimary),
+                        items: kLanguages
+                            .map((l) => DropdownMenuItem(
+                                  value: l.code,
+                                  child: Text(l.name), // plain Text, translate nahi hona
+                                ))
+                            .toList(),
+                        onChanged: (v) {
+                          if (v != null) {
+                            context.read<LangProvider>().setLang(v);
+                          }
+                        },
+                      ),
+                    ],
+                  ),
+                  SizedBox(height: 12),
+                  // -----------------------------------
+
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Tr(
+                        'Email Notifications',
+                        style: TextStyle(fontSize: 13, color: _p.textPrimary),
+                      ),
+                      Switch(
+                        value: true,
+                        onChanged: (value) {},
+                        activeColor: _p.accent,
+                      ),
+                    ],
+                  ),
+                  SizedBox(height: 12),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Tr(
+                            'Dark Mode',
+                            style: TextStyle(fontSize: 13, color: _p.textPrimary),
+                          ),
+                          SizedBox(height: 2),
+                          Tr(
+                            theme.isDarkMode ? 'On' : 'Off — Light Mode',
+                            style: TextStyle(fontSize: 11, color: _p.textSecondary),
+                          ),
+                        ],
+                      ),
+                      Switch(
+                        value: theme.isDarkMode,
+                        onChanged: (value) => theme.setDarkMode(value),
+                        activeColor: _p.accent,
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            SizedBox(height: 24),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: () => _logout(context),
+                icon: Icon(Icons.logout_rounded),
+                label: Tr('Sign Out'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: _p.textPrimary,
+                  side: BorderSide(color: _p.borderStrong),
+                  padding: EdgeInsets.symmetric(vertical: 14),
                 ),
               ),
-            ],
-          ),
-        );
-      },
-    );
-  }
+            ),
+          ],
+        ),
+      );
+    },
+  );
+}
 
   Widget _buildTemplateCardNew(Map<String, dynamic> template, Color cardColor) {
     final displayName = (template['name'] ?? 'Template').toString();
@@ -3881,7 +3906,7 @@ void _showPreview(Map<String, dynamic> doc) {
                       padding: EdgeInsets.only(bottom: 6),
                       child: Row(
                         children: [
-                          Text(
+                          Tr(
                             '• ',
                             style: TextStyle(
                               fontSize: 11,
@@ -3915,7 +3940,7 @@ void _showPreview(Map<String, dynamic> doc) {
                               borderRadius: BorderRadius.circular(6),
                             ),
                           ),
-                          child: Text(
+                          child: Tr(
                             'Preview',
                             style: TextStyle(
                               fontSize: 11,
@@ -3943,7 +3968,7 @@ void _showPreview(Map<String, dynamic> doc) {
                               borderRadius: BorderRadius.circular(6),
                             ),
                           ),
-                          child: Text(
+                          child: Tr(
                             'Select',
                             style: TextStyle(
                               fontSize: 11,
@@ -3987,7 +4012,7 @@ void _showPreview(Map<String, dynamic> doc) {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
+            Tr(
               'Upload Document',
               style: TextStyle(
                 fontSize: 20,
@@ -4022,7 +4047,7 @@ void _showPreview(Map<String, dynamic> doc) {
                           borderRadius: BorderRadius.circular(6),
                         ),
                         child: Center(
-                          child: Text(
+                          child: Tr(
                             'Upload File',
                             style: TextStyle(
                               color: Colors.white,
@@ -4051,7 +4076,7 @@ void _showPreview(Map<String, dynamic> doc) {
                           borderRadius: BorderRadius.circular(6),
                         ),
                         child: Center(
-                          child: Text(
+                          child: Tr(
                             'Paste Text',
                             style: TextStyle(
                               color: _p.textPrimary,
@@ -4067,7 +4092,7 @@ void _showPreview(Map<String, dynamic> doc) {
               ),
             ),
             SizedBox(height: 20),
-            Text(
+            Tr(
               'Supported formats: PDF, DOCX, DOC, TXT',
               style: TextStyle(
                 fontSize: 11,
@@ -4080,7 +4105,7 @@ void _showPreview(Map<String, dynamic> doc) {
               children: [
                 TextButton(
                   onPressed: () => Navigator.pop(context),
-                  child: Text(
+                  child: Tr(
                     'Cancel',
                     style: TextStyle(
                       color: _p.textSecondary,
@@ -4125,7 +4150,7 @@ void _showPreview(Map<String, dynamic> doc) {
                 children: [
                   const CircularProgressIndicator(),
                   SizedBox(height: 16),
-                  Text(
+                  Tr(
                     'Uploading document...',
                     style: TextStyle(color: _p.textPrimary),
                   ),
@@ -4147,7 +4172,7 @@ void _showPreview(Map<String, dynamic> doc) {
           if (success) {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
-                content: Text('Document uploaded successfully!'),
+                content: Tr('Document uploaded successfully!'),
                 backgroundColor: Color(0xFF10B981),
               ),
             );
@@ -4194,7 +4219,7 @@ void _showPreview(Map<String, dynamic> doc) {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
+              Tr(
                 'Paste Your Content',
                 style: TextStyle(
                   fontSize: 20,
@@ -4203,7 +4228,7 @@ void _showPreview(Map<String, dynamic> doc) {
                 ),
               ),
               SizedBox(height: 8),
-              Text(
+              Tr(
                 'Paste your document text below',
                 style: TextStyle(
                   fontSize: 12,
@@ -4249,7 +4274,7 @@ void _showPreview(Map<String, dynamic> doc) {
                 children: [
                   TextButton(
                     onPressed: () => Navigator.pop(context),
-                    child: Text(
+                    child: Tr(
                       'Cancel',
                       style: TextStyle(
                         color: _p.textSecondary,
@@ -4266,7 +4291,7 @@ void _showPreview(Map<String, dynamic> doc) {
                         borderRadius: BorderRadius.circular(6),
                       ),
                     ),
-                    child: Text(
+                    child: Tr(
                       'Upload',
                       style: TextStyle(
                         fontSize: 12,
@@ -4288,7 +4313,7 @@ void _showPreview(Map<String, dynamic> doc) {
     if (content.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Please paste some content'),
+          content: Tr('Please paste some content'),
           backgroundColor: Color(0xFFEF4444),
         ),
       );
@@ -4314,7 +4339,7 @@ void _showPreview(Map<String, dynamic> doc) {
             children: [
               const CircularProgressIndicator(),
               SizedBox(height: 16),
-              Text(
+              Tr(
                 'Processing content...',
                 style: TextStyle(color: _p.textPrimary),
               ),
@@ -4336,7 +4361,7 @@ void _showPreview(Map<String, dynamic> doc) {
       if (success) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Content uploaded successfully!'),
+            content: Tr('Content uploaded successfully!'),
             backgroundColor: Color(0xFF10B981),
           ),
         );
@@ -4359,7 +4384,7 @@ void _showPreview(Map<String, dynamic> doc) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
+        Tr(
           label,
           style: TextStyle(
             fontSize: 12,
@@ -4425,7 +4450,7 @@ void _showPreview(Map<String, dynamic> doc) {
   void _showFormattedMissingHint() {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(
+        content: Tr(
           'No formatted version yet. Open Analyze, apply fixes, then tap Save Formatted Document.',
         ),
         backgroundColor: _p.accent,
@@ -4515,7 +4540,7 @@ void _showPreview(Map<String, dynamic> doc) {
                     base64Decode(qrBase64),
                     width: 250,
                     height: 250,
-                    errorBuilder: (_, __, ___) => Text('Failed to load QR'),
+                    errorBuilder: (_, __, ___) => Tr('Failed to load QR'),
                   ),
                 ),
               ),
@@ -4549,7 +4574,7 @@ void _showPreview(Map<String, dynamic> doc) {
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Downloading unformatted report...'),
+          content: Tr('Downloading unformatted report...'),
           backgroundColor: _p.accent,
         ),
       );
@@ -4634,7 +4659,7 @@ void _showPreview(Map<String, dynamic> doc) {
                   ),
                 ),
                 SizedBox(height: 16),
-                Text(
+                Tr(
                   savedFormattedOnly ? 'Download formatted as' : 'Download as',
                   style: TextStyle(
                     color: _p.textPrimary,
@@ -4643,7 +4668,7 @@ void _showPreview(Map<String, dynamic> doc) {
                   ),
                 ),
                 SizedBox(height: 6),
-                Text(
+                Tr(
                   'File will be saved to your phone',
                   style: TextStyle(
                     color: _p.textSecondary,
@@ -4731,7 +4756,7 @@ void _showPreview(Map<String, dynamic> doc) {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
+                    Tr(
                       title,
                       style: TextStyle(
                         color: _p.textPrimary,
@@ -4740,7 +4765,7 @@ void _showPreview(Map<String, dynamic> doc) {
                       ),
                     ),
                     SizedBox(height: 2),
-                    Text(
+                    Tr(
                       subtitle,
                       style: TextStyle(
                         color: _p.textSecondary,
@@ -4772,7 +4797,7 @@ void _showPreview(Map<String, dynamic> doc) {
     if (userId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Please sign in again to download'),
+          content: Tr('Please sign in again to download'),
           backgroundColor: Colors.red,
         ),
       );
@@ -4930,7 +4955,7 @@ void _showPreview(Map<String, dynamic> doc) {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
+              Tr(
                 'Delete Report',
                 style: TextStyle(
                   fontSize: 18,
@@ -4952,7 +4977,7 @@ void _showPreview(Map<String, dynamic> doc) {
                 children: [
                   TextButton(
                     onPressed: () => Navigator.pop(context),
-                    child: Text(
+                    child: Tr(
                       'Cancel',
                       style: TextStyle(
                         color: _p.textSecondary,
@@ -4969,7 +4994,7 @@ void _showPreview(Map<String, dynamic> doc) {
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Color(0xFFEF4444),
                     ),
-                    child: Text(
+                    child: Tr(
                       'Delete',
                       style: TextStyle(
                         color: Colors.white,
@@ -5004,7 +5029,7 @@ void _showPreview(Map<String, dynamic> doc) {
               children: [
                 const CircularProgressIndicator(),
                 SizedBox(height: 16),
-                Text(
+                Tr(
                   'Deleting document...',
                   style: TextStyle(color: _p.textPrimary),
                 ),
@@ -5025,7 +5050,7 @@ void _showPreview(Map<String, dynamic> doc) {
         if (success) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('Document deleted successfully'),
+              content: Tr('Document deleted successfully'),
               backgroundColor: Color(0xFF10B981),
               duration: Duration(seconds: 2),
             ),
@@ -5147,7 +5172,7 @@ void _showPreview(Map<String, dynamic> doc) {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('• ', style: TextStyle(fontSize: 12)),
+              Tr('• ', style: TextStyle(fontSize: 12)),
               Expanded(
                 child: Text(text, style: style),
               ),
@@ -5243,7 +5268,7 @@ class TemplatesPanel extends StatelessWidget {
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
+              Tr(
                 'Templates',
                 style: TextStyle(
                   fontSize: 28,
@@ -5253,7 +5278,7 @@ class TemplatesPanel extends StatelessWidget {
                 ),
               ),
               SizedBox(height: 8),
-              Text(
+              Tr(
                 'Select a template to apply formatting to your documents',
                 style: TextStyle(
                   fontSize: 14,
@@ -5298,7 +5323,7 @@ class TemplatesPanel extends StatelessWidget {
                       children: [
                         Icon(Icons.layers_clear, size: 48, color: p.textMuted),
                         SizedBox(height: 16),
-                        Text(
+                        Tr(
                           'No templates available yet',
                           style: TextStyle(
                             color: p.textSecondary,
@@ -5402,7 +5427,7 @@ class TemplatesPanel extends StatelessWidget {
                                                   color: Color(0xFF10B981),
                                                 ),
                                                 SizedBox(width: 4),
-                                                Text(
+                                                Tr(
                                                   'Selected',
                                                   style: TextStyle(
                                                     fontSize: 12,
@@ -5445,7 +5470,7 @@ class TemplatesPanel extends StatelessWidget {
                                       children: [
                                         Icon(isSelected ? Icons.check : Icons.add, size: 18),
                                         SizedBox(width: 6),
-                                        Text(isSelected ? 'Selected' : 'Select'),
+                                        Tr(isSelected ? 'Selected' : 'Select'),
                                       ],
                                     ),
                                   ),
@@ -5481,7 +5506,7 @@ class SettingsPanel extends StatelessWidget {
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
+              Tr(
                 'Settings',
                 style: TextStyle(
                   fontSize: 28,
@@ -5491,7 +5516,7 @@ class SettingsPanel extends StatelessWidget {
                 ),
               ),
               SizedBox(height: 8),
-              Text(
+              Tr(
                 'Manage your account settings and preferences',
                 style: TextStyle(
                   fontSize: 14,
@@ -5541,7 +5566,7 @@ class SettingsPanel extends StatelessWidget {
                             ),
                           ),
                           SizedBox(width: 12),
-                          Text(
+                          Tr(
                             'Account Settings',
                             style: TextStyle(
                               fontSize: 16,
@@ -5605,7 +5630,7 @@ class SettingsPanel extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
+                Tr(
                   label,
                   style: TextStyle(
                     fontSize: 12,

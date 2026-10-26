@@ -6,6 +6,7 @@ import '../providers/auth_provider.dart';
 import '../services/admin_api_service.dart';
 import '../widgets/admin/admin_ui.dart';
 
+import '../widgets/tr.dart';
 class AdminUsersScreen extends StatefulWidget {
   const AdminUsersScreen({super.key});
 
@@ -159,7 +160,7 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
               ElevatedButton.icon(
                 onPressed: _loadUsers,
                 icon: const Icon(Icons.refresh),
-                label: const Text('Refresh'),
+                label: const Tr('Refresh'),
               ),
             ],
           ),
@@ -285,7 +286,7 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
                             _applyFiltersAndPagination();
                           }
                         : null,
-                    child: const Text('Prev'),
+                    child: const Tr('Prev'),
                   ),
                   Text(
                     '$_currentPage / $totalPages',
@@ -298,7 +299,7 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
                             _applyFiltersAndPagination();
                           }
                         : null,
-                    child: const Text('Next'),
+                    child: const Tr('Next'),
                   ),
                 ],
               ),

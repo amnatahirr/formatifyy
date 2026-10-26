@@ -9,6 +9,7 @@ import '../../screens/template_configuration_screen.dart';
 import '../../services/admin_api_service.dart';
 import '../../widgets/admin/admin_ui.dart';
 
+import '../../widgets/tr.dart';
 class TemplateListScreen extends StatefulWidget {
   final DepartmentSummary department;
 
@@ -68,11 +69,11 @@ class _TemplateListScreenState extends State<TemplateListScreen> {
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: AdminColors.surface,
-        title: const Text('Delete Template'),
+        title: const Tr('Delete Template'),
         content: Text('Delete "${item.name}"? This cannot be undone.'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
-          TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('Delete')),
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Tr('Cancel')),
+          TextButton(onPressed: () => Navigator.pop(context, true), child: const Tr('Delete')),
         ],
       ),
     );
@@ -133,7 +134,7 @@ class _TemplateListScreenState extends State<TemplateListScreen> {
             Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
-                TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+                TextButton(onPressed: () => Navigator.pop(context), child: const Tr('Cancel')),
                 const SizedBox(width: 8),
                 ElevatedButton(
                   onPressed: () async {
@@ -162,7 +163,7 @@ class _TemplateListScreenState extends State<TemplateListScreen> {
                       showAdminSnackBar(this.context, 'Could not save template: $e', isError: true);
                     }
                   },
-                  child: const Text('Save'),
+                  child: const Tr('Save'),
                 ),
               ],
             ),
@@ -189,7 +190,7 @@ class _TemplateListScreenState extends State<TemplateListScreen> {
           onPressed: _openCreateTemplate,
           backgroundColor: AdminColors.primary,
           icon: const Icon(Icons.add),
-          label: const Text('Create Template'),
+          label: const Tr('Create Template'),
         ),
         child: _loading
             ? const AdminLoadingView()

@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:printing/printing.dart';
 
+import '../tr.dart';
 /// Shows the server-rendered sample document (PDF of the real .docx).
 /// [loader] is called on open and again on "Retry".
 class SampleDocumentDialog extends StatefulWidget {
@@ -45,7 +46,7 @@ class _SampleDocumentDialogState extends State<SampleDocumentDialog> {
                       color: Color(0xFF6366F1)),
                   const SizedBox(width: 8),
                   const Expanded(
-                    child: Text('Sample document',
+                    child: Tr('Sample document',
                         style: TextStyle(
                             color: Colors.white,
                             fontSize: 15,
@@ -70,7 +71,7 @@ class _SampleDocumentDialogState extends State<SampleDocumentDialog> {
                         children: [
                           CircularProgressIndicator(),
                           SizedBox(height: 16),
-                          Text('Generating sample document...',
+                          Tr('Generating sample document...',
                               style: TextStyle(color: Colors.white70)),
                         ],
                       ),
@@ -93,7 +94,7 @@ class _SampleDocumentDialogState extends State<SampleDocumentDialog> {
                             OutlinedButton.icon(
                               onPressed: _retry,
                               icon: const Icon(Icons.refresh),
-                              label: const Text('Retry'),
+                              label: const Tr('Retry'),
                             ),
                           ],
                         ),

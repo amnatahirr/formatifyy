@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../theme/app_theme.dart';
 
+import 'tr.dart';
 class ExportDialog extends StatefulWidget {
   final Function(String format, {bool applyBullets, bool autoDetect}) onExport;
   final Function()? onQRCode;
@@ -98,8 +99,7 @@ class _ExportDialogState extends State<ExportDialog> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          'Export Document',
+                        Tr('Export Document',
                           style: TextStyle(
                             fontSize: 20,
                             fontWeight: FontWeight.w700,
@@ -107,8 +107,7 @@ class _ExportDialogState extends State<ExportDialog> {
                           ),
                         ),
                         const SizedBox(height: 4),
-                        Text(
-                          'Choose your preferred export format',
+                        Tr('Choose your preferred export format',
                           style: TextStyle(
                             fontSize: 13,
                             color: p.textSecondary,
@@ -145,8 +144,7 @@ class _ExportDialogState extends State<ExportDialog> {
                       }),
                       const SizedBox(height: 20),
                       if (_selectedFormat == 'docx') ...[
-                        Text(
-                          'Bullet Formatting',
+                        Tr('Bullet Formatting',
                           style: TextStyle(
                             fontSize: 13,
                             fontWeight: FontWeight.w600,
@@ -171,15 +169,13 @@ class _ExportDialogState extends State<ExportDialog> {
                                 contentPadding: const EdgeInsets.symmetric(
                                   horizontal: 12,
                                 ),
-                                title: Text(
-                                  'Apply Bullet Formatting',
+                                title: Tr('Apply Bullet Formatting',
                                   style: TextStyle(
                                     fontSize: 13,
                                     color: p.textPrimary,
                                   ),
                                 ),
-                                subtitle: Text(
-                                  'Format lists with bullets from template',
+                                subtitle: Tr('Format lists with bullets from template',
                                   style: TextStyle(
                                     fontSize: 11,
                                     color: p.textSecondary,
@@ -200,15 +196,13 @@ class _ExportDialogState extends State<ExportDialog> {
                                   contentPadding: const EdgeInsets.symmetric(
                                     horizontal: 12,
                                   ),
-                                  title: Text(
-                                    'Auto-Detect List Content',
+                                  title: Tr('Auto-Detect List Content',
                                     style: TextStyle(
                                       fontSize: 13,
                                       color: p.textPrimary,
                                     ),
                                   ),
-                                  subtitle: Text(
-                                    'Automatically detect and format list items',
+                                  subtitle: Tr('Automatically detect and format list items',
                                     style: TextStyle(
                                       fontSize: 11,
                                       color: p.textSecondary,
@@ -230,8 +224,7 @@ class _ExportDialogState extends State<ExportDialog> {
                       ],
                       if (widget.onQRCode != null ||
                           widget.onScanQRDownload != null) ...[
-                        Text(
-                          'Download to Phone',
+                        Tr('Download to Phone',
                           style: TextStyle(
                             fontSize: 13,
                             fontWeight: FontWeight.w600,
@@ -268,7 +261,7 @@ class _ExportDialogState extends State<ExportDialog> {
                                           }
                                         },
                                   icon: const Icon(Icons.qr_code_2, size: 16),
-                                  label: const Text('Generate QR Code'),
+                                  label: const Tr('Generate QR Code'),
                                   style: ElevatedButton.styleFrom(
                                     backgroundColor: const Color(0xFF10B981),
                                     foregroundColor: Colors.white,
@@ -286,7 +279,7 @@ class _ExportDialogState extends State<ExportDialog> {
                                     Icons.qr_code_scanner,
                                     size: 16,
                                   ),
-                                  label: const Text('Scan & Download'),
+                                  label: const Tr('Scan & Download'),
                                   style: ElevatedButton.styleFrom(
                                     shape: RoundedRectangleBorder(
                                       borderRadius: BorderRadius.circular(6),
@@ -322,8 +315,7 @@ class _ExportDialogState extends State<ExportDialog> {
                             borderRadius: BorderRadius.circular(6),
                           ),
                         ),
-                        child: Text(
-                          'Cancel',
+                        child: Tr('Cancel',
                           style: TextStyle(
                             fontSize: 13,
                             fontWeight: FontWeight.w600,

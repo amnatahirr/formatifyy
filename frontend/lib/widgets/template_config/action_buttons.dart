@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../tr.dart';
 class ActionButtons extends StatelessWidget {
   final int? selectedTemplateId;
   final bool isSaving;
@@ -32,7 +33,7 @@ class ActionButtons extends StatelessWidget {
               foregroundColor: Colors.white,
               side: const BorderSide(color: Color(0xFF2D3748)),
             ),
-            child: const Text('Clear Selection'),
+            child: const Tr('Clear Selection'),
           ),
           const SizedBox(width: 12),
         ],

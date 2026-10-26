@@ -2,13 +2,14 @@ import 'package:flutter/material.dart';
 
 import 'admin/admin_ui.dart';
 
+import 'tr.dart';
 /// Confirmation before starting template-free analysis (non-student roles).
 Future<bool> confirmAnalyzeWithoutTemplate(BuildContext context) async {
   final ok = await showDialog<bool>(
     context: context,
     builder: (ctx) => AlertDialog(
       backgroundColor: AdminColors.surface,
-      title: const Text('Analyzing without a template'),
+      title: const Tr('Analyzing without a template'),
       content: Text(
         'Results will use general academic formatting guidelines '
         '(headings, fonts, spacing, margins, citations), not your '
@@ -23,7 +24,7 @@ Future<bool> confirmAnalyzeWithoutTemplate(BuildContext context) async {
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(ctx, false),
-          child: const Text('Cancel'),
+          child: const Tr('Cancel'),
         ),
         ElevatedButton(
           onPressed: () => Navigator.pop(ctx, true),
@@ -31,7 +32,7 @@ Future<bool> confirmAnalyzeWithoutTemplate(BuildContext context) async {
             backgroundColor: AdminColors.primary,
             foregroundColor: Colors.white,
           ),
-          child: const Text('Continue'),
+          child: const Tr('Continue'),
         ),
       ],
     ),
@@ -50,7 +51,7 @@ Future<bool> showFreeformExportSummaryDialog(
     context: context,
     builder: (ctx) => AlertDialog(
       backgroundColor: AdminColors.surface,
-      title: const Text('Export AI-guided fixes'),
+      title: const Tr('Export AI-guided fixes'),
       content: SizedBox(
         width: 480,
         child: SingleChildScrollView(
@@ -65,8 +66,7 @@ Future<bool> showFreeformExportSummaryDialog(
                   borderRadius: BorderRadius.circular(6),
                   border: Border.all(color: AdminColors.primary.withOpacity(0.35)),
                 ),
-                child: const Text(
-                  'AI-guided · no template',
+                child: const Tr('AI-guided · no template',
                   style: TextStyle(
                     color: Color(0xFFA5B4FC),
                     fontSize: 11.5,
@@ -95,8 +95,7 @@ Future<bool> showFreeformExportSummaryDialog(
               ),
               const SizedBox(height: 8),
               if (appliedFixes.isEmpty)
-                Text(
-                  'No auto-applicable fixes.',
+                Tr('No auto-applicable fixes.',
                   style: TextStyle(color: Colors.white.withOpacity(0.45), fontSize: 12.5),
                 )
               else
@@ -171,7 +170,7 @@ Future<bool> showFreeformExportSummaryDialog(
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(ctx, false),
-          child: const Text('Cancel'),
+          child: const Tr('Cancel'),
         ),
         ElevatedButton(
           onPressed: appliedFixes.isEmpty ? null : () => Navigator.pop(ctx, true),
@@ -179,7 +178,7 @@ Future<bool> showFreeformExportSummaryDialog(
             backgroundColor: AdminColors.primary,
             foregroundColor: Colors.white,
           ),
-          child: const Text('Confirm export'),
+          child: const Tr('Confirm export'),
         ),
       ],
     ),
