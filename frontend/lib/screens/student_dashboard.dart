@@ -495,54 +495,66 @@ AnalysisNav.request.removeListener(_onAnalysisRequest);
     );
   }
 
-  Widget _buildSidebarItem(int index, IconData icon, String label) {
-    final isSelected = _selectedIndex == index;
-    // No Semantics/Tooltip/Focus wrappers existed here — onTap body unchanged.
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: isSelected ? _p.accentSoft : Colors.transparent,
-        borderRadius: BorderRadius.circular(10),
-        border: isSelected ? Border.all(color: _p.accent, width: 1.5) : null,
-      ),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(10),
-        onTap: () {
-  AnalysisNav.request.value = null;   // analysis band, job chalti rehti hai
-  setState(() {
-    _selectedIndex = index;
-    _activeProjectId = null;
-    _activeAnalysis = null;
-  });
-},
-        child: Padding(
-          padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          child: Row(
-            children: [
-              Icon(
-                icon,
-                size: 20,
-                color: isSelected
-                    ? _p.accent
-                    : _p.textSecondary,
-              ),
-              SizedBox(width: 12),
-              Tr(
+
+Widget _buildSidebarItem(int index, IconData icon, String label) {
+  final isSelected = _selectedIndex == index;
+
+  return Container(
+    margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+    decoration: BoxDecoration(
+      color: isSelected ? _p.accentSoft : Colors.transparent,
+      borderRadius: BorderRadius.circular(10),
+      border: isSelected
+          ? Border.all(color: _p.accent, width: 1.5)
+          : null,
+    ),
+    child: InkWell(
+      borderRadius: BorderRadius.circular(10),
+      onTap: () {
+        AnalysisNav.request.value = null;
+
+        setState(() {
+          _selectedIndex = index;
+          _activeProjectId = null;
+          _activeAnalysis = null;
+        });
+      },
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: 16,
+          vertical: 12,
+        ),
+        child: Row(
+          children: [
+            Icon(
+              icon,
+              size: 20,
+              color: isSelected ? _p.accent : _p.textSecondary,
+            ),
+            const SizedBox(width: 12),
+
+            Expanded(
+              child: Tr(
                 label,
                 style: TextStyle(
                   fontSize: 13,
-                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
-                  color: isSelected
-                      ? _p.accent
-                      : _p.textSecondary,
+                  fontWeight:
+                      isSelected ? FontWeight.w600 : FontWeight.w400,
+                  color: isSelected ? _p.accent : _p.textSecondary,
                 ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
-    );
-  }
+    ),
+  );
+}
+
+  
+  
 
   Widget _buildTopBar({required bool compact}) {
     final titles = [
