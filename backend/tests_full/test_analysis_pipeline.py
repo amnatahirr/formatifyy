@@ -12,10 +12,10 @@ from unittest.mock import patch
 
 import pytest
 
-from aggregator import aggregate
-from batcher import create_batches
+from pipeline.aggregator import aggregate
+from pipeline.batcher import create_batches
 from models import DocumentModel, ImageBlock, ParagraphBlock
-from parser import parse_text
+from pipeline.parser import parse_text
 
 
 pytestmark = [pytest.mark.pipeline]
@@ -143,7 +143,7 @@ def test_dispatch_all_swallows_agent_exceptions():
     """Dispatcher should not abort whole analyze when one agent fails."""
     import asyncio
 
-    from dispatcher import dispatch_all
+    from pipeline.dispatcher import dispatch_all
 
     doc = _doc_with_pages(2)
     batches = create_batches(doc, batch_size=4)
@@ -165,7 +165,7 @@ def test_dispatch_all_swallows_agent_exceptions():
 
 @pytest.mark.p1
 def test_list_detection_import_smoke():
-    from list_detection import detect_list_groups
+    from docx_tools.list_detection import detect_list_groups
 
     blocks = [
         {
@@ -199,7 +199,7 @@ def test_list_detection_import_smoke():
 
 @pytest.mark.p2
 def test_heading_analysis_endpoint(client, sample_docx_bytes):
-    from parser import parse_file
+    from pipeline.parser import parse_file
     import tempfile
 
     with tempfile.NamedTemporaryFile(suffix=".docx", delete=False) as f:

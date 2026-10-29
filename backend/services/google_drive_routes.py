@@ -32,7 +32,7 @@ from config import settings
 from database import get_db
 from middleware.org_middleware import resolve_org_id_for_user_action
 from services.google_drive_service import GoogleDriveService, _GOOGLE_EXPORT
-from templates import get_template_by_id
+from template_logic.templates import get_template_by_id
 
 try:
     from googleapiclient.errors import HttpError as GoogleHttpError

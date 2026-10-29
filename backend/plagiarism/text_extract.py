@@ -61,7 +61,7 @@ def _extract_docx(path: Path) -> str:
 
 
 def _extract_pdf(path: Path) -> str:
-    from pdf_io import extract_pdf_plain_text
+    from docx_tools.pdf_io import extract_pdf_plain_text
 
     text = extract_pdf_plain_text(str(path))
     if not text:

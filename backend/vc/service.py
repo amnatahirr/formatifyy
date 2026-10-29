@@ -12,7 +12,7 @@ from docx import Document
 from fastapi import HTTPException, UploadFile
 
 from database import get_db
-from templates import get_template_by_id
+from template_logic.templates import get_template_by_id
 from vc.conflicts import detect_all_conflicts, store_conflicts
 from vc.database import generate_invite_code
 from vc.docx_import import extract_sections_from_docx

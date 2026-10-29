@@ -7,7 +7,7 @@ from __future__ import annotations
 import re
 from typing import Any, Dict, List, Optional, Set
 
-from docx_fields import paragraph_has_image, paragraph_is_figure_caption
+from docx_tools.docx_fields import paragraph_has_image, paragraph_is_figure_caption
 
 # Explicit numbered refs: Figure 3.1 / Fig. 2 / figure 12
 _EXPLICIT_REF_RE = re.compile(

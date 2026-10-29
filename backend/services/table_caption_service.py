@@ -15,7 +15,7 @@ from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.text.paragraph import Paragraph
 
-from docx_fields import (
+from docx_tools.docx_fields import (
     CAPTION_TEXT_RE,
     _body_children,
     _body_index,
@@ -25,7 +25,7 @@ from docx_fields import (
     paragraph_has_seq_caption,
 )
 from services.table_config import get_table_format_config
-from table_processor import _infer_table_description
+from docx_tools.table_processor import _infer_table_description
 
 W_P = qn("w:p")
 W_TBL = qn("w:tbl")

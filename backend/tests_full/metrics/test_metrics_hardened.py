@@ -50,7 +50,7 @@ def test_performance_real_pipelines(benchmark, perf_recorder):
     Executes the REAL benchmark suite once (measure_call rounds inside),
     plus a pytest-benchmark timing of batcher for the HTML/CLI benchmark table.
     """
-    from batcher import create_batches
+    from pipeline.batcher import create_batches
     from tests_full.metrics.performance_report import _make_doc
 
     doc = _make_doc(16, 2)

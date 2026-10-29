@@ -12,7 +12,7 @@ from docx import Document as DocxDocument
 from docx.shared import Inches, Pt
 
 from database import get_db
-from templates import get_template_by_id
+from template_logic.templates import get_template_by_id
 
 UPLOAD_DIR = "uploads"
 

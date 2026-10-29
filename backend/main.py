@@ -55,11 +55,11 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from aggregator import aggregate
-from admin_routes import router as admin_router
-from supervisor_routes import router as supervisor_router
-from student_routes import router as student_router
-from batcher import create_batches
+from pipeline.aggregator import aggregate
+from routes.admin_routes import router as admin_router
+from routes.supervisor_routes import router as supervisor_router
+from routes.student_routes import router as student_router
+from pipeline.batcher import create_batches
 from database import get_db, hash_password, init_db, verify_password
 from middleware.org_middleware import (
     resolve_organization_from_request,
@@ -75,7 +75,7 @@ import tempfile
 from starlette.background import BackgroundTasks
 from crypto_utils import encrypt_file, read_file_bytes
 
-from preview_elements import build_preview_elements
+from docx_tools.preview_elements import build_preview_elements
 def _resolve_org_for_auth(org_code: str | None, request: Request) -> dict:
     """Login/signup: prefer explicit org_code body field over headers."""
     code = (org_code or "").strip().upper()
@@ -88,16 +88,16 @@ def _resolve_org_for_auth(org_code: str | None, request: Request) -> dict:
         return org
     return resolve_organization_from_request(request)
 
-from dispatcher import dispatch_all, dispatch_freeform
+from pipeline.dispatcher import dispatch_all, dispatch_freeform
 from models import AnalysisReport, UserLoginRequest, UserSignupRequest, TemplateCreateRequest, TemplateUpdateRequest, ChangePasswordRequest
-from parser import parse_file, parse_text
-from reformatter import reformat_document, convert_docx_to_pdf
+from pipeline.parser import parse_file, parse_text
+from docx_tools.reformatter import reformat_document, convert_docx_to_pdf
 from issue_utils import (
     build_document_blocks,
     normalize_issues,
     save_document_images,
 )
-from image_formatter import format_document_images, fix_image_captions
+from docx_tools.image_formatter import format_document_images, fix_image_captions
 from services.image_formatting_service import run_image_formatting_pipeline
 from services.table_formatting_service import run_table_formatting_pipeline
 from services.image_config import DEFAULT_IMAGE_FORMAT_RULES
@@ -106,7 +106,7 @@ from services.table_config import (
     normalize_formatting_rules_table_section,
     validate_table_format_rules,
 )
-from docx_fields import (
+from docx_tools.docx_fields import (
     analyze_document_lists,
     apply_toc_heading_styles,
     collect_headings,
@@ -116,13 +116,13 @@ from docx_fields import (
     insert_lot_field,
     insert_toc_field,
 )
-from table_processor import (
+from docx_tools.table_processor import (
     detect_tables,
     format_tables_in_document,
     fill_table_cell,
     normalize_table_fonts,
 )
-from content_fixer import (
+from docx_tools.content_fixer import (
     apply_text_fix,
     apply_all_text_fixes,
     apply_heading_fix,
@@ -131,7 +131,7 @@ from content_fixer import (
     renumber_heading_prefixes,
     _is_instruction_suggestion,
 )
-from heading_analysis import (
+from docx_tools.heading_analysis import (
     analyze_document_headings,
     analyze_document_headings_with_claude,
     analyze_headings,
@@ -139,7 +139,7 @@ from heading_analysis import (
     enrich_matches_with_fix_status,
     heading_matches_to_issues,
 )
-from templates import (
+from template_logic.templates import (
     delete_template as delete_template_record,
     get_all_templates,
     get_freeform_placeholder_template_id,
@@ -150,7 +150,7 @@ from templates import (
 )
 from vc.routes import router as vc_router, set_analysis_runner
 from vc.reports_sync import sync_analysis_to_project_members
-from translate_routes import router as translate_router
+from routes.translate_routes import router as translate_router
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # CONFIG
@@ -195,13 +195,13 @@ app.add_middleware(
 
 # Multi-tenancy: resolve org (default id=1) + gate FYP routes only
 from middleware.org_middleware import OrganizationMiddleware, get_organization
-from template_sample_preview import router as template_sample_router
+from template_logic.template_sample_preview import router as template_sample_router
 app.include_router(template_sample_router)
 app.add_middleware(OrganizationMiddleware)
 app.include_router(translate_router)
 
 app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
-from qr_routes import router as qr_router
+from routes.qr_routes import router as qr_router
 app.include_router(qr_router)
 # In-memory job store: job_id → {report, output_path, filename}
 _jobs: Dict[str, Dict] = {}
@@ -771,7 +771,7 @@ async def _run_analysis(
     # Skip cover / info / TOC / LOF / LOT (list of images) pages for scoring.
     # Reformat still uses the original file path below — front-matter untouched.
     try:
-        from review_blocks import strip_frontmatter_from_document
+        from docx_tools.review_blocks import strip_frontmatter_from_document
         doc_model = strip_frontmatter_from_document(doc_model)
     except Exception as exc:
         print(f"[analysis] frontmatter skip failed (non-fatal): {exc}")
@@ -839,15 +839,15 @@ app.include_router(supervisor_router)
 app.include_router(student_router)
 
 # Additive: draft-template extraction from prose guideline DOCX (does not alter create/update)
-from template_extract_routes import router as template_extract_router
+from routes.template_extract_routes import router as template_extract_router
 app.include_router(template_extract_router)
 
 # Frontmatter: cover / project-info detect + generate
-from frontmatter_routes import router as frontmatter_router
+from routes.frontmatter_routes import router as frontmatter_router
 app.include_router(frontmatter_router)
 
 # Super Admin — manage organizations (X-Super-Admin-Key)
-from super_admin_routes import router as super_admin_router
+from routes.super_admin_routes import router as super_admin_router
 app.include_router(super_admin_router)
 
 # Google Drive OAuth + import (auth + uploads)
@@ -857,7 +857,7 @@ app.include_router(google_auth_router)
 app.include_router(google_uploads_router)
 
 # Voice-enabled template patch (Whisper STT → GPT-4o-mini → JSON patch)
-from voice_template import router as voice_template_router
+from template_logic.voice_template import router as voice_template_router
 app.include_router(voice_template_router)
 
 
@@ -1115,7 +1115,7 @@ def _prepare_formatted_docx(doc: Any, document_id: int) -> str:
 
     # Prepend admin cover / project-info templates when those pages are missing
     try:
-        from frontmatter_apply import ensure_frontmatter_pages
+        from frontmatter.frontmatter_apply import ensure_frontmatter_pages
         fm = ensure_frontmatter_pages(document_id, working_copy)
         if fm.get("applied"):
             shutil.copy2(working_copy, output_path)
@@ -1212,7 +1212,7 @@ def _ensure_formatted_working_copy(
             f"from {_source_ext(original)} → docx"
         )
         try:
-            from frontmatter_apply import clear_frontmatter_marker, ensure_frontmatter_pages
+            from frontmatter.frontmatter_apply import clear_frontmatter_marker, ensure_frontmatter_pages
             clear_frontmatter_marker(int(doc["id"]))
             ensure_frontmatter_pages(int(doc["id"]), working_copy)
         except Exception as exc:
@@ -1221,8 +1221,8 @@ def _ensure_formatted_working_copy(
         # Existing copies: collapse duplicate page breaks + strip empty body gaps.
         try:
             from docx import Document as DocxDoc
-            from docx_fields import _collapse_consecutive_page_breaks
-            from reformatter import remove_empty_body_paragraph_gaps
+            from docx_tools.docx_fields import _collapse_consecutive_page_breaks
+            from docx_tools.reformatter import remove_empty_body_paragraph_gaps
 
             d = DocxDoc(working_copy)
             removed = _collapse_consecutive_page_breaks(d)
@@ -1281,8 +1281,8 @@ def _detect_missing_bullet_issues(docx_path: str) -> list:
     try:
         from docx import Document as DocxDoc
         from docx.oxml.ns import qn
-        from list_detection import detect_list_groups, list_groups_to_issues
-        from review_blocks import frontmatter_text_set
+        from docx_tools.list_detection import detect_list_groups, list_groups_to_issues
+        from docx_tools.review_blocks import frontmatter_text_set
 
         docx = DocxDoc(docx_path)
         fm_texts = frontmatter_text_set(docx_path)
@@ -1395,7 +1395,7 @@ def apply_section_bullets_to_file(docx_path: str, para_indices: list[int]):
     from docx.oxml import OxmlElement as _OE
     from docx.oxml.ns import qn
     import random
-    from list_detection import is_heading_paragraph
+    from docx_tools.list_detection import is_heading_paragraph
     
     docx = DocxDoc(docx_path)
     paras = docx.paragraphs
@@ -1861,7 +1861,7 @@ async def _run_analysis_freeform(
         raise HTTPException(status_code=400, detail=f"Failed to parse document: {exc}")
 
     try:
-        from review_blocks import strip_frontmatter_from_document
+        from docx_tools.review_blocks import strip_frontmatter_from_document
         doc_model = strip_frontmatter_from_document(doc_model)
     except Exception as exc:
         print(f"[analysis-freeform] frontmatter skip failed (non-fatal): {exc}")
@@ -2230,7 +2230,7 @@ async def analyze_document_endpoint(document_id: int, user_id: int = Query(...))
     template_heading_matches: List[Dict[str, Any]] = []
     if doc_model and tmpl:
         try:
-            from review_blocks import strip_frontmatter_from_document
+            from docx_tools.review_blocks import strip_frontmatter_from_document
             heading_doc = strip_frontmatter_from_document(doc_model)
             decisions = _load_heading_decisions(document_id)
             client = None
@@ -3052,7 +3052,7 @@ def apply_all_style_fixes(document_id: int, user_id: int = Query(...)):
     )
 
     try:
-        from frontmatter_apply import clear_frontmatter_marker, ensure_frontmatter_pages
+        from frontmatter.frontmatter_apply import clear_frontmatter_marker, ensure_frontmatter_pages
         clear_frontmatter_marker(document_id)
         ensure_frontmatter_pages(document_id, working_copy)
     except Exception as exc:
@@ -3479,7 +3479,7 @@ async def apply_all_fixes(
         try:
             from docx import Document as DocxDoc
             from docx.oxml.ns import qn
-            from list_detection import detect_list_groups, groups_needing_numpr
+            from docx_tools.list_detection import detect_list_groups, groups_needing_numpr
 
             _SAFE_APPLY_DETECTIONS = {
                 "infinitive",
@@ -3627,7 +3627,7 @@ def _strip_bullets_from_headings(docx_path: str) -> int:
     """Remove Word list numbering / bullet glyphs from heading paragraphs."""
     from docx import Document as DocxDoc
     from docx.oxml.ns import qn
-    from list_detection import is_heading_paragraph
+    from docx_tools.list_detection import is_heading_paragraph
 
     docx = DocxDoc(docx_path)
     cleaned = 0
@@ -3810,7 +3810,7 @@ async def replace_image(
 
         # Refresh extracted preview image from working document
         try:
-            from parser import parse_file
+            from pipeline.parser import parse_file
             from issue_utils import save_document_images
             doc_model = parse_file(working_copy, _filename_for_parse(working_copy, doc["filename"]))
             save_document_images(doc_model, document_id, UPLOAD_DIR)
@@ -4017,7 +4017,7 @@ def add_toc(document_id: int, user_id: int = Query(...)):
 
     from docx import Document as DocxDocument
 
-    from docx_fields import _toc_field_is_unpopulated
+    from docx_tools.docx_fields import _toc_field_is_unpopulated
 
     doc = DocxDocument(working_copy)
     if document_has_toc(doc) and not _toc_field_is_unpopulated(doc):
@@ -4079,8 +4079,8 @@ def add_lot(document_id: int, user_id: int = Query(...)):
     """Insert a dynamic List of Tables field (requires table captions)."""
     from docx import Document as DocxDocument
 
-    from docx_fields import document_has_lot
-    from table_processor import ensure_table_captions
+    from docx_tools.docx_fields import document_has_lot
+    from docx_tools.table_processor import ensure_table_captions
 
     doc_row, tmpl = _get_user_document(document_id, user_id)
     working_copy = _ensure_formatted_working_copy(doc_row, tmpl)
@@ -4112,7 +4112,7 @@ def add_lof(document_id: int, user_id: int = Query(...)):
     """Insert a dynamic List of Figures field (requires figure captions)."""
     from docx import Document as DocxDocument
 
-    from docx_fields import count_figures, document_has_lof
+    from docx_tools.docx_fields import count_figures, document_has_lof
 
     doc_row, tmpl = _get_user_document(document_id, user_id)
     working_copy = _ensure_formatted_working_copy(doc_row, tmpl)

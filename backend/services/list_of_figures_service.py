@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
-from docx_fields import (
+from docx_tools.docx_fields import (
     _LOF_HEADING_RE,
     _find_section_heading_paragraph,
     _get_max_bookmark_id,

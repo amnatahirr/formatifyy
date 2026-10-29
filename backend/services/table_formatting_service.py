@@ -18,7 +18,7 @@ from services.table_numbering_service import (
     assign_table_numbers,
 )
 from services.table_reference_validator import validate_table_references
-from table_processor import format_table
+from docx_tools.table_processor import format_table
 
 
 def run_table_formatting_pipeline(
@@ -34,7 +34,7 @@ def run_table_formatting_pipeline(
     Mutates a copy at output_path.
     """
     from docx import Document
-    from docx_fields import _element_is_before_body_start
+    from docx_tools.docx_fields import _element_is_before_body_start
 
     if not file_path.endswith(".docx"):
         return {
