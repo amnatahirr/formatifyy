@@ -1818,7 +1818,7 @@ void _openAnalyzeScreen(Map<String, dynamic> doc) {
   ));
 }
 
-  Widget _buildMyReportsPage() {
+Widget _buildMyReportsPage() {
     final auth = context.read<AuthProvider>();
     return Consumer<DocumentProvider>(
       builder: (context, docProvider, _) {
@@ -1840,15 +1840,15 @@ void _openAnalyzeScreen(Map<String, dynamic> doc) {
             return dateB.compareTo(dateA);
           });
         }
-        
+
         // Calculate pagination
         int totalPages = (filteredDocs.length / _itemsPerPage).ceil();
         if (totalPages < 1) totalPages = 1;
         int startIndex = (_currentPage - 1) * _itemsPerPage;
         int endIndex = startIndex + _itemsPerPage;
-        List<Map<String, dynamic>> paginatedDocs = filteredDocs
-            .sublist(startIndex, endIndex > filteredDocs.length ? filteredDocs.length : endIndex);
-        
+        List<Map<String, dynamic>> paginatedDocs = filteredDocs.sublist(
+            startIndex, endIndex > filteredDocs.length ? filteredDocs.length : endIndex);
+
         final compact = isCompact(context);
 
         return RefreshIndicator(
@@ -1856,547 +1856,609 @@ void _openAnalyzeScreen(Map<String, dynamic> doc) {
           color: _p.accent,
           backgroundColor: _p.surface,
           child: SingleChildScrollView(
-          physics: const AlwaysScrollableScrollPhysics(),
-          padding: EdgeInsets.fromLTRB(
-            compact ? 16 : 32,
-            compact ? 12 : 32,
-            compact ? 16 : 32,
-            compact ? 100 : 32,
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Search + Sort only
-              if (compact) ...[
-                Container(
-                  decoration: BoxDecoration(
-                    color: _p.surface,
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: _p.border),
-                  ),
-                  padding: EdgeInsets.symmetric(horizontal: 12),
-                  child: TextField(
-                    onChanged: (value) {
-                      setState(() {
-                        _searchQuery = value;
-                        _currentPage = 1;
-                      });
-                    },
-                    style: TextStyle(color: _p.textPrimary),
-                    decoration: InputDecoration(
-                      hintText: 'Search reports...',
-                      hintStyle: TextStyle(
-                        color: _p.textMuted,
-                        fontSize: 13,
-                      ),
-                      border: InputBorder.none,
-                      prefixIcon: Icon(
-                        Icons.search,
-                        color: _p.textSecondary,
-                        size: 20,
-                      ),
-                    ),
-                  ),
-                ),
-                SizedBox(height: 10),
-                _buildReportsMenuButton(
-                  icon: Icons.swap_vert,
-                  label: _sortBy == 'name' ? 'Name A-Z' : 'Most Recent',
-                  items: const [
-                    PopupMenuItem(value: 'recent', child: Tr('Most Recent')),
-                    PopupMenuItem(value: 'name', child: Tr('Name A-Z')),
-                  ],
-                  onSelected: (value) {
-                    setState(() {
-                      _sortBy = value;
-                      _currentPage = 1;
-                    });
-                  },
-                ),
-              ] else
-              Row(
-                children: [
-                  Expanded(
-                    flex: 2,
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: _p.surface,
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(
-                          color: _p.border,
-                        ),
-                      ),
-                      padding: EdgeInsets.symmetric(horizontal: 16),
-                      child: TextField(
-                        onChanged: (value) {
-                          setState(() {
-                            _searchQuery = value;
-                            _currentPage = 1;
-                          });
-                        },
-                        style: TextStyle(color: _p.textPrimary),
-                        decoration: InputDecoration(
-                          hintText: 'Search reports...',
-                          hintStyle: TextStyle(
-                            color: _p.textMuted,
-                            fontSize: 13,
-                          ),
-                          border: InputBorder.none,
-                          prefixIcon: Icon(
-                            Icons.search,
-                            color: _p.textSecondary,
-                            size: 20,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                  SizedBox(width: 12),
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: EdgeInsets.fromLTRB(
+              compact ? 16 : 32,
+              compact ? 12 : 32,
+              compact ? 16 : 32,
+              compact ? 100 : 32,
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Search + Sort only
+                if (compact) ...[
                   Container(
                     decoration: BoxDecoration(
                       color: _p.surface,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(
-                        color: _p.border,
-                      ),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: _p.border),
                     ),
                     padding: EdgeInsets.symmetric(horizontal: 12),
-                    child: PopupMenuButton<String>(
-                      onSelected: (value) {
+                    child: TextField(
+                      onChanged: (value) {
                         setState(() {
-                          _sortBy = value;
+                          _searchQuery = value;
                           _currentPage = 1;
                         });
                       },
-                      itemBuilder: (context) => [
-                        const PopupMenuItem(value: 'recent', child: Tr('Most Recent')),
-                        const PopupMenuItem(value: 'name', child: Tr('Name A-Z')),
-                      ],
-                      child: Row(
+                      style: TextStyle(color: _p.textPrimary),
+                      decoration: InputDecoration(
+                        hintText: 'Search reports...',
+                        hintStyle: TextStyle(
+                          color: _p.textMuted,
+                          fontSize: 13,
+                        ),
+                        border: InputBorder.none,
+                        prefixIcon: Icon(
+                          Icons.search,
+                          color: _p.textSecondary,
+                          size: 20,
+                        ),
+                      ),
+                    ),
+                  ),
+                  SizedBox(height: 10),
+                  _buildReportsMenuButton(
+                    icon: Icons.swap_vert,
+                    label: _sortBy == 'name' ? 'Name A-Z' : 'Most Recent',
+                    items: const [
+                      PopupMenuItem(value: 'recent', child: Tr('Most Recent')),
+                      PopupMenuItem(value: 'name', child: Tr('Name A-Z')),
+                    ],
+                    onSelected: (value) {
+                      setState(() {
+                        _sortBy = value;
+                        _currentPage = 1;
+                      });
+                    },
+                  ),
+                ] else
+                  Row(
+                    children: [
+                      Expanded(
+                        flex: 2,
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: _p.surface,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                              color: _p.border,
+                            ),
+                          ),
+                          padding: EdgeInsets.symmetric(horizontal: 16),
+                          child: TextField(
+                            onChanged: (value) {
+                              setState(() {
+                                _searchQuery = value;
+                                _currentPage = 1;
+                              });
+                            },
+                            style: TextStyle(color: _p.textPrimary),
+                            decoration: InputDecoration(
+                              hintText: 'Search reports...',
+                              hintStyle: TextStyle(
+                                color: _p.textMuted,
+                                fontSize: 13,
+                              ),
+                              border: InputBorder.none,
+                              prefixIcon: Icon(
+                                Icons.search,
+                                color: _p.textSecondary,
+                                size: 20,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                      SizedBox(width: 12),
+                      Container(
+                        decoration: BoxDecoration(
+                          color: _p.surface,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: _p.border,
+                          ),
+                        ),
+                        padding: EdgeInsets.symmetric(horizontal: 12),
+                        child: PopupMenuButton<String>(
+                          onSelected: (value) {
+                            setState(() {
+                              _sortBy = value;
+                              _currentPage = 1;
+                            });
+                          },
+                          itemBuilder: (context) => [
+                            const PopupMenuItem(value: 'recent', child: Tr('Most Recent')),
+                            const PopupMenuItem(value: 'name', child: Tr('Name A-Z')),
+                          ],
+                          child: Row(
+                            children: [
+                              Icon(Icons.swap_vert, color: _p.textSecondary, size: 18),
+                              SizedBox(width: 8),
+                              Tr(
+                                _sortBy == 'name' ? 'Name A-Z' : 'Most Recent',
+                                style: TextStyle(
+                                  color: _p.textSecondary,
+                                  fontSize: 13,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                SizedBox(height: compact ? 20 : 28),
+                // Grid / list of Reports
+                if (docProvider.isLoading)
+                  Center(child: CircularProgressIndicator())
+                else if (paginatedDocs.isEmpty)
+                  Center(
+                    child: Padding(
+                      padding: EdgeInsets.symmetric(vertical: 48),
+                      child: Column(
                         children: [
-                          Icon(Icons.swap_vert, color: _p.textSecondary, size: 18),
-                          SizedBox(width: 8),
+                          Icon(
+                            Icons.folder_open,
+                            size: 48,
+                            color: _p.textMuted,
+                          ),
+                          SizedBox(height: 16),
                           Tr(
-                            _sortBy == 'name' ? 'Name A-Z' : 'Most Recent',
+                            'No reports found',
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: _p.textSecondary,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  )
+                else if (compact)
+                  Column(
+                    children: [
+                      for (final doc in paginatedDocs)
+                        Padding(
+                          padding: EdgeInsets.only(bottom: 10),
+                          child: _buildMobileReportCard(doc),
+                        ),
+                    ],
+                  )
+                else
+                  GridView.builder(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: 3,
+                      crossAxisSpacing: 24,
+                      mainAxisSpacing: 24,
+                      // Taller cards so Unformatted / Formatted actions fit cleanly.
+                      childAspectRatio: 0.72,
+                    ),
+                    itemCount: paginatedDocs.length,
+                    itemBuilder: (context, index) {
+                      final doc = paginatedDocs[index];
+                      final status = doc['status'] ?? 'draft';
+                      final statusColor = _getStatusColor(status);
+                      final statusLabel = _getStatusLabel(status);
+                      final iconColor = _getIconColor(status);
+                      final hasFormatted = doc['has_formatted'] == true;
+
+                      return Container(
+                        decoration: _cardDeco(),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(
+                            _p.isDark ? _p.cardRadius : 12,
+                          ),
+                          child: Column(
+                            children: [
+                              // Top Section with Icon and Status Badge
+                              Container(
+                                height: 140,
+                                decoration: BoxDecoration(
+                                  color: iconColor.withOpacity(0.15),
+                                ),
+                                child: Stack(
+                                  children: [
+                                    Center(
+                                      child: Icon(
+                                        Icons.description,
+                                        size: 48,
+                                        color: iconColor,
+                                      ),
+                                    ),
+                                    Positioned(
+                                      top: 12,
+                                      right: 12,
+                                      child: Container(
+                                        padding: EdgeInsets.symmetric(
+                                          horizontal: 10,
+                                          vertical: 6,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: statusColor.withOpacity(0.8),
+                                          borderRadius: BorderRadius.circular(6),
+                                        ),
+                                        child: Tr(
+                                          statusLabel,
+                                          style: TextStyle(
+                                            fontSize: 10,
+                                            fontWeight: FontWeight.w600,
+                                            color: _p.textPrimary,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              // Bottom Section with Details
+                              Expanded(
+                                child: Padding(
+                                  padding: EdgeInsets.all(16),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        doc['filename'] ?? 'Untitled',
+                                        style: TextStyle(
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w600,
+                                          color: _p.textPrimary,
+                                        ),
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                      SizedBox(height: 6),
+                                      Text(
+                                        doc['template_name'] ?? 'No template',
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          color: _p.textSecondary,
+                                        ),
+                                      ),
+                                      SizedBox(height: 8),
+                                      Text(
+                                        'Modified ${_getTimeAgo(doc['created_at'] ?? DateTime.now())}',
+                                        style: TextStyle(
+                                          fontSize: 10,
+                                          color: _p.textSecondary,
+                                        ),
+                                      ),
+                                      if (hasFormatted) ...[
+                                        SizedBox(height: 6),
+                                        Container(
+                                          padding: EdgeInsets.symmetric(
+                                              horizontal: 8, vertical: 3),
+                                          decoration: BoxDecoration(
+                                            color: Color(0xFF10B981).withOpacity(0.12),
+                                            borderRadius: BorderRadius.circular(6),
+                                          ),
+                                          child: Tr(
+                                            'Both versions ready to download',
+                                            style: TextStyle(
+                                              fontSize: 10,
+                                              fontWeight: FontWeight.w600,
+                                              color: Color(0xFF059669),
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                      Spacer(),
+                                      // "Download" label so users know these buttons export files
+                                      Padding(
+                                        padding: EdgeInsets.only(bottom: 6),
+                                        child: Row(
+                                          children: [
+                                            Icon(
+                                              Icons.download_rounded,
+                                              size: 13,
+                                              color: _p.textSecondary,
+                                            ),
+                                            SizedBox(width: 4),
+                                            Tr(
+                                              'Download',
+                                              style: TextStyle(
+                                                fontSize: 11,
+                                                fontWeight: FontWeight.w600,
+                                                color: _p.textSecondary,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      // Version download buttons + actions menu
+                                      Row(
+                                        children: [
+                                          Expanded(
+                                            child: Tooltip(
+                                              message:
+                                                  'Download original file (unformatted)',
+                                              child: OutlinedButton.icon(
+                                                onPressed: () => _handleDownloadVersion(
+                                                  doc,
+                                                  version: 'unformatted',
+                                                ),
+                                                icon: Icon(
+                                                  Icons.file_download_outlined,
+                                                  size: 14,
+                                                ),
+                                                label: Tr(
+                                                  'Unformatted',
+                                                  style: TextStyle(
+                                                    fontSize: 10,
+                                                    fontWeight: FontWeight.w700,
+                                                  ),
+                                                ),
+                                                style: OutlinedButton.styleFrom(
+                                                  foregroundColor: _p.textPrimary,
+                                                  side: BorderSide(color: _p.border),
+                                                  padding: EdgeInsets.symmetric(
+                                                    vertical: 8,
+                                                    horizontal: 4,
+                                                  ),
+                                                  shape: RoundedRectangleBorder(
+                                                    borderRadius:
+                                                        BorderRadius.circular(6),
+                                                  ),
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                          SizedBox(width: 6),
+                                          Expanded(
+                                            child: Tooltip(
+                                              message: hasFormatted
+                                                  ? 'Download formatted file'
+                                                  : 'Not available yet - open Analyze and save the formatted document',
+                                              child: OutlinedButton.icon(
+                                                onPressed: hasFormatted
+                                                    ? () => _handleDownloadVersion(
+                                                          doc,
+                                                          version: 'formatted',
+                                                        )
+                                                    : () => _showFormattedMissingHint(),
+                                                icon: Icon(
+                                                  Icons.file_download_outlined,
+                                                  size: 14,
+                                                ),
+                                                label: Tr(
+                                                  'Formatted',
+                                                  style: TextStyle(
+                                                    fontSize: 10,
+                                                    fontWeight: FontWeight.w700,
+                                                  ),
+                                                ),
+                                                style: OutlinedButton.styleFrom(
+                                                  foregroundColor: hasFormatted
+                                                      ? _p.accent
+                                                      : _p.textMuted,
+                                                  side: BorderSide(
+                                                    color: hasFormatted
+                                                        ? _p.accent
+                                                        : _p.border,
+                                                  ),
+                                                  padding: EdgeInsets.symmetric(
+                                                    vertical: 8,
+                                                    horizontal: 4,
+                                                  ),
+                                                  shape: RoundedRectangleBorder(
+                                                    borderRadius:
+                                                        BorderRadius.circular(6),
+                                                  ),
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                          SizedBox(width: 4),
+                                          PopupMenuButton<String>(
+                                            onSelected: (value) {
+                                              if (value == 'analyze') {
+                                                _openAnalyzeScreen(doc);
+                                              } else if (value == 'preview') {
+                                                _showPreview(doc);
+                                              } else if (value == 'rename') {
+                                                _showRenameDialog(doc);
+                                              } else if (value == 'edit') {
+                                                _showEditDialog(doc, auth.userId!);
+                                              } else if (value == 'send' &&
+                                                  DevUserConfig.hasFypModule) {
+                                                _sendReportToSupervisor(doc);
+                                              } else if (value == 'delete') {
+                                                _handleDelete(doc);
+                                              }
+                                            },
+                                            itemBuilder: (context) => [
+                                              const PopupMenuItem(
+                                                value: 'analyze',
+                                                child: Row(
+                                                  children: [
+                                                    Icon(Icons.analytics_outlined,
+                                                        size: 16,
+                                                        color: Color(0xFF10B981)),
+                                                    SizedBox(width: 8),
+                                                    Tr('Analyze'),
+                                                  ],
+                                                ),
+                                              ),
+                                              if (DevUserConfig.hasFypModule)
+                                                const PopupMenuItem(
+                                                  value: 'send',
+                                                  child: Row(
+                                                    children: [
+                                                      Icon(Icons.send_rounded,
+                                                          size: 16,
+                                                          color: Color(0xFF10B981)),
+                                                      SizedBox(width: 8),
+                                                      Tr('Send to Supervisor'),
+                                                    ],
+                                                  ),
+                                                ),
+                                              const PopupMenuItem(
+                                                value: 'preview',
+                                                child: Row(
+                                                  children: [
+                                                    Icon(Icons.preview, size: 16),
+                                                    SizedBox(width: 8),
+                                                    Tr('Preview'),
+                                                  ],
+                                                ),
+                                              ),
+                                              const PopupMenuItem(
+                                                value: 'rename',
+                                                child: Row(
+                                                  children: [
+                                                    Icon(
+                                                        Icons
+                                                            .drive_file_rename_outline,
+                                                        size: 16),
+                                                    SizedBox(width: 8),
+                                                    Tr('Rename'),
+                                                  ],
+                                                ),
+                                              ),
+                                              const PopupMenuItem(
+                                                value: 'edit',
+                                                child: Row(
+                                                  children: [
+                                                    Icon(Icons.edit_outlined,
+                                                        size: 16),
+                                                    SizedBox(width: 8),
+                                                    Tr('Edit'),
+                                                  ],
+                                                ),
+                                              ),
+                                              const PopupMenuItem(
+                                                value: 'delete',
+                                                child: Row(
+                                                  children: [
+                                                    Icon(Icons.delete,
+                                                        size: 16, color: Colors.red),
+                                                    SizedBox(width: 8),
+                                                    Tr('Delete',
+                                                        style: TextStyle(
+                                                            color: Colors.red)),
+                                                  ],
+                                                ),
+                                              ),
+                                            ],
+                                            child: Icon(
+                                              Icons.more_vert,
+                                              size: 16,
+                                              color: _p.textSecondary,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                SizedBox(height: 40),
+                // Pagination
+                if (filteredDocs.isNotEmpty)
+                  Center(
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          icon: Icon(Icons.chevron_left),
+                          color: _p.textSecondary,
+                          onPressed: _currentPage > 1
+                              ? () => setState(() => _currentPage--)
+                              : null,
+                        ),
+                        for (int i = 1; i <= totalPages && i <= 3; i++)
+                          GestureDetector(
+                            onTap: () => setState(() => _currentPage = i),
+                            child: Padding(
+                              padding: EdgeInsets.symmetric(horizontal: 4),
+                              child: Container(
+                                width: 32,
+                                height: 32,
+                                decoration: BoxDecoration(
+                                  color: i == _currentPage ? _p.accent : _p.surface,
+                                  borderRadius: BorderRadius.circular(6),
+                                  border: Border.all(
+                                    color: _p.border,
+                                  ),
+                                ),
+                                child: Center(
+                                  child: Text(
+                                    '$i',
+                                    style: TextStyle(
+                                      color: i == _currentPage
+                                          ? Colors.white
+                                          : _p.textSecondary,
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        if (totalPages > 3)
+                          Tr(
+                            '...',
                             style: TextStyle(
                               color: _p.textSecondary,
                               fontSize: 13,
                             ),
                           ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              SizedBox(height: compact ? 20 : 28),
-              // Grid / list of Reports
-              if (docProvider.isLoading)
-                Center(child: CircularProgressIndicator())
-              else if (paginatedDocs.isEmpty)
-                Center(
-                  child: Padding(
-                    padding: EdgeInsets.symmetric(vertical: 48),
-                    child: Column(
-                      children: [
-                        Icon(
-                          Icons.folder_open,
-                          size: 48,
-                          color: _p.textMuted,
-                        ),
-                        SizedBox(height: 16),
-                        Tr(
-                          'No reports found',
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: _p.textSecondary,
+                        if (totalPages > 3)
+                          GestureDetector(
+                            onTap: () => setState(() => _currentPage = totalPages),
+                            child: Padding(
+                              padding: EdgeInsets.symmetric(horizontal: 4),
+                              child: Container(
+                                width: 32,
+                                height: 32,
+                                decoration: BoxDecoration(
+                                  color: totalPages == _currentPage
+                                      ? _p.accent
+                                      : _p.surface,
+                                  borderRadius: BorderRadius.circular(6),
+                                  border: Border.all(
+                                    color: _p.border,
+                                  ),
+                                ),
+                                child: Center(
+                                  child: Text(
+                                    '$totalPages',
+                                    style: TextStyle(
+                                      color: totalPages == _currentPage
+                                          ? Colors.white
+                                          : _p.textSecondary,
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
                           ),
+                        IconButton(
+                          icon: Icon(Icons.chevron_right),
+                          color: _p.textSecondary,
+                          onPressed: _currentPage < totalPages
+                              ? () => setState(() => _currentPage++)
+                              : null,
                         ),
                       ],
                     ),
                   ),
-                )
-              else if (compact)
-                Column(
-                  children: [
-                    for (final doc in paginatedDocs)
-                      Padding(
-                        padding: EdgeInsets.only(bottom: 10),
-                        child: _buildMobileReportCard(doc),
-                      ),
-                  ],
-                )
-              else
-                GridView.builder(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 3,
-                    crossAxisSpacing: 24,
-                    mainAxisSpacing: 24,
-                    // Taller cards so Unformatted / Formatted actions fit cleanly.
-                    childAspectRatio: 0.72,
-                  ),
-                  itemCount: paginatedDocs.length,
-                  itemBuilder: (context, index) {
-                    final doc = paginatedDocs[index];
-                    final status = doc['status'] ?? 'draft';
-                    final statusColor = _getStatusColor(status);
-                    final statusLabel = _getStatusLabel(status);
-                    final iconColor = _getIconColor(status);
-
-                    return Container(
-                      decoration: _cardDeco(),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(
-                          _p.isDark ? _p.cardRadius : 12,
-                        ),
-                        child: Column(
-                        children: [
-                          // Top Section with Icon and Status Badge
-                          Container(
-                            height: 140,
-                            decoration: BoxDecoration(
-                              color: iconColor.withOpacity(0.15),
-                            ),
-                            child: Stack(
-                              children: [
-                                Center(
-                                  child: Icon(
-                                    Icons.description,
-                                    size: 48,
-                                    color: iconColor,
-                                  ),
-                                ),
-                                Positioned(
-                                  top: 12,
-                                  right: 12,
-                                  child: Container(
-                                    padding: EdgeInsets.symmetric(
-                                      horizontal: 10,
-                                      vertical: 6,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: statusColor.withOpacity(0.8),
-                                      borderRadius: BorderRadius.circular(6),
-                                    ),
-                                    child: Tr(
-                                      statusLabel,
-                                      style: TextStyle(
-                                        fontSize: 10,
-                                        fontWeight: FontWeight.w600,
-                                        color: _p.textPrimary,
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          // Bottom Section with Details
-                          Expanded(
-                            child: Padding(
-                              padding: EdgeInsets.all(16),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    doc['filename'] ?? 'Untitled',
-                                    style: TextStyle(
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.w600,
-                                      color: _p.textPrimary,
-                                    ),
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                  SizedBox(height: 6),
-                                  Text(
-                                    doc['template_name'] ?? 'No template',
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      color: _p.textSecondary,
-                                    ),
-                                  ),
-                                  SizedBox(height: 8),
-                                  Text(
-                                    'Modified ${_getTimeAgo(doc['created_at'] ?? DateTime.now())}',
-                                    style: TextStyle(
-                                      fontSize: 10,
-                                      color: _p.textSecondary,
-                                    ),
-                                  ),
-                                  if (doc['has_formatted'] == true) ...[
-                                    SizedBox(height: 6),
-                                    Container(
-                                      padding: EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                      decoration: BoxDecoration(
-                                        color: Color(0xFF10B981).withOpacity(0.12),
-                                        borderRadius: BorderRadius.circular(6),
-                                      ),
-                                      child: Tr(
-                                        'Formatted + Unformatted available',
-                                        style: TextStyle(
-                                          fontSize: 10,
-                                          fontWeight: FontWeight.w600,
-                                          color: Color(0xFF059669),
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                  Spacer(),
-                                  // Version access + actions
-                                  Row(
-                                    children: [
-                                      Expanded(
-                                        child: OutlinedButton(
-                                          onPressed: () => _handleDownloadVersion(
-                                            doc,
-                                            version: 'unformatted',
-                                          ),
-                                          style: OutlinedButton.styleFrom(
-                                            foregroundColor: _p.textPrimary,
-                                            side: BorderSide(color: _p.border),
-                                            padding: EdgeInsets.symmetric(vertical: 8),
-                                            shape: RoundedRectangleBorder(
-                                              borderRadius: BorderRadius.circular(6),
-                                            ),
-                                          ),
-                                          child: Tr(
-                                            'Unformatted',
-                                            style: TextStyle(
-                                              fontSize: 10,
-                                              fontWeight: FontWeight.w700,
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                      SizedBox(width: 6),
-                                      Expanded(
-                                        child: OutlinedButton(
-                                          onPressed: doc['has_formatted'] == true
-                                              ? () => _handleDownloadVersion(
-                                                    doc,
-                                                    version: 'formatted',
-                                                  )
-                                              : () => _showFormattedMissingHint(),
-                                          style: OutlinedButton.styleFrom(
-                                            foregroundColor: doc['has_formatted'] == true
-                                                ? _p.accent
-                                                : _p.textMuted,
-                                            side: BorderSide(
-                                              color: doc['has_formatted'] == true
-                                                  ? _p.accent
-                                                  : _p.border,
-                                            ),
-                                            padding: EdgeInsets.symmetric(vertical: 8),
-                                            shape: RoundedRectangleBorder(
-                                              borderRadius: BorderRadius.circular(6),
-                                            ),
-                                          ),
-                                          child: Tr(
-                                            'Formatted',
-                                            style: TextStyle(
-                                              fontSize: 10,
-                                              fontWeight: FontWeight.w700,
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                      SizedBox(width: 4),
-                                      PopupMenuButton<String>(
-                                        onSelected: (value) {
-                                          if (value == 'analyze') {
-                                            _openAnalyzeScreen(doc);
-                                          } else if (value == 'preview') {
-                                            _showPreview(doc);
-                                          } else if (value == 'rename') {
-                                            _showRenameDialog(doc);
-                                          } else if (value == 'edit') {
-                                            _showEditDialog(doc, auth.userId!);
-                                          } else if (value == 'send' &&
-                                              DevUserConfig.hasFypModule) {
-                                            _sendReportToSupervisor(doc);
-                                          } else if (value == 'delete') {
-                                            _handleDelete(doc);
-                                          }
-                                        },
-                                        itemBuilder: (context) => [
-                                          const PopupMenuItem(
-                                            value: 'analyze',
-                                            child: Row(
-                                              children: [
-                                                Icon(Icons.analytics_outlined, size: 16, color: Color(0xFF10B981)),
-                                                SizedBox(width: 8),
-                                                Tr('Analyze'),
-                                              ],
-                                            ),
-                                          ),
-                                          if (DevUserConfig.hasFypModule)
-                                            const PopupMenuItem(
-                                              value: 'send',
-                                              child: Row(
-                                                children: [
-                                                  Icon(Icons.send_rounded, size: 16, color: Color(0xFF10B981)),
-                                                  SizedBox(width: 8),
-                                                  Tr('Send to Supervisor'),
-                                                ],
-                                              ),
-                                            ),
-                                          const PopupMenuItem(
-                                            value: 'preview',
-                                            child: Row(
-                                              children: [
-                                                Icon(Icons.preview, size: 16),
-                                                SizedBox(width: 8),
-                                                Tr('Preview'),
-                                              ],
-                                            ),
-                                          ),
-                                          const PopupMenuItem(
-                                            value: 'rename',
-                                            child: Row(
-                                              children: [
-                                                Icon(Icons.drive_file_rename_outline, size: 16),
-                                                SizedBox(width: 8),
-                                                Tr('Rename'),
-                                              ],
-                                            ),
-                                          ),
-                                          const PopupMenuItem(
-                                            value: 'edit',
-                                            child: Row(
-                                              children: [
-                                                Icon(Icons.edit_outlined, size: 16),
-                                                SizedBox(width: 8),
-                                                Tr('Edit'),
-                                              ],
-                                            ),
-                                          ),
-                                          const PopupMenuItem(
-                                            value: 'delete',
-                                            child: Row(
-                                              children: [
-                                                Icon(Icons.delete, size: 16, color: Colors.red),
-                                                SizedBox(width: 8),
-                                                Tr('Delete', style: TextStyle(color: Colors.red)),
-                                              ],
-                                            ),
-                                          ),
-                                        ],
-                                        child: Icon(
-                                          Icons.more_vert,
-                                          size: 16,
-                                          color: _p.textSecondary,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      ),
-                    );
-                  },
-                ),
-              SizedBox(height: 40),
-              // Pagination
-              if (filteredDocs.isNotEmpty)
-                Center(
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      IconButton(
-                        icon: Icon(Icons.chevron_left),
-                        color: _p.textSecondary,
-                        onPressed: _currentPage > 1
-                            ? () => setState(() => _currentPage--)
-                            : null,
-                      ),
-                      for (int i = 1; i <= totalPages && i <= 3; i++)
-                        GestureDetector(
-                          onTap: () => setState(() => _currentPage = i),
-                          child: Padding(
-                            padding: EdgeInsets.symmetric(horizontal: 4),
-                            child: Container(
-                              width: 32,
-                              height: 32,
-                              decoration: BoxDecoration(
-                                color: i == _currentPage
-                                    ? _p.accent
-                                    : _p.surface,
-                                borderRadius: BorderRadius.circular(6),
-                                border: Border.all(
-                                  color: _p.border,
-                                ),
-                              ),
-                              child: Center(
-                                child: Text(
-                                  '$i',
-                                  style: TextStyle(
-                                    color: i == _currentPage ? Colors.white : _p.textSecondary,
-                                    fontWeight: FontWeight.w600,
-                                    fontSize: 13,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      if (totalPages > 3)
-                        Tr(
-                          '...',
-                          style: TextStyle(
-                            color: _p.textSecondary,
-                            fontSize: 13,
-                          ),
-                        ),
-                      if (totalPages > 3)
-                        GestureDetector(
-                          onTap: () => setState(() => _currentPage = totalPages),
-                          child: Padding(
-                            padding: EdgeInsets.symmetric(horizontal: 4),
-                            child: Container(
-                              width: 32,
-                              height: 32,
-                              decoration: BoxDecoration(
-                                color: totalPages == _currentPage
-                                    ? _p.accent
-                                    : _p.surface,
-                                borderRadius: BorderRadius.circular(6),
-                                border: Border.all(
-                                  color: _p.border,
-                                ),
-                              ),
-                              child: Center(
-                                child: Text(
-                                  '$totalPages',
-                                  style: TextStyle(
-                                    color: totalPages == _currentPage ? Colors.white : _p.textSecondary,
-                                    fontWeight: FontWeight.w600,
-                                    fontSize: 13,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      IconButton(
-                        icon: Icon(Icons.chevron_right),
-                        color: _p.textSecondary,
-                        onPressed: _currentPage < totalPages
-                            ? () => setState(() => _currentPage++)
-                            : null,
-                      ),
-                    ],
-                  ),
-                ),
-            ],
+              ],
+            ),
           ),
-        ),
         );
       },
     );

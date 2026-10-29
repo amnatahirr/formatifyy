@@ -190,6 +190,8 @@ class _DocumentPreviewPanelState extends State<DocumentPreviewPanel> {
 
       return m;
     }).toList();
+    _blocks = _stripToc(_blocks);
+    _logSummary();
     _logSummary();
   }
 
@@ -213,6 +215,47 @@ class _DocumentPreviewPanelState extends State<DocumentPreviewPanel> {
     }
   }
 
+  /// Hides the Table of Contents / List of Figures / List of Tables pages
+  /// from the preview. Starts at a TOC-style heading and stops at the next
+  /// real heading (or at a page break to a later page).
+  List<Map<String, dynamic>> _stripToc(List<Map<String, dynamic>> blocks) {
+    const tocTitles = {
+      'table of contents',
+      'contents',
+      'list of figures',
+      'list of tables',
+    };
+
+    bool isTocTitle(Map<String, dynamic> b) {
+      final t = (b['text'] ?? b['title'] ?? '').toString().trim().toLowerCase();
+      return tocTitles.contains(t);
+    }
+
+    // A line that is just a page number, or "title ..... 3", or "title \t 3".
+    bool looksLikeTocLine(Map<String, dynamic> b) {
+      if (_type(b) == 'toc_item') return true;
+      final t = (b['text'] ?? b['title'] ?? '').toString().trim();
+      if (t.isEmpty) return true;
+      if (RegExp(r'^\d+$').hasMatch(t)) return true;
+      if (RegExp(r'^.+[\s.…\t]{2,}\d+$').hasMatch(t)) return true;
+      return false;
+    }
+
+    final out = <Map<String, dynamic>>[];
+    var skipping = false;
+    for (final b in blocks) {
+      if (isTocTitle(b)) {
+        skipping = true;
+        continue;
+      }
+      if (skipping) {
+        if (looksLikeTocLine(b)) continue;
+        skipping = false; // first real content after the TOC
+      }
+      out.add(b);
+    }
+    return out;
+  }
   /// First non-empty image path-like value found in the block.
   String _rawImagePath(Map<String, dynamic> b) {
     for (final k in const [
