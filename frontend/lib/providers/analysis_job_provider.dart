@@ -1,7 +1,7 @@
 
 import 'dart:async';
 import 'dart:convert';
-
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
@@ -63,6 +63,16 @@ class AnalysisJobProvider extends ChangeNotifier {
     });
   }
 
+/// Build phase ke dauran notify na karo, frame ke baad karo.
+void _safeNotify() {
+  final phase = SchedulerBinding.instance.schedulerPhase;
+  if (phase == SchedulerPhase.persistentCallbacks) {
+    WidgetsBinding.instance.addPostFrameCallback((_) => notifyListeners());
+  } else {
+    notifyListeners();
+  }
+}
+
   /// Removes a completed or failed job.
   void dismissJob(int documentId) {
     final job = _jobs[documentId];
@@ -118,7 +128,7 @@ class AnalysisJobProvider extends ChangeNotifier {
     );
 
     _jobs[documentId] = job;
-    notifyListeners();
+    _safeNotify();
 
     final base = ApiConfig.getBaseUrl();
 
