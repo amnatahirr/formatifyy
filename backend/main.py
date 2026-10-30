@@ -45,7 +45,7 @@ import re
 import shutil
 import uuid
 from typing import Any, Dict, List, Optional
-
+from reminders import start_scheduler, stop_scheduler
 import anthropic
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile, Query, Body, Request
@@ -173,6 +173,8 @@ os.makedirs(OUTPUT_DIR, exist_ok=True)
 # Ensure database tables and seed data exist on startup
 init_db()
 
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # APP
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -193,6 +195,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+@app.on_event("startup")
+def _start_reminders():
+    start_scheduler()
+
+@app.on_event("shutdown")
+def _stop_reminders():
+    stop_scheduler()
 # Multi-tenancy: resolve org (default id=1) + gate FYP routes only
 from middleware.org_middleware import OrganizationMiddleware, get_organization
 from template_logic.template_sample_preview import router as template_sample_router

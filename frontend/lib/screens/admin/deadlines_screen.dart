@@ -22,6 +22,7 @@ class _DeadlinesScreenState extends State<DeadlinesScreen> {
   String? _error;
   List<DeadlineModel> _deadlines = const [];
   List<DepartmentSummary> _departments = const [];
+  
 
   @override
   void initState() {
@@ -73,6 +74,95 @@ class _DeadlinesScreenState extends State<DeadlinesScreen> {
     return '${date.day} ${months[date.month - 1]} ${date.year}';
   }
 
+Future<void> _promoteSemesters() async {
+  final userId = context.read<AuthProvider>().userId;
+  if (userId == null) return;
+  try {
+    final students = await _api.fetchPromoteStudents(userId);
+    if (!mounted) return;
+    if (students.isEmpty) {
+      showAdminSnackBar(context, 'No active students found.', isError: true);
+      return;
+    }
+
+    final held = <int>{}; // jin ko promote NAHI karna
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) {
+          final promoting = students.length - held.length;
+          return AlertDialog(
+            backgroundColor: AdminColors.surface,
+            title: const Tr('Promote Semester'),
+            content: SizedBox(
+              width: double.maxFinite,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'The students listed below are eligible for promotion to the next semester. You can hold back specific students from promotion by unchecking their boxes.',
+                    style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 13),
+                  ),
+                  const SizedBox(height: 8),
+                  Flexible(
+                    child: ListView(
+                      shrinkWrap: true,
+                      children: students.map((s) {
+                        final id = s['id'] as int;
+                        return CheckboxListTile(
+                          dense: true,
+                          value: !held.contains(id),
+                          onChanged: (v) => setDialogState(() {
+                            if (v == true) {
+                              held.remove(id);
+                            } else {
+                              held.add(id);
+                            }
+                          }),
+                          title: Text(
+                            '${s['username']}',
+                            style: const TextStyle(color: Colors.white),
+                          ),
+                          subtitle: Text(
+                            'Semester ${s['current_semester']}'
+                            '${s['current_semester'] == 8 ? ' (promoted to. graduation)' : ''}',
+                            style: TextStyle(color: Colors.white.withOpacity(0.6)),
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text('$promoting will be promoted, ${held.length} will be on holds.',
+                      style: const TextStyle(color: Colors.white)),
+                  const Text('This action cannot be undo.',
+                      style: TextStyle(color: Colors.redAccent, fontSize: 12)),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Tr('Cancel')),
+              TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Tr('Promote')),
+            ],
+          );
+        },
+      ),
+    );
+    if (ok != true) return;
+
+    final r = await _api.promoteSemester(userId, excludeIds: held.toList());
+    if (!mounted) return;
+    showAdminSnackBar(
+      context,
+      '${r['promoted']} promoted, ${r['graduated']} graduated, ${r['held_back']} held back.',
+    );
+  } catch (e) {
+    if (!mounted) return;
+    showAdminSnackBar(context, e.toString(), isError: true);
+  }
+}
+
   Future<void> _openDeadlineSheet({DeadlineModel? item}) async {
     final titleController = TextEditingController(text: item?.title ?? '');
     final descriptionController = TextEditingController(text: item?.description ?? '');
@@ -80,6 +170,7 @@ class _DeadlinesScreenState extends State<DeadlinesScreen> {
     int? selectedDepartmentId = item?.appliesToAll == true ? null : item?.departmentId;
     final formKey = GlobalKey<FormState>();
     var saving = false;
+    int? selectedTarget = item?.targetSemester;
 
     await showAdminBottomSheet(
       context: context,
@@ -171,6 +262,22 @@ class _DeadlinesScreenState extends State<DeadlinesScreen> {
                   onChanged: (value) => setSheetState(() => selectedDepartmentId = value),
                 ),
                 const SizedBox(height: 16),
+                DropdownButtonFormField<int?>(
+  value: selectedTarget,
+  dropdownColor: AdminColors.card,
+  style: const TextStyle(color: Colors.white),
+  decoration: adminFieldDecoration(
+    label: 'Target phase',
+    prefixIcon: Icons.school_rounded,
+  ),
+  items: const [
+    DropdownMenuItem<int?>(value: null, child: Tr('All Semesters')),
+    DropdownMenuItem<int?>(value: 6, child: Tr('Proposal (Semester 6)')),
+    DropdownMenuItem<int?>(value: 7, child: Tr('FYP-1 (Semester 7)')),
+    DropdownMenuItem<int?>(value: 8, child: Tr('FYP-2 (Semester 8)')),
+  ],
+  onChanged: (v) => setSheetState(() => selectedTarget = v),
+),
                 Container(
                   width: double.infinity,
                   padding: const EdgeInsets.all(14),
@@ -221,6 +328,7 @@ class _DeadlinesScreenState extends State<DeadlinesScreen> {
                                   'due_date': selectedDate!.toIso8601String().split('T').first,
                                   'department_id': selectedDepartmentId,
                                   'applies_to_all': selectedDepartmentId == null,
+                                  'target_semester': selectedTarget,
                                 };
                                 try {
                                   if (item == null) {
@@ -373,14 +481,22 @@ class _DeadlinesScreenState extends State<DeadlinesScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: ElevatedButton.icon(
-                    onPressed: () => _openDeadlineSheet(),
-                    icon: const Icon(Icons.add),
-                    label: const Tr('Add Deadline'),
-                  ),
-                ),
+                Row(
+  mainAxisAlignment: MainAxisAlignment.end,
+  children: [
+    OutlinedButton.icon(
+      onPressed: _promoteSemesters,
+      icon: const Icon(Icons.upgrade_rounded),
+      label: const Tr('Promote Semester'),
+    ),
+    const SizedBox(width: 8),
+    ElevatedButton.icon(
+      onPressed: () => _openDeadlineSheet(),
+      icon: const Icon(Icons.add),
+      label: const Tr('Add Deadline'),
+    ),
+  ],
+),
                 const SizedBox(height: 16),
                 Expanded(child: _buildList()),
               ],

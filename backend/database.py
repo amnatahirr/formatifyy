@@ -965,6 +965,22 @@ def _ensure_organizations_schema(cursor) -> None:
     _ensure_supervisors_org_scoped_uniqueness(cursor)
     _ensure_semester_deadlines_org_scoped(cursor)
     _repair_mislabelled_company_tenants(cursor)
+    _ensure_column(cursor, "deadlines", "target_semester", "target_semester INTEGER")
+    _ensure_column(cursor, "users", "is_graduated", "is_graduated INTEGER DEFAULT 0")
+    cursor.execute("PRAGMA table_info(deadline_reminders_sent)")
+    _cols = [r[1] for r in cursor.fetchall()]
+    if _cols and "stage" not in _cols:
+        cursor.execute("DROP TABLE deadline_reminders_sent")
+        cursor.execute("""
+    CREATE TABLE IF NOT EXISTS deadline_reminders_sent (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        deadline_id INTEGER NOT NULL,
+        user_id INTEGER NOT NULL,
+        stage INTEGER NOT NULL DEFAULT 3,
+        sent_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE (deadline_id, user_id, stage)
+    )
+""")
 
     # Alias: user asked for "groups" / "submissions" — we use fyp_groups / final_submissions
     print("[database] Organizations schema ready (default org_id=1).")

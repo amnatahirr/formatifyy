@@ -10,12 +10,20 @@ from email.message import EmailMessage
 from typing import Any
 
 from fastapi import APIRouter, Body, File, HTTPException, Query, Request, UploadFile
-
+from email_service import send_emails_async, build_deadline_email
 from database import get_db, hash_password
 from middleware.org_middleware import resolve_organization_from_request
+from reminders import (
+    students_for_deadline as _students_for_deadline,
+    notify_students as _notify_students,
+    run_deadline_reminders,
+)
 
 router = APIRouter(prefix="/api/admin", tags=["Admin"])
 logger = logging.getLogger(__name__)
+
+# Semester -> FYP phase (informational; deadlines target a semester directly).
+PHASE_BY_SEMESTER = {6: "proposal", 7: "fyp1", 8: "fyp2"}
 
 
 def _org_id(request: Request) -> int:
@@ -24,6 +32,7 @@ def _org_id(request: Request) -> int:
     if isinstance(org, dict) and org.get("id"):
         return int(org["id"])
     return int(resolve_organization_from_request(request)["id"])
+
 
 DEFAULT_SETTINGS: dict[str, str] = {
     "system_name": "FORMATIFY Admin Panel",
@@ -66,6 +75,19 @@ def _format_date(value: str | None) -> str:
             return datetime.strptime(value, "%Y-%m-%d").strftime("%Y-%m-%d")
         except ValueError:
             return value
+
+
+def _parse_target_semester(value) -> int | None:
+    """None / '' = all semesters. Otherwise an int between 1 and 8."""
+    if value in (None, ""):
+        return None
+    try:
+        sem = int(value)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="target_semester must be a number.")
+    if sem < 1 or sem > 8:
+        raise HTTPException(status_code=400, detail="target_semester must be between 1 and 8.")
+    return sem
 
 
 def _as_bool(value: str | None) -> bool:
@@ -1080,6 +1102,11 @@ def get_admin_templates(
     return rows
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# DEADLINES (with target semester + notifications)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
 @router.get("/deadlines")
 def get_deadlines(
     request: Request,
@@ -1118,13 +1145,15 @@ def create_deadline(
     org_id = _org_id(request)
     applies_to_all = bool(payload.get("applies_to_all", not payload.get("department_id")))
     department_id = None if applies_to_all else int(payload.get("department_id"))
+    target_semester = _parse_target_semester(payload.get("target_semester"))
 
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute(
         """
-        INSERT INTO deadlines (title, description, due_date, department_id, applies_to_all, org_id)
-        VALUES (?, ?, ?, ?, ?, ?)
+        INSERT INTO deadlines
+            (title, description, due_date, department_id, applies_to_all, target_semester, org_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
         """,
         (
             payload.get("title"),
@@ -1132,11 +1161,39 @@ def create_deadline(
             payload.get("due_date"),
             department_id,
             1 if applies_to_all else 0,
+            target_semester,
             org_id,
         ),
     )
     conn.commit()
     deadline_id = cursor.lastrowid
+
+    # Notify only the matching students (current semester + department, not graduated)
+    students = _students_for_deadline(cursor, org_id, department_id, target_semester)
+    description = (payload.get("description") or "").strip()
+    message = f"Due {_format_date(payload.get('due_date'))}. {description}".strip()
+    notified = _notify_students(
+        cursor,
+        students,
+        f"New deadline: {payload.get('title')}",
+        message,
+        deadline_id,
+    )
+    conn.commit()
+
+    email_batch = []
+    for s in students:
+        if not s["email"]:
+            continue
+        subject, text, html = build_deadline_email(
+            title=payload.get("title") or "",
+            due_date=payload.get("due_date") or "",
+            description=description,
+            name=s["username"],
+        )
+        email_batch.append((s["email"], subject, text, html))
+    send_emails_async(email_batch)
+
     cursor.execute(
         """
         SELECT dl.*, d.name AS department_name, d.code AS department_code
@@ -1149,7 +1206,7 @@ def create_deadline(
     deadline = dict(cursor.fetchone())
     deadline["due_date"] = _format_date(deadline.get("due_date"))
     conn.close()
-    return {"success": True, "deadline": deadline}
+    return {"success": True, "deadline": deadline, "notified": notified}
 
 
 @router.put("/deadlines/{deadline_id}")
@@ -1174,10 +1231,18 @@ def update_deadline(
 
     applies_to_all = bool(payload.get("applies_to_all", existing["applies_to_all"]))
     department_id = None if applies_to_all else int(payload.get("department_id", existing["department_id"]))
+
+    # Key present in payload -> use it (null = all semesters); otherwise keep old value.
+    if "target_semester" in payload:
+        target_semester = _parse_target_semester(payload.get("target_semester"))
+    else:
+        target_semester = existing["target_semester"]
+
     cursor.execute(
         """
         UPDATE deadlines
-        SET title = ?, description = ?, due_date = ?, department_id = ?, applies_to_all = ?
+        SET title = ?, description = ?, due_date = ?, department_id = ?,
+            applies_to_all = ?, target_semester = ?
         WHERE id = ? AND org_id = ?
         """,
         (
@@ -1186,10 +1251,19 @@ def update_deadline(
             payload.get("due_date", existing["due_date"]),
             department_id,
             1 if applies_to_all else 0,
+            target_semester,
             deadline_id,
             org_id,
         ),
     )
+
+    # If the date changed, allow reminders to go out again for the new date.
+    if "due_date" in payload and _format_date(payload["due_date"]) != _format_date(existing["due_date"]):
+        cursor.execute(
+            "DELETE FROM deadline_reminders_sent WHERE deadline_id = ?",
+            (deadline_id,),
+        )
+
     conn.commit()
     cursor.execute(
         """
@@ -1227,6 +1301,10 @@ def delete_deadline(
     cursor.execute(
         "DELETE FROM deadlines WHERE id = ? AND org_id = ?",
         (deadline_id, org_id),
+    )
+    cursor.execute(
+        "DELETE FROM deadline_reminders_sent WHERE deadline_id = ?",
+        (deadline_id,),
     )
     conn.commit()
     conn.close()
@@ -1387,6 +1465,141 @@ def update_semester_deadline(
     finally:
         conn.close()
 
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# SEMESTER PROMOTION + GRADUATION + REMINDER TRIGGER
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+@router.get("/promote-semester/preview")
+def promote_semester_preview(
+    request: Request,
+    user_id: int | None = Query(default=None),
+):
+    """Show how many students will be promoted / graduated (no changes made)."""
+    _require_admin(user_id)
+    org_id = _org_id(request)
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            """
+            SELECT current_semester, COUNT(*) AS n FROM users
+            WHERE org_id = ? AND role = 'student'
+              AND COALESCE(is_graduated, 0) = 0 AND current_semester IS NOT NULL
+            GROUP BY current_semester ORDER BY current_semester
+            """,
+            (org_id,),
+        )
+        rows = [dict(r) for r in cur.fetchall()]
+        graduating = sum(r["n"] for r in rows if r["current_semester"] >= 8)
+        promoting = sum(r["n"] for r in rows if r["current_semester"] < 8)
+        return {
+            "by_semester": rows,
+            "will_promote": promoting,
+            "will_graduate": graduating,
+        }
+    finally:
+        conn.close()
+
+
+@router.get("/promote-semester/students")
+def promote_students_list(
+    request: Request,
+    user_id: int | None = Query(default=None),
+):
+    """Promote dialog ke liye: active students ki list (semester-wise)."""
+    _require_admin(user_id)
+    org_id = _org_id(request)
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            """
+            SELECT id, username, email, current_semester
+            FROM users
+            WHERE org_id = ? AND role = 'student'
+              AND COALESCE(is_graduated, 0) = 0 AND current_semester IS NOT NULL
+            ORDER BY current_semester, username
+            """,
+            (org_id,),
+        )
+        return {"students": [dict(r) for r in cur.fetchall()]}
+    finally:
+        conn.close()
+
+
+@router.post("/promote-semester")
+def promote_semester(
+    request: Request,
+    payload: dict[str, Any] = Body(default={}),
+    user_id: int | None = Query(default=None),
+):
+    """Semester +1 (sem 8 = graduate). payload.exclude_ids wale students jyun ke tyun rehte hain."""
+    _require_admin(user_id)
+    org_id = _org_id(request)
+    exclude_ids = [int(i) for i in (payload.get("exclude_ids") or [])]
+    skip_sql = ""
+    skip_params: list[Any] = []
+    if exclude_ids:
+        skip_sql = f" AND id NOT IN ({','.join('?' * len(exclude_ids))})"
+        skip_params = exclude_ids
+
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        # Pehle semester 8 walay graduate
+        cur.execute(
+            f"""
+            UPDATE users SET is_graduated = 1
+            WHERE org_id = ? AND role = 'student'
+              AND COALESCE(is_graduated, 0) = 0 AND current_semester >= 8
+              {skip_sql}
+            """,
+            [org_id, *skip_params],
+        )
+        graduated = cur.rowcount
+        cur.execute(
+            f"""
+            UPDATE users SET current_semester = current_semester + 1
+            WHERE org_id = ? AND role = 'student'
+              AND COALESCE(is_graduated, 0) = 0
+              AND current_semester IS NOT NULL AND current_semester < 8
+              {skip_sql}
+            """,
+            [org_id, *skip_params],
+        )
+        promoted = cur.rowcount
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+    logger.info(
+        "Org %s: promoted=%s graduated=%s held_back=%s by admin %s",
+        org_id, promoted, graduated, exclude_ids, user_id,
+    )
+    return {"success": True, "promoted": promoted, "graduated": graduated, "held_back": len(exclude_ids)}
+
+
+@router.post("/run-reminders")
+def run_reminders_now(
+    request: Request,
+    user_id: int | None = Query(default=None),
+):
+    """For testing: run the reminder job right now."""
+    _require_admin(user_id)
+    return {"success": True, **run_deadline_reminders()}
+
+@router.post("/test-email")
+def test_email(
+    to: str = Query(...),
+    user_id: int | None = Query(default=None),
+):
+    _require_admin(user_id)
+    from email_service import send_test_email
+    return send_test_email(to)
 
 @router.get("/analytics")
 def get_admin_analytics(
