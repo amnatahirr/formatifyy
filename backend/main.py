@@ -2200,6 +2200,15 @@ async def analyze_document_endpoint(document_id: int, user_id: int = Query(...))
         style_issues.extend(bullets)
         normalized_issues.extend(bullets)
 
+    # Missing sections come from heading_analysis (whole document), added further
+    # down. Drop the formatting agent's per-batch guesses: it only sees 4 pages.
+    normalized_issues = [
+        i for i in normalized_issues if (i.get("type") or "").lower() != "missing_section"
+    ]
+    style_issues = [
+        i for i in style_issues if (i.get("type") or "").lower() != "missing_section"
+    ]
+
     major_count = len([i for i in normalized_issues if (i.get("severity") or "").lower() == "major"])
     minor_count = len([i for i in normalized_issues if (i.get("severity") or "").lower() == "minor"])
     critical_count = len([i for i in normalized_issues if (i.get("severity") or "").upper() == "CRITICAL"])
@@ -2257,6 +2266,22 @@ async def analyze_document_endpoint(document_id: int, user_id: int = Query(...))
             heading_issues = heading_matches_to_issues(template_heading_matches)
             if heading_issues:
                 normalized_heading_issues = normalize_issues(heading_issues, image_paths)
+                for _it in normalized_heading_issues:
+                    if (_it.get("type") or "").lower() != "missing_section":
+                        continue
+                    _name = str(_it.get("matched_template_heading") or "").strip()
+                    if not _name:
+                        _m = re.search(
+                            r'"([^"]+)"',
+                            str(_it.get("suggestion") or _it.get("reason") or ""),
+                        )
+                        _name = _m.group(1).strip() if _m else ""
+                    if _name:
+                        _it["fix_type"] = "insert_missing_section"
+                        _it["fix_details"] = {
+                            "section_name": _name,
+                            "level": _it.get("heading_level") or 1,
+                        }
                 style_issues.extend(normalized_heading_issues)
                 normalized_issues.extend(normalized_heading_issues)
         except Exception as exc:
@@ -3046,6 +3071,36 @@ async def apply_content_fix(
         applied, skipped = apply_section_bullets_to_file(working_copy, para_indices)
         ok = len(applied) > 0
         msg = f"Bullets applied to {len(applied)} paragraph(s)." if ok else "No bullets applied."
+    elif fix_type == "insert_missing_section":
+        from missing_sections import insert_missing_section_by_name
+
+        details = payload.get("fix_details") if isinstance(payload.get("fix_details"), dict) else {}
+        section_name = str(
+            payload.get("section_name") or details.get("section_name") or ""
+        ).strip()
+        if not section_name:
+            raise HTTPException(status_code=400, detail="section_name is required")
+        res = insert_missing_section_by_name(
+            working_copy,
+            tmpl.get("required_sections", []),
+            section_name,
+            content=payload.get("content"),
+        )
+        ok = bool(res.get("inserted"))
+        msg = (
+            f'Added a "{section_name}" section.'
+            if ok
+            else res.get("reason", "Section was not added.")
+        )
+        if ok:
+            try:
+                apply_template_reformat(
+                    working_copy,
+                    tmpl["formatting_rules"],
+                    tmpl.get("required_sections", []),
+                )
+            except Exception as exc:
+                print(f"[apply-content-fix] reformat skipped (non-fatal): {exc}")
     elif fix_type == "formatting":
         ok, msg = apply_template_reformat(
             working_copy,
@@ -3901,6 +3956,165 @@ def _get_user_document(document_id: int, user_id: int):
 # ═══════════════════════════════════════════════════════════════════════════════
 # TOC / LOT / LOF — Word field generation
 # ═══════════════════════════════════════════════════════════════════════════════
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# MISSING SECTION DETECTION
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@app.get("/api/documents/missing-sections/{document_id}", tags=["Documents"])
+def missing_sections_endpoint(document_id: int, user_id: int = Query(...)):
+    """Compare the template's required sections with the document's headings."""
+    from missing_sections import detect_missing_sections
+
+    doc_row, tmpl = _get_user_document(document_id, user_id)
+    working_copy = _ensure_formatted_working_copy(doc_row, tmpl)
+    info = detect_missing_sections(working_copy, tmpl.get("required_sections", []))
+    return {"status": "success", "document_id": document_id, **info}
+
+
+@app.post("/api/documents/insert-missing-section/{document_id}", tags=["Documents"])
+def insert_missing_section_endpoint(
+    document_id: int,
+    user_id: int = Query(...),
+    payload: Dict[str, Any] = Body(...),
+):
+    """Insert a heading + placeholder for a missing section, in template order."""
+    from missing_sections import insert_missing_section_by_name
+
+    name = str(payload.get("section_name") or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="section_name is required")
+
+    doc_row, tmpl = _get_user_document(document_id, user_id)
+    working_copy = _ensure_formatted_working_copy(doc_row, tmpl)
+    result = insert_missing_section_by_name(
+        working_copy,
+        tmpl.get("required_sections", []),
+        name,
+        content=payload.get("content"),
+    )
+    if not result.get("inserted"):
+        raise HTTPException(status_code=400, detail=result.get("reason", "Not inserted"))
+
+    try:
+        apply_template_reformat(
+            working_copy,
+            tmpl["formatting_rules"],
+            tmpl.get("required_sections", []),
+        )
+    except Exception as exc:
+        print(f"[insert-missing-section] reformat skipped (non-fatal): {exc}")
+
+    commit = _commit_working_document(document_id, working_copy, doc_row)
+    return {
+        "status": "success",
+        "message": f'Added a "{result["section_name"]}" section placeholder.',
+        **result,
+        **commit,
+    }
+
+
+@app.post("/api/documents/suggest-section/{document_id}", tags=["Documents"])
+async def suggest_section_endpoint(
+    document_id: int,
+    user_id: int = Query(...),
+    payload: Dict[str, Any] = Body(...),
+):
+    """Optional: AI outline of what a missing section should contain (sends heading titles only)."""
+    from missing_sections import collect_candidate_headings
+
+    name = str(payload.get("section_name") or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="section_name is required")
+
+    doc_row, tmpl = _get_user_document(document_id, user_id)
+    working_copy = _ensure_formatted_working_copy(doc_row, tmpl)
+    headings = [h["text"] for h in collect_candidate_headings(working_copy)][:60]
+
+    prompt = (
+        "A student is writing a university final year project report. "
+        f'The report is missing its "{name}" section.\n'
+        "Existing headings in the report:\n- " + "\n- ".join(headings) + "\n\n"
+        f'Give a short outline (4-6 plain bullet points) of what the "{name}" '
+        "section should cover for this report. No preamble."
+    )
+    try:
+        client = await _get_ai_client()
+        resp = await client.messages.create(
+            model=ANALYSIS_MODEL,
+            max_tokens=500,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        text = "".join(
+            getattr(b, "text", "") or "" for b in (getattr(resp, "content", None) or [])
+        ).strip()
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"AI suggestion unavailable: {exc}")
+    return {"status": "success", "section_name": name, "suggestion": text}
+
+
+@app.get("/api/documents/missing-section-previews/{document_id}", tags=["Documents"])
+async def missing_section_previews_endpoint(
+    document_id: int,
+    user_id: int = Query(...),
+    suggest: bool = Query(False),
+):
+    """
+    Data for the faded "Missing" headings in the Word preview.
+    suggest=true also asks the AI for a short starting draft per missing section
+    (sends heading titles + a ~1500 character excerpt; max 6 sections).
+    """
+    from missing_sections import (
+        build_previews,
+        build_suggestion_prompt,
+        detect_missing_sections,
+        document_context,
+    )
+
+    doc_row, tmpl = _get_user_document(document_id, user_id)
+    working_copy = _ensure_formatted_working_copy(doc_row, tmpl)
+    info = detect_missing_sections(working_copy, tmpl.get("required_sections", []))
+    previews = build_previews(info) if info.get("reliable") else []
+
+    if suggest and previews:
+        context = document_context(working_copy)
+        try:
+            client = await _get_ai_client()
+        except Exception as exc:
+            client = None
+            print(f"[missing-previews] AI client unavailable: {exc}")
+
+        async def _draft(p):
+            if client is None:
+                p["suggestion_error"] = "AI is not configured."
+                return
+            try:
+                resp = await client.messages.create(
+                    model=ANALYSIS_MODEL,
+                    max_tokens=500,
+                    messages=[{
+                        "role": "user",
+                        "content": build_suggestion_prompt(p["name"], context),
+                    }],
+                )
+                p["suggested_content"] = "".join(
+                    getattr(b, "text", "") or ""
+                    for b in (getattr(resp, "content", None) or [])
+                ).strip()
+            except Exception as exc:
+                p["suggestion_error"] = str(exc)[:200]
+
+        await asyncio.gather(*[_draft(p) for p in previews[:6]])
+
+    return {
+        "status": "success",
+        "document_id": document_id,
+        "reliable": bool(info.get("reliable")),
+        "reason": info.get("reason", ""),
+        "previews": previews,
+    }
+
 
 @app.get("/api/toc-check/{document_id}", tags=["Documents"])
 def toc_check(document_id: int, user_id: int = Query(...)):

@@ -20,3 +20,12 @@ build/
 .idea/
 .vscode/
 .DS_Store
+
+
+backend/.env
+*.bak
+backend/out.txt
+backend/report_latex.zip
+backend/latex_out/
+backend/check_draft.py
+backend/list_docs.py

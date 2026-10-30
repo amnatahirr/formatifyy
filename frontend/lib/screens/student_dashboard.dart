@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:frontend/providers/qr_service.dart';
 import 'package:frontend/widgets/qr_dialog.dart';
@@ -34,7 +33,7 @@ import '../widgets/student/mobile_status_summary_card.dart';
 import '../widgets/student/desktop_semester_deadline_card.dart';
 import '../utils/responsive.dart';
 import 'mobile_companion_screen.dart';
-import '../widgets/document_preview_panel.dart'; 
+import '../widgets/document_preview_panel.dart';
 
 /// Mobile bottom-nav → existing `_selectedIndex` targets.
 /// Notifications has no desktop sidebar entry; uses [kNotificationsTabIndex].
@@ -50,14 +49,22 @@ class _MobileNavItem {
 
 const List<_MobileNavItem> _kMobileNavItemsCore = [
   _MobileNavItem(0, Icons.dashboard_outlined, 'Dashboard'),
-  _MobileNavItem(kNotificationsTabIndex, Icons.notifications_outlined, 'Notifications'),
+  _MobileNavItem(
+    kNotificationsTabIndex,
+    Icons.notifications_outlined,
+    'Notifications',
+  ),
   _MobileNavItem(2, Icons.folder_outlined, 'Reports'),
 ];
 
 const List<_MobileNavItem> _kMobileNavItemsFyp = [
   _MobileNavItem(0, Icons.dashboard_outlined, 'Dashboard'),
   _MobileNavItem(8, Icons.checklist_outlined, 'Milestones'),
-  _MobileNavItem(kNotificationsTabIndex, Icons.notifications_outlined, 'Notifications'),
+  _MobileNavItem(
+    kNotificationsTabIndex,
+    Icons.notifications_outlined,
+    'Notifications',
+  ),
   _MobileNavItem(2, Icons.folder_outlined, 'Reports'),
 ];
 
@@ -113,9 +120,9 @@ class _StudentDashboardState extends State<StudentDashboard> {
         final email = (auth.userEmail ?? auth.email ?? '').trim();
         if (DevUserConfig.hasFypModule && email.isNotEmpty) {
           context.read<FypProvider>().fetchAssignmentStatus(
-                userId: auth.userId!,
-                email: email,
-              );
+            userId: auth.userId!,
+            email: email,
+          );
         }
         //Start auto-refresh polling every 30 seconds
         _refreshTimer = Timer.periodic(Duration(seconds: 10), (_) {
@@ -131,7 +138,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
 
   @override
   void dispose() {
-   _refreshTimer?.cancel();
+    _refreshTimer?.cancel();
     super.dispose();
   }
 
@@ -216,9 +223,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
     required _MobileNavItem item,
     required bool selected,
   }) {
-    final color = selected
-        ? _p.accent
-        : _p.iconMuted;
+    final color = selected ? _p.accent : _p.iconMuted;
 
     return InkWell(
       onTap: () {
@@ -253,9 +258,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
       decoration: BoxDecoration(
         color: _p.sidebarBg,
         border: Border(
-          right: BorderSide(
-            color: _p.isDark ? _p.borderStrong : _p.border,
-          ),
+          right: BorderSide(color: _p.isDark ? _p.borderStrong : _p.border),
         ),
       ),
       child: Column(
@@ -270,11 +273,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
                     color: _p.accent,
                     borderRadius: BorderRadius.circular(6),
                   ),
-                  child: Icon(
-                    Icons.description,
-                    color: Colors.white,
-                    size: 20,
-                  ),
+                  child: Icon(Icons.description, color: Colors.white, size: 20),
                 ),
                 SizedBox(width: 12),
                 Column(
@@ -305,31 +304,11 @@ class _StudentDashboardState extends State<StudentDashboard> {
             child: ListView(
               padding: EdgeInsets.symmetric(vertical: 8),
               children: [
-                _buildSidebarItem(
-                  0,
-                  Icons.dashboard,
-                  'Dashboard',
-                ),
-                _buildSidebarItem(
-                  1,
-                  Icons.add_circle_outline,
-                  'New Report',
-                ),
-                _buildSidebarItem(
-                  2,
-                  Icons.folder,
-                  'My Reports',
-                ),
-                _buildSidebarItem(
-                  3,
-                  Icons.people_outline,
-                  'Collaboration',
-                ),
-                _buildSidebarItem(
-                  5,
-                  Icons.layers,
-                  'Templates',
-                ),
+                _buildSidebarItem(0, Icons.dashboard, 'Dashboard'),
+                _buildSidebarItem(1, Icons.add_circle_outline, 'New Report'),
+                _buildSidebarItem(2, Icons.folder, 'My Reports'),
+                _buildSidebarItem(3, Icons.people_outline, 'Collaboration'),
+                _buildSidebarItem(5, Icons.layers, 'Templates'),
                 if (DevUserConfig.hasFypModule) ...[
                   Consumer<FypProvider>(
                     builder: (context, fyp, _) {
@@ -343,16 +322,8 @@ class _StudentDashboardState extends State<StudentDashboard> {
                       );
                     },
                   ),
-                  _buildSidebarItem(
-                    7,
-                    Icons.badge_outlined,
-                    'My Supervisor',
-                  ),
-                  _buildSidebarItem(
-                    8,
-                    Icons.checklist_outlined,
-                    'Milestones',
-                  ),
+                  _buildSidebarItem(7, Icons.badge_outlined, 'My Supervisor'),
+                  _buildSidebarItem(8, Icons.checklist_outlined, 'Milestones'),
                   _buildSidebarItem(
                     9,
                     Icons.sticky_note_2_outlined,
@@ -369,11 +340,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
                     'Status Tracker',
                   ),
                 ],
-                _buildSidebarItem(
-                  12,
-                  Icons.settings,
-                  'Settings',
-                ),
+                _buildSidebarItem(12, Icons.settings, 'Settings'),
               ],
             ),
           ),
@@ -439,7 +406,11 @@ class _StudentDashboardState extends State<StudentDashboard> {
                           height: 32,
                           child: ElevatedButton.icon(
                             onPressed: () => _logout(context),
-                            icon: Icon(Icons.logout, size: 14, color: Colors.white),
+                            icon: Icon(
+                              Icons.logout,
+                              size: 14,
+                              color: Colors.white,
+                            ),
                             label: Text(
                               'Logout',
                               style: TextStyle(
@@ -493,9 +464,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
               Icon(
                 icon,
                 size: 20,
-                color: isSelected
-                    ? _p.accent
-                    : _p.textSecondary,
+                color: isSelected ? _p.accent : _p.textSecondary,
               ),
               SizedBox(width: 12),
               Text(
@@ -503,9 +472,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
                 style: TextStyle(
                   fontSize: 13,
                   fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
-                  color: isSelected
-                      ? _p.accent
-                      : _p.textSecondary,
+                  color: isSelected ? _p.accent : _p.textSecondary,
                 ),
               ),
             ],
@@ -555,23 +522,23 @@ class _StudentDashboardState extends State<StudentDashboard> {
       descriptions[13] = 'Updates and account notifications';
     }
     final showingProject = _activeProjectId != null;
-    final projectName = context.watch<CollaborationProvider>().currentProject?['name'] as String?;
+    final projectName =
+        context.watch<CollaborationProvider>().currentProject?['name']
+            as String?;
     final title = showingProject
         ? (projectName ?? 'Project')
         : titles[_selectedIndex];
     final description = showingProject
         ? 'Shared project workspace'
         : (_selectedIndex == 0
-            ? 'Welcome back, ${context.watch<AuthProvider>().currentUser ?? "User"}. ${descriptions[_selectedIndex]}'
-            : descriptions[_selectedIndex]);
+              ? 'Welcome back, ${context.watch<AuthProvider>().currentUser ?? "User"}. ${descriptions[_selectedIndex]}'
+              : descriptions[_selectedIndex]);
 
     return Container(
       decoration: BoxDecoration(
         color: _p.topBarBg,
         border: Border(
-          bottom: BorderSide(
-            color: _p.isDark ? _p.borderStrong : _p.border,
-          ),
+          bottom: BorderSide(color: _p.isDark ? _p.borderStrong : _p.border),
         ),
         boxShadow: _p.cardShadow,
       ),
@@ -585,78 +552,81 @@ class _StudentDashboardState extends State<StudentDashboard> {
         bottom: false,
         minimum: EdgeInsets.only(top: compact ? 8 : 0),
         child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: TextStyle(
-                    fontSize: compact ? 20 : 28,
-                    fontWeight: FontWeight.w700,
-                    color: _p.textPrimary,
-                  ),
-                ),
-                if (!compact || _selectedIndex == 0)
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
                   Text(
-                    description,
-                    maxLines: compact ? 1 : 3,
-                    overflow: TextOverflow.ellipsis,
+                    title,
                     style: TextStyle(
-                      fontSize: 13,
-                      color: _p.textSecondary,
-                      fontWeight: FontWeight.w400,
+                      fontSize: compact ? 20 : 28,
+                      fontWeight: FontWeight.w700,
+                      color: _p.textPrimary,
                     ),
                   ),
-              ],
-            ),
-          ),
-          if (!compact)
-            Row(
-              children: [
-                NotificationsPanelButton(),
-                SizedBox(width: 12),
-                GestureDetector(
-                  onTap: () {
-                    setState(() {
-                      _selectedIndex = 1;
-                      _activeProjectId = null;
-                    });
-                  },
-                  child: Container(
-                    padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: _p.accent,
-                      borderRadius: BorderRadius.circular(6),
+                  if (!compact || _selectedIndex == 0)
+                    Text(
+                      description,
+                      maxLines: compact ? 1 : 3,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: _p.textSecondary,
+                        fontWeight: FontWeight.w400,
+                      ),
                     ),
-                    child: Row(
-                      children: [
-                        Icon(Icons.add, size: 18, color: Colors.white),
-                        SizedBox(width: 6),
-                        Text(
-                          'New Report',
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.white,
+                ],
+              ),
+            ),
+            if (!compact)
+              Row(
+                children: [
+                  NotificationsPanelButton(),
+                  SizedBox(width: 12),
+                  GestureDetector(
+                    onTap: () {
+                      setState(() {
+                        _selectedIndex = 1;
+                        _activeProjectId = null;
+                      });
+                    },
+                    child: Container(
+                      padding: EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
+                      decoration: BoxDecoration(
+                        color: _p.accent,
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(Icons.add, size: 18, color: Colors.white),
+                          SizedBox(width: 6),
+                          Text(
+                            'New Report',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.white,
+                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
-                ),
-              ],
-            )
-          else
-            IconButton(
-              tooltip: 'Sign out',
-              onPressed: () => _logout(context),
-              icon: Icon(Icons.logout_rounded, color: _p.textSecondary),
-            ),
-        ],
-      ),
+                ],
+              )
+            else
+              IconButton(
+                tooltip: 'Sign out',
+                onPressed: () => _logout(context),
+                icon: Icon(Icons.logout_rounded, color: _p.textSecondary),
+              ),
+          ],
+        ),
       ),
     );
   }
@@ -758,20 +728,22 @@ class _StudentDashboardState extends State<StudentDashboard> {
             );
           case 7:
             return MySupervisorScreen(
-              onChooseSupervisor: context.watch<FypProvider>().canChooseSupervisor
+              onChooseSupervisor:
+                  context.watch<FypProvider>().canChooseSupervisor
                   ? () => setState(() {
-                        _selectedIndex = 6;
-                        _activeProjectId = null;
-                      })
+                      _selectedIndex = 6;
+                      _activeProjectId = null;
+                    })
                   : null,
             );
           case 8:
             return FypMilestonesScreen(
-              onChooseSupervisor: context.watch<FypProvider>().canChooseSupervisor
+              onChooseSupervisor:
+                  context.watch<FypProvider>().canChooseSupervisor
                   ? () => setState(() {
-                        _selectedIndex = 6;
-                        _activeProjectId = null;
-                      })
+                      _selectedIndex = 6;
+                      _activeProjectId = null;
+                    })
                   : null,
               onOpenMySupervisor: () => setState(() {
                 _selectedIndex = 7;
@@ -782,11 +754,12 @@ class _StudentDashboardState extends State<StudentDashboard> {
             return const StudentMeetingNotesScreen();
           case 10:
             return PlagiarismReportScreen(
-              onChooseSupervisor: context.watch<FypProvider>().canChooseSupervisor
+              onChooseSupervisor:
+                  context.watch<FypProvider>().canChooseSupervisor
                   ? () => setState(() {
-                        _selectedIndex = 6;
-                        _activeProjectId = null;
-                      })
+                      _selectedIndex = 6;
+                      _activeProjectId = null;
+                    })
                   : null,
               onOpenMySupervisor: () => setState(() {
                 _selectedIndex = 7;
@@ -799,11 +772,12 @@ class _StudentDashboardState extends State<StudentDashboard> {
             );
           case 11:
             return StatusTrackerScreen(
-              onChooseSupervisor: context.watch<FypProvider>().canChooseSupervisor
+              onChooseSupervisor:
+                  context.watch<FypProvider>().canChooseSupervisor
                   ? () => setState(() {
-                        _selectedIndex = 6;
-                        _activeProjectId = null;
-                      })
+                      _selectedIndex = 6;
+                      _activeProjectId = null;
+                    })
                   : null,
               onOpenMySupervisor: () => setState(() {
                 _selectedIndex = 7;
@@ -831,8 +805,14 @@ class _StudentDashboardState extends State<StudentDashboard> {
     return Consumer<DocumentProvider>(
       builder: (context, docProvider, _) {
         final totalReports = docProvider.documents.length;
-        final completedCount = docProvider.documents.where((d) => d['status'] == 'formatted').length;
-        final draftCount = docProvider.documents.where((d) => d['status'] == 'uploaded' || d['status'] == 'processing').length;
+        final completedCount = docProvider.documents
+            .where((d) => d['status'] == 'formatted')
+            .length;
+        final draftCount = docProvider.documents
+            .where(
+              (d) => d['status'] == 'uploaded' || d['status'] == 'processing',
+            )
+            .length;
 
         return SingleChildScrollView(
           padding: EdgeInsets.all(compact ? 16 : 32),
@@ -852,7 +832,12 @@ class _StudentDashboardState extends State<StudentDashboard> {
                   SizedBox(height: 20),
                 ],
               ],
-              _buildStatsRow(compact: compact, totalReports: totalReports, draftCount: draftCount, completedCount: completedCount),
+              _buildStatsRow(
+                compact: compact,
+                totalReports: totalReports,
+                draftCount: draftCount,
+                completedCount: completedCount,
+              ),
               SizedBox(height: 28),
               if (compact) ...[
                 _buildRecentReportsSection(docProvider.documents),
@@ -871,9 +856,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
                       child: _buildRecentReportsSection(docProvider.documents),
                     ),
                     SizedBox(width: 16),
-                    Expanded(
-                      child: _buildAIToolsSection(compact: false),
-                    ),
+                    Expanded(child: _buildAIToolsSection(compact: false)),
                   ],
                 ),
                 SizedBox(height: 32),
@@ -896,14 +879,10 @@ class _StudentDashboardState extends State<StudentDashboard> {
       child: InkWell(
         onTap: () {
           Navigator.of(context).push(
-            MaterialPageRoute(
-              builder: (_) => const MobileCompanionScreen(),
-            ),
+            MaterialPageRoute(builder: (_) => const MobileCompanionScreen()),
           );
         },
-        borderRadius: BorderRadius.circular(
-          _p.isDark ? _p.cardRadius : 12,
-        ),
+        borderRadius: BorderRadius.circular(_p.isDark ? _p.cardRadius : 12),
         child: Container(
           width: double.infinity,
           padding: EdgeInsets.all(16),
@@ -938,18 +917,12 @@ class _StudentDashboardState extends State<StudentDashboard> {
                     SizedBox(height: 4),
                     Text(
                       'Scan QR, camera, or gallery upload',
-                      style: TextStyle(
-                        color: _p.textSecondary,
-                        fontSize: 12,
-                      ),
+                      style: TextStyle(color: _p.textSecondary, fontSize: 12),
                     ),
                   ],
                 ),
               ),
-              Icon(
-                Icons.chevron_right,
-                color: _p.textMuted,
-              ),
+              Icon(Icons.chevron_right, color: _p.textMuted),
             ],
           ),
         ),
@@ -1008,12 +981,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
             spacing: gap,
             runSpacing: gap,
             children: cards
-                .map(
-                  (card) => SizedBox(
-                    width: cardWidth,
-                    child: card,
-                  ),
-                )
+                .map((card) => SizedBox(width: cardWidth, child: card))
                 .toList(),
           );
         },
@@ -1052,11 +1020,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
                   color: changeColor.withOpacity(0.15),
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: Icon(
-                  icon,
-                  color: changeColor,
-                  size: compact ? 16 : 20,
-                ),
+                child: Icon(icon, color: changeColor, size: compact ? 16 : 20),
               ),
               SizedBox(width: 8),
               Expanded(
@@ -1146,10 +1110,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
                 padding: EdgeInsets.symmetric(vertical: 24),
                 child: Text(
                   'No reports yet',
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: _p.textSecondary,
-                  ),
+                  style: TextStyle(fontSize: 13, color: _p.textSecondary),
                 ),
               ),
             )
@@ -1158,9 +1119,17 @@ class _StudentDashboardState extends State<StudentDashboard> {
               final doc = entry.value;
               final isLast = entry.key == recentDocs.length - 1;
               final status = doc['status'] ?? 'uploaded';
-              final statusLabel = status == 'formatted' ? 'Complete' : status == 'processing' ? 'Processing' : 'Draft';
-              final statusColor = status == 'formatted' ? Color(0xFF10B981) : status == 'processing' ? Color(0xFFD97706) : _p.accent;
-              
+              final statusLabel = status == 'formatted'
+                  ? 'Complete'
+                  : status == 'processing'
+                  ? 'Processing'
+                  : 'Draft';
+              final statusColor = status == 'formatted'
+                  ? Color(0xFF10B981)
+                  : status == 'processing'
+                  ? Color(0xFFD97706)
+                  : _p.accent;
+
               return Column(
                 children: [
                   _buildReportItem(
@@ -1238,11 +1207,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
           ),
         ),
         SizedBox(width: 8),
-        Icon(
-          Icons.more_vert,
-          size: 16,
-          color: _p.textMuted,
-        ),
+        Icon(Icons.more_vert, size: 16, color: _p.textMuted),
       ],
     );
   }
@@ -1289,11 +1254,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
             child: Column(
               children: [
                 for (var i = 0; i < tools.length; i++) ...[
-                  if (i > 0)
-                    Divider(
-                      height: 1,
-                      color: _p.border,
-                    ),
+                  if (i > 0) Divider(height: 1, color: _p.border),
                   _buildAIToolTile(
                     tools[i].$1,
                     tools[i].$2,
@@ -1304,18 +1265,17 @@ class _StudentDashboardState extends State<StudentDashboard> {
               ],
             ),
           )
-        else
-          ...[
-            for (var i = 0; i < tools.length; i++) ...[
-              if (i > 0) SizedBox(height: 12),
-              _buildAIToolCard(
-                tools[i].$1,
-                tools[i].$2,
-                tools[i].$3,
-                tools[i].$4,
-              ),
-            ],
+        else ...[
+          for (var i = 0; i < tools.length; i++) ...[
+            if (i > 0) SizedBox(height: 12),
+            _buildAIToolCard(
+              tools[i].$1,
+              tools[i].$2,
+              tools[i].$3,
+              tools[i].$4,
+            ),
           ],
+        ],
       ],
     );
   }
@@ -1331,9 +1291,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
         _selectedIndex = 1;
         _activeProjectId = null;
       }),
-      borderRadius: BorderRadius.circular(
-        _p.isDark ? _p.cardRadius : 14,
-      ),
+      borderRadius: BorderRadius.circular(_p.isDark ? _p.cardRadius : 14),
       child: Padding(
         padding: EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         child: Row(
@@ -1365,19 +1323,12 @@ class _StudentDashboardState extends State<StudentDashboard> {
                     description,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: _p.textSecondary,
-                    ),
+                    style: TextStyle(fontSize: 12, color: _p.textSecondary),
                   ),
                 ],
               ),
             ),
-            Icon(
-              Icons.chevron_right_rounded,
-              color: _p.textMuted,
-              size: 20,
-            ),
+            Icon(Icons.chevron_right_rounded, color: _p.textMuted, size: 20),
           ],
         ),
       ),
@@ -1568,10 +1519,8 @@ class _StudentDashboardState extends State<StudentDashboard> {
                 runSpacing: 12,
                 children: recent
                     .map(
-                      (p) => ProjectCard(
-                        project: p,
-                        onTap: () => _openProject(p),
-                      ),
+                      (p) =>
+                          ProjectCard(project: p, onTap: () => _openProject(p)),
                     )
                     .toList(),
               ),
@@ -1589,9 +1538,9 @@ class _StudentDashboardState extends State<StudentDashboard> {
         Icons.description_outlined,
         _p.accent,
         () => setState(() {
-              _selectedIndex = 1;
-              _activeProjectId = null;
-            }),
+          _selectedIndex = 1;
+          _activeProjectId = null;
+        }),
       ),
       (
         'Import',
@@ -1599,9 +1548,9 @@ class _StudentDashboardState extends State<StudentDashboard> {
         Icons.upload_file_outlined,
         Color(0xFF8B5CF6),
         () => setState(() {
-              _selectedIndex = 1;
-              _activeProjectId = null;
-            }),
+          _selectedIndex = 1;
+          _activeProjectId = null;
+        }),
       ),
       (
         'Templates',
@@ -1609,9 +1558,9 @@ class _StudentDashboardState extends State<StudentDashboard> {
         Icons.layers_outlined,
         Color(0xFF06B6D4),
         () => setState(() {
-              _selectedIndex = 5;
-              _activeProjectId = null;
-            }),
+          _selectedIndex = 5;
+          _activeProjectId = null;
+        }),
       ),
       (
         'Collaborate',
@@ -1738,10 +1687,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
   }
 
   Widget _buildNewReportPage() {
-    return NewReportScreen(
-      selectedTemplate: _selectedTemplate,
-      embedded: true,
-    );
+    return NewReportScreen(selectedTemplate: _selectedTemplate, embedded: true);
   }
 
   void _openAnalyzeScreen(Map<String, dynamic> doc) {
@@ -1781,31 +1727,38 @@ class _StudentDashboardState extends State<StudentDashboard> {
       builder: (context, docProvider, _) {
         // Apply search
         List<Map<String, dynamic>> filteredDocs = docProvider.documents
-            .where((d) => (d['filename'] ?? '')
-                .toLowerCase()
-                .contains(_searchQuery.toLowerCase()))
+            .where(
+              (d) => (d['filename'] ?? '').toLowerCase().contains(
+                _searchQuery.toLowerCase(),
+              ),
+            )
             .toList();
 
         // Sort by recent or name
         if (_sortBy == 'name') {
-          filteredDocs.sort((a, b) =>
-              (a['filename'] ?? '').compareTo(b['filename'] ?? ''));
+          filteredDocs.sort(
+            (a, b) => (a['filename'] ?? '').compareTo(b['filename'] ?? ''),
+          );
         } else {
           filteredDocs.sort((a, b) {
-            final dateA = DateTime.tryParse(a['created_at'] ?? '') ?? DateTime.now();
-            final dateB = DateTime.tryParse(b['created_at'] ?? '') ?? DateTime.now();
+            final dateA =
+                DateTime.tryParse(a['created_at'] ?? '') ?? DateTime.now();
+            final dateB =
+                DateTime.tryParse(b['created_at'] ?? '') ?? DateTime.now();
             return dateB.compareTo(dateA);
           });
         }
-        
+
         // Calculate pagination
         int totalPages = (filteredDocs.length / _itemsPerPage).ceil();
         if (totalPages < 1) totalPages = 1;
         int startIndex = (_currentPage - 1) * _itemsPerPage;
         int endIndex = startIndex + _itemsPerPage;
-        List<Map<String, dynamic>> paginatedDocs = filteredDocs
-            .sublist(startIndex, endIndex > filteredDocs.length ? filteredDocs.length : endIndex);
-        
+        List<Map<String, dynamic>> paginatedDocs = filteredDocs.sublist(
+          startIndex,
+          endIndex > filteredDocs.length ? filteredDocs.length : endIndex,
+        );
+
         final compact = isCompact(context);
 
         return RefreshIndicator(
@@ -1813,547 +1766,613 @@ class _StudentDashboardState extends State<StudentDashboard> {
           color: _p.accent,
           backgroundColor: _p.surface,
           child: SingleChildScrollView(
-          physics: const AlwaysScrollableScrollPhysics(),
-          padding: EdgeInsets.fromLTRB(
-            compact ? 16 : 32,
-            compact ? 12 : 32,
-            compact ? 16 : 32,
-            compact ? 100 : 32,
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Search + Sort only
-              if (compact) ...[
-                Container(
-                  decoration: BoxDecoration(
-                    color: _p.surface,
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: _p.border),
-                  ),
-                  padding: EdgeInsets.symmetric(horizontal: 12),
-                  child: TextField(
-                    onChanged: (value) {
-                      setState(() {
-                        _searchQuery = value;
-                        _currentPage = 1;
-                      });
-                    },
-                    style: TextStyle(color: _p.textPrimary),
-                    decoration: InputDecoration(
-                      hintText: 'Search reports...',
-                      hintStyle: TextStyle(
-                        color: _p.textMuted,
-                        fontSize: 13,
-                      ),
-                      border: InputBorder.none,
-                      prefixIcon: Icon(
-                        Icons.search,
-                        color: _p.textSecondary,
-                        size: 20,
-                      ),
-                    ),
-                  ),
-                ),
-                SizedBox(height: 10),
-                _buildReportsMenuButton(
-                  icon: Icons.swap_vert,
-                  label: _sortBy == 'name' ? 'Name A-Z' : 'Most Recent',
-                  items: const [
-                    PopupMenuItem(value: 'recent', child: Text('Most Recent')),
-                    PopupMenuItem(value: 'name', child: Text('Name A-Z')),
-                  ],
-                  onSelected: (value) {
-                    setState(() {
-                      _sortBy = value;
-                      _currentPage = 1;
-                    });
-                  },
-                ),
-              ] else
-              Row(
-                children: [
-                  Expanded(
-                    flex: 2,
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: _p.surface,
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(
-                          color: _p.border,
-                        ),
-                      ),
-                      padding: EdgeInsets.symmetric(horizontal: 16),
-                      child: TextField(
-                        onChanged: (value) {
-                          setState(() {
-                            _searchQuery = value;
-                            _currentPage = 1;
-                          });
-                        },
-                        style: TextStyle(color: _p.textPrimary),
-                        decoration: InputDecoration(
-                          hintText: 'Search reports...',
-                          hintStyle: TextStyle(
-                            color: _p.textMuted,
-                            fontSize: 13,
-                          ),
-                          border: InputBorder.none,
-                          prefixIcon: Icon(
-                            Icons.search,
-                            color: _p.textSecondary,
-                            size: 20,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                  SizedBox(width: 12),
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: EdgeInsets.fromLTRB(
+              compact ? 16 : 32,
+              compact ? 12 : 32,
+              compact ? 16 : 32,
+              compact ? 100 : 32,
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Search + Sort only
+                if (compact) ...[
                   Container(
                     decoration: BoxDecoration(
                       color: _p.surface,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(
-                        color: _p.border,
-                      ),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: _p.border),
                     ),
                     padding: EdgeInsets.symmetric(horizontal: 12),
-                    child: PopupMenuButton<String>(
-                      onSelected: (value) {
+                    child: TextField(
+                      onChanged: (value) {
                         setState(() {
-                          _sortBy = value;
+                          _searchQuery = value;
                           _currentPage = 1;
                         });
                       },
-                      itemBuilder: (context) => [
-                        const PopupMenuItem(value: 'recent', child: Text('Most Recent')),
-                        const PopupMenuItem(value: 'name', child: Text('Name A-Z')),
-                      ],
-                      child: Row(
+                      style: TextStyle(color: _p.textPrimary),
+                      decoration: InputDecoration(
+                        hintText: 'Search reports...',
+                        hintStyle: TextStyle(color: _p.textMuted, fontSize: 13),
+                        border: InputBorder.none,
+                        prefixIcon: Icon(
+                          Icons.search,
+                          color: _p.textSecondary,
+                          size: 20,
+                        ),
+                      ),
+                    ),
+                  ),
+                  SizedBox(height: 10),
+                  _buildReportsMenuButton(
+                    icon: Icons.swap_vert,
+                    label: _sortBy == 'name' ? 'Name A-Z' : 'Most Recent',
+                    items: const [
+                      PopupMenuItem(
+                        value: 'recent',
+                        child: Text('Most Recent'),
+                      ),
+                      PopupMenuItem(value: 'name', child: Text('Name A-Z')),
+                    ],
+                    onSelected: (value) {
+                      setState(() {
+                        _sortBy = value;
+                        _currentPage = 1;
+                      });
+                    },
+                  ),
+                ] else
+                  Row(
+                    children: [
+                      Expanded(
+                        flex: 2,
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: _p.surface,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: _p.border),
+                          ),
+                          padding: EdgeInsets.symmetric(horizontal: 16),
+                          child: TextField(
+                            onChanged: (value) {
+                              setState(() {
+                                _searchQuery = value;
+                                _currentPage = 1;
+                              });
+                            },
+                            style: TextStyle(color: _p.textPrimary),
+                            decoration: InputDecoration(
+                              hintText: 'Search reports...',
+                              hintStyle: TextStyle(
+                                color: _p.textMuted,
+                                fontSize: 13,
+                              ),
+                              border: InputBorder.none,
+                              prefixIcon: Icon(
+                                Icons.search,
+                                color: _p.textSecondary,
+                                size: 20,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                      SizedBox(width: 12),
+                      Container(
+                        decoration: BoxDecoration(
+                          color: _p.surface,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: _p.border),
+                        ),
+                        padding: EdgeInsets.symmetric(horizontal: 12),
+                        child: PopupMenuButton<String>(
+                          onSelected: (value) {
+                            setState(() {
+                              _sortBy = value;
+                              _currentPage = 1;
+                            });
+                          },
+                          itemBuilder: (context) => [
+                            const PopupMenuItem(
+                              value: 'recent',
+                              child: Text('Most Recent'),
+                            ),
+                            const PopupMenuItem(
+                              value: 'name',
+                              child: Text('Name A-Z'),
+                            ),
+                          ],
+                          child: Row(
+                            children: [
+                              Icon(
+                                Icons.swap_vert,
+                                color: _p.textSecondary,
+                                size: 18,
+                              ),
+                              SizedBox(width: 8),
+                              Text(
+                                _sortBy == 'name' ? 'Name A-Z' : 'Most Recent',
+                                style: TextStyle(
+                                  color: _p.textSecondary,
+                                  fontSize: 13,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                SizedBox(height: compact ? 20 : 28),
+                // Grid / list of Reports
+                if (docProvider.isLoading)
+                  Center(child: CircularProgressIndicator())
+                else if (paginatedDocs.isEmpty)
+                  Center(
+                    child: Padding(
+                      padding: EdgeInsets.symmetric(vertical: 48),
+                      child: Column(
                         children: [
-                          Icon(Icons.swap_vert, color: _p.textSecondary, size: 18),
-                          SizedBox(width: 8),
+                          Icon(
+                            Icons.folder_open,
+                            size: 48,
+                            color: _p.textMuted,
+                          ),
+                          SizedBox(height: 16),
                           Text(
-                            _sortBy == 'name' ? 'Name A-Z' : 'Most Recent',
+                            'No reports found',
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: _p.textSecondary,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  )
+                else if (compact)
+                  Column(
+                    children: [
+                      for (final doc in paginatedDocs)
+                        Padding(
+                          padding: EdgeInsets.only(bottom: 10),
+                          child: _buildMobileReportCard(doc),
+                        ),
+                    ],
+                  )
+                else
+                  GridView.builder(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: 3,
+                      crossAxisSpacing: 24,
+                      mainAxisSpacing: 24,
+                      // Taller cards so Unformatted / Formatted actions fit cleanly.
+                      childAspectRatio: 0.72,
+                    ),
+                    itemCount: paginatedDocs.length,
+                    itemBuilder: (context, index) {
+                      final doc = paginatedDocs[index];
+                      final status = doc['status'] ?? 'draft';
+                      final statusColor = _getStatusColor(status);
+                      final statusLabel = _getStatusLabel(status);
+                      final iconColor = _getIconColor(status);
+
+                      return Container(
+                        decoration: _cardDeco(),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(
+                            _p.isDark ? _p.cardRadius : 12,
+                          ),
+                          child: Column(
+                            children: [
+                              // Top Section with Icon and Status Badge
+                              Container(
+                                height: 140,
+                                decoration: BoxDecoration(
+                                  color: iconColor.withOpacity(0.15),
+                                ),
+                                child: Stack(
+                                  children: [
+                                    Center(
+                                      child: Icon(
+                                        Icons.description,
+                                        size: 48,
+                                        color: iconColor,
+                                      ),
+                                    ),
+                                    Positioned(
+                                      top: 12,
+                                      right: 12,
+                                      child: Container(
+                                        padding: EdgeInsets.symmetric(
+                                          horizontal: 10,
+                                          vertical: 6,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: statusColor.withOpacity(0.8),
+                                          borderRadius: BorderRadius.circular(
+                                            6,
+                                          ),
+                                        ),
+                                        child: Text(
+                                          statusLabel,
+                                          style: TextStyle(
+                                            fontSize: 10,
+                                            fontWeight: FontWeight.w600,
+                                            color: _p.textPrimary,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              // Bottom Section with Details
+                              Expanded(
+                                child: Padding(
+                                  padding: EdgeInsets.all(16),
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        doc['filename'] ?? 'Untitled',
+                                        style: TextStyle(
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w600,
+                                          color: _p.textPrimary,
+                                        ),
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                      SizedBox(height: 6),
+                                      Text(
+                                        doc['template_name'] ?? 'No template',
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          color: _p.textSecondary,
+                                        ),
+                                      ),
+                                      SizedBox(height: 8),
+                                      Text(
+                                        'Modified ${_getTimeAgo(doc['created_at'] ?? DateTime.now())}',
+                                        style: TextStyle(
+                                          fontSize: 10,
+                                          color: _p.textSecondary,
+                                        ),
+                                      ),
+                                      if (doc['has_formatted'] == true) ...[
+                                        SizedBox(height: 6),
+                                        Container(
+                                          padding: EdgeInsets.symmetric(
+                                            horizontal: 8,
+                                            vertical: 3,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: Color(
+                                              0xFF10B981,
+                                            ).withOpacity(0.12),
+                                            borderRadius: BorderRadius.circular(
+                                              6,
+                                            ),
+                                          ),
+                                          child: Text(
+                                            'Formatted + Unformatted available',
+                                            style: TextStyle(
+                                              fontSize: 10,
+                                              fontWeight: FontWeight.w600,
+                                              color: Color(0xFF059669),
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                      Spacer(),
+                                      // Version access + actions
+                                      Row(
+                                        children: [
+                                          Expanded(
+                                            child: OutlinedButton(
+                                              onPressed: () =>
+                                                  _handleDownloadVersion(
+                                                    doc,
+                                                    version: 'unformatted',
+                                                  ),
+                                              style: OutlinedButton.styleFrom(
+                                                foregroundColor: _p.textPrimary,
+                                                side: BorderSide(
+                                                  color: _p.border,
+                                                ),
+                                                padding: EdgeInsets.symmetric(
+                                                  vertical: 8,
+                                                ),
+                                                shape: RoundedRectangleBorder(
+                                                  borderRadius:
+                                                      BorderRadius.circular(6),
+                                                ),
+                                              ),
+                                              child: Text(
+                                                'Unformatted',
+                                                style: TextStyle(
+                                                  fontSize: 10,
+                                                  fontWeight: FontWeight.w700,
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                          SizedBox(width: 6),
+                                          Expanded(
+                                            child: OutlinedButton(
+                                              onPressed:
+                                                  doc['has_formatted'] == true
+                                                  ? () =>
+                                                        _handleDownloadVersion(
+                                                          doc,
+                                                          version: 'formatted',
+                                                        )
+                                                  : () =>
+                                                        _showFormattedMissingHint(),
+                                              style: OutlinedButton.styleFrom(
+                                                foregroundColor:
+                                                    doc['has_formatted'] == true
+                                                    ? _p.accent
+                                                    : _p.textMuted,
+                                                side: BorderSide(
+                                                  color:
+                                                      doc['has_formatted'] ==
+                                                          true
+                                                      ? _p.accent
+                                                      : _p.border,
+                                                ),
+                                                padding: EdgeInsets.symmetric(
+                                                  vertical: 8,
+                                                ),
+                                                shape: RoundedRectangleBorder(
+                                                  borderRadius:
+                                                      BorderRadius.circular(6),
+                                                ),
+                                              ),
+                                              child: Text(
+                                                'Formatted',
+                                                style: TextStyle(
+                                                  fontSize: 10,
+                                                  fontWeight: FontWeight.w700,
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                          SizedBox(width: 4),
+                                          PopupMenuButton<String>(
+                                            onSelected: (value) {
+                                              if (value == 'analyze') {
+                                                _openAnalyzeScreen(doc);
+                                              } else if (value == 'preview') {
+                                                _showPreview(doc);
+                                              } else if (value == 'rename') {
+                                                _showRenameDialog(doc);
+                                              } else if (value == 'edit') {
+                                                _showEditDialog(
+                                                  doc,
+                                                  auth.userId!,
+                                                );
+                                              } else if (value == 'send' &&
+                                                  DevUserConfig.hasFypModule) {
+                                                _sendReportToSupervisor(doc);
+                                              } else if (value == 'delete') {
+                                                _handleDelete(doc);
+                                              }
+                                            },
+                                            itemBuilder: (context) => [
+                                              const PopupMenuItem(
+                                                value: 'analyze',
+                                                child: Row(
+                                                  children: [
+                                                    Icon(
+                                                      Icons.analytics_outlined,
+                                                      size: 16,
+                                                      color: Color(0xFF10B981),
+                                                    ),
+                                                    SizedBox(width: 8),
+                                                    Text('Analyze'),
+                                                  ],
+                                                ),
+                                              ),
+                                              if (DevUserConfig.hasFypModule)
+                                                const PopupMenuItem(
+                                                  value: 'send',
+                                                  child: Row(
+                                                    children: [
+                                                      Icon(
+                                                        Icons.send_rounded,
+                                                        size: 16,
+                                                        color: Color(
+                                                          0xFF10B981,
+                                                        ),
+                                                      ),
+                                                      SizedBox(width: 8),
+                                                      Text(
+                                                        'Send to Supervisor',
+                                                      ),
+                                                    ],
+                                                  ),
+                                                ),
+                                              const PopupMenuItem(
+                                                value: 'preview',
+                                                child: Row(
+                                                  children: [
+                                                    Icon(
+                                                      Icons.preview,
+                                                      size: 16,
+                                                    ),
+                                                    SizedBox(width: 8),
+                                                    Text('Preview'),
+                                                  ],
+                                                ),
+                                              ),
+                                              const PopupMenuItem(
+                                                value: 'rename',
+                                                child: Row(
+                                                  children: [
+                                                    Icon(
+                                                      Icons
+                                                          .drive_file_rename_outline,
+                                                      size: 16,
+                                                    ),
+                                                    SizedBox(width: 8),
+                                                    Text('Rename'),
+                                                  ],
+                                                ),
+                                              ),
+                                              const PopupMenuItem(
+                                                value: 'edit',
+                                                child: Row(
+                                                  children: [
+                                                    Icon(
+                                                      Icons.edit_outlined,
+                                                      size: 16,
+                                                    ),
+                                                    SizedBox(width: 8),
+                                                    Text('Edit'),
+                                                  ],
+                                                ),
+                                              ),
+                                              const PopupMenuItem(
+                                                value: 'delete',
+                                                child: Row(
+                                                  children: [
+                                                    Icon(
+                                                      Icons.delete,
+                                                      size: 16,
+                                                      color: Colors.red,
+                                                    ),
+                                                    SizedBox(width: 8),
+                                                    Text(
+                                                      'Delete',
+                                                      style: TextStyle(
+                                                        color: Colors.red,
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                            ],
+                                            child: Icon(
+                                              Icons.more_vert,
+                                              size: 16,
+                                              color: _p.textSecondary,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                SizedBox(height: 40),
+                // Pagination
+                if (filteredDocs.isNotEmpty)
+                  Center(
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          icon: Icon(Icons.chevron_left),
+                          color: _p.textSecondary,
+                          onPressed: _currentPage > 1
+                              ? () => setState(() => _currentPage--)
+                              : null,
+                        ),
+                        for (int i = 1; i <= totalPages && i <= 3; i++)
+                          GestureDetector(
+                            onTap: () => setState(() => _currentPage = i),
+                            child: Padding(
+                              padding: EdgeInsets.symmetric(horizontal: 4),
+                              child: Container(
+                                width: 32,
+                                height: 32,
+                                decoration: BoxDecoration(
+                                  color: i == _currentPage
+                                      ? _p.accent
+                                      : _p.surface,
+                                  borderRadius: BorderRadius.circular(6),
+                                  border: Border.all(color: _p.border),
+                                ),
+                                child: Center(
+                                  child: Text(
+                                    '$i',
+                                    style: TextStyle(
+                                      color: i == _currentPage
+                                          ? Colors.white
+                                          : _p.textSecondary,
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        if (totalPages > 3)
+                          Text(
+                            '...',
                             style: TextStyle(
                               color: _p.textSecondary,
                               fontSize: 13,
                             ),
                           ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              SizedBox(height: compact ? 20 : 28),
-              // Grid / list of Reports
-              if (docProvider.isLoading)
-                Center(child: CircularProgressIndicator())
-              else if (paginatedDocs.isEmpty)
-                Center(
-                  child: Padding(
-                    padding: EdgeInsets.symmetric(vertical: 48),
-                    child: Column(
-                      children: [
-                        Icon(
-                          Icons.folder_open,
-                          size: 48,
-                          color: _p.textMuted,
-                        ),
-                        SizedBox(height: 16),
-                        Text(
-                          'No reports found',
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: _p.textSecondary,
+                        if (totalPages > 3)
+                          GestureDetector(
+                            onTap: () =>
+                                setState(() => _currentPage = totalPages),
+                            child: Padding(
+                              padding: EdgeInsets.symmetric(horizontal: 4),
+                              child: Container(
+                                width: 32,
+                                height: 32,
+                                decoration: BoxDecoration(
+                                  color: totalPages == _currentPage
+                                      ? _p.accent
+                                      : _p.surface,
+                                  borderRadius: BorderRadius.circular(6),
+                                  border: Border.all(color: _p.border),
+                                ),
+                                child: Center(
+                                  child: Text(
+                                    '$totalPages',
+                                    style: TextStyle(
+                                      color: totalPages == _currentPage
+                                          ? Colors.white
+                                          : _p.textSecondary,
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
                           ),
+                        IconButton(
+                          icon: Icon(Icons.chevron_right),
+                          color: _p.textSecondary,
+                          onPressed: _currentPage < totalPages
+                              ? () => setState(() => _currentPage++)
+                              : null,
                         ),
                       ],
                     ),
                   ),
-                )
-              else if (compact)
-                Column(
-                  children: [
-                    for (final doc in paginatedDocs)
-                      Padding(
-                        padding: EdgeInsets.only(bottom: 10),
-                        child: _buildMobileReportCard(doc),
-                      ),
-                  ],
-                )
-              else
-                GridView.builder(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 3,
-                    crossAxisSpacing: 24,
-                    mainAxisSpacing: 24,
-                    // Taller cards so Unformatted / Formatted actions fit cleanly.
-                    childAspectRatio: 0.72,
-                  ),
-                  itemCount: paginatedDocs.length,
-                  itemBuilder: (context, index) {
-                    final doc = paginatedDocs[index];
-                    final status = doc['status'] ?? 'draft';
-                    final statusColor = _getStatusColor(status);
-                    final statusLabel = _getStatusLabel(status);
-                    final iconColor = _getIconColor(status);
-
-                    return Container(
-                      decoration: _cardDeco(),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(
-                          _p.isDark ? _p.cardRadius : 12,
-                        ),
-                        child: Column(
-                        children: [
-                          // Top Section with Icon and Status Badge
-                          Container(
-                            height: 140,
-                            decoration: BoxDecoration(
-                              color: iconColor.withOpacity(0.15),
-                            ),
-                            child: Stack(
-                              children: [
-                                Center(
-                                  child: Icon(
-                                    Icons.description,
-                                    size: 48,
-                                    color: iconColor,
-                                  ),
-                                ),
-                                Positioned(
-                                  top: 12,
-                                  right: 12,
-                                  child: Container(
-                                    padding: EdgeInsets.symmetric(
-                                      horizontal: 10,
-                                      vertical: 6,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: statusColor.withOpacity(0.8),
-                                      borderRadius: BorderRadius.circular(6),
-                                    ),
-                                    child: Text(
-                                      statusLabel,
-                                      style: TextStyle(
-                                        fontSize: 10,
-                                        fontWeight: FontWeight.w600,
-                                        color: _p.textPrimary,
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          // Bottom Section with Details
-                          Expanded(
-                            child: Padding(
-                              padding: EdgeInsets.all(16),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    doc['filename'] ?? 'Untitled',
-                                    style: TextStyle(
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.w600,
-                                      color: _p.textPrimary,
-                                    ),
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                  SizedBox(height: 6),
-                                  Text(
-                                    doc['template_name'] ?? 'No template',
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      color: _p.textSecondary,
-                                    ),
-                                  ),
-                                  SizedBox(height: 8),
-                                  Text(
-                                    'Modified ${_getTimeAgo(doc['created_at'] ?? DateTime.now())}',
-                                    style: TextStyle(
-                                      fontSize: 10,
-                                      color: _p.textSecondary,
-                                    ),
-                                  ),
-                                  if (doc['has_formatted'] == true) ...[
-                                    SizedBox(height: 6),
-                                    Container(
-                                      padding: EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                      decoration: BoxDecoration(
-                                        color: Color(0xFF10B981).withOpacity(0.12),
-                                        borderRadius: BorderRadius.circular(6),
-                                      ),
-                                      child: Text(
-                                        'Formatted + Unformatted available',
-                                        style: TextStyle(
-                                          fontSize: 10,
-                                          fontWeight: FontWeight.w600,
-                                          color: Color(0xFF059669),
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                  Spacer(),
-                                  // Version access + actions
-                                  Row(
-                                    children: [
-                                      Expanded(
-                                        child: OutlinedButton(
-                                          onPressed: () => _handleDownloadVersion(
-                                            doc,
-                                            version: 'unformatted',
-                                          ),
-                                          style: OutlinedButton.styleFrom(
-                                            foregroundColor: _p.textPrimary,
-                                            side: BorderSide(color: _p.border),
-                                            padding: EdgeInsets.symmetric(vertical: 8),
-                                            shape: RoundedRectangleBorder(
-                                              borderRadius: BorderRadius.circular(6),
-                                            ),
-                                          ),
-                                          child: Text(
-                                            'Unformatted',
-                                            style: TextStyle(
-                                              fontSize: 10,
-                                              fontWeight: FontWeight.w700,
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                      SizedBox(width: 6),
-                                      Expanded(
-                                        child: OutlinedButton(
-                                          onPressed: doc['has_formatted'] == true
-                                              ? () => _handleDownloadVersion(
-                                                    doc,
-                                                    version: 'formatted',
-                                                  )
-                                              : () => _showFormattedMissingHint(),
-                                          style: OutlinedButton.styleFrom(
-                                            foregroundColor: doc['has_formatted'] == true
-                                                ? _p.accent
-                                                : _p.textMuted,
-                                            side: BorderSide(
-                                              color: doc['has_formatted'] == true
-                                                  ? _p.accent
-                                                  : _p.border,
-                                            ),
-                                            padding: EdgeInsets.symmetric(vertical: 8),
-                                            shape: RoundedRectangleBorder(
-                                              borderRadius: BorderRadius.circular(6),
-                                            ),
-                                          ),
-                                          child: Text(
-                                            'Formatted',
-                                            style: TextStyle(
-                                              fontSize: 10,
-                                              fontWeight: FontWeight.w700,
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                      SizedBox(width: 4),
-                                      PopupMenuButton<String>(
-                                        onSelected: (value) {
-                                          if (value == 'analyze') {
-                                            _openAnalyzeScreen(doc);
-                                          } else if (value == 'preview') {
-                                            _showPreview(doc);
-                                          } else if (value == 'rename') {
-                                            _showRenameDialog(doc);
-                                          } else if (value == 'edit') {
-                                            _showEditDialog(doc, auth.userId!);
-                                          } else if (value == 'send' &&
-                                              DevUserConfig.hasFypModule) {
-                                            _sendReportToSupervisor(doc);
-                                          } else if (value == 'delete') {
-                                            _handleDelete(doc);
-                                          }
-                                        },
-                                        itemBuilder: (context) => [
-                                          const PopupMenuItem(
-                                            value: 'analyze',
-                                            child: Row(
-                                              children: [
-                                                Icon(Icons.analytics_outlined, size: 16, color: Color(0xFF10B981)),
-                                                SizedBox(width: 8),
-                                                Text('Analyze'),
-                                              ],
-                                            ),
-                                          ),
-                                          if (DevUserConfig.hasFypModule)
-                                            const PopupMenuItem(
-                                              value: 'send',
-                                              child: Row(
-                                                children: [
-                                                  Icon(Icons.send_rounded, size: 16, color: Color(0xFF10B981)),
-                                                  SizedBox(width: 8),
-                                                  Text('Send to Supervisor'),
-                                                ],
-                                              ),
-                                            ),
-                                          const PopupMenuItem(
-                                            value: 'preview',
-                                            child: Row(
-                                              children: [
-                                                Icon(Icons.preview, size: 16),
-                                                SizedBox(width: 8),
-                                                Text('Preview'),
-                                              ],
-                                            ),
-                                          ),
-                                          const PopupMenuItem(
-                                            value: 'rename',
-                                            child: Row(
-                                              children: [
-                                                Icon(Icons.drive_file_rename_outline, size: 16),
-                                                SizedBox(width: 8),
-                                                Text('Rename'),
-                                              ],
-                                            ),
-                                          ),
-                                          const PopupMenuItem(
-                                            value: 'edit',
-                                            child: Row(
-                                              children: [
-                                                Icon(Icons.edit_outlined, size: 16),
-                                                SizedBox(width: 8),
-                                                Text('Edit'),
-                                              ],
-                                            ),
-                                          ),
-                                          const PopupMenuItem(
-                                            value: 'delete',
-                                            child: Row(
-                                              children: [
-                                                Icon(Icons.delete, size: 16, color: Colors.red),
-                                                SizedBox(width: 8),
-                                                Text('Delete', style: TextStyle(color: Colors.red)),
-                                              ],
-                                            ),
-                                          ),
-                                        ],
-                                        child: Icon(
-                                          Icons.more_vert,
-                                          size: 16,
-                                          color: _p.textSecondary,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      ),
-                    );
-                  },
-                ),
-              SizedBox(height: 40),
-              // Pagination
-              if (filteredDocs.isNotEmpty)
-                Center(
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      IconButton(
-                        icon: Icon(Icons.chevron_left),
-                        color: _p.textSecondary,
-                        onPressed: _currentPage > 1
-                            ? () => setState(() => _currentPage--)
-                            : null,
-                      ),
-                      for (int i = 1; i <= totalPages && i <= 3; i++)
-                        GestureDetector(
-                          onTap: () => setState(() => _currentPage = i),
-                          child: Padding(
-                            padding: EdgeInsets.symmetric(horizontal: 4),
-                            child: Container(
-                              width: 32,
-                              height: 32,
-                              decoration: BoxDecoration(
-                                color: i == _currentPage
-                                    ? _p.accent
-                                    : _p.surface,
-                                borderRadius: BorderRadius.circular(6),
-                                border: Border.all(
-                                  color: _p.border,
-                                ),
-                              ),
-                              child: Center(
-                                child: Text(
-                                  '$i',
-                                  style: TextStyle(
-                                    color: i == _currentPage ? Colors.white : _p.textSecondary,
-                                    fontWeight: FontWeight.w600,
-                                    fontSize: 13,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      if (totalPages > 3)
-                        Text(
-                          '...',
-                          style: TextStyle(
-                            color: _p.textSecondary,
-                            fontSize: 13,
-                          ),
-                        ),
-                      if (totalPages > 3)
-                        GestureDetector(
-                          onTap: () => setState(() => _currentPage = totalPages),
-                          child: Padding(
-                            padding: EdgeInsets.symmetric(horizontal: 4),
-                            child: Container(
-                              width: 32,
-                              height: 32,
-                              decoration: BoxDecoration(
-                                color: totalPages == _currentPage
-                                    ? _p.accent
-                                    : _p.surface,
-                                borderRadius: BorderRadius.circular(6),
-                                border: Border.all(
-                                  color: _p.border,
-                                ),
-                              ),
-                              child: Center(
-                                child: Text(
-                                  '$totalPages',
-                                  style: TextStyle(
-                                    color: totalPages == _currentPage ? Colors.white : _p.textSecondary,
-                                    fontWeight: FontWeight.w600,
-                                    fontSize: 13,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      IconButton(
-                        icon: Icon(Icons.chevron_right),
-                        color: _p.textSecondary,
-                        onPressed: _currentPage < totalPages
-                            ? () => setState(() => _currentPage++)
-                            : null,
-                      ),
-                    ],
-                  ),
-                ),
-            ],
+              ],
+            ),
           ),
-        ),
         );
       },
     );
@@ -2437,9 +2456,8 @@ class _StudentDashboardState extends State<StudentDashboard> {
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (_) => Center(
-        child: CircularProgressIndicator(color: Color(0xFF10B981)),
-      ),
+      builder: (_) =>
+          Center(child: CircularProgressIndicator(color: Color(0xFF10B981))),
     );
 
     final result = await docs.submitFinalSubmission(
@@ -2497,10 +2515,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
             SizedBox(width: 8),
             Text(
               label,
-              style: TextStyle(
-                color: _p.textSecondary,
-                fontSize: 13,
-              ),
+              style: TextStyle(color: _p.textSecondary, fontSize: 13),
             ),
           ],
         ),
@@ -2530,7 +2545,11 @@ class _StudentDashboardState extends State<StudentDashboard> {
                   color: iconColor.withOpacity(0.15),
                   borderRadius: BorderRadius.circular(10),
                 ),
-                child: Icon(Icons.description_outlined, color: iconColor, size: 22),
+                child: Icon(
+                  Icons.description_outlined,
+                  color: iconColor,
+                  size: 22,
+                ),
               ),
               SizedBox(width: 12),
               Expanded(
@@ -2552,10 +2571,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
                       doc['template_name'] ?? 'No template',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: _p.textSecondary,
-                      ),
+                      style: TextStyle(fontSize: 12, color: _p.textSecondary),
                     ),
                   ],
                 ),
@@ -2581,10 +2597,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
           SizedBox(height: 10),
           Text(
             'Modified ${_getTimeAgo(doc['created_at'] ?? DateTime.now())}',
-            style: TextStyle(
-              fontSize: 11,
-              color: _p.textMuted,
-            ),
+            style: TextStyle(fontSize: 11, color: _p.textMuted),
           ),
           SizedBox(height: 12),
           if (doc['has_formatted'] == true)
@@ -2648,10 +2661,8 @@ class _StudentDashboardState extends State<StudentDashboard> {
                 child: SizedBox(
                   height: 40,
                   child: OutlinedButton(
-                    onPressed: () => _handleDownloadVersion(
-                      doc,
-                      version: 'unformatted',
-                    ),
+                    onPressed: () =>
+                        _handleDownloadVersion(doc, version: 'unformatted'),
                     style: OutlinedButton.styleFrom(
                       foregroundColor: _p.textPrimary,
                       side: BorderSide(color: _p.border),
@@ -2661,7 +2672,10 @@ class _StudentDashboardState extends State<StudentDashboard> {
                     ),
                     child: Text(
                       'Unformatted',
-                      style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12),
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 12,
+                      ),
                     ),
                   ),
                 ),
@@ -2672,10 +2686,8 @@ class _StudentDashboardState extends State<StudentDashboard> {
                   height: 40,
                   child: OutlinedButton(
                     onPressed: doc['has_formatted'] == true
-                        ? () => _handleDownloadVersion(
-                              doc,
-                              version: 'formatted',
-                            )
+                        ? () =>
+                              _handleDownloadVersion(doc, version: 'formatted')
                         : () => _showFormattedMissingHint(),
                     style: OutlinedButton.styleFrom(
                       foregroundColor: doc['has_formatted'] == true
@@ -2692,7 +2704,10 @@ class _StudentDashboardState extends State<StudentDashboard> {
                     ),
                     child: Text(
                       'Formatted',
-                      style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12),
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 12,
+                      ),
                     ),
                   ),
                 ),
@@ -2807,13 +2822,19 @@ class _StudentDashboardState extends State<StudentDashboard> {
     );
 
     if (entered == null || entered.isEmpty || !mounted) return;
-    final saved = await docProvider.renameDocument(docId, userId, '$entered$ext');
+    final saved = await docProvider.renameDocument(
+      docId,
+      userId,
+      '$entered$ext',
+    );
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(saved != null
-            ? 'Report renamed'
-            : (docProvider.errorMessage ?? 'Rename failed')),
+        content: Text(
+          saved != null
+              ? 'Report renamed'
+              : (docProvider.errorMessage ?? 'Rename failed'),
+        ),
         backgroundColor: saved != null ? Color(0xFF10B981) : Color(0xFFEF4444),
       ),
     );
@@ -2831,17 +2852,21 @@ class _StudentDashboardState extends State<StudentDashboard> {
         builder: (context, setState) {
           // Load document content
           if (isLoading) {
-            docProvider.getPreview(doc['id'], userId).then((previewData) {
-              if (previewData != null) {
-                editController.text = previewData['formatted_content'] ?? '';
-              }
-              setState(() => isLoading = false);
-            }).catchError((error) {
-              setState(() {
-                isLoading = false;
-                editError = 'Failed to load document';
-              });
-            });
+            docProvider
+                .getPreview(doc['id'], userId)
+                .then((previewData) {
+                  if (previewData != null) {
+                    editController.text =
+                        previewData['formatted_content'] ?? '';
+                  }
+                  setState(() => isLoading = false);
+                })
+                .catchError((error) {
+                  setState(() {
+                    isLoading = false;
+                    editError = 'Failed to load document';
+                  });
+                });
           }
 
           return Dialog(
@@ -2864,11 +2889,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
                   Container(
                     padding: EdgeInsets.all(20),
                     decoration: BoxDecoration(
-                      border: Border(
-                        bottom: BorderSide(
-                          color: _p.border,
-                        ),
-                      ),
+                      border: Border(bottom: BorderSide(color: _p.border)),
                     ),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -2883,29 +2904,20 @@ class _StudentDashboardState extends State<StudentDashboard> {
                         ),
                         GestureDetector(
                           onTap: () => Navigator.pop(context),
-                          child: Icon(
-                            Icons.close,
-                            color: _p.textSecondary,
-                          ),
+                          child: Icon(Icons.close, color: _p.textSecondary),
                         ),
                       ],
                     ),
                   ),
                   // Content
                   if (isLoading)
-                    Expanded(
-                      child: Center(
-                        child: CircularProgressIndicator(),
-                      ),
-                    )
+                    Expanded(child: Center(child: CircularProgressIndicator()))
                   else if (editError != null)
                     Expanded(
                       child: Center(
                         child: Text(
                           editError!,
-                          style: TextStyle(
-                            color: _p.textSecondary,
-                          ),
+                          style: TextStyle(color: _p.textSecondary),
                         ),
                       ),
                     )
@@ -2929,21 +2941,15 @@ class _StudentDashboardState extends State<StudentDashboard> {
                             ),
                             border: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(8),
-                              borderSide: BorderSide(
-                                color: _p.border,
-                              ),
+                              borderSide: BorderSide(color: _p.border),
                             ),
                             enabledBorder: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(8),
-                              borderSide: BorderSide(
-                                color: _p.border,
-                              ),
+                              borderSide: BorderSide(color: _p.border),
                             ),
                             focusedBorder: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(8),
-                              borderSide: BorderSide(
-                                color: _p.accent,
-                              ),
+                              borderSide: BorderSide(color: _p.accent),
                             ),
                             filled: true,
                             fillColor: _p.surface,
@@ -2956,11 +2962,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
                   Container(
                     padding: EdgeInsets.all(20),
                     decoration: BoxDecoration(
-                      border: Border(
-                        top: BorderSide(
-                          color: _p.border,
-                        ),
-                      ),
+                      border: Border(top: BorderSide(color: _p.border)),
                     ),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.end,
@@ -2969,9 +2971,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
                           onPressed: () => Navigator.pop(context),
                           child: Text(
                             'Cancel',
-                            style: TextStyle(
-                              color: _p.textPrimary,
-                            ),
+                            style: TextStyle(color: _p.textPrimary),
                           ),
                         ),
                         SizedBox(width: 12),
@@ -2979,11 +2979,12 @@ class _StudentDashboardState extends State<StudentDashboard> {
                           onPressed: isLoading || editError != null
                               ? null
                               : () async {
-                                  final success = await docProvider.saveDocumentContent(
-                                    doc['id'],
-                                    editController.text,
-                                    userId,
-                                  );
+                                  final success = await docProvider
+                                      .saveDocumentContent(
+                                        doc['id'],
+                                        editController.text,
+                                        userId,
+                                      );
                                   if (!mounted) return;
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     SnackBar(
@@ -3020,7 +3021,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
     );
   }
 
-void _showPreview(Map<String, dynamic> doc) {
+  void _showPreview(Map<String, dynamic> doc) {
     final auth = context.read<AuthProvider>();
     final docProvider = context.read<DocumentProvider>();
     final isTemplate = doc['formatting_rules'] != null;
@@ -3035,12 +3036,8 @@ void _showPreview(Map<String, dynamic> doc) {
           height: MediaQuery.of(context).size.height * 0.85,
           decoration: BoxDecoration(
             color: _p.surfaceAlt,
-            borderRadius: BorderRadius.circular(
-              _p.isDark ? _p.cardRadius : 12,
-            ),
-            border: Border.all(
-              color: _p.isDark ? _p.borderStrong : _p.border,
-            ),
+            borderRadius: BorderRadius.circular(_p.isDark ? _p.cardRadius : 12),
+            border: Border.all(color: _p.isDark ? _p.borderStrong : _p.border),
             boxShadow: _p.isDark ? _p.cardShadow : null,
           ),
           child: Column(
@@ -3049,11 +3046,7 @@ void _showPreview(Map<String, dynamic> doc) {
               Container(
                 padding: EdgeInsets.symmetric(horizontal: 20, vertical: 16),
                 decoration: BoxDecoration(
-                  border: Border(
-                    bottom: BorderSide(
-                      color: _p.border,
-                    ),
-                  ),
+                  border: Border(bottom: BorderSide(color: _p.border)),
                 ),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -3062,7 +3055,9 @@ void _showPreview(Map<String, dynamic> doc) {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          isTemplate ? 'Template Preview' : (doc['filename'] ?? 'Document Preview'),
+                          isTemplate
+                              ? 'Template Preview'
+                              : (doc['filename'] ?? 'Document Preview'),
                           style: TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.w600,
@@ -3094,17 +3089,36 @@ void _showPreview(Map<String, dynamic> doc) {
                 child: isTemplate
                     ? DocumentPreviewPanel(
                         blocks: [
-                          {'type': 'heading', 'level': 1, 'text': 'Sample Heading 1'},
                           {
-                            'type': 'paragraph',
-                            'text': 'This is a sample paragraph showing how your documents will be formatted using this template with all applied styles, font selections, and correct margins.'
+                            'type': 'heading',
+                            'level': 1,
+                            'text': 'Sample Heading 1',
                           },
-                          {'type': 'heading', 'level': 2, 'text': 'Sample Heading 2'},
-                          {'type': 'list_item', 'list_style': 'bullet', 'text': 'First point to demonstrate bullet formatting'},
-                          {'type': 'list_item', 'list_style': 'bullet', 'text': 'Second point with consistent spacing'},
                           {
                             'type': 'paragraph',
-                            'text': 'Conclusion paragraph showing body text formatting with proper line spacing and font selection.'
+                            'text':
+                                'This is a sample paragraph showing how your documents will be formatted using this template with all applied styles, font selections, and correct margins.',
+                          },
+                          {
+                            'type': 'heading',
+                            'level': 2,
+                            'text': 'Sample Heading 2',
+                          },
+                          {
+                            'type': 'list_item',
+                            'list_style': 'bullet',
+                            'text':
+                                'First point to demonstrate bullet formatting',
+                          },
+                          {
+                            'type': 'list_item',
+                            'list_style': 'bullet',
+                            'text': 'Second point with consistent spacing',
+                          },
+                          {
+                            'type': 'paragraph',
+                            'text':
+                                'Conclusion paragraph showing body text formatting with proper line spacing and font selection.',
                           },
                         ],
                         issues: const [],
@@ -3114,15 +3128,21 @@ void _showPreview(Map<String, dynamic> doc) {
                         ignoredIssueIds: const {},
                         onApplyFix: (_, __) {},
                         onIgnoreIssue: (_) {},
-                        defaultFont: doc['formatting_rules']?['body_font'] ?? 'Times New Roman',
-                        bodyPt: (doc['formatting_rules']?['body_size'] ?? 12).toDouble(),
+                        defaultFont:
+                            doc['formatting_rules']?['body_font'] ??
+                            'Times New Roman',
+                        bodyPt: (doc['formatting_rules']?['body_size'] ?? 12)
+                            .toDouble(),
                       )
                     : FutureBuilder<Map<String, dynamic>?>(
                         future: docProvider.getPreview(doc['id'], auth.userId!),
                         builder: (context, snapshot) {
-                          if (snapshot.connectionState == ConnectionState.waiting) {
+                          if (snapshot.connectionState ==
+                              ConnectionState.waiting) {
                             return Center(
-                              child: CircularProgressIndicator(color: _p.accent),
+                              child: CircularProgressIndicator(
+                                color: _p.accent,
+                              ),
                             );
                           }
 
@@ -3136,8 +3156,10 @@ void _showPreview(Map<String, dynamic> doc) {
                           }
 
                           final previewData = snapshot.data!;
-                          final rawLines = previewData['formatted_lines'] ?? previewData['blocks'];
-                          
+                          final rawLines =
+                              previewData['formatted_lines'] ??
+                              previewData['blocks'];
+
                           // Normalize content into standard block maps expected by DocumentPreviewPanel
                           List<Map<String, dynamic>> blocks = [];
                           if (rawLines is List) {
@@ -3156,8 +3178,10 @@ void _showPreview(Map<String, dynamic> doc) {
                             blocks = [
                               {
                                 'type': 'paragraph',
-                                'text': previewData['formatted_content'] ?? 'No content available.',
-                              }
+                                'text':
+                                    previewData['formatted_content'] ??
+                                    'No content available.',
+                              },
                             ];
                           }
 
@@ -3191,13 +3215,24 @@ void _showPreview(Map<String, dynamic> doc) {
     // Sample content to show template formatting
     final sampleContent = [
       {'text': 'Sample Heading 1', 'type': 'heading1'},
-      {'text': 'This is a sample paragraph showing how your documents will be formatted using this template.', 'type': 'paragraph'},
+      {
+        'text':
+            'This is a sample paragraph showing how your documents will be formatted using this template.',
+        'type': 'paragraph',
+      },
       {'text': 'Sample Heading 2', 'type': 'heading2'},
       {'text': 'Key Points:', 'type': 'heading3'},
-      {'text': 'First point to demonstrate bullet formatting', 'type': 'bullet'},
+      {
+        'text': 'First point to demonstrate bullet formatting',
+        'type': 'bullet',
+      },
       {'text': 'Second point with consistent spacing', 'type': 'bullet'},
       {'text': 'Third point showing style application', 'type': 'bullet'},
-      {'text': 'Conclusion paragraph showing body text formatting with proper line spacing and font selection.', 'type': 'paragraph'},
+      {
+        'text':
+            'Conclusion paragraph showing body text formatting with proper line spacing and font selection.',
+        'type': 'paragraph',
+      },
     ];
 
     return SingleChildScrollView(
@@ -3209,10 +3244,7 @@ void _showPreview(Map<String, dynamic> doc) {
           borderRadius: BorderRadius.circular(8),
           border: Border.all(color: _p.border),
           boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.12),
-              blurRadius: 8,
-            ),
+            BoxShadow(color: Colors.black.withOpacity(0.12), blurRadius: 8),
           ],
         ),
         padding: EdgeInsets.all(40),
@@ -3256,14 +3288,19 @@ void _showPreview(Map<String, dynamic> doc) {
                   ElevatedButton.icon(
                     onPressed: () {
                       ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('Request Template feature coming soon')),
+                        SnackBar(
+                          content: Text('Request Template feature coming soon'),
+                        ),
                       );
                     },
                     icon: Icon(Icons.add, size: 18),
                     label: Text('Request Template'),
                     style: ElevatedButton.styleFrom(
                       foregroundColor: Colors.white,
-                      padding: EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                      padding: EdgeInsets.symmetric(
+                        horizontal: 24,
+                        vertical: 12,
+                      ),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(8),
                       ),
@@ -3319,11 +3356,26 @@ void _showPreview(Map<String, dynamic> doc) {
                         }
                       },
                       items: [
-                        const DropdownMenuItem(value: 'all', child: Text('All Categories')),
-                        const DropdownMenuItem(value: 'engineering', child: Text('Engineering')),
-                        const DropdownMenuItem(value: 'sciences', child: Text('Sciences')),
-                        const DropdownMenuItem(value: 'business', child: Text('Business')),
-                        const DropdownMenuItem(value: 'humanities', child: Text('Humanities')),
+                        const DropdownMenuItem(
+                          value: 'all',
+                          child: Text('All Categories'),
+                        ),
+                        const DropdownMenuItem(
+                          value: 'engineering',
+                          child: Text('Engineering'),
+                        ),
+                        const DropdownMenuItem(
+                          value: 'sciences',
+                          child: Text('Sciences'),
+                        ),
+                        const DropdownMenuItem(
+                          value: 'business',
+                          child: Text('Business'),
+                        ),
+                        const DropdownMenuItem(
+                          value: 'humanities',
+                          child: Text('Humanities'),
+                        ),
                       ],
                     ),
                   ),
@@ -3346,9 +3398,18 @@ void _showPreview(Map<String, dynamic> doc) {
                         }
                       },
                       items: [
-                        const DropdownMenuItem(value: 'popular', child: Text('Most Popular')),
-                        const DropdownMenuItem(value: 'recent', child: Text('Most Recent')),
-                        const DropdownMenuItem(value: 'name', child: Text('Name (A-Z)')),
+                        const DropdownMenuItem(
+                          value: 'popular',
+                          child: Text('Most Popular'),
+                        ),
+                        const DropdownMenuItem(
+                          value: 'recent',
+                          child: Text('Most Recent'),
+                        ),
+                        const DropdownMenuItem(
+                          value: 'name',
+                          child: Text('Name (A-Z)'),
+                        ),
                       ],
                     ),
                   ),
@@ -3409,7 +3470,10 @@ void _showPreview(Map<String, dynamic> doc) {
                         onPressed: () => _showPreview(_selectedTemplate!),
                         style: ElevatedButton.styleFrom(
                           foregroundColor: Colors.white,
-                          padding: EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                          padding: EdgeInsets.symmetric(
+                            horizontal: 20,
+                            vertical: 10,
+                          ),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(6),
                           ),
@@ -3484,10 +3548,7 @@ void _showPreview(Map<String, dynamic> doc) {
                 DevUserConfig.hasFypModule
                     ? 'Loaded from your university database'
                     : 'Templates configured for your organization',
-                style: TextStyle(
-                  fontSize: 13,
-                  color: _p.textSecondary,
-                ),
+                style: TextStyle(fontSize: 13, color: _p.textSecondary),
               ),
               SizedBox(height: 20),
               if (templateProvider.isLoading)
@@ -3526,10 +3587,7 @@ void _showPreview(Map<String, dynamic> doc) {
                     padding: EdgeInsets.symmetric(vertical: 48),
                     child: Text(
                       'No templates yet. Ask your admin to add templates in Template Manager.',
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: _p.textSecondary,
-                      ),
+                      style: TextStyle(fontSize: 14, color: _p.textSecondary),
                       textAlign: TextAlign.center,
                     ),
                   ),
@@ -3567,7 +3625,11 @@ void _showPreview(Map<String, dynamic> doc) {
                           color: _p.accent.withValues(alpha: 0.12),
                           shape: BoxShape.circle,
                         ),
-                        child: Icon(Icons.help_outline, color: _p.accent, size: 28),
+                        child: Icon(
+                          Icons.help_outline,
+                          color: _p.accent,
+                          size: 28,
+                        ),
                       ),
                       SizedBox(height: 16),
                       Text(
@@ -3584,21 +3646,25 @@ void _showPreview(Map<String, dynamic> doc) {
                       Text(
                         'Request a custom template and we\'ll add it within 48 hours',
                         textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: _p.textSecondary,
-                        ),
+                        style: TextStyle(fontSize: 14, color: _p.textSecondary),
                       ),
                       SizedBox(height: 24),
                       ElevatedButton(
                         onPressed: () {
                           ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text('Custom template request submitted')),
+                            SnackBar(
+                              content: Text(
+                                'Custom template request submitted',
+                              ),
+                            ),
                           );
                         },
                         style: ElevatedButton.styleFrom(
                           foregroundColor: Colors.white,
-                          padding: EdgeInsets.symmetric(horizontal: 32, vertical: 14),
+                          padding: EdgeInsets.symmetric(
+                            horizontal: 32,
+                            vertical: 14,
+                          ),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(8),
                           ),
@@ -3625,7 +3691,6 @@ void _showPreview(Map<String, dynamic> doc) {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              
               Container(
                 decoration: _cardDeco(),
                 padding: EdgeInsets.all(20),
@@ -3673,10 +3738,7 @@ void _showPreview(Map<String, dynamic> doc) {
                       children: [
                         Text(
                           'Email Notifications',
-                          style: TextStyle(
-                            fontSize: 13,
-                            color: _p.textPrimary,
-                          ),
+                          style: TextStyle(fontSize: 13, color: _p.textPrimary),
                         ),
                         Switch(
                           value: true,
@@ -3743,7 +3805,9 @@ void _showPreview(Map<String, dynamic> doc) {
   Widget _buildTemplateCardNew(Map<String, dynamic> template, Color cardColor) {
     final displayName = (template['name'] ?? 'Template').toString();
     final description = (template['description'] ?? '').toString().trim();
-    final sections = List<dynamic>.from(template['required_sections'] ?? const []);
+    final sections = List<dynamic>.from(
+      template['required_sections'] ?? const [],
+    );
     final rules = Map<String, dynamic>.from(
       (template['formatting_rules'] is Map)
           ? Map<String, dynamic>.from(template['formatting_rules'] as Map)
@@ -3752,7 +3816,9 @@ void _showPreview(Map<String, dynamic> doc) {
 
     final details = <String>[];
     if (sections.isNotEmpty) {
-      details.add('${sections.length} required section${sections.length == 1 ? '' : 's'}');
+      details.add(
+        '${sections.length} required section${sections.length == 1 ? '' : 's'}',
+      );
     }
     final bodyFont = (rules['body_font'] ?? '').toString().trim();
     final bodySize = rules['body_size'];
@@ -3775,163 +3841,160 @@ void _showPreview(Map<String, dynamic> doc) {
     return Container(
       decoration: _cardDeco(),
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(
-          _p.isDark ? _p.cardRadius : 12,
-        ),
+        borderRadius: BorderRadius.circular(_p.isDark ? _p.cardRadius : 12),
         child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            width: double.infinity,
-            height: 120,
-            decoration: BoxDecoration(
-              // Dark: purple-system header. Light: keep multi-color cardColor variety.
-              gradient: _p.isDark
-                  ? LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [
-                        _p.accentAlt.withOpacity(0.55),
-                        _p.accent.withOpacity(0.35),
-                        _p.surfaceElevated,
-                      ],
-                    )
-                  : LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [cardColor, cardColor.withOpacity(0.8)],
-                    ),
-              color: _p.isDark ? null : cardColor,
-            ),
-            padding: EdgeInsets.all(20),
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: Text(
-                displayName,
-                maxLines: 3,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w600,
-                  color: _p.textPrimary,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: double.infinity,
+              height: 120,
+              decoration: BoxDecoration(
+                // Dark: purple-system header. Light: keep multi-color cardColor variety.
+                gradient: _p.isDark
+                    ? LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [
+                          _p.accentAlt.withOpacity(0.55),
+                          _p.accent.withOpacity(0.35),
+                          _p.surfaceElevated,
+                        ],
+                      )
+                    : LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [cardColor, cardColor.withOpacity(0.8)],
+                      ),
+                color: _p.isDark ? null : cardColor,
+              ),
+              padding: EdgeInsets.all(20),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  displayName,
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w600,
+                    color: _p.textPrimary,
+                  ),
                 ),
               ),
             ),
-          ),
-          Expanded(
-            child: Padding(
-              padding: EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    displayName,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: _p.textPrimary,
+            Expanded(
+              child: Padding(
+                padding: EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      displayName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: _p.textPrimary,
+                      ),
                     ),
-                  ),
-                  SizedBox(height: 6),
-                  Text(
-                    description.isEmpty
-                        ? 'No description provided'
-                        : description,
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: _p.textSecondary,
+                    SizedBox(height: 6),
+                    Text(
+                      description.isEmpty
+                          ? 'No description provided'
+                          : description,
+                      style: TextStyle(fontSize: 12, color: _p.textSecondary),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
                     ),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  SizedBox(height: 12),
-                  ...details.take(3).map(
-                    (detail) => Padding(
-                      padding: EdgeInsets.only(bottom: 6),
-                      child: Row(
-                        children: [
-                          Text(
-                            '• ',
-                            style: TextStyle(
-                              fontSize: 11,
-                              color: _p.textSecondary,
+                    SizedBox(height: 12),
+                    ...details
+                        .take(3)
+                        .map(
+                          (detail) => Padding(
+                            padding: EdgeInsets.only(bottom: 6),
+                            child: Row(
+                              children: [
+                                Text(
+                                  '• ',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: _p.textSecondary,
+                                  ),
+                                ),
+                                Expanded(
+                                  child: Text(
+                                    detail,
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: _p.textSecondary,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
-                          Expanded(
+                        ),
+                    Spacer(),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: () => _showPreview(template),
+                            style: OutlinedButton.styleFrom(
+                              side: BorderSide(color: _p.borderStrong),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                            ),
                             child: Text(
-                              detail,
+                              'Preview',
                               style: TextStyle(
                                 fontSize: 11,
-                                color: _p.textSecondary,
+                                fontWeight: FontWeight.w600,
+                                color: _p.textPrimary,
                               ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
                             ),
                           ),
-                        ],
-                      ),
+                        ),
+                        SizedBox(width: 8),
+                        Expanded(
+                          child: ElevatedButton(
+                            onPressed: () {
+                              setState(() {
+                                _selectedTemplate = template;
+                                _selectedIndex = 1;
+                                _activeProjectId = null;
+                              });
+                            },
+                            // No opaque backgroundColor — theme gradient CTA.
+                            // Sits in card body (surface), below header — not on gradient.
+                            style: ElevatedButton.styleFrom(
+                              foregroundColor: Colors.white,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                            ),
+                            child: Text(
+                              'Select',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
-                  ),
-                  Spacer(),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: OutlinedButton(
-                          onPressed: () => _showPreview(template),
-                          style: OutlinedButton.styleFrom(
-                            side: BorderSide(color: _p.borderStrong),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(6),
-                            ),
-                          ),
-                          child: Text(
-                            'Preview',
-                            style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w600,
-                              color: _p.textPrimary,
-                            ),
-                          ),
-                        ),
-                      ),
-                      SizedBox(width: 8),
-                      Expanded(
-                        child: ElevatedButton(
-                          onPressed: () {
-                            setState(() {
-                              _selectedTemplate = template;
-                              _selectedIndex = 1;
-                              _activeProjectId = null;
-                            });
-                          },
-                          // No opaque backgroundColor — theme gradient CTA.
-                          // Sits in card body (surface), below header — not on gradient.
-                          style: ElevatedButton.styleFrom(
-                            foregroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(6),
-                            ),
-                          ),
-                          child: Text(
-                            'Select',
-                            style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w600,
-                              color: Colors.white,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
-          ),
-        ],
-      ),
+          ],
+        ),
       ),
     );
   }
@@ -3947,9 +4010,7 @@ void _showPreview(Map<String, dynamic> doc) {
     return Dialog(
       backgroundColor: _p.surface,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(
-          _p.isDark ? _p.cardRadius : 12,
-        ),
+        borderRadius: BorderRadius.circular(_p.isDark ? _p.cardRadius : 12),
       ),
       child: Container(
         width: 400,
@@ -3969,10 +4030,7 @@ void _showPreview(Map<String, dynamic> doc) {
             SizedBox(height: 8),
             Text(
               'Using template: ${template['name']}',
-              style: TextStyle(
-                fontSize: 12,
-                color: _p.textSecondary,
-              ),
+              style: TextStyle(fontSize: 12, color: _p.textSecondary),
             ),
             SizedBox(height: 24),
             // Tab-like buttons for choosing upload method
@@ -4016,9 +4074,7 @@ void _showPreview(Map<String, dynamic> doc) {
                         padding: EdgeInsets.symmetric(vertical: 12),
                         decoration: BoxDecoration(
                           color: Colors.transparent,
-                          border: Border.all(
-                            color: _p.borderStrong,
-                          ),
+                          border: Border.all(color: _p.borderStrong),
                           borderRadius: BorderRadius.circular(6),
                         ),
                         child: Center(
@@ -4040,10 +4096,7 @@ void _showPreview(Map<String, dynamic> doc) {
             SizedBox(height: 20),
             Text(
               'Supported formats: PDF, DOCX, DOC, TXT',
-              style: TextStyle(
-                fontSize: 11,
-                color: _p.textSecondary,
-              ),
+              style: TextStyle(fontSize: 11, color: _p.textSecondary),
             ),
             SizedBox(height: 20),
             Row(
@@ -4154,9 +4207,7 @@ void _showPreview(Map<String, dynamic> doc) {
       builder: (context) => Dialog(
         backgroundColor: _p.surface,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(
-            _p.isDark ? _p.cardRadius : 12,
-          ),
+          borderRadius: BorderRadius.circular(_p.isDark ? _p.cardRadius : 12),
         ),
         child: Container(
           width: 500,
@@ -4176,10 +4227,7 @@ void _showPreview(Map<String, dynamic> doc) {
               SizedBox(height: 8),
               Text(
                 'Paste your document text below',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: _p.textSecondary,
-                ),
+                style: TextStyle(fontSize: 12, color: _p.textSecondary),
               ),
               SizedBox(height: 16),
               TextField(
@@ -4188,29 +4236,21 @@ void _showPreview(Map<String, dynamic> doc) {
                 style: TextStyle(color: _p.textPrimary),
                 decoration: InputDecoration(
                   hintText: 'Paste your document content here...',
-                  hintStyle: TextStyle(
-                    color: _p.textMuted,
-                  ),
+                  hintStyle: TextStyle(color: _p.textMuted),
                   filled: true,
                   fillColor: _p.surface,
                   contentPadding: EdgeInsets.all(12),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(6),
-                    borderSide: BorderSide(
-                      color: _p.borderStrong,
-                    ),
+                    borderSide: BorderSide(color: _p.borderStrong),
                   ),
                   enabledBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(6),
-                    borderSide: BorderSide(
-                      color: _p.borderStrong,
-                    ),
+                    borderSide: BorderSide(color: _p.borderStrong),
                   ),
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(6),
-                    borderSide: BorderSide(
-                      color: _p.accent,
-                    ),
+                    borderSide: BorderSide(color: _p.accent),
                   ),
                 ),
               ),
@@ -4231,7 +4271,8 @@ void _showPreview(Map<String, dynamic> doc) {
                   ),
                   SizedBox(width: 12),
                   ElevatedButton(
-                    onPressed: () => _uploadPastedContent(template, textController.text),
+                    onPressed: () =>
+                        _uploadPastedContent(template, textController.text),
                     style: ElevatedButton.styleFrom(
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(6),
@@ -4255,7 +4296,10 @@ void _showPreview(Map<String, dynamic> doc) {
     );
   }
 
-  void _uploadPastedContent(Map<String, dynamic> template, String content) async {
+  void _uploadPastedContent(
+    Map<String, dynamic> template,
+    String content,
+  ) async {
     if (content.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -4351,48 +4395,56 @@ void _showPreview(Map<String, dynamic> doc) {
     );
   }
 
- String _getTimeAgo(dynamic dateTime) {
-  if (dateTime == null) return 'just now';
+  String _getTimeAgo(dynamic dateTime) {
+    if (dateTime == null) return 'just now';
 
-  DateTime parsedDateTime;
+    DateTime parsedDateTime;
 
-  if (dateTime is Timestamp) {
-    // 1. Firebase Timestamp handling
-    parsedDateTime = dateTime.toDate().toLocal();
-  } else if (dateTime is String) {
-    // 2. String handling (Ensures string is parsed as UTC if not specified)
-    String dateStr = dateTime.trim();
-    if (!dateStr.endsWith('Z') && !dateStr.contains('+')) {
-      dateStr += 'Z'; // Force UTC parsing if missing
+    if (dateTime is String) {
+      // Parse timezone-less strings as UTC.
+      String dateStr = dateTime.trim();
+      final hasTimezone = RegExp(
+        r'(Z|[+-]\d{2}(?::?\d{2})?)$',
+        caseSensitive: false,
+      ).hasMatch(dateStr);
+      if (!hasTimezone) {
+        dateStr += 'Z';
+      }
+      final parsed = DateTime.tryParse(dateStr);
+      parsedDateTime = parsed != null ? parsed.toLocal() : DateTime.now();
+    } else if (dateTime is DateTime) {
+      parsedDateTime = dateTime.isUtc ? dateTime.toLocal() : dateTime;
+    } else {
+      // Handle Firebase Timestamp-like values without requiring its type import.
+      try {
+        final converted = (dateTime as dynamic).toDate();
+        if (converted is! DateTime) return 'just now';
+        parsedDateTime = converted.toLocal();
+      } catch (_) {
+        return 'just now';
+      }
     }
-    final parsed = DateTime.tryParse(dateStr);
-    parsedDateTime = parsed != null ? parsed.toLocal() : DateTime.now();
-  } else if (dateTime is DateTime) {
-    // 3. DateTime object handling
-    parsedDateTime = dateTime.isUtc ? dateTime.toLocal() : dateTime;
-  } else {
-    return 'just now';
+
+    final now = DateTime.now();
+    final difference = now.difference(parsedDateTime);
+
+    // Future timestamp prevention (Server latency check)
+    if (difference.isNegative || difference.inSeconds < 30) {
+      return 'just now';
+    } else if (difference.inDays >= 7) {
+      final weeks = (difference.inDays / 7).floor();
+      return '$weeks week${weeks > 1 ? 's' : ''} ago';
+    } else if (difference.inDays > 0) {
+      return '${difference.inDays} day${difference.inDays > 1 ? 's' : ''} ago';
+    } else if (difference.inHours > 0) {
+      return '${difference.inHours} hour${difference.inHours > 1 ? 's' : ''} ago';
+    } else if (difference.inMinutes > 0) {
+      return '${difference.inMinutes} minute${difference.inMinutes > 1 ? 's' : ''} ago';
+    } else {
+      return '${difference.inSeconds} second${difference.inSeconds > 1 ? 's' : ''} ago';
+    }
   }
 
-  final now = DateTime.now();
-  final difference = now.difference(parsedDateTime);
-
-  // Future timestamp prevention (Server latency check)
-  if (difference.isNegative || difference.inSeconds < 30) {
-    return 'just now';
-  } else if (difference.inDays >= 7) {
-    final weeks = (difference.inDays / 7).floor();
-    return '$weeks week${weeks > 1 ? 's' : ''} ago';
-  } else if (difference.inDays > 0) {
-    return '${difference.inDays} day${difference.inDays > 1 ? 's' : ''} ago';
-  } else if (difference.inHours > 0) {
-    return '${difference.inHours} hour${difference.inHours > 1 ? 's' : ''} ago';
-  } else if (difference.inMinutes > 0) {
-    return '${difference.inMinutes} minute${difference.inMinutes > 1 ? 's' : ''} ago';
-  } else {
-    return '${difference.inSeconds} second${difference.inSeconds > 1 ? 's' : ''} ago';
-  }
-}
   void _showFormattedMissingHint() {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -4429,47 +4481,54 @@ void _showPreview(Map<String, dynamic> doc) {
     showDialog(
       context: context,
       builder: (dialogContext) => ExportDialog(
-        onExport: (format, {bool applyBullets = true, bool autoDetect = true}) async {
-          final docProvider = context.read<DocumentProvider>();
-          final authProvider = Provider.of<AuthProvider>(context, listen: false);
-          final userId = authProvider.userId;
-          try {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text('Downloading formatted document as $format...'),
-                backgroundColor: _p.accent,
-              ),
-            );
-
-            final success = await docProvider.downloadSavedFormattedDocument(
-              doc['id'],
-              userId!,
-              format: format,
-            );
-
-            if (mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text(
-                    success
-                        ? 'Formatted document downloaded as $format!'
-                        : 'Download failed: ${docProvider.errorMessage}',
+        onExport:
+            (format, {bool applyBullets = true, bool autoDetect = true}) async {
+              final docProvider = context.read<DocumentProvider>();
+              final authProvider = Provider.of<AuthProvider>(
+                context,
+                listen: false,
+              );
+              final userId = authProvider.userId;
+              try {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      'Downloading formatted document as $format...',
+                    ),
+                    backgroundColor: _p.accent,
                   ),
-                  backgroundColor: success ? Colors.green : Colors.red,
-                ),
-              );
-            }
-          } catch (e) {
-            if (mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text('Error: $e'),
-                  backgroundColor: Colors.red,
-                ),
-              );
-            }
-          }
-        },
+                );
+
+                final success = await docProvider
+                    .downloadSavedFormattedDocument(
+                      doc['id'],
+                      userId!,
+                      format: format,
+                    );
+
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        success
+                            ? 'Formatted document downloaded as $format!'
+                            : 'Download failed: ${docProvider.errorMessage}',
+                      ),
+                      backgroundColor: success ? Colors.green : Colors.red,
+                    ),
+                  );
+                }
+              } catch (e) {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Error: $e'),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                }
+              }
+            },
         onQRCode: () async {
           try {
             final result = await QRService.generateQr(doc['id']);
@@ -4513,9 +4572,8 @@ void _showPreview(Map<String, dynamic> doc) {
       showDialog(
         context: context,
         barrierDismissible: false,
-        builder: (_) => Center(
-          child: CircularProgressIndicator(color: _p.accent),
-        ),
+        builder: (_) =>
+            Center(child: CircularProgressIndicator(color: _p.accent)),
       );
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -4526,7 +4584,10 @@ void _showPreview(Map<String, dynamic> doc) {
       );
     }
 
-    final success = await docProvider.downloadOriginalDocument(doc['id'], userId);
+    final success = await docProvider.downloadOriginalDocument(
+      doc['id'],
+      userId,
+    );
     if (!mounted) return;
 
     if (isCompact(context)) {
@@ -4616,10 +4677,7 @@ void _showPreview(Map<String, dynamic> doc) {
                 SizedBox(height: 6),
                 Text(
                   'File will be saved to your phone',
-                  style: TextStyle(
-                    color: _p.textSecondary,
-                    fontSize: 13,
-                  ),
+                  style: TextStyle(color: _p.textSecondary, fontSize: 13),
                 ),
                 SizedBox(height: 16),
                 _mobileDownloadOption(
@@ -4668,23 +4726,15 @@ void _showPreview(Map<String, dynamic> doc) {
   }) {
     return Material(
       color: _p.surfaceAlt,
-      borderRadius: BorderRadius.circular(
-        _p.isDark ? _p.cardRadius : 12,
-      ),
+      borderRadius: BorderRadius.circular(_p.isDark ? _p.cardRadius : 12),
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(
-          _p.isDark ? _p.cardRadius : 12,
-        ),
+        borderRadius: BorderRadius.circular(_p.isDark ? _p.cardRadius : 12),
         child: Container(
           padding: EdgeInsets.all(14),
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(
-              _p.isDark ? _p.cardRadius : 12,
-            ),
-            border: Border.all(
-              color: _p.isDark ? _p.borderStrong : _p.border,
-            ),
+            borderRadius: BorderRadius.circular(_p.isDark ? _p.cardRadius : 12),
+            border: Border.all(color: _p.isDark ? _p.borderStrong : _p.border),
           ),
           child: Row(
             children: [
@@ -4713,19 +4763,12 @@ void _showPreview(Map<String, dynamic> doc) {
                     SizedBox(height: 2),
                     Text(
                       subtitle,
-                      style: TextStyle(
-                        color: _p.textSecondary,
-                        fontSize: 12,
-                      ),
+                      style: TextStyle(color: _p.textSecondary, fontSize: 12),
                     ),
                   ],
                 ),
               ),
-              Icon(
-                Icons.download_rounded,
-                color: _p.textMuted,
-                size: 20,
-              ),
+              Icon(Icons.download_rounded, color: _p.textMuted, size: 20),
             ],
           ),
         ),
@@ -4754,9 +4797,8 @@ void _showPreview(Map<String, dynamic> doc) {
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (_) => Center(
-        child: CircularProgressIndicator(color: _p.accent),
-      ),
+      builder: (_) =>
+          Center(child: CircularProgressIndicator(color: _p.accent)),
     );
 
     try {
@@ -4827,60 +4869,58 @@ void _showPreview(Map<String, dynamic> doc) {
     showDialog(
       context: context,
       builder: (dialogContext) => ExportDialog(
-        onExport: (format, {bool applyBullets = true, bool autoDetect = true}) async {
-          final docProvider = context.read<DocumentProvider>();
-          final userId = context.read<AuthProvider>().userId;
-          if (userId == null) return;
+        onExport:
+            (format, {bool applyBullets = true, bool autoDetect = true}) async {
+              final docProvider = context.read<DocumentProvider>();
+              final userId = context.read<AuthProvider>().userId;
+              if (userId == null) return;
 
-          try {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text('Preparing $format for share...'),
-                backgroundColor: _p.accent,
-              ),
-            );
-
-            final success = await docProvider.downloadFormattedDocument(
-              doc['id'],
-              userId,
-              format: format,
-              applyBullets: applyBullets,
-              autoDetectBullets: autoDetect,
-            );
-
-            final path = docProvider.lastDownloadedPath;
-            if (!success || path == null || path.isEmpty) {
-              if (mounted) {
+              try {
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
-                    content: Text(
-                      'Share failed: ${docProvider.errorMessage ?? 'Could not save file'}',
-                    ),
-                    backgroundColor: Colors.red,
+                    content: Text('Preparing $format for share...'),
+                    backgroundColor: _p.accent,
                   ),
                 );
-              }
-              return;
-            }
 
-            final fileName = path.split(Platform.pathSeparator).last;
-            await SharePlus.instance.share(
-              ShareParams(
-                files: [XFile(path)],
-                subject: fileName,
-              ),
-            );
-          } catch (e) {
-            if (mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text('Share error: $e'),
-                  backgroundColor: Colors.red,
-                ),
-              );
-            }
-          }
-        },
+                final success = await docProvider.downloadFormattedDocument(
+                  doc['id'],
+                  userId,
+                  format: format,
+                  applyBullets: applyBullets,
+                  autoDetectBullets: autoDetect,
+                );
+
+                final path = docProvider.lastDownloadedPath;
+                if (!success || path == null || path.isEmpty) {
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(
+                          'Share failed: ${docProvider.errorMessage ?? 'Could not save file'}',
+                        ),
+                        backgroundColor: Colors.red,
+                      ),
+                    );
+                  }
+                  return;
+                }
+
+                final fileName = path.split(Platform.pathSeparator).last;
+                await SharePlus.instance.share(
+                  ShareParams(files: [XFile(path)], subject: fileName),
+                );
+              } catch (e) {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Share error: $e'),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                }
+              }
+            },
       ),
     );
   }
@@ -4891,9 +4931,7 @@ void _showPreview(Map<String, dynamic> doc) {
       builder: (context) => Dialog(
         backgroundColor: _p.surface,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(
-            _p.isDark ? _p.cardRadius : 12,
-          ),
+          borderRadius: BorderRadius.circular(_p.isDark ? _p.cardRadius : 12),
         ),
         child: Container(
           padding: EdgeInsets.all(24),
@@ -4912,10 +4950,7 @@ void _showPreview(Map<String, dynamic> doc) {
               SizedBox(height: 12),
               Text(
                 'Are you sure you want to delete "${doc['filename']}"? This action cannot be undone.',
-                style: TextStyle(
-                  fontSize: 13,
-                  color: _p.textSecondary,
-                ),
+                style: TextStyle(fontSize: 13, color: _p.textSecondary),
               ),
               SizedBox(height: 24),
               Row(
@@ -5032,7 +5067,7 @@ void _showPreview(Map<String, dynamic> doc) {
   ) {
     TextStyle style;
     EdgeInsets padding = EdgeInsets.zero;
-    
+
     switch (lineType) {
       case 'heading1':
         style = TextStyle(
@@ -5055,7 +5090,7 @@ void _showPreview(Map<String, dynamic> doc) {
         );
         padding = EdgeInsets.only(top: 12, bottom: 8);
         break;
-      
+
       case 'heading2':
         style = TextStyle(
           fontSize: double.parse(
@@ -5077,7 +5112,7 @@ void _showPreview(Map<String, dynamic> doc) {
         );
         padding = EdgeInsets.only(top: 10, bottom: 6);
         break;
-      
+
       case 'heading3':
         style = TextStyle(
           fontSize: double.parse(
@@ -5099,7 +5134,7 @@ void _showPreview(Map<String, dynamic> doc) {
         );
         padding = EdgeInsets.only(top: 8, bottom: 4);
         break;
-      
+
       case 'bullet':
         style = TextStyle(
           fontSize: double.parse(
@@ -5119,13 +5154,11 @@ void _showPreview(Map<String, dynamic> doc) {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text('• ', style: TextStyle(fontSize: 12)),
-              Expanded(
-                child: Text(text, style: style),
-              ),
+              Expanded(child: Text(text, style: style)),
             ],
           ),
         );
-      
+
       case 'numbered':
         style = TextStyle(
           fontSize: double.parse(
@@ -5145,13 +5178,11 @@ void _showPreview(Map<String, dynamic> doc) {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               SizedBox(width: 20),
-              Expanded(
-                child: Text(text, style: style),
-              ),
+              Expanded(child: Text(text, style: style)),
             ],
           ),
         );
-      
+
       default: // paragraph
         style = TextStyle(
           fontSize: double.parse(
@@ -5167,7 +5198,7 @@ void _showPreview(Map<String, dynamic> doc) {
         );
         padding = EdgeInsets.only(bottom: 6);
     }
-    
+
     return Padding(
       padding: padding,
       child: Text(text, style: style),
@@ -5240,9 +5271,7 @@ class TemplatesPanel extends StatelessWidget {
               builder: (context, templateProvider, _) {
                 if (templateProvider.isLoading) {
                   return Center(
-                    child: CircularProgressIndicator(
-                      color: Color(0xFF6366F1),
-                    ),
+                    child: CircularProgressIndicator(color: Color(0xFF6366F1)),
                   );
                 }
 
@@ -5286,26 +5315,28 @@ class TemplatesPanel extends StatelessWidget {
                   itemCount: templateProvider.templates.length,
                   itemBuilder: (context, index) {
                     final template = templateProvider.templates[index];
-                    final isSelected = templateProvider.selectedTemplate?['id'] == template['id'];
-                    
+                    final isSelected =
+                        templateProvider.selectedTemplate?['id'] ==
+                        template['id'];
+
                     return Container(
                       margin: EdgeInsets.only(bottom: 16),
                       decoration: BoxDecoration(
                         color: isSelected
                             ? (p.isDark
-                                ? p.accentSoft
-                                : const Color(0xFF6366F1).withOpacity(0.15))
+                                  ? p.accentSoft
+                                  : const Color(0xFF6366F1).withOpacity(0.15))
                             : (p.isDark
-                                ? p.surfaceElevated
-                                : const Color(0xFF1A1F2E)),
+                                  ? p.surfaceElevated
+                                  : const Color(0xFF1A1F2E)),
                         borderRadius: BorderRadius.circular(
                           p.isDark ? p.cardRadius : 12,
                         ),
                         border: Border.all(
                           color: isSelected
                               ? (p.isDark
-                                  ? p.accent.withOpacity(0.4)
-                                  : const Color(0xFF6366F1).withOpacity(0.4))
+                                    ? p.accent.withOpacity(0.4)
+                                    : const Color(0xFF6366F1).withOpacity(0.4))
                               : (p.isDark ? p.borderStrong : p.border),
                           width: 1.5,
                         ),
@@ -5320,7 +5351,8 @@ class TemplatesPanel extends StatelessWidget {
                               children: [
                                 Expanded(
                                   child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
                                     children: [
                                       Row(
                                         children: [
@@ -5329,8 +5361,9 @@ class TemplatesPanel extends StatelessWidget {
                                             decoration: BoxDecoration(
                                               color: p.isDark
                                                   ? p.accentSoft
-                                                  : const Color(0xFF6366F1)
-                                                      .withOpacity(0.2),
+                                                  : const Color(
+                                                      0xFF6366F1,
+                                                    ).withOpacity(0.2),
                                               borderRadius:
                                                   BorderRadius.circular(6),
                                             ),
@@ -5345,7 +5378,8 @@ class TemplatesPanel extends StatelessWidget {
                                           SizedBox(width: 12),
                                           Expanded(
                                             child: Text(
-                                              template['name'] ?? 'Unnamed Template',
+                                              template['name'] ??
+                                                  'Unnamed Template',
                                               style: TextStyle(
                                                 fontSize: 17,
                                                 fontWeight: FontWeight.w600,
@@ -5357,12 +5391,21 @@ class TemplatesPanel extends StatelessWidget {
                                       ),
                                       if (isSelected)
                                         Padding(
-                                          padding: EdgeInsets.only(top: 8, left: 20),
+                                          padding: EdgeInsets.only(
+                                            top: 8,
+                                            left: 20,
+                                          ),
                                           child: Container(
-                                            padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                            padding: EdgeInsets.symmetric(
+                                              horizontal: 8,
+                                              vertical: 4,
+                                            ),
                                             decoration: BoxDecoration(
-                                              color: Color(0xFF10B981).withOpacity(0.15),
-                                              borderRadius: BorderRadius.circular(6),
+                                              color: Color(
+                                                0xFF10B981,
+                                              ).withOpacity(0.15),
+                                              borderRadius:
+                                                  BorderRadius.circular(6),
                                             ),
                                             child: Row(
                                               mainAxisSize: MainAxisSize.min,
@@ -5377,7 +5420,8 @@ class TemplatesPanel extends StatelessWidget {
                                                   'Selected',
                                                   style: TextStyle(
                                                     fontSize: 12,
-                                                    color: Colors.white.withOpacity(0.8),
+                                                    color: Colors.white
+                                                        .withOpacity(0.8),
                                                     fontWeight: FontWeight.w500,
                                                   ),
                                                 ),
@@ -5394,13 +5438,22 @@ class TemplatesPanel extends StatelessWidget {
                                     onPressed: isSelected
                                         ? null
                                         : () {
-                                            templateProvider.selectTemplate(template);
-                                            ScaffoldMessenger.of(context).showSnackBar(
+                                            templateProvider.selectTemplate(
+                                              template,
+                                            );
+                                            ScaffoldMessenger.of(
+                                              context,
+                                            ).showSnackBar(
                                               SnackBar(
-                                                content: Text('Template "${template['name']}" selected!'),
-                                                backgroundColor: Color(0xFF10B981),
+                                                content: Text(
+                                                  'Template "${template['name']}" selected!',
+                                                ),
+                                                backgroundColor: Color(
+                                                  0xFF10B981,
+                                                ),
                                                 duration: Duration(seconds: 2),
-                                                behavior: SnackBarBehavior.floating,
+                                                behavior:
+                                                    SnackBarBehavior.floating,
                                                 margin: EdgeInsets.all(16),
                                               ),
                                             );
@@ -5409,14 +5462,21 @@ class TemplatesPanel extends StatelessWidget {
                                       backgroundColor: isSelected
                                           ? Color(0xFF10B981).withOpacity(0.2)
                                           : Color(0xFF6366F1),
-                                      foregroundColor: isSelected ? Color(0xFF10B981) : Colors.white,
+                                      foregroundColor: isSelected
+                                          ? Color(0xFF10B981)
+                                          : Colors.white,
                                     ),
                                     child: Row(
                                       mainAxisSize: MainAxisSize.min,
                                       children: [
-                                        Icon(isSelected ? Icons.check : Icons.add, size: 18),
+                                        Icon(
+                                          isSelected ? Icons.check : Icons.add,
+                                          size: 18,
+                                        ),
                                         SizedBox(width: 6),
-                                        Text(isSelected ? 'Selected' : 'Select'),
+                                        Text(
+                                          isSelected ? 'Selected' : 'Select',
+                                        ),
                                       ],
                                     ),
                                   ),
@@ -5477,9 +5537,7 @@ class SettingsPanel extends StatelessWidget {
             builder: (context, auth, _) {
               return Container(
                 decoration: BoxDecoration(
-                  color: p.isDark
-                      ? p.surfaceElevated
-                      : const Color(0xFF1A1F2E),
+                  color: p.isDark ? p.surfaceElevated : const Color(0xFF1A1F2E),
                   borderRadius: BorderRadius.circular(
                     p.isDark ? p.cardRadius : 12,
                   ),
@@ -5601,5 +5659,4 @@ class SettingsPanel extends StatelessWidget {
       ),
     );
   }
-
 }
