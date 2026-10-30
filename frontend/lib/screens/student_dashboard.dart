@@ -39,6 +39,7 @@ import 'mobile_companion_screen.dart';
 import '../widgets/document_preview_panel.dart'; 
 import '../providers/lang_provider.dart';
 import '../widgets/tr.dart';
+import '../providers/analysis_job_provider.dart';
 
 /// Mobile bottom-nav → existing `_selectedIndex` targets.
 /// Notifications has no desktop sidebar entry; uses [kNotificationsTabIndex].
@@ -93,6 +94,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
   String _searchQuery = '';
   String _selectedFilter = 'all';
   String _sortBy = 'recent';
+  bool _emailNotifications = true;
   int _currentPage = 1;
   int _itemsPerPage = 9;
   Timer? _refreshTimer;
@@ -273,227 +275,208 @@ AnalysisNav.request.removeListener(_onAnalysisRequest);
     );
   }
 
-  Widget _buildSidebar() {
-    return Container(
-      width: 200,
-      decoration: BoxDecoration(
-        color: _p.sidebarBg,
-        border: Border(
-          right: BorderSide(
-            color: _p.isDark ? _p.borderStrong : _p.border,
-          ),
+Widget _sidebarLabel(String text) => Padding(
+      padding: const EdgeInsets.fromLTRB(20, 18, 20, 4),
+      child: Text(
+        text.toUpperCase(),
+        style: TextStyle(
+          fontSize: 10,
+          letterSpacing: 0.8,
+          fontWeight: FontWeight.w700,
+          color: _p.textMuted,
         ),
       ),
-      child: Column(
-        children: [
-          Padding(
-            padding: EdgeInsets.all(20),
-            child: Row(
-              children: [
-                Container(
-                  padding: EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: _p.accent,
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                  child: Icon(
-                    Icons.description,
-                    color: Colors.white,
-                    size: 20,
-                  ),
+    );
+
+Widget _buildSidebar() {
+  return Container(
+    width: 200,
+    decoration: BoxDecoration(
+      color: _p.sidebarBg,
+      border: Border(
+        right: BorderSide(
+          color: _p.isDark ? _p.borderStrong : _p.border,
+        ),
+      ),
+    ),
+    child: Column(
+      children: [
+        // ── Logo ──────────────────────────────────────────────
+        Padding(
+          padding: const EdgeInsets.all(20),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: _p.accent,
+                  borderRadius: BorderRadius.circular(6),
                 ),
-                SizedBox(width: 12),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Tr(
-                      'FORMATIFY',
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
-                        color: _p.textPrimary,
-                      ),
+                child: const Icon(Icons.description,
+                    color: Colors.white, size: 20),
+              ),
+              const SizedBox(width: 12),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Tr(
+                    'FORMATIFY',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: _p.textPrimary,
                     ),
-                    Tr(
-                      'Academic Edition',
-                      style: TextStyle(
-                        fontSize: 10,
-                        color: _p.textPrimary,
-                        fontWeight: FontWeight.w400,
-                      ),
+                  ),
+                  Tr(
+                    'Academic Edition',
+                    style: TextStyle(
+                      fontSize: 10,
+                      color: _p.textPrimary,
+                      fontWeight: FontWeight.w400,
                     ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-          Expanded(
-            child: ListView(
-              padding: EdgeInsets.symmetric(vertical: 8),
-              children: [
-                _buildSidebarItem(
-                  0,
-                  Icons.dashboard,
-                  'Dashboard',
-                ),
-                _buildSidebarItem(
-                  1,
-                  Icons.add_circle_outline,
-                  'New Report',
-                ),
-                _buildSidebarItem(
-                  2,
-                  Icons.folder,
-                  'My Reports',
-                ),
-                const AnalysisJobsSidebarItem(),
-                _buildSidebarItem(
-                  3,
-                  Icons.people_outline,
-                  'Collaboration',
-                ),
-                _buildSidebarItem(
-                  5,
-                  Icons.layers,
-                  'Templates',
-                ),
-                if (DevUserConfig.hasFypModule) ...[
-                  Consumer<FypProvider>(
-                    builder: (context, fyp, _) {
-                      if (!fyp.canChooseSupervisor) {
-                        return const SizedBox.shrink();
-                      }
-                      return _buildSidebarItem(
-                        6,
-                        Icons.school_outlined,
-                        'ChooseSupervisor',
-                      );
-                    },
-                  ),
-                  _buildSidebarItem(
-                    7,
-                    Icons.badge_outlined,
-                    'My Supervisor',
-                  ),
-                  _buildSidebarItem(
-                    8,
-                    Icons.checklist_outlined,
-                    'Milestones',
-                  ),
-                  _buildSidebarItem(
-                    9,
-                    Icons.sticky_note_2_outlined,
-                    'Meeting Notes',
-                  ),
-                  _buildSidebarItem(
-                    10,
-                    Icons.policy_outlined,
-                    'Plagiarism Report',
-                  ),
-                  _buildSidebarItem(
-                    11,
-                    Icons.track_changes_outlined,
-                    'Status Tracker',
                   ),
                 ],
-                _buildSidebarItem(
-                  12,
-                  Icons.settings,
-                  'Settings',
-                ),
-              ],
-            ),
-          ),
-          Padding(
-            padding: EdgeInsets.all(16),
-            child: Container(
-              decoration: BoxDecoration(
-                color: _p.surfaceAlt,
-                borderRadius: BorderRadius.circular(
-                  _p.isDark ? _p.cardRadius : 8,
-                ),
-                border: Border.all(
-                  color: _p.isDark ? _p.borderStrong : _p.border,
-                ),
-                boxShadow: _p.isDark ? _p.cardShadow : null,
               ),
-              child: Padding(
-                padding: EdgeInsets.all(12),
-                child: Consumer<AuthProvider>(
-                  builder: (context, auth, _) {
-                    return Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Container(
-                          width: 32,
-                          height: 32,
-                          decoration: BoxDecoration(
-                            color: _p.accent,
-                            borderRadius: BorderRadius.circular(6),
-                          ),
-                          child: Center(
-                            child: Text(
-                              (auth.currentUser?.isNotEmpty ?? false)
-                                  ? auth.currentUser![0].toUpperCase()
-                                  : 'U',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                          ),
-                        ),
-                        SizedBox(height: 12),
-                        Text(
-                          auth.currentUser ?? 'User',
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                            color: _p.textPrimary,
-                          ),
-                        ),
-                        Text(
-                          DevUserConfig.displayRoleLabel(auth.userRole),
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: _p.textSecondary,
-                            fontWeight: FontWeight.w400,
-                          ),
-                        ),
-                        SizedBox(height: 12),
-                        SizedBox(
-                          width: double.infinity,
-                          height: 32,
-                          child: ElevatedButton.icon(
-                            onPressed: () => _logout(context),
-                            icon: Icon(Icons.logout, size: 14, color: Colors.white),
-                            label: Tr(
-                              'Logout',
-                              style: TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w600,
-                                color: Colors.white,
-                              ),
-                            ),
-                            style: ElevatedButton.styleFrom(
-                              foregroundColor: Colors.white,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(6),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
+            ],
+          ),
+        ),
+
+        // ── Menu ──────────────────────────────────────────────
+        Expanded(
+          child: ListView(
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            children: [
+              _buildSidebarItem(0, Icons.dashboard, 'Dashboard'),
+              _buildSidebarItem(1, Icons.add_circle_outline, 'New Report'),
+              _buildSidebarItem(2, Icons.folder, 'My Reports'),
+              const AnalysisJobsSidebarItem(),
+
+              _sidebarLabel('Workspace'),
+              _buildSidebarItem(3, Icons.people_outline, 'Collaboration'),
+              _buildSidebarItem(5, Icons.layers, 'Templates'),
+
+              if (DevUserConfig.hasFypModule) ...[
+                _sidebarLabel('Final Year Project'),
+                Consumer<FypProvider>(
+                  builder: (context, fyp, _) {
+                    if (!fyp.canChooseSupervisor) {
+                      return const SizedBox.shrink();
+                    }
+                    return _buildSidebarItem(
+                      6,
+                      Icons.school_outlined,
+                      'Find Supervisor',
                     );
                   },
                 ),
+                _buildSidebarItem(7, Icons.badge_outlined, 'My Supervisor'),
+                _buildSidebarItem(8, Icons.checklist_outlined, 'Milestones'),
+                _buildSidebarItem(
+                    9, Icons.sticky_note_2_outlined, 'Meeting Notes'),
+                _buildSidebarItem(
+                    10, Icons.policy_outlined, 'Plagiarism Report'),
+                _buildSidebarItem(
+                    11, Icons.track_changes_outlined, 'Status Tracker'),
+              ],
+
+              _sidebarLabel('Account'),
+              _buildSidebarItem(12, Icons.settings, 'Settings'),
+            ],
+          ),
+        ),
+
+        // ── User card ─────────────────────────────────────────
+        Padding(
+          padding: const EdgeInsets.all(16),
+          child: Container(
+            decoration: BoxDecoration(
+              color: _p.surfaceAlt,
+              borderRadius: BorderRadius.circular(
+                _p.isDark ? _p.cardRadius : 8,
+              ),
+              border: Border.all(
+                color: _p.isDark ? _p.borderStrong : _p.border,
+              ),
+              boxShadow: _p.isDark ? _p.cardShadow : null,
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Consumer<AuthProvider>(
+                builder: (context, auth, _) {
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        width: 32,
+                        height: 32,
+                        decoration: BoxDecoration(
+                          color: _p.accent,
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Center(
+                          child: Text(
+                            (auth.currentUser?.isNotEmpty ?? false)
+                                ? auth.currentUser![0].toUpperCase()
+                                : 'U',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        auth.currentUser ?? 'User',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: _p.textPrimary,
+                        ),
+                      ),
+                      Text(
+                        DevUserConfig.displayRoleLabel(auth.userRole),
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: _p.textSecondary,
+                          fontWeight: FontWeight.w400,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      SizedBox(
+                        width: double.infinity,
+                        height: 32,
+                        child: ElevatedButton.icon(
+                          onPressed: () => _logout(context),
+                          icon: const Icon(Icons.logout,
+                              size: 14, color: Colors.white),
+                          label: const Tr(
+                            'Logout',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.white,
+                            ),
+                          ),
+                          style: ElevatedButton.styleFrom(
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  );
+                },
               ),
             ),
           ),
-        ],
-      ),
-    );
-  }
+        ),
+      ],
+    ),
+  );
+}
 
 
 Widget _buildSidebarItem(int index, IconData icon, String label) {
@@ -879,67 +862,6 @@ Widget _buildSidebarItem(int index, IconData icon, String label) {
     }
   }
 
-  Widget _buildDashboardContent() {
-    final compact = isCompact(context);
-    return Consumer<DocumentProvider>(
-      builder: (context, docProvider, _) {
-        final totalReports = docProvider.documents.length;
-        final completedCount = docProvider.documents.where((d) => d['status'] == 'formatted').length;
-        final draftCount = docProvider.documents.where((d) => d['status'] == 'uploaded' || d['status'] == 'processing').length;
-
-        return SingleChildScrollView(
-          padding: EdgeInsets.all(compact ? 16 : 32),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              if (compact) ...[
-                if (DevUserConfig.hasFypModule) ...[
-                  const MobileStatusSummaryCard(),
-                  SizedBox(height: 16),
-                ],
-                _buildSendFromPhoneCard(),
-                SizedBox(height: 20),
-              ] else ...[
-                if (DevUserConfig.hasFypModule) ...[
-                  const DesktopSemesterDeadlineCard(),
-                  SizedBox(height: 20),
-                ],
-              ],
-              _buildStatsRow(compact: compact, totalReports: totalReports, draftCount: draftCount, completedCount: completedCount),
-              SizedBox(height: 28),
-              if (compact) ...[
-                _buildRecentReportsSection(docProvider.documents),
-                SizedBox(height: 24),
-                _buildAIToolsSection(compact: true),
-                SizedBox(height: 24),
-                _buildSharedProjectsSection(),
-                SizedBox(height: 24),
-                _buildQuickActionsSection(compact: true),
-              ] else ...[
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      flex: 2,
-                      child: _buildRecentReportsSection(docProvider.documents),
-                    ),
-                    SizedBox(width: 16),
-                    Expanded(
-                      child: _buildAIToolsSection(compact: false),
-                    ),
-                  ],
-                ),
-                SizedBox(height: 32),
-                _buildSharedProjectsSection(),
-                SizedBox(height: 32),
-                _buildQuickActionsSection(compact: false),
-              ],
-            ],
-          ),
-        );
-      },
-    );
-  }
 
   /// Mobile-only entry to Quick Access (Scan QR / Camera / Gallery).
   /// Navigates to [MobileCompanionScreen] — not rebuilt here.
@@ -1010,149 +932,299 @@ Widget _buildSidebarItem(int index, IconData icon, String label) {
     );
   }
 
-  Widget _buildStatsRow({
-    required bool compact,
-    required int totalReports,
-    required int draftCount,
-    required int completedCount,
-  }) {
-    final cards = [
-      _buildStatCard(
-        title: 'Total Reports',
-        value: totalReports.toString(),
-        change: '+12%',
-        icon: Icons.description,
-        changeColor: Color(0xFF10B981),
-        compact: compact,
-      ),
-      _buildStatCard(
-        title: 'Active Drafts',
-        value: draftCount.toString(),
-        change: 'In Progress',
-        icon: Icons.history,
-        changeColor: Color(0xFFD97706),
-        compact: compact,
-      ),
-      _buildStatCard(
-        title: 'Completed',
-        value: completedCount.toString(),
-        change: '+8%',
-        icon: Icons.check_circle,
-        changeColor: Color(0xFF10B981),
-        compact: compact,
-      ),
-      _buildStatCard(
-        title: 'AI Suggestions Used',
-        value: (totalReports * 5).toString(),
-        change: 'AI',
-        icon: Icons.auto_awesome,
-        changeColor: Color(0xFF8B5CF6),
-        compact: compact,
-      ),
-    ];
 
-    // Phones (~360–430px): 2×2 grid so labels/badges never overflow card edges.
-    if (compact) {
-      return LayoutBuilder(
-        builder: (context, constraints) {
-          final gap = 16.0;
-          final cardWidth = (constraints.maxWidth - gap) / 2;
-          return Wrap(
-            spacing: gap,
-            runSpacing: gap,
-            children: cards
-                .map(
-                  (card) => SizedBox(
-                    width: cardWidth,
-                    child: card,
-                  ),
-                )
-                .toList(),
-          );
-        },
-      );
-    }
+void _goTo(int index) {
+  AnalysisNav.request.value = null;
+  setState(() {
+    _selectedIndex = index;
+    _activeProjectId = null;
+    _activeAnalysis = null;
+  });
+}
 
-    return Row(
-      children: [
-        for (var i = 0; i < cards.length; i++) ...[
-          if (i > 0) SizedBox(width: 24),
-          Expanded(child: cards[i]),
-        ],
-      ],
-    );
-  }
-
-  Widget _buildStatCard({
-    required String title,
-    required String value,
-    required String change,
-    required IconData icon,
-    required Color changeColor,
-    bool compact = false,
-  }) {
-    return Container(
-      decoration: _cardDeco(),
-      padding: EdgeInsets.all(compact ? 12 : 20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+Widget _fypChip(String label, IconData icon, int index) {
+  return InkWell(
+    onTap: () => _goTo(index),
+    borderRadius: BorderRadius.circular(999),
+    child: Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: _p.surface,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: _p.isDark ? _p.borderStrong : _p.border),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Row(
-            children: [
-              Container(
-                padding: EdgeInsets.all(compact ? 8 : 10),
-                decoration: BoxDecoration(
-                  color: changeColor.withOpacity(0.15),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Icon(
-                  icon,
-                  color: changeColor,
-                  size: compact ? 16 : 20,
-                ),
-              ),
-              SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  change,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  textAlign: TextAlign.right,
-                  style: TextStyle(
-                    fontSize: compact ? 10 : 12,
-                    fontWeight: FontWeight.w600,
-                    color: changeColor,
-                  ),
-                ),
+          Icon(icon, size: 16, color: _p.accent),
+          const SizedBox(width: 8),
+          Tr(label,
+              style: TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w600,
+                  color: _p.textPrimary)),
+        ],
+      ),
+    ),
+  );
+}
+
+Widget _buildDashboardContent() {
+  final compact = isCompact(context);
+  return Consumer<DocumentProvider>(
+    builder: (context, docProvider, _) {
+      final docs = docProvider.documents;
+      final formatted = docs.where((d) => d['has_formatted'] == true).length;
+      final pending = docs.length - formatted;
+      final jobs = context.watch<AnalysisJobProvider>();
+      final readyAnalyses = jobs.jobs
+          .where((j) => j.status == AnalysisStatus.completed)
+          .length;
+
+      return SingleChildScrollView(
+        padding: EdgeInsets.all(compact ? 16 : 32),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (compact && DevUserConfig.hasFypModule) ...[
+              const MobileStatusSummaryCard(),
+              const SizedBox(height: 16),
+            ],
+            if (compact) ...[
+              _buildSendFromPhoneCard(),
+              const SizedBox(height: 20),
+            ],
+            if (!compact && DevUserConfig.hasFypModule) ...[
+              const DesktopSemesterDeadlineCard(),
+              const SizedBox(height: 20),
+            ],
+            _buildStatsRow(
+              compact: compact,
+              total: docs.length,
+              pending: pending,
+              formatted: formatted,
+              analysesRunning: jobs.runningCount,
+              analysesReady: readyAnalyses,
+            ),
+            const SizedBox(height: 32),
+            _sectionTitle('Workspace', 'Jump straight into the tools you use most'),
+            const SizedBox(height: 14),
+            _buildFeatureGrid(compact, docs.length, jobs),
+
+            // ── FYP strip (sirf FYP module par) ──────────────────
+            if (DevUserConfig.hasFypModule) ...[
+              const SizedBox(height: 28),
+              _sectionTitle(
+                  'Final Year Project', 'Supervisor, milestones and submission'),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                children: [
+                  _fypChip('My Supervisor', Icons.badge_outlined, 7),
+                  _fypChip('Milestones', Icons.checklist_outlined, 8),
+                  _fypChip('Meeting Notes', Icons.sticky_note_2_outlined, 9),
+                  _fypChip('Plagiarism', Icons.policy_outlined, 10),
+                  _fypChip('Status Tracker', Icons.track_changes_outlined, 11),
+                ],
               ),
             ],
-          ),
-          SizedBox(height: compact ? 10 : 16),
-          Text(
-            value,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontSize: compact ? 22 : 32,
-              fontWeight: FontWeight.w700,
-              color: _p.textPrimary,
-            ),
-          ),
-          SizedBox(height: compact ? 2 : 4),
-          Tr(
-            title,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontSize: compact ? 11 : 13,
-              fontWeight: FontWeight.w400,
-              color: _p.textSecondary,
-            ),
-          ),
-        ],
-      ),
-    );
+
+            const SizedBox(height: 32),
+            _buildRecentReportsSection(docs),
+            const SizedBox(height: 32),
+            _buildSharedProjectsSection(),
+            const SizedBox(height: 16),
+          ],
+        ),
+      );
+    },
+  );
+}
+
+Widget _sectionTitle(String title, String subtitle) {
+  return Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Tr(title,
+          style: TextStyle(
+              fontSize: 17, fontWeight: FontWeight.w700, color: _p.textPrimary)),
+      const SizedBox(height: 2),
+      Tr(subtitle, style: TextStyle(fontSize: 12, color: _p.textSecondary)),
+    ],
+  );
+}
+
+Widget _buildStatsRow({
+  required bool compact,
+  required int total,
+  required int pending,
+  required int formatted,
+  required int analysesRunning,
+  required int analysesReady,
+}) {
+  final cards = [
+    _buildStatCard('Total Reports', '$total', Icons.description_outlined,
+        const Color(0xFF6366F1), compact, 'All uploaded documents'),
+    _buildStatCard('Awaiting Formatting', '$pending', Icons.pending_actions,
+        const Color(0xFFD97706), compact, 'Not saved as formatted yet'),
+    _buildStatCard('Formatted', '$formatted', Icons.check_circle_outline,
+        const Color(0xFF10B981), compact, 'Ready to download'),
+    _buildStatCard(
+        'Analyses',
+        '${analysesRunning + analysesReady}',
+        Icons.analytics_outlined,
+        const Color(0xFF8B5CF6),
+        compact,
+        analysesRunning > 0
+            ? '$analysesRunning running · $analysesReady ready'
+            : '$analysesReady ready to review'),
+  ];
+
+  if (compact) {
+    return LayoutBuilder(builder: (context, c) {
+      const gap = 12.0;
+      final w = (c.maxWidth - gap) / 2;
+      return Wrap(
+        spacing: gap,
+        runSpacing: gap,
+        children: cards.map((e) => SizedBox(width: w, child: e)).toList(),
+      );
+    });
   }
+  return Row(
+    children: [
+      for (var i = 0; i < cards.length; i++) ...[
+        if (i > 0) const SizedBox(width: 20),
+        Expanded(child: cards[i]),
+      ],
+    ],
+  );
+}
+
+Widget _buildStatCard(String title, String value, IconData icon, Color color,
+    bool compact, String caption) {
+  return Container(
+    decoration: _cardDeco(),
+    padding: EdgeInsets.all(compact ? 14 : 20),
+    child: Row(
+      children: [
+        Container(
+          padding: EdgeInsets.all(compact ? 9 : 12),
+          decoration: BoxDecoration(
+            color: color.withOpacity(0.14),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Icon(icon, color: color, size: compact ? 18 : 22),
+        ),
+        const SizedBox(width: 14),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(value,
+                  style: TextStyle(
+                      fontSize: compact ? 22 : 28,
+                      fontWeight: FontWeight.w700,
+                      color: _p.textPrimary,
+                      height: 1.1)),
+              const SizedBox(height: 2),
+              Tr(title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: _p.textPrimary)),
+              if (!compact)
+                Text(caption,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 10.5, color: _p.textSecondary)),
+            ],
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+Widget _buildFeatureGrid(bool compact, int reportCount, AnalysisJobProvider jobs) {
+  final fyp = DevUserConfig.hasFypModule ? context.watch<FypProvider>() : null;
+
+  final items = <_Feature>[
+  _Feature('New Report', 'Upload a document and pick a template',
+      Icons.add_circle_outline, _p.accent, () => _goTo(1)),
+  _Feature('My Reports', '$reportCount report${reportCount == 1 ? '' : 's'} · download versions',
+      Icons.folder_outlined, const Color(0xFF6366F1), () => _goTo(2)),
+  _Feature('Templates', 'Browse formatting templates',
+      Icons.layers_outlined, const Color(0xFF06B6D4), () => _goTo(5)),
+  _Feature('Collaboration', 'Shared projects and teammates',
+      Icons.people_outline, const Color(0xFFEC4899), () => _goTo(3)),
+];
+
+  return LayoutBuilder(builder: (context, c) {
+    const gap = 14.0;
+    final cols = compact ? 2 : (c.maxWidth > 1200 ? 4 : 3);
+    final w = (c.maxWidth - gap * (cols - 1)) / cols;
+    return Wrap(
+      spacing: gap,
+      runSpacing: gap,
+      children: items
+          .map((f) => SizedBox(width: w, child: _buildFeatureCard(f, compact)))
+          .toList(),
+    );
+  });
+}
+
+Widget _buildFeatureCard(_Feature f, bool compact) {
+  return MouseRegion(
+    cursor: SystemMouseCursors.click,
+    child: InkWell(
+      onTap: f.onTap,
+      borderRadius: BorderRadius.circular(_p.isDark ? _p.cardRadius : 12),
+      child: Container(
+        decoration: _cardDeco(),
+        padding: EdgeInsets.all(compact ? 14 : 18),
+        child: Row(
+          children: [
+            Container(
+              width: 42,
+              height: 42,
+              decoration: BoxDecoration(
+                color: f.color.withOpacity(0.14),
+                borderRadius: BorderRadius.circular(11),
+              ),
+              child: Icon(f.icon, color: f.color, size: 21),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Tr(f.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                          fontSize: 13.5,
+                          fontWeight: FontWeight.w600,
+                          color: _p.textPrimary)),
+                  const SizedBox(height: 2),
+                  Text(f.subtitle,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                          fontSize: 11, color: _p.textSecondary, height: 1.3)),
+                ],
+              ),
+            ),
+            Icon(Icons.chevron_right_rounded, color: _p.textMuted, size: 18),
+          ],
+        ),
+      ),
+    ),
+  );
+}
 
   Widget _buildRecentReportsSection(List<Map<String, dynamic>> documents) {
     final recentDocs = documents.take(4).toList();
@@ -1208,306 +1280,74 @@ Widget _buildSidebarItem(int index, IconData icon, String label) {
             )
           else
             ...recentDocs.asMap().entries.map((entry) {
-              final doc = entry.value;
-              final isLast = entry.key == recentDocs.length - 1;
-              final status = doc['status'] ?? 'uploaded';
-              final statusLabel = status == 'formatted' ? 'Complete' : status == 'processing' ? 'Processing' : 'Draft';
-              final statusColor = status == 'formatted' ? Color(0xFF10B981) : status == 'processing' ? Color(0xFFD97706) : _p.accent;
-              
-              return Column(
-                children: [
-                  _buildReportItem(
-                    doc['filename'] ?? 'Untitled Report',
-                    'Last edited ${_getTimeAgo(doc['created_at'] ?? DateTime.now())}',
-                    statusLabel,
-                    statusColor,
-                    Icons.description,
-                    statusColor,
-                  ),
-                  if (!isLast) SizedBox(height: 12),
-                ],
-              );
-            }).toList(),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildReportItem(
-    String title,
-    String subtitle,
-    String status,
-    Color statusColor,
-    IconData icon,
-    Color iconColor,
-  ) {
-    return Row(
-      children: [
-        Container(
-          padding: EdgeInsets.all(10),
-          decoration: BoxDecoration(
-            color: iconColor.withOpacity(0.15),
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Icon(icon, color: iconColor, size: 18),
-        ),
-        SizedBox(width: 12),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Tr(
-                title,
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  color: _p.textPrimary,
-                ),
-              ),
-              Tr(
-                subtitle,
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w400,
-                  color: _p.textSecondary,
-                ),
-              ),
-            ],
-          ),
-        ),
-        Container(
-          padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-          decoration: BoxDecoration(
-            color: statusColor.withOpacity(0.15),
-            borderRadius: BorderRadius.circular(6),
-          ),
-          child: Tr(
-            status,
-            style: TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w600,
-              color: statusColor,
-            ),
-          ),
-        ),
-        SizedBox(width: 8),
-        Icon(
-          Icons.more_vert,
-          size: 16,
-          color: _p.textMuted,
-        ),
-      ],
-    );
-  }
-
-  Widget _buildAIToolsSection({bool compact = false}) {
-    final tools = [
-      (
-        'Auto Format',
-        DevUserConfig.hasFypModule
-            ? 'Format to academic standards'
-            : 'Format to your org template',
-        Icons.auto_awesome,
-        _p.accent,
-      ),
-      (
-        'Citation Helper',
-        'APA, MLA, Chicago citations',
-        Icons.format_quote,
-        Color(0xFF8B5CF6),
-      ),
-      (
-        'Grammar Check',
-        'Academic writing suggestions',
-        Icons.check_circle_outline,
-        Color(0xFF10B981),
-      ),
-    ];
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Tr(
-          'AI Formatting Tools',
-          style: TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.w600,
-            color: _p.textPrimary,
-          ),
-        ),
-        SizedBox(height: 14),
-        if (compact)
+  final doc = entry.value;
+  final isLast = entry.key == recentDocs.length - 1;
+  final formatted = doc['has_formatted'] == true;
+  final color = formatted ? const Color(0xFF10B981) : _p.accent;
+  return Column(
+    children: [
+      Row(
+        children: [
           Container(
-            decoration: _cardDeco(lightRadius: 14),
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.14),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(Icons.description_outlined, color: color, size: 18),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
             child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                for (var i = 0; i < tools.length; i++) ...[
-                  if (i > 0)
-                    Divider(
-                      height: 1,
-                      color: _p.border,
-                    ),
-                  _buildAIToolTile(
-                    tools[i].$1,
-                    tools[i].$2,
-                    tools[i].$3,
-                    tools[i].$4,
-                  ),
-                ],
-              ],
-            ),
-          )
-        else
-          ...[
-            for (var i = 0; i < tools.length; i++) ...[
-              if (i > 0) SizedBox(height: 12),
-              _buildAIToolCard(
-                tools[i].$1,
-                tools[i].$2,
-                tools[i].$3,
-                tools[i].$4,
-              ),
-            ],
-          ],
-      ],
-    );
-  }
-
-  Widget _buildAIToolTile(
-    String title,
-    String description,
-    IconData icon,
-    Color color,
-  ) {
-    return InkWell(
-      onTap: () => setState(() {
-        _selectedIndex = 1;
-        _activeProjectId = null;
-      }),
-      borderRadius: BorderRadius.circular(
-        _p.isDark ? _p.cardRadius : 14,
-      ),
-      child: Padding(
-        padding: EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        child: Row(
-          children: [
-            Container(
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
-                color: color.withOpacity(0.15),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Icon(icon, color: color, size: 20),
-            ),
-            SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Tr(
-                    title,
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: _p.textPrimary,
-                    ),
-                  ),
-                  SizedBox(height: 2),
-                  Tr(
-                    description,
+                Text(doc['filename'] ?? 'Untitled',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      fontSize: 12,
-                      color: _p.textSecondary,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            Icon(
-              Icons.chevron_right_rounded,
-              color: _p.textMuted,
-              size: 20,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildAIToolCard(
-    String title,
-    String description,
-    IconData icon,
-    Color color,
-  ) {
-    return Container(
-      decoration: _cardDeco(),
-      padding: EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                padding: EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: color.withOpacity(0.15),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Icon(icon, color: color, size: 18),
-              ),
-              SizedBox(width: 12),
-              Expanded(
-                child: Tr(
-                  title,
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: _p.textPrimary,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          SizedBox(height: 8),
-          Tr(
-            description,
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w400,
-              color: _p.textSecondary,
-              height: 1.4,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: _p.textPrimary)),
+                Text(
+                    '${doc['template_name'] ?? 'No template'} · ${_getTimeAgo(doc['created_at'])}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 11, color: _p.textSecondary)),
+              ],
             ),
           ),
-          SizedBox(height: 12),
-          SizedBox(
-            width: double.infinity,
-            height: 32,
-            child: ElevatedButton(
-              onPressed: () {},
-              style: ElevatedButton.styleFrom(
-                backgroundColor: color,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(6),
-                ),
-              ),
-              child: Tr(
-                'Use Tool',
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.14),
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: Tr(formatted ? 'Formatted' : 'Not formatted',
                 style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                  color: _p.textPrimary,
-                ),
-              ),
-            ),
+                    fontSize: 10.5, fontWeight: FontWeight.w600, color: color)),
           ),
+          const SizedBox(width: 8),
+          TextButton.icon(
+            onPressed: () => _openAnalyzeScreen(doc),
+            icon: const Icon(Icons.analytics_outlined, size: 15),
+            label: const Tr('Analyze', style: TextStyle(fontSize: 11.5)),
+          ),
+        ],
+      ),
+      if (!isLast) Divider(height: 24, color: _p.border),
+    ],
+  );
+}),
         ],
       ),
     );
   }
+
+
+
+ 
+  
+
 
   void _openCollaborationHub() {
     setState(() {
@@ -1634,161 +1474,7 @@ Widget _buildSidebarItem(int index, IconData icon, String label) {
     );
   }
 
-  Widget _buildQuickActionsSection({bool compact = false}) {
-    final actions = [
-      (
-        'New Report',
-        'Start or use a template',
-        Icons.description_outlined,
-        _p.accent,
-        () => setState(() {
-              _selectedIndex = 1;
-              _activeProjectId = null;
-            }),
-      ),
-      (
-        'Import',
-        'Upload a document',
-        Icons.upload_file_outlined,
-        Color(0xFF8B5CF6),
-        () => setState(() {
-              _selectedIndex = 1;
-              _activeProjectId = null;
-            }),
-      ),
-      (
-        'Templates',
-        'Browse formats',
-        Icons.layers_outlined,
-        Color(0xFF06B6D4),
-        () => setState(() {
-              _selectedIndex = 5;
-              _activeProjectId = null;
-            }),
-      ),
-      (
-        'Collaborate',
-        'Work with team',
-        Icons.people_outline,
-        Color(0xFF10B981),
-        _openCollaborationHub,
-      ),
-    ];
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Tr(
-          'Quick Actions',
-          style: TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.w600,
-            color: _p.textPrimary,
-          ),
-        ),
-        SizedBox(height: 14),
-        if (compact)
-          LayoutBuilder(
-            builder: (context, constraints) {
-              const gap = 10.0;
-              final width = (constraints.maxWidth - gap) / 2;
-              return Wrap(
-                spacing: gap,
-                runSpacing: gap,
-                children: actions
-                    .map(
-                      (a) => SizedBox(
-                        width: width,
-                        child: _buildQuickActionCard(
-                          a.$1,
-                          a.$2,
-                          a.$3,
-                          a.$4,
-                          onTap: a.$5,
-                          compact: true,
-                        ),
-                      ),
-                    )
-                    .toList(),
-              );
-            },
-          )
-        else
-          Row(
-            children: [
-              for (var i = 0; i < actions.length; i++) ...[
-                if (i > 0) SizedBox(width: 16),
-                Expanded(
-                  child: _buildQuickActionCard(
-                    actions[i].$1,
-                    actions[i].$2,
-                    actions[i].$3,
-                    actions[i].$4,
-                    onTap: actions[i].$5,
-                  ),
-                ),
-              ],
-            ],
-          ),
-      ],
-    );
-  }
-
-  Widget _buildQuickActionCard(
-    String title,
-    String description,
-    IconData icon,
-    Color color, {
-    required VoidCallback onTap,
-    bool compact = false,
-  }) {
-    return GestureDetector(
-      onTap: onTap,
-      child: MouseRegion(
-        cursor: SystemMouseCursors.click,
-        child: Container(
-          decoration: _cardDeco(lightRadius: 14),
-          padding: EdgeInsets.all(compact ? 14 : 16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Container(
-                padding: EdgeInsets.all(compact ? 8 : 10),
-                decoration: BoxDecoration(
-                  color: color.withOpacity(0.15),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Icon(icon, color: color, size: compact ? 18 : 20),
-              ),
-              SizedBox(height: compact ? 10 : 12),
-              Tr(
-                title,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: compact ? 13 : 13,
-                  fontWeight: FontWeight.w600,
-                  color: _p.textPrimary,
-                ),
-              ),
-              SizedBox(height: 4),
-              Tr(
-                description,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: compact ? 11 : 11,
-                  fontWeight: FontWeight.w400,
-                  color: _p.textSecondary,
-                  height: 1.35,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
+ 
 
   Widget _buildNewReportPage() {
     return NewReportScreen(
@@ -1819,650 +1505,588 @@ void _openAnalyzeScreen(Map<String, dynamic> doc) {
 }
 
 Widget _buildMyReportsPage() {
-    final auth = context.read<AuthProvider>();
-    return Consumer<DocumentProvider>(
-      builder: (context, docProvider, _) {
-        // Apply search
-        List<Map<String, dynamic>> filteredDocs = docProvider.documents
-            .where((d) => (d['filename'] ?? '')
-                .toLowerCase()
-                .contains(_searchQuery.toLowerCase()))
-            .toList();
+  final auth = context.read<AuthProvider>();
+  return Consumer<DocumentProvider>(
+    builder: (context, docProvider, _) {
+      // Search
+      List<Map<String, dynamic>> filteredDocs = docProvider.documents
+          .where((d) => (d['filename'] ?? '')
+              .toString()
+              .toLowerCase()
+              .contains(_searchQuery.toLowerCase()))
+          .toList();
 
-        // Sort by recent or name
-        if (_sortBy == 'name') {
-          filteredDocs.sort((a, b) =>
-              (a['filename'] ?? '').compareTo(b['filename'] ?? ''));
-        } else {
-          filteredDocs.sort((a, b) {
-            final dateA = DateTime.tryParse(a['created_at'] ?? '') ?? DateTime.now();
-            final dateB = DateTime.tryParse(b['created_at'] ?? '') ?? DateTime.now();
-            return dateB.compareTo(dateA);
-          });
-        }
+      // Sort
+      if (_sortBy == 'name') {
+        filteredDocs.sort((a, b) =>
+            (a['filename'] ?? '').compareTo(b['filename'] ?? ''));
+      } else {
+        filteredDocs.sort((a, b) {
+          final dateA =
+              DateTime.tryParse(a['created_at'] ?? '') ?? DateTime.now();
+          final dateB =
+              DateTime.tryParse(b['created_at'] ?? '') ?? DateTime.now();
+          return dateB.compareTo(dateA);
+        });
+      }
 
-        // Calculate pagination
-        int totalPages = (filteredDocs.length / _itemsPerPage).ceil();
-        if (totalPages < 1) totalPages = 1;
-        int startIndex = (_currentPage - 1) * _itemsPerPage;
-        int endIndex = startIndex + _itemsPerPage;
-        List<Map<String, dynamic>> paginatedDocs = filteredDocs.sublist(
-            startIndex, endIndex > filteredDocs.length ? filteredDocs.length : endIndex);
+      // Pagination
+      int totalPages = (filteredDocs.length / _itemsPerPage).ceil();
+      if (totalPages < 1) totalPages = 1;
+      final page = _currentPage.clamp(1, totalPages);
+      final startIndex = (page - 1) * _itemsPerPage;
+      final endIndex = (startIndex + _itemsPerPage > filteredDocs.length)
+          ? filteredDocs.length
+          : startIndex + _itemsPerPage;
+      final paginatedDocs = filteredDocs.sublist(startIndex, endIndex);
 
-        final compact = isCompact(context);
+      final compact = isCompact(context);
 
-        return RefreshIndicator(
-          onRefresh: () => docProvider.fetchDocuments(auth.userId!),
-          color: _p.accent,
-          backgroundColor: _p.surface,
-          child: SingleChildScrollView(
-            physics: const AlwaysScrollableScrollPhysics(),
-            padding: EdgeInsets.fromLTRB(
-              compact ? 16 : 32,
-              compact ? 12 : 32,
-              compact ? 16 : 32,
-              compact ? 100 : 32,
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Search + Sort only
-                if (compact) ...[
-                  Container(
-                    decoration: BoxDecoration(
-                      color: _p.surface,
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: _p.border),
-                    ),
-                    padding: EdgeInsets.symmetric(horizontal: 12),
-                    child: TextField(
-                      onChanged: (value) {
-                        setState(() {
-                          _searchQuery = value;
-                          _currentPage = 1;
-                        });
-                      },
-                      style: TextStyle(color: _p.textPrimary),
-                      decoration: InputDecoration(
-                        hintText: 'Search reports...',
-                        hintStyle: TextStyle(
-                          color: _p.textMuted,
-                          fontSize: 13,
-                        ),
-                        border: InputBorder.none,
-                        prefixIcon: Icon(
-                          Icons.search,
-                          color: _p.textSecondary,
-                          size: 20,
-                        ),
-                      ),
-                    ),
-                  ),
-                  SizedBox(height: 10),
-                  _buildReportsMenuButton(
-                    icon: Icons.swap_vert,
-                    label: _sortBy == 'name' ? 'Name A-Z' : 'Most Recent',
-                    items: const [
-                      PopupMenuItem(value: 'recent', child: Tr('Most Recent')),
-                      PopupMenuItem(value: 'name', child: Tr('Name A-Z')),
-                    ],
-                    onSelected: (value) {
-                      setState(() {
-                        _sortBy = value;
-                        _currentPage = 1;
-                      });
-                    },
-                  ),
-                ] else
-                  Row(
-                    children: [
-                      Expanded(
-                        flex: 2,
-                        child: Container(
-                          decoration: BoxDecoration(
-                            color: _p.surface,
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(
-                              color: _p.border,
-                            ),
-                          ),
-                          padding: EdgeInsets.symmetric(horizontal: 16),
-                          child: TextField(
-                            onChanged: (value) {
-                              setState(() {
-                                _searchQuery = value;
-                                _currentPage = 1;
-                              });
-                            },
-                            style: TextStyle(color: _p.textPrimary),
-                            decoration: InputDecoration(
-                              hintText: 'Search reports...',
-                              hintStyle: TextStyle(
-                                color: _p.textMuted,
-                                fontSize: 13,
-                              ),
-                              border: InputBorder.none,
-                              prefixIcon: Icon(
-                                Icons.search,
-                                color: _p.textSecondary,
-                                size: 20,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                      SizedBox(width: 12),
-                      Container(
-                        decoration: BoxDecoration(
-                          color: _p.surface,
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(
-                            color: _p.border,
-                          ),
-                        ),
-                        padding: EdgeInsets.symmetric(horizontal: 12),
-                        child: PopupMenuButton<String>(
-                          onSelected: (value) {
-                            setState(() {
-                              _sortBy = value;
-                              _currentPage = 1;
-                            });
-                          },
-                          itemBuilder: (context) => [
-                            const PopupMenuItem(value: 'recent', child: Tr('Most Recent')),
-                            const PopupMenuItem(value: 'name', child: Tr('Name A-Z')),
-                          ],
-                          child: Row(
-                            children: [
-                              Icon(Icons.swap_vert, color: _p.textSecondary, size: 18),
-                              SizedBox(width: 8),
-                              Tr(
-                                _sortBy == 'name' ? 'Name A-Z' : 'Most Recent',
-                                style: TextStyle(
-                                  color: _p.textSecondary,
-                                  fontSize: 13,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                SizedBox(height: compact ? 20 : 28),
-                // Grid / list of Reports
-                if (docProvider.isLoading)
-                  Center(child: CircularProgressIndicator())
-                else if (paginatedDocs.isEmpty)
-                  Center(
-                    child: Padding(
-                      padding: EdgeInsets.symmetric(vertical: 48),
-                      child: Column(
-                        children: [
-                          Icon(
-                            Icons.folder_open,
-                            size: 48,
-                            color: _p.textMuted,
-                          ),
-                          SizedBox(height: 16),
-                          Tr(
-                            'No reports found',
-                            style: TextStyle(
-                              fontSize: 14,
-                              color: _p.textSecondary,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  )
-                else if (compact)
-                  Column(
-                    children: [
-                      for (final doc in paginatedDocs)
-                        Padding(
-                          padding: EdgeInsets.only(bottom: 10),
-                          child: _buildMobileReportCard(doc),
-                        ),
-                    ],
-                  )
-                else
-                  GridView.builder(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: 3,
-                      crossAxisSpacing: 24,
-                      mainAxisSpacing: 24,
-                      // Taller cards so Unformatted / Formatted actions fit cleanly.
-                      childAspectRatio: 0.72,
-                    ),
-                    itemCount: paginatedDocs.length,
-                    itemBuilder: (context, index) {
-                      final doc = paginatedDocs[index];
-                      final status = doc['status'] ?? 'draft';
-                      final statusColor = _getStatusColor(status);
-                      final statusLabel = _getStatusLabel(status);
-                      final iconColor = _getIconColor(status);
-                      final hasFormatted = doc['has_formatted'] == true;
-
-                      return Container(
-                        decoration: _cardDeco(),
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(
-                            _p.isDark ? _p.cardRadius : 12,
-                          ),
-                          child: Column(
-                            children: [
-                              // Top Section with Icon and Status Badge
-                              Container(
-                                height: 140,
-                                decoration: BoxDecoration(
-                                  color: iconColor.withOpacity(0.15),
-                                ),
-                                child: Stack(
-                                  children: [
-                                    Center(
-                                      child: Icon(
-                                        Icons.description,
-                                        size: 48,
-                                        color: iconColor,
-                                      ),
-                                    ),
-                                    Positioned(
-                                      top: 12,
-                                      right: 12,
-                                      child: Container(
-                                        padding: EdgeInsets.symmetric(
-                                          horizontal: 10,
-                                          vertical: 6,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          color: statusColor.withOpacity(0.8),
-                                          borderRadius: BorderRadius.circular(6),
-                                        ),
-                                        child: Tr(
-                                          statusLabel,
-                                          style: TextStyle(
-                                            fontSize: 10,
-                                            fontWeight: FontWeight.w600,
-                                            color: _p.textPrimary,
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              // Bottom Section with Details
-                              Expanded(
-                                child: Padding(
-                                  padding: EdgeInsets.all(16),
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        doc['filename'] ?? 'Untitled',
-                                        style: TextStyle(
-                                          fontSize: 14,
-                                          fontWeight: FontWeight.w600,
-                                          color: _p.textPrimary,
-                                        ),
-                                        maxLines: 2,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                      SizedBox(height: 6),
-                                      Text(
-                                        doc['template_name'] ?? 'No template',
-                                        style: TextStyle(
-                                          fontSize: 11,
-                                          color: _p.textSecondary,
-                                        ),
-                                      ),
-                                      SizedBox(height: 8),
-                                      Text(
-                                        'Modified ${_getTimeAgo(doc['created_at'] ?? DateTime.now())}',
-                                        style: TextStyle(
-                                          fontSize: 10,
-                                          color: _p.textSecondary,
-                                        ),
-                                      ),
-                                      if (hasFormatted) ...[
-                                        SizedBox(height: 6),
-                                        Container(
-                                          padding: EdgeInsets.symmetric(
-                                              horizontal: 8, vertical: 3),
-                                          decoration: BoxDecoration(
-                                            color: Color(0xFF10B981).withOpacity(0.12),
-                                            borderRadius: BorderRadius.circular(6),
-                                          ),
-                                          child: Tr(
-                                            'Both versions ready to download',
-                                            style: TextStyle(
-                                              fontSize: 10,
-                                              fontWeight: FontWeight.w600,
-                                              color: Color(0xFF059669),
-                                            ),
-                                          ),
-                                        ),
-                                      ],
-                                      Spacer(),
-                                      // "Download" label so users know these buttons export files
-                                      Padding(
-                                        padding: EdgeInsets.only(bottom: 6),
-                                        child: Row(
-                                          children: [
-                                            Icon(
-                                              Icons.download_rounded,
-                                              size: 13,
-                                              color: _p.textSecondary,
-                                            ),
-                                            SizedBox(width: 4),
-                                            Tr(
-                                              'Download',
-                                              style: TextStyle(
-                                                fontSize: 11,
-                                                fontWeight: FontWeight.w600,
-                                                color: _p.textSecondary,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                      // Version download buttons + actions menu
-                                      Row(
-                                        children: [
-                                          Expanded(
-                                            child: Tooltip(
-                                              message:
-                                                  'Download original file (unformatted)',
-                                              child: OutlinedButton.icon(
-                                                onPressed: () => _handleDownloadVersion(
-                                                  doc,
-                                                  version: 'unformatted',
-                                                ),
-                                                icon: Icon(
-                                                  Icons.file_download_outlined,
-                                                  size: 14,
-                                                ),
-                                                label: Tr(
-                                                  'Unformatted',
-                                                  style: TextStyle(
-                                                    fontSize: 10,
-                                                    fontWeight: FontWeight.w700,
-                                                  ),
-                                                ),
-                                                style: OutlinedButton.styleFrom(
-                                                  foregroundColor: _p.textPrimary,
-                                                  side: BorderSide(color: _p.border),
-                                                  padding: EdgeInsets.symmetric(
-                                                    vertical: 8,
-                                                    horizontal: 4,
-                                                  ),
-                                                  shape: RoundedRectangleBorder(
-                                                    borderRadius:
-                                                        BorderRadius.circular(6),
-                                                  ),
-                                                ),
-                                              ),
-                                            ),
-                                          ),
-                                          SizedBox(width: 6),
-                                          Expanded(
-                                            child: Tooltip(
-                                              message: hasFormatted
-                                                  ? 'Download formatted file'
-                                                  : 'Not available yet - open Analyze and save the formatted document',
-                                              child: OutlinedButton.icon(
-                                                onPressed: hasFormatted
-                                                    ? () => _handleDownloadVersion(
-                                                          doc,
-                                                          version: 'formatted',
-                                                        )
-                                                    : () => _showFormattedMissingHint(),
-                                                icon: Icon(
-                                                  Icons.file_download_outlined,
-                                                  size: 14,
-                                                ),
-                                                label: Tr(
-                                                  'Formatted',
-                                                  style: TextStyle(
-                                                    fontSize: 10,
-                                                    fontWeight: FontWeight.w700,
-                                                  ),
-                                                ),
-                                                style: OutlinedButton.styleFrom(
-                                                  foregroundColor: hasFormatted
-                                                      ? _p.accent
-                                                      : _p.textMuted,
-                                                  side: BorderSide(
-                                                    color: hasFormatted
-                                                        ? _p.accent
-                                                        : _p.border,
-                                                  ),
-                                                  padding: EdgeInsets.symmetric(
-                                                    vertical: 8,
-                                                    horizontal: 4,
-                                                  ),
-                                                  shape: RoundedRectangleBorder(
-                                                    borderRadius:
-                                                        BorderRadius.circular(6),
-                                                  ),
-                                                ),
-                                              ),
-                                            ),
-                                          ),
-                                          SizedBox(width: 4),
-                                          PopupMenuButton<String>(
-                                            onSelected: (value) {
-                                              if (value == 'analyze') {
-                                                _openAnalyzeScreen(doc);
-                                              } else if (value == 'preview') {
-                                                _showPreview(doc);
-                                              } else if (value == 'rename') {
-                                                _showRenameDialog(doc);
-                                              } else if (value == 'edit') {
-                                                _showEditDialog(doc, auth.userId!);
-                                              } else if (value == 'send' &&
-                                                  DevUserConfig.hasFypModule) {
-                                                _sendReportToSupervisor(doc);
-                                              } else if (value == 'delete') {
-                                                _handleDelete(doc);
-                                              }
-                                            },
-                                            itemBuilder: (context) => [
-                                              const PopupMenuItem(
-                                                value: 'analyze',
-                                                child: Row(
-                                                  children: [
-                                                    Icon(Icons.analytics_outlined,
-                                                        size: 16,
-                                                        color: Color(0xFF10B981)),
-                                                    SizedBox(width: 8),
-                                                    Tr('Analyze'),
-                                                  ],
-                                                ),
-                                              ),
-                                              if (DevUserConfig.hasFypModule)
-                                                const PopupMenuItem(
-                                                  value: 'send',
-                                                  child: Row(
-                                                    children: [
-                                                      Icon(Icons.send_rounded,
-                                                          size: 16,
-                                                          color: Color(0xFF10B981)),
-                                                      SizedBox(width: 8),
-                                                      Tr('Send to Supervisor'),
-                                                    ],
-                                                  ),
-                                                ),
-                                              const PopupMenuItem(
-                                                value: 'preview',
-                                                child: Row(
-                                                  children: [
-                                                    Icon(Icons.preview, size: 16),
-                                                    SizedBox(width: 8),
-                                                    Tr('Preview'),
-                                                  ],
-                                                ),
-                                              ),
-                                              const PopupMenuItem(
-                                                value: 'rename',
-                                                child: Row(
-                                                  children: [
-                                                    Icon(
-                                                        Icons
-                                                            .drive_file_rename_outline,
-                                                        size: 16),
-                                                    SizedBox(width: 8),
-                                                    Tr('Rename'),
-                                                  ],
-                                                ),
-                                              ),
-                                              const PopupMenuItem(
-                                                value: 'edit',
-                                                child: Row(
-                                                  children: [
-                                                    Icon(Icons.edit_outlined,
-                                                        size: 16),
-                                                    SizedBox(width: 8),
-                                                    Tr('Edit'),
-                                                  ],
-                                                ),
-                                              ),
-                                              const PopupMenuItem(
-                                                value: 'delete',
-                                                child: Row(
-                                                  children: [
-                                                    Icon(Icons.delete,
-                                                        size: 16, color: Colors.red),
-                                                    SizedBox(width: 8),
-                                                    Tr('Delete',
-                                                        style: TextStyle(
-                                                            color: Colors.red)),
-                                                  ],
-                                                ),
-                                              ),
-                                            ],
-                                            child: Icon(
-                                              Icons.more_vert,
-                                              size: 16,
-                                              color: _p.textSecondary,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                SizedBox(height: 40),
-                // Pagination
-                if (filteredDocs.isNotEmpty)
-                  Center(
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        IconButton(
-                          icon: Icon(Icons.chevron_left),
-                          color: _p.textSecondary,
-                          onPressed: _currentPage > 1
-                              ? () => setState(() => _currentPage--)
-                              : null,
-                        ),
-                        for (int i = 1; i <= totalPages && i <= 3; i++)
-                          GestureDetector(
-                            onTap: () => setState(() => _currentPage = i),
-                            child: Padding(
-                              padding: EdgeInsets.symmetric(horizontal: 4),
-                              child: Container(
-                                width: 32,
-                                height: 32,
-                                decoration: BoxDecoration(
-                                  color: i == _currentPage ? _p.accent : _p.surface,
-                                  borderRadius: BorderRadius.circular(6),
-                                  border: Border.all(
-                                    color: _p.border,
-                                  ),
-                                ),
-                                child: Center(
-                                  child: Text(
-                                    '$i',
-                                    style: TextStyle(
-                                      color: i == _currentPage
-                                          ? Colors.white
-                                          : _p.textSecondary,
-                                      fontWeight: FontWeight.w600,
-                                      fontSize: 13,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                        if (totalPages > 3)
-                          Tr(
-                            '...',
-                            style: TextStyle(
-                              color: _p.textSecondary,
-                              fontSize: 13,
-                            ),
-                          ),
-                        if (totalPages > 3)
-                          GestureDetector(
-                            onTap: () => setState(() => _currentPage = totalPages),
-                            child: Padding(
-                              padding: EdgeInsets.symmetric(horizontal: 4),
-                              child: Container(
-                                width: 32,
-                                height: 32,
-                                decoration: BoxDecoration(
-                                  color: totalPages == _currentPage
-                                      ? _p.accent
-                                      : _p.surface,
-                                  borderRadius: BorderRadius.circular(6),
-                                  border: Border.all(
-                                    color: _p.border,
-                                  ),
-                                ),
-                                child: Center(
-                                  child: Text(
-                                    '$totalPages',
-                                    style: TextStyle(
-                                      color: totalPages == _currentPage
-                                          ? Colors.white
-                                          : _p.textSecondary,
-                                      fontWeight: FontWeight.w600,
-                                      fontSize: 13,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                        IconButton(
-                          icon: Icon(Icons.chevron_right),
-                          color: _p.textSecondary,
-                          onPressed: _currentPage < totalPages
-                              ? () => setState(() => _currentPage++)
-                              : null,
-                        ),
-                      ],
-                    ),
-                  ),
-              ],
-            ),
+      return RefreshIndicator(
+        onRefresh: () => docProvider.fetchDocuments(auth.userId!),
+        color: _p.accent,
+        backgroundColor: _p.surface,
+        child: SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: EdgeInsets.fromLTRB(
+            compact ? 16 : 32,
+            compact ? 12 : 28,
+            compact ? 16 : 32,
+            compact ? 100 : 32,
           ),
-        );
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _reportsToolbar(compact, filteredDocs.length),
+              SizedBox(height: compact ? 18 : 24),
+
+              if (docProvider.isLoading)
+                const Center(
+                  child: Padding(
+                    padding: EdgeInsets.symmetric(vertical: 60),
+                    child: CircularProgressIndicator(),
+                  ),
+                )
+              else if (paginatedDocs.isEmpty)
+                _reportsEmptyState()
+              else if (compact)
+                Column(
+                  children: [
+                    for (final doc in paginatedDocs)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 10),
+                        child: _buildMobileReportCard(doc),
+                      ),
+                  ],
+                )
+              else
+                GridView.builder(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                    maxCrossAxisExtent: 400,
+                    crossAxisSpacing: 20,
+                    mainAxisSpacing: 20,
+                    mainAxisExtent: 226,
+                  ),
+                  itemCount: paginatedDocs.length,
+                  itemBuilder: (context, index) =>
+                      _reportCard(paginatedDocs[index], auth),
+                ),
+
+              if (filteredDocs.isNotEmpty) ...[
+                const SizedBox(height: 32),
+                _reportsPagination(page, totalPages),
+              ],
+            ],
+          ),
+        ),
+      );
+    },
+  );
+}
+
+// ── Toolbar: search + sort + count ─────────────────────────────────────
+
+Widget _reportsToolbar(bool compact, int total) {
+  final search = Container(
+    height: 44,
+    decoration: BoxDecoration(
+      color: _p.surface,
+      borderRadius: BorderRadius.circular(10),
+      border: Border.all(color: _p.isDark ? _p.borderStrong : _p.border),
+    ),
+    child: TextField(
+      onChanged: (value) {
+        setState(() {
+          _searchQuery = value;
+          _currentPage = 1;
+        });
       },
+      style: TextStyle(color: _p.textPrimary, fontSize: 13.5),
+      decoration: InputDecoration(
+        hintText: 'Search reports...',
+        hintStyle: TextStyle(color: _p.textMuted, fontSize: 13),
+        border: InputBorder.none,
+        isCollapsed: true,
+        contentPadding: const EdgeInsets.symmetric(vertical: 14),
+        prefixIcon: Icon(Icons.search, color: _p.textSecondary, size: 20),
+      ),
+    ),
+  );
+
+  final sort = Container(
+    height: 44,
+    padding: const EdgeInsets.symmetric(horizontal: 14),
+    decoration: BoxDecoration(
+      color: _p.surface,
+      borderRadius: BorderRadius.circular(10),
+      border: Border.all(color: _p.isDark ? _p.borderStrong : _p.border),
+    ),
+    child: PopupMenuButton<String>(
+      tooltip: 'Sort',
+      onSelected: (value) {
+        setState(() {
+          _sortBy = value;
+          _currentPage = 1;
+        });
+      },
+      itemBuilder: (context) => const [
+        PopupMenuItem(value: 'recent', child: Tr('Most Recent')),
+        PopupMenuItem(value: 'name', child: Tr('Name A-Z')),
+      ],
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.swap_vert, color: _p.textSecondary, size: 18),
+          const SizedBox(width: 8),
+          Tr(
+            _sortBy == 'name' ? 'Name A-Z' : 'Most Recent',
+            style: TextStyle(color: _p.textPrimary, fontSize: 13),
+          ),
+          const SizedBox(width: 4),
+          Icon(Icons.keyboard_arrow_down, color: _p.textSecondary, size: 18),
+        ],
+      ),
+    ),
+  );
+
+  final count = Container(
+    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+    decoration: BoxDecoration(
+      color: _p.accentSoft,
+      borderRadius: BorderRadius.circular(999),
+    ),
+    child: Text(
+      '$total report${total == 1 ? '' : 's'}',
+      style: TextStyle(
+        color: _p.accent,
+        fontSize: 12,
+        fontWeight: FontWeight.w700,
+      ),
+    ),
+  );
+
+  if (compact) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        search,
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            Expanded(child: sort),
+            const SizedBox(width: 10),
+            count,
+          ],
+        ),
+      ],
     );
   }
+
+  return Row(
+    children: [
+      Expanded(child: search),
+      const SizedBox(width: 12),
+      sort,
+      const SizedBox(width: 12),
+      count,
+    ],
+  );
+}
+
+// ── Empty state ────────────────────────────────────────────────────────
+
+Widget _reportsEmptyState() {
+  final searching = _searchQuery.trim().isNotEmpty;
+  return Center(
+    child: Padding(
+      padding: const EdgeInsets.symmetric(vertical: 64),
+      child: Column(
+        children: [
+          Container(
+            width: 72,
+            height: 72,
+            decoration: BoxDecoration(
+              color: _p.accentSoft,
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              searching ? Icons.search_off : Icons.folder_open,
+              size: 32,
+              color: _p.accent,
+            ),
+          ),
+          const SizedBox(height: 18),
+          Tr(
+            searching ? 'No matching reports' : 'No reports found',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w700,
+              color: _p.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Tr(
+            searching
+                ? 'Try a different search term.'
+                : 'Upload a document from New Report to get started.',
+            style: TextStyle(fontSize: 13, color: _p.textSecondary),
+          ),
+          if (!searching) ...[
+            const SizedBox(height: 18),
+            ElevatedButton.icon(
+              onPressed: () => _goTo(1),
+              icon: const Icon(Icons.add, size: 18),
+              label: const Tr('New Report'),
+              style: ElevatedButton.styleFrom(
+                foregroundColor: Colors.white,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    ),
+  );
+}
+
+// ── Report card ────────────────────────────────────────────────────────
+
+Widget _reportCard(Map<String, dynamic> doc, AuthProvider auth) {
+  final status = doc['status'] ?? 'draft';
+  final statusColor = _getStatusColor(status);
+  final statusLabel = _getStatusLabel(status);
+  final iconColor = _getIconColor(status);
+  final hasFormatted = doc['has_formatted'] == true;
+  const green = Color(0xFF10B981);
+
+  return Container(
+    decoration: _cardDeco(),
+    padding: const EdgeInsets.all(16),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Icon + name + menu
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 42,
+              height: 42,
+              decoration: BoxDecoration(
+                color: iconColor.withOpacity(0.14),
+                borderRadius: BorderRadius.circular(11),
+              ),
+              child: Icon(Icons.description_outlined,
+                  size: 21, color: iconColor),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    doc['filename'] ?? 'Untitled',
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.w700,
+                      color: _p.textPrimary,
+                      height: 1.25,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    doc['template_name'] ?? 'No template',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 11.5, color: _p.textSecondary),
+                  ),
+                ],
+              ),
+            ),
+            _reportMenu(doc, auth),
+          ],
+        ),
+
+        const SizedBox(height: 12),
+
+        // Status chips
+        Wrap(
+          spacing: 6,
+          runSpacing: 6,
+          children: [
+            _reportChip(statusLabel, statusColor),
+            if (hasFormatted)
+              _reportChip('Formatted saved', green, icon: Icons.check_circle),
+          ],
+        ),
+
+        const Spacer(),
+
+        // Modified time
+        Row(
+          children: [
+            Icon(Icons.schedule, size: 13, color: _p.textMuted),
+            const SizedBox(width: 5),
+            Text(
+              'Modified ${_getTimeAgo(doc['created_at'] ?? DateTime.now())}',
+              style: TextStyle(fontSize: 11, color: _p.textMuted),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        Divider(height: 1, color: _p.border),
+        const SizedBox(height: 10),
+
+        // Download buttons
+        Row(
+          children: [
+            Expanded(
+              child: Tooltip(
+                message: 'Download original file (unformatted)',
+                child: OutlinedButton.icon(
+                  onPressed: () =>
+                      _handleDownloadVersion(doc, version: 'unformatted'),
+                  icon: const Icon(Icons.file_download_outlined, size: 15),
+                  label: const Tr('Original',
+                      style: TextStyle(
+                          fontSize: 11.5, fontWeight: FontWeight.w700)),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: _p.textPrimary,
+                    side: BorderSide(color: _p.border),
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8)),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Tooltip(
+                message: hasFormatted
+                    ? 'Download formatted file'
+                    : 'Not available yet - open Analyze and save the formatted document',
+                child: OutlinedButton.icon(
+                  onPressed: hasFormatted
+                      ? () => _handleDownloadVersion(doc, version: 'formatted')
+                      : () => _showFormattedMissingHint(),
+                  icon: const Icon(Icons.file_download_outlined, size: 15),
+                  label: const Tr('Formatted',
+                      style: TextStyle(
+                          fontSize: 11.5, fontWeight: FontWeight.w700)),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: hasFormatted ? _p.accent : _p.textMuted,
+                    side: BorderSide(
+                        color: hasFormatted ? _p.accent : _p.border),
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8)),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ],
+    ),
+  );
+}
+
+Widget _reportChip(String text, Color color, {IconData? icon}) {
+  return Container(
+    padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+    decoration: BoxDecoration(
+      color: color.withOpacity(0.13),
+      borderRadius: BorderRadius.circular(999),
+    ),
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (icon != null) ...[
+          Icon(icon, size: 11, color: color),
+          const SizedBox(width: 4),
+        ],
+        Tr(
+          text,
+          style: TextStyle(
+            fontSize: 10.5,
+            fontWeight: FontWeight.w700,
+            color: color,
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+// ── Actions menu (same actions as before) ──────────────────────────────
+
+Widget _reportMenu(Map<String, dynamic> doc, AuthProvider auth) {
+  PopupMenuItem<String> item(
+    String value,
+    IconData icon,
+    String label, {
+    Color? color,
+  }) {
+    final c = color ?? _p.textPrimary;
+    return PopupMenuItem<String>(
+      value: value,
+      height: 40,
+      padding: const EdgeInsets.symmetric(horizontal: 14),
+      child: Row(
+        children: [
+          Icon(icon, size: 17, color: color ?? _p.textSecondary),
+          const SizedBox(width: 12),
+          Tr(
+            label,
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w500,
+              color: c,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  return PopupMenuButton<String>(
+    tooltip: 'More',
+    padding: EdgeInsets.zero,
+    offset: const Offset(0, 34),
+    elevation: 8,
+    color: _p.isDark ? _p.surfaceElevated : _p.surface,
+    surfaceTintColor: Colors.transparent,
+    constraints: const BoxConstraints(minWidth: 200),
+    shape: RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(12),
+      side: BorderSide(color: _p.isDark ? _p.borderStrong : _p.border),
+    ),
+    icon: Icon(Icons.more_vert, size: 18, color: _p.textSecondary),
+    onSelected: (value) {
+      if (value == 'analyze') {
+        _openAnalyzeScreen(doc);
+      } else if (value == 'preview') {
+        _showPreview(doc);
+      } else if (value == 'rename') {
+        _showRenameDialog(doc);
+      } else if (value == 'edit') {
+        _showEditDialog(doc, auth.userId!);
+      } else if (value == 'send' && DevUserConfig.hasFypModule) {
+        _sendReportToSupervisor(doc);
+      } else if (value == 'delete') {
+        _handleDelete(doc);
+      }
+    },
+    itemBuilder: (context) => [
+      item('analyze', Icons.analytics_outlined, 'Analyze',
+          color: const Color(0xFF10B981)),
+      if (DevUserConfig.hasFypModule)
+        item('send', Icons.send_rounded, 'Send to Supervisor',
+            color: const Color(0xFF10B981)),
+      const PopupMenuDivider(height: 8),
+      item('preview', Icons.visibility_outlined, 'Preview'),
+      item('rename', Icons.drive_file_rename_outline, 'Rename'),
+      item('edit', Icons.edit_outlined, 'Edit'),
+      const PopupMenuDivider(height: 8),
+      item('delete', Icons.delete_outline, 'Delete',
+          color: const Color(0xFFEF4444)),
+    ],
+  );
+}
+
+// ── Pagination ─────────────────────────────────────────────────────────
+
+Widget _reportsPagination(int page, int totalPages) {
+  Widget pageBtn(int n) {
+    final active = n == page;
+    return GestureDetector(
+      onTap: () => setState(() => _currentPage = n),
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        child: Container(
+          width: 34,
+          height: 34,
+          margin: const EdgeInsets.symmetric(horizontal: 3),
+          decoration: BoxDecoration(
+            color: active ? _p.accent : _p.surface,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: active ? _p.accent : _p.border,
+            ),
+          ),
+          child: Center(
+            child: Text(
+              '$n',
+              style: TextStyle(
+                color: active ? Colors.white : _p.textSecondary,
+                fontWeight: FontWeight.w600,
+                fontSize: 13,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  return Center(
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        IconButton(
+          icon: const Icon(Icons.chevron_left),
+          color: _p.textSecondary,
+          onPressed: page > 1 ? () => setState(() => _currentPage = page - 1) : null,
+        ),
+        for (int i = 1; i <= totalPages && i <= 3; i++) pageBtn(i),
+        if (totalPages > 3) ...[
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            child: Text('…',
+                style: TextStyle(color: _p.textSecondary, fontSize: 13)),
+          ),
+          pageBtn(totalPages),
+        ],
+        IconButton(
+          icon: const Icon(Icons.chevron_right),
+          color: _p.textSecondary,
+          onPressed: page < totalPages
+              ? () => setState(() => _currentPage = page + 1)
+              : null,
+        ),
+      ],
+    ),
+  );
+}
 
   Future<void> _sendReportToSupervisor(Map<String, dynamic> doc) async {
     final auth = context.read<AuthProvider>();
@@ -3722,152 +3346,302 @@ void _showPreview(Map<String, dynamic> doc) {
     );
   }
 
- Widget _buildSettingsPage() {
+Widget _buildSettingsPage() {
   return Consumer2<AuthProvider, ThemeProvider>(
     builder: (context, auth, theme, _) {
       final lang = context.watch<LangProvider>();
+      final name = auth.currentUser ?? 'User';
 
-      return SingleChildScrollView(
-        padding: EdgeInsets.all(32),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              decoration: _cardDeco(),
-              padding: EdgeInsets.all(20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Tr(
-                    'Account Information',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                      color: _p.textPrimary,
-                    ),
-                  ),
-                  SizedBox(height: 16),
-                  _buildSettingsItem('Username', auth.currentUser ?? 'N/A'),
-                  SizedBox(height: 12),
-                  _buildSettingsItem('Email', auth.email ?? 'N/A'),
-                  SizedBox(height: 12),
-                  _buildSettingsItem(
-                    'Account Type',
-                    DevUserConfig.displayRoleLabel(auth.userRole),
-                  ),
-                ],
-              ),
-            ),
-            SizedBox(height: 24),
-            Container(
-              decoration: _cardDeco(),
-              padding: EdgeInsets.all(20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Tr(
-                    'Preferences',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                      color: _p.textPrimary,
-                    ),
-                  ),
-                  SizedBox(height: 16),
-
-                  // ---------- NEW: Language ----------
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      return Align(
+        alignment: Alignment.topCenter,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 760),
+          child: SingleChildScrollView(
+            padding: EdgeInsets.all(isCompact(context) ? 16 : 32),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // ── Profile header ─────────────────────────────
+                Container(
+                  decoration: _cardDeco(),
+                  padding: const EdgeInsets.all(22),
+                  child: Row(
                     children: [
-                      Tr(
-                        'Language',
-                        style: TextStyle(fontSize: 13, color: _p.textPrimary),
-                      ),
-                      DropdownButton<String>(
-                        value: lang.code,
-                        dropdownColor: _p.surface,
-                        underline: SizedBox(),
-                        style: TextStyle(fontSize: 13, color: _p.textPrimary),
-                        items: kLanguages
-                            .map((l) => DropdownMenuItem(
-                                  value: l.code,
-                                  child: Text(l.name), // plain Text, translate nahi hona
-                                ))
-                            .toList(),
-                        onChanged: (v) {
-                          if (v != null) {
-                            context.read<LangProvider>().setLang(v);
-                          }
-                        },
-                      ),
-                    ],
-                  ),
-                  SizedBox(height: 12),
-                  // -----------------------------------
-
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Tr(
-                        'Email Notifications',
-                        style: TextStyle(fontSize: 13, color: _p.textPrimary),
-                      ),
-                      Switch(
-                        value: true,
-                        onChanged: (value) {},
-                        activeColor: _p.accent,
-                      ),
-                    ],
-                  ),
-                  SizedBox(height: 12),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Tr(
-                            'Dark Mode',
-                            style: TextStyle(fontSize: 13, color: _p.textPrimary),
+                      Container(
+                        width: 60,
+                        height: 60,
+                        decoration: BoxDecoration(
+                          color: _p.accent,
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: Center(
+                          child: Text(
+                            name.isNotEmpty ? name[0].toUpperCase() : 'U',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 24,
+                              fontWeight: FontWeight.w700,
+                            ),
                           ),
-                          SizedBox(height: 2),
-                          Tr(
-                            theme.isDarkMode ? 'On' : 'Off — Light Mode',
-                            style: TextStyle(fontSize: 11, color: _p.textSecondary),
-                          ),
-                        ],
+                        ),
                       ),
-                      Switch(
-                        value: theme.isDarkMode,
-                        onChanged: (value) => theme.setDarkMode(value),
-                        activeColor: _p.accent,
+                      const SizedBox(width: 18),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              name,
+                              style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w700,
+                                color: _p.textPrimary,
+                              ),
+                            ),
+                            const SizedBox(height: 3),
+                            Text(
+                              auth.email ?? 'No email',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: _p.textSecondary,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: _p.accentSoft,
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: Text(
+                          DevUserConfig.displayRoleLabel(auth.userRole),
+                          style: TextStyle(
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w700,
+                            color: _p.accent,
+                          ),
+                        ),
                       ),
                     ],
                   ),
-                ],
-              ),
-            ),
-            SizedBox(height: 24),
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton.icon(
-                onPressed: () => _logout(context),
-                icon: Icon(Icons.logout_rounded),
-                label: Tr('Sign Out'),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: _p.textPrimary,
-                  side: BorderSide(color: _p.borderStrong),
-                  padding: EdgeInsets.symmetric(vertical: 14),
                 ),
-              ),
+                const SizedBox(height: 28),
+
+                // ── Account ────────────────────────────────────
+                _settingsSectionTitle('Account', Icons.person_outline),
+                const SizedBox(height: 10),
+                Container(
+                  decoration: _cardDeco(),
+                  child: Column(
+                    children: [
+                      _settingsInfoRow(
+                          Icons.badge_outlined, 'Username', name),
+                      _settingsDivider(),
+                      _settingsInfoRow(Icons.mail_outline, 'Email',
+                          auth.email ?? 'N/A'),
+                      _settingsDivider(),
+                      _settingsInfoRow(
+                          Icons.shield_outlined,
+                          'Account type',
+                          DevUserConfig.displayRoleLabel(auth.userRole)),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 28),
+
+                // ── Preferences ────────────────────────────────
+                _settingsSectionTitle('Preferences', Icons.tune),
+                const SizedBox(height: 10),
+                Container(
+                  decoration: _cardDeco(),
+                  child: Column(
+                    children: [
+                      _settingsRow(
+                        icon: Icons.language,
+                        title: 'Language',
+                        subtitle: 'Choose the app language',
+                        trailing: DropdownButtonHideUnderline(
+                          child: DropdownButton<String>(
+                            value: lang.code,
+                            dropdownColor: _p.surface,
+                            borderRadius: BorderRadius.circular(10),
+                            style: TextStyle(
+                                fontSize: 13, color: _p.textPrimary),
+                            items: kLanguages
+                                .map((l) => DropdownMenuItem(
+                                      value: l.code,
+                                      child: Text(l.name),
+                                    ))
+                                .toList(),
+                            onChanged: (v) {
+                              if (v != null) {
+                                context.read<LangProvider>().setLang(v);
+                              }
+                            },
+                          ),
+                        ),
+                      ),
+                      _settingsDivider(),
+                      _settingsRow(
+                        icon: theme.isDarkMode
+                            ? Icons.dark_mode_outlined
+                            : Icons.light_mode_outlined,
+                        title: 'Dark mode',
+                        subtitle: theme.isDarkMode ? 'On' : 'Off · Light mode',
+                        trailing: Switch(
+                          value: theme.isDarkMode,
+                          onChanged: (v) => theme.setDarkMode(v),
+                          activeColor: _p.accent,
+                        ),
+                      ),
+                      _settingsDivider(),
+                      _settingsRow(
+                        icon: Icons.notifications_none,
+                        title: 'Email notifications',
+                        subtitle: 'Updates about your reports and reviews',
+                        trailing: Switch(
+                          value: _emailNotifications,
+                          onChanged: (v) =>
+                              setState(() => _emailNotifications = v),
+                          activeColor: _p.accent,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 28),
+
+                // ── Session ────────────────────────────────────
+                _settingsSectionTitle('Session', Icons.lock_outline),
+                const SizedBox(height: 10),
+                Container(
+                  decoration: _cardDeco(),
+                  child: _settingsRow(
+                    icon: Icons.logout_rounded,
+                    iconColor: const Color(0xFFEF4444),
+                    title: 'Sign out',
+                    subtitle: 'You will need to sign in again',
+                    trailing: OutlinedButton(
+                      onPressed: () => _logout(context),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: const Color(0xFFEF4444),
+                        side: BorderSide(
+                            color: const Color(0xFFEF4444).withOpacity(0.5)),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                      child: const Tr('Sign out'),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+              ],
             ),
-          ],
+          ),
         ),
       );
     },
   );
 }
 
+Widget _settingsSectionTitle(String text, IconData icon) {
+  return Row(
+    children: [
+      Icon(icon, size: 16, color: _p.textSecondary),
+      const SizedBox(width: 8),
+      Tr(
+        text.toUpperCase(),
+        style: TextStyle(
+          fontSize: 11.5,
+          letterSpacing: 0.8,
+          fontWeight: FontWeight.w700,
+          color: _p.textSecondary,
+        ),
+      ),
+    ],
+  );
+}
+
+Widget _settingsDivider() =>
+    Divider(height: 1, thickness: 1, color: _p.border);
+
+Widget _settingsInfoRow(IconData icon, String label, String value) {
+  return Padding(
+    padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 15),
+    child: Row(
+      children: [
+        Icon(icon, size: 19, color: _p.textSecondary),
+        const SizedBox(width: 14),
+        Tr(label,
+            style: TextStyle(fontSize: 13, color: _p.textSecondary)),
+        const Spacer(),
+        Flexible(
+          child: Text(
+            value,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.right,
+            style: TextStyle(
+              fontSize: 13.5,
+              fontWeight: FontWeight.w600,
+              color: _p.textPrimary,
+            ),
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+Widget _settingsRow({
+  required IconData icon,
+  required String title,
+  required String subtitle,
+  required Widget trailing,
+  Color? iconColor,
+}) {
+  final c = iconColor ?? _p.accent;
+  return Padding(
+    padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+    child: Row(
+      children: [
+        Container(
+          width: 38,
+          height: 38,
+          decoration: BoxDecoration(
+            color: c.withOpacity(0.12),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Icon(icon, size: 19, color: c),
+        ),
+        const SizedBox(width: 14),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Tr(title,
+                  style: TextStyle(
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w600,
+                    color: _p.textPrimary,
+                  )),
+              const SizedBox(height: 2),
+              Tr(subtitle,
+                  style: TextStyle(fontSize: 11.5, color: _p.textSecondary)),
+            ],
+          ),
+        ),
+        trailing,
+      ],
+    ),
+  );
+}
   Widget _buildTemplateCardNew(Map<String, dynamic> template, Color cardColor) {
     final displayName = (template['name'] ?? 'Template').toString();
     final description = (template['description'] ?? '').toString().trim();
@@ -5730,4 +5504,12 @@ class SettingsPanel extends StatelessWidget {
     );
   }
 
+}
+
+class _Feature {
+  final String title, subtitle;
+  final IconData icon;
+  final Color color;
+  final VoidCallback onTap;
+  const _Feature(this.title, this.subtitle, this.icon, this.color, this.onTap);
 }

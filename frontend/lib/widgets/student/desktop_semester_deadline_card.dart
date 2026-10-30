@@ -52,48 +52,59 @@ class _DesktopSemesterDeadlineCardState
     return '${d.day} ${months[d.month - 1]} ${d.year}';
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final fyp = context.watch<FypProvider>();
-    final p = context.watch<ThemeProvider>().palette;
-    final semDl = fyp.semesterDeadline;
+ @override
+Widget build(BuildContext context) {
+  final fyp = context.watch<FypProvider>();
+  final p = context.watch<ThemeProvider>().palette;
+  final semDl = fyp.semesterDeadline;
+  final loading = _loading || fyp.isSemesterDeadlineLoading;
+  final found = semDl?['found'] == true;
 
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: p.surface,
-        borderRadius: BorderRadius.circular(p.isDark ? p.cardRadius : 12),
-        border: Border.all(color: p.isDark ? p.borderStrong : p.border),
-        boxShadow: p.cardShadow,
+  // Loading: koi jagah nahi gherni
+  if (loading) return const SizedBox.shrink();
+
+  // Not set: poori bar ki jagah chhota chip, left aligned
+  if (!found) {
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+        decoration: BoxDecoration(
+          color: p.surface,
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: p.isDark ? p.borderStrong : p.border),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.event_outlined, color: p.iconMuted, size: 15),
+            const SizedBox(width: 8),
+            Tr('Semester deadline not set',
+              style: TextStyle(color: p.textMuted, fontSize: 12),
+            ),
+          ],
+        ),
       ),
-      child: _loading || fyp.isSemesterDeadlineLoading
-          ? SizedBox(
-              height: 28,
-              child: Center(
-                child: CircularProgressIndicator(
-                  color: p.accent,
-                  strokeWidth: 2,
-                ),
-              ),
-            )
-          : _buildContent(semDl, p),
     );
   }
 
+  // Deadline set: compact bar
+  return Container(
+    width: double.infinity,
+    padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+    decoration: BoxDecoration(
+      color: p.surface,
+      borderRadius: BorderRadius.circular(p.isDark ? p.cardRadius : 12),
+      border: Border.all(color: p.isDark ? p.borderStrong : p.border),
+      boxShadow: p.cardShadow,
+    ),
+    child: _buildContent(semDl, p),
+  );
+}
+
   Widget _buildContent(Map<String, dynamic>? semDl, AppPalette p) {
-    final found = semDl?['found'] == true;
-    if (!found) {
-      return Row(
-        children: [
-          Icon(Icons.event_outlined, color: p.iconMuted, size: 20),
-          const SizedBox(width: 12),
-          Tr('Semester deadline not set',
-            style: TextStyle(color: p.textMuted, fontSize: 14),
-          ),
-        ],
-      );
-    }
+  
+  
 
     final isPassed = semDl?['is_passed'] == true;
     final daysRemaining = (semDl?['days_remaining'] as num?)?.toInt();

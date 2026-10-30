@@ -7,7 +7,7 @@ import 'package:provider/provider.dart';
 import '../config/api_config.dart';
 import '../config/dev_user_config.dart';
 import '../providers/auth_provider.dart';
-
+import 'package:shared_preferences/shared_preferences.dart';
 import '../services/login_credentials_store.dart';
 
 import '../services/super_admin_api_service.dart';
@@ -50,6 +50,8 @@ class _LoginScreenState extends State<LoginScreen> {
   List<SavedLoginAccount> _savedAccounts = const [];
 
   final _orgCodeController = TextEditingController();
+  static const _recentOrgsKey = 'recent_org_codes';
+List<String> _recentOrgCodes = const [];
   /// false until user continues with a valid organization code
   bool _orgResolved = false;
   bool _resolvingOrg = false;
@@ -74,6 +76,7 @@ class _LoginScreenState extends State<LoginScreen> {
     super.initState();
     _emailFocusNode.addListener(_onEmailFocusChanged);
     _loadSavedCredentials();
+    _loadRecentOrgCodes();
   }
 
   void _onEmailFocusChanged() {
@@ -101,6 +104,34 @@ class _LoginScreenState extends State<LoginScreen> {
       }
     });
   }
+
+  Future<void> _loadRecentOrgCodes() async {
+  final prefs = await SharedPreferences.getInstance();
+  final list = prefs.getStringList(_recentOrgsKey) ?? const [];
+  if (!mounted) return;
+  setState(() => _recentOrgCodes = list);
+}
+
+Future<void> _saveRecentOrgCode(String code) async {
+  final normalized = code.trim().toUpperCase();
+  if (normalized.isEmpty) return;
+  final updated = [
+    normalized,
+    ..._recentOrgCodes.where((c) => c != normalized),
+  ].take(5).toList();
+  final prefs = await SharedPreferences.getInstance();
+  await prefs.setStringList(_recentOrgsKey, updated);
+  if (mounted) setState(() => _recentOrgCodes = updated);
+}
+
+Future<void> _removeRecentOrgCode(String code) async {
+  final updated = _recentOrgCodes.where((c) => c != code).toList();
+  final prefs = await SharedPreferences.getInstance();
+  await prefs.setStringList(_recentOrgsKey, updated);
+  if (mounted) setState(() => _recentOrgCodes = updated);
+}
+
+  
 
   Future<void> _applySuggestedAccount(String email) async {
     final normalized = email.trim().toLowerCase();
@@ -442,6 +473,67 @@ class _LoginScreenState extends State<LoginScreen> {
           icon: Icons.apartment_rounded,
           textCapitalization: TextCapitalization.characters,
         ),
+        if (_recentOrgCodes.isNotEmpty) ...[
+  const SizedBox(height: 14),
+  const Tr('Recently used',
+    style: TextStyle(
+      fontSize: 11.5,
+      fontWeight: FontWeight.w700,
+      letterSpacing: 0.6,
+      color: _AuthColors.mutedSoft,
+    ),
+  ),
+  const SizedBox(height: 8),
+  Wrap(
+    spacing: 8,
+    runSpacing: 8,
+    children: _recentOrgCodes.map((code) {
+      return InkWell(
+        borderRadius: BorderRadius.circular(999),
+        onTap: _resolvingOrg
+            ? null
+            : () {
+                _orgCodeController.text = code;
+                _resolveOrganization();
+              },
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(12, 7, 6, 7),
+          decoration: BoxDecoration(
+            color: _AuthColors.inputFill,
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(color: _AuthColors.border),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.history,
+                  size: 14, color: _AuthColors.accent),
+              const SizedBox(width: 6),
+              Text(
+                code,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(width: 4),
+              InkWell(
+                onTap: () => _removeRecentOrgCode(code),
+                borderRadius: BorderRadius.circular(999),
+                child: const Padding(
+                  padding: EdgeInsets.all(3),
+                  child: Icon(Icons.close,
+                      size: 13, color: _AuthColors.mutedSoft),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }).toList(),
+  ),
+],
         const SizedBox(height: 14),
         if (_orgResolveError != null) ...[
           Container(
@@ -487,6 +579,7 @@ class _LoginScreenState extends State<LoginScreen> {
         allowSignup: info['allow_self_signup'] == true,
         color: (info['primary_color'] ?? '').toString(),
       );
+      await _saveRecentOrgCode((info['org_code'] ?? code).toString());
       if (!mounted) return;
       setState(() {
         _orgResolved = true;
