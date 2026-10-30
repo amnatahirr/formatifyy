@@ -11,7 +11,10 @@ import shutil
 from typing import Any, Dict, List, Optional, Set
 
 from services.list_of_tables_service import regenerate_list_of_tables
-from services.table_caption_service import detect_captions_for_tables
+from services.table_caption_service import (
+    apply_table_caption_keep_chain,
+    detect_captions_for_tables,
+) 
 from services.table_config import get_table_format_config
 from services.table_numbering_service import (
     apply_numbering_to_table_captions,
@@ -35,6 +38,7 @@ def run_table_formatting_pipeline(
     """
     from docx import Document
     from docx_tools.docx_fields import _element_is_before_body_start
+    from docx_tools.reformatter import _make_table_pagination_safe
 
     if not file_path.endswith(".docx"):
         return {
@@ -91,6 +95,15 @@ def run_table_formatting_pipeline(
         formatted_indices.append(index)
         if info.get("notes"):
             style_notes.append({"index": index, "notes": info["notes"]})
+
+        # 4b — pagination: caption stays with table, rows never split, header repeats
+    for index in formatted_indices:
+        table = doc.tables[index]
+        try:
+            apply_table_caption_keep_chain(doc, table)
+            _make_table_pagination_safe(table)
+        except Exception as exc:
+            print(f"[tables] pagination skipped for table {index}: {exc}")
 
     # 5 — LOT
     lot_report = regenerate_list_of_tables(doc, applied, formatting_rules)

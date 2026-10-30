@@ -455,6 +455,36 @@ def _set_keep(para, with_next: Optional[bool] = None, together: Optional[bool] =
     except Exception:
         pass
 
+def _flush_left(para) -> None:
+    """Force zero indent (overrides style/numbering) and strip leading tabs/spaces."""
+    from docx.shared import Inches
+    from docx.oxml.ns import qn
+
+    pf = para.paragraph_format
+    pf.left_indent = Inches(0)
+    pf.first_line_indent = Inches(0)
+
+    # Word gives priority to the *Chars attributes; remove them
+    pPr = para._element.pPr
+    ind = pPr.find(qn("w:ind")) if pPr is not None else None
+    if ind is not None:
+        for attr in ("leftChars", "startChars", "firstLineChars",
+                     "hangingChars", "start", "hanging"):
+            ind.attrib.pop(qn(f"w:{attr}"), None)
+
+    # leading tab / spaces in the first text run
+    for r in para._element.findall(qn("w:r")):
+        stop = False
+        for child in list(r):
+            if child.tag == qn("w:tab"):
+                r.remove(child)
+            elif child.tag == qn("w:t"):
+                child.text = (child.text or "").lstrip(" \t\u00a0")
+                if child.text:
+                    stop = True
+                    break
+        if stop:
+            break
 
 def _usable_page_height_inches(doc) -> float:
     """Usable body height (page height minus top/bottom margins) of the last section."""
@@ -643,6 +673,8 @@ def _apply_pagination_rules(doc, body_start=None) -> None:
                         if _para_has_drawing(prev) or _is_caption_para(prev):
                             break
                         _set_keep(prev, with_next=True, together=True)
+                        if not _is_heading_style(prev):
+                            _flush_left(prev)
                         pulled += 1
                         if _is_heading_style(prev):
                             break
