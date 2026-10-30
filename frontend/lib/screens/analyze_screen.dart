@@ -22,7 +22,7 @@ import '../widgets/reference_formatter_widget.dart';
 import '../providers/analysis_job_provider.dart';
 import '../main.dart' show navigatorKey; 
 import '../utils/analysis_nav.dart';
-
+import 'dart:async';
 import '../widgets/tr.dart';
 // ─────────────────────────────────────────────────────────────────────────────
 // Color palette — follows ThemeProvider (light / dark)
@@ -223,6 +223,10 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
   bool _isDownloading = false;
   bool _isSavingFormatted = false;
   bool _formattedSaved = false;
+  Timer? _autoSaveDebounce;
+Timer? _autoSavePeriodic;
+bool _autoSaveDirty = false;
+DateTime? _lastSavedAt;
   /// True briefly after analyze HTTP succeeds so the progress UI can show Finalizing.
   bool _analysisComplete = false;
   /// Bumped on each analyze run so the progress panel resets its stages.
@@ -241,6 +245,10 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
   List<Map<String, dynamic>> _freeformManualNotes = [];
 
 late final AnalysisJobProvider _jobs;
+late final DocumentProvider _docs;
+late final AuthProvider _auth;
+
+
 
 
   // Document review preview state
@@ -320,6 +328,8 @@ late final AnalysisJobProvider _jobs;
     debugPrint('!!! AnalyzeScreen opened NON-embedded. Caller:\n${StackTrace.current}');
   }
     _jobs = context.read<AnalysisJobProvider>();
+    _docs = context.read<DocumentProvider>();
+_auth = context.read<AuthProvider>();
   _jobs.activeDocId = widget.documentId;
     _tabController = TabController(length: 9, vsync: this);
     _tabController.addListener(_onAnalysisTabChanged);
@@ -352,6 +362,8 @@ late final AnalysisJobProvider _jobs;
         _analysisComplete = true;
       });
       _loadTables();
+      _startAutoSaveTimer();
+      _markDirty();
       await Future.delayed(const Duration(milliseconds: 500));
     }
     return data;
@@ -377,12 +389,23 @@ late final AnalysisJobProvider _jobs;
   }
 
   @override
-  void dispose() {
-     if (_jobs.activeDocId == widget.documentId) _jobs.activeDocId = null;
-    _tabController.removeListener(_onAnalysisTabChanged);
-    _tabController.dispose();
-    super.dispose();
+void dispose() {
+  // Auto-save timers band karo
+  _autoSaveDebounce?.cancel();
+  _autoSavePeriodic?.cancel();
+
+  // Aakhri pending save (best effort). dispose mein setState nahi chalta,
+  // isliye yahan _autoSave ki jagah seedha provider call karte hain.
+  final userId = _auth.userId;
+  if (_autoSaveDirty && userId != null) {
+    _docs.saveFormattedDocument(widget.documentId, userId);
   }
+
+  if (_jobs.activeDocId == widget.documentId) _jobs.activeDocId = null;
+  _tabController.removeListener(_onAnalysisTabChanged);
+  _tabController.dispose();
+  super.dispose();
+}
 
   String get _imageHostBase {
     final uri = Uri.tryParse(_baseUrl);
@@ -522,6 +545,7 @@ late final AnalysisJobProvider _jobs;
       }
       _isFixApplied = true;
     });
+     _markDirty();
   }
 
   int _headingLevelFromMatch(Map<String, dynamic> match) {
@@ -2508,41 +2532,61 @@ late final AnalysisJobProvider _jobs;
     }
   }
 
-  Future<void> _saveFormattedDocument() async {
-    if (_isSavingFormatted) return;
-    final auth = context.read<AuthProvider>();
-    final userId = auth.userId;
-    if (userId == null) {
-      _showSnack('Please sign in again to save.', _red);
-      return;
-    }
 
-    setState(() { _isSavingFormatted = true; });
-    try {
-      final docProvider = context.read<DocumentProvider>();
-      final success = await docProvider.saveFormattedDocument(
-        widget.documentId,
-        userId,
-      );
-      if (!mounted) return;
-      if (success) {
-        setState(() { _formattedSaved = true; });
-        _showSnack(
-          'Formatted document saved to My Reports. Open the report card to access Unformatted and Formatted versions.',
-          _green,
-        );
-      } else {
-        _showSnack(
-          docProvider.errorMessage ?? 'Could not save formatted document.',
-          _red,
-        );
-      }
-    } catch (e) {
-      if (mounted) _showSnack('Save error: $e', _red);
-    } finally {
-      if (mounted) setState(() { _isSavingFormatted = false; });
+void _markDirty() {
+  if (!_analysisComplete) return;
+  _autoSaveDirty = true;
+  _autoSaveDebounce?.cancel();
+  _autoSaveDebounce = Timer(const Duration(seconds: 2), _autoSave);
+}
+
+void _startAutoSaveTimer() {
+  _autoSavePeriodic?.cancel();
+  _autoSavePeriodic = Timer.periodic(const Duration(seconds: 20), (_) {
+    if (_autoSaveDirty) _autoSave();
+  });
+}
+
+
+
+String get _autoSaveLabel {
+  if (_isSavingFormatted) return 'Saving...';
+  if (_autoSaveDirty) return 'Unsaved changes';
+  if (_lastSavedAt != null) return 'All changes saved';
+  return 'Not saved yet';
+}
+
+
+
+
+Future<void> _autoSave() async {
+  if (_isSavingFormatted || !mounted) return;
+  final userId = _auth.userId;
+  if (userId == null) return;
+  debugPrint('[AutoSave] saving... ${DateTime.now()}');
+
+  _autoSaveDirty = false;
+  setState(() => _isSavingFormatted = true);
+  try {
+    final ok = await _docs.saveFormattedDocument(widget.documentId, userId);
+    debugPrint('[AutoSave] result: $ok'); 
+    if (!mounted) return;
+    if (ok) {
+      setState(() {
+        _formattedSaved = true;
+        _lastSavedAt = DateTime.now();
+      });
+    } else {
+      _autoSaveDirty = true;
     }
+  } catch (e) {
+    _autoSaveDirty = true;
+    debugPrint('[AutoSave] failed: $e');
+  } finally {
+    if (mounted) setState(() => _isSavingFormatted = false);
   }
+}
+
 
   Future<void> _renameThisDocument() async {
     final userId = context.read<AuthProvider>().userId;
@@ -7166,147 +7210,142 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
   }
 
   // ── Action bar ────────────────────────────────────────────────────────────
+Widget _buildActionBar(List<dynamic> oldIssues) {
+  final openIssues = _visibleIssues(oldIssues);
+  final activeIssues = openIssues.length;
+  final majorCount = openIssues.where((i) {
+    final sev = ((i as Map)['severity'] as String? ?? '').toLowerCase();
+    return sev == 'major' || sev == 'critical' || sev == 'error';
+  }).length;
+  final pendingImages = _pendingImageIssues.length;
 
-  Widget _buildActionBar(List<dynamic> oldIssues) {
-    final openIssues = _visibleIssues(oldIssues);
-    final activeIssues = openIssues.length;
-    final majorCount = openIssues.where((i) {
-      final sev = ((i as Map)['severity'] as String? ?? '').toLowerCase();
-      return sev == 'major' || sev == 'critical' || sev == 'error';
-    }).length;
-    final pendingImages = _pendingImageIssues.length;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
-      decoration: BoxDecoration(
-        color: _surface,
-        border: Border(top: BorderSide(color: _border)),
-      ),
-      child: Row(
-        children: [
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                '$activeIssues issues  ·  $majorCount major',
-                style: TextStyle(color: _textPri, fontSize: 13),
-              ),
-              pendingImages > 0
-                  ? Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(
-                          Icons.warning_amber_rounded,
-                          color: _yellow,
-                          size: 12,
-                        ),
-                        const SizedBox(width: 4),
-                        Text(
-                          '$pendingImages image${pendingImages == 1 ? '' : 's'} '
-                          'need${pendingImages == 1 ? 's' : ''} to be replaced '
-                          'or removed manually',
-                          style: const TextStyle(color: _yellow, fontSize: 11),
-                        ),
-                      ],
+  return Container(
+    padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+    decoration: BoxDecoration(
+      color: _surface,
+      border: Border(top: BorderSide(color: _border)),
+    ),
+    child: Row(
+      children: [
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '$activeIssues issues  ·  $majorCount major',
+              style: TextStyle(color: _textPri, fontSize: 13),
+            ),
+            pendingImages > 0
+                ? Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.warning_amber_rounded,
+                        color: _yellow,
+                        size: 12,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        '$pendingImages image${pendingImages == 1 ? '' : 's'} '
+                        'need${pendingImages == 1 ? 's' : ''} to be replaced '
+                        'or removed manually',
+                        style: const TextStyle(color: _yellow, fontSize: 11),
+                      ),
+                    ],
+                  )
+                : Tr('Review highlights, apply fixes, then download',
+                    style: TextStyle(color: _textSec, fontSize: 11),
+                  ),
+          ],
+        ),
+        const Spacer(),
+        TextButton(
+          onPressed: () {
+            setState(() {
+              for (final i in _visibleIssues(oldIssues)) {
+                _ignoredIssueIds.add((i as Map)['issue_id'] as String? ?? '');
+              }
+            });
+            _showSnack('All issues ignored', _textSec);
+          },
+          child: Tr('Ignore All', style: TextStyle(color: _textSec)),
+        ),
+        const SizedBox(width: 12),
+        _isFixApplied
+            ? Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // ── Auto-save status ──────────────────────────────
+                  if (_isSavingFormatted)
+                    const SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: _green,
+                      ),
                     )
-                  : Tr('Review highlights, apply fixes, then download',
-                      style: TextStyle(color: _textSec, fontSize: 11),
+                  else
+                    Icon(
+                      _autoSaveDirty
+                          ? Icons.cloud_upload_outlined
+                          : (_lastSavedAt != null
+                              ? Icons.cloud_done_outlined
+                              : Icons.cloud_off_outlined),
+                      size: 16,
+                      color: _autoSaveDirty ? _yellow : _green,
                     ),
-            ],
-          ),
-          const Spacer(),
-          TextButton(
-            onPressed: () {
-              setState(() {
-                for (final i in _visibleIssues(oldIssues)) {
-                  _ignoredIssueIds.add((i as Map)['issue_id'] as String? ?? '');
-                }
-              });
-              _showSnack('All issues ignored', _textSec);
-            },
-            child: Tr('Ignore All', style: TextStyle(color: _textSec)),
-          ),
-          const SizedBox(width: 12),
-          _isFixApplied
-              ? Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    OutlinedButton.icon(
-                      onPressed:
-                          _isSavingFormatted ? null : _saveFormattedDocument,
-                      icon: _isSavingFormatted
-                          ? const SizedBox(
-                              width: 14,
-                              height: 14,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : Icon(
-                              _formattedSaved
-                                  ? Icons.check_circle_outline
-                                  : Icons.save_outlined,
-                              size: 16,
-                            ),
-                      label: Text(
-                        _isSavingFormatted
-                            ? 'Saving...'
-                            : (_formattedSaved
-                                ? 'Saved'
-                                : 'Save Formatted Document'),
-                      ),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: _green,
-                        side: BorderSide(color: _green),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 12,
-                        ),
-                      ),
+                  const SizedBox(width: 6),
+                  Text(
+                    _autoSaveLabel,
+                    style: TextStyle(
+                      color: _autoSaveDirty ? _yellow : _green,
+                      fontSize: 12,
                     ),
-                    const SizedBox(width: 10),
-                    ElevatedButton.icon(
-                      onPressed: _isDownloading ? null : _downloadDirectly,
-                      icon: _isDownloading
-                          ? const SizedBox(
-                              width: 14,
-                              height: 14,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: Colors.white,
-                              ),
-                            )
-                          : const Icon(Icons.download, size: 16),
-                      label: Text(
-                        _isDownloading
-                            ? 'Downloading...'
-                            : 'Download Formatted Document',
-                      ),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: _green,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 20,
-                          vertical: 12,
-                        ),
-                      ),
-                    ),
-                  ],
-                )
-              : ElevatedButton.icon(
-                onPressed: _isApplyingFix ? null : _applyAllFixesAndStyles,
-                icon:
-                    _isApplyingFix
+                  ),
+                  const SizedBox(width: 16),
+                  // ── Download ──────────────────────────────────────
+                  ElevatedButton.icon(
+                    onPressed: _isDownloading ? null : _downloadDirectly,
+                    icon: _isDownloading
                         ? const SizedBox(
-                          width: 14,
-                          height: 14,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
-                          ),
-                        )
-                        : const Icon(Icons.auto_fix_high, size: 16),
+                            width: 14,
+                            height: 14,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : const Icon(Icons.download, size: 16),
+                    label: Text(
+                      _isDownloading
+                          ? 'Downloading...'
+                          : 'Download Formatted Document',
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: _green,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 20,
+                        vertical: 12,
+                      ),
+                    ),
+                  ),
+                ],
+              )
+            : ElevatedButton.icon(
+                onPressed: _isApplyingFix ? null : _applyAllFixesAndStyles,
+                icon: _isApplyingFix
+                    ? const SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                    : const Icon(Icons.auto_fix_high, size: 16),
                 label: Text(
-                  _isApplyingFix
-                      ? 'Applying all fixes...'
-                      : 'Apply All Fixes',
+                  _isApplyingFix ? 'Applying all fixes...' : 'Apply All Fixes',
                 ),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: _purple,
@@ -7317,11 +7356,10 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
                   ),
                 ),
               ),
-        ],
-      ),
-    );
-  }
-
+      ],
+    ),
+  );
+}
   // ── Empty state ───────────────────────────────────────────────────────────
 
   Widget _buildEmptyState(
