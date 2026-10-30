@@ -193,13 +193,15 @@ _HEADING_STYLE_RE = re.compile(r"(?i)^heading\s*([1-4])$")
 
 
 def _set_paragraph_text(para, text: str) -> None:
-    """Replace paragraph visible text while keeping the first run if present."""
-    if para.runs:
-        para.runs[0].text = text
-        for run in para.runs[1:]:
+    """Replace visible text while keeping runs that hold images/drawings."""
+    text_runs = [r for r in para.runs if not _run_contains_drawing(r)]
+    if text_runs:
+        text_runs[0].text = text
+        for run in text_runs[1:]:
             run.text = ""
-    else:
+    elif not para.runs:
         para.text = text
+    # else: paragraph is image-only -> leave it untouched
 
 
 def renumber_heading_prefixes(file_path: str) -> int:

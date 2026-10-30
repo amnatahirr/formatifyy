@@ -65,6 +65,14 @@ def aggregate(
 
         # Strip private keys before creating the Issue
         clean = {k: v for k, v in raw.items() if not k.startswith("_")}
+        none_keys = [k for k, v in clean.items() if v is None]
+        if none_keys:
+            print(
+                f"[aggregator] WARNING: {func}/{itype} returned None for "
+                f"{none_keys}, using defaults"
+            )
+            for k in none_keys:
+                clean.pop(k)
         unique_issues.append(Issue(**clean))
 
     # ── Aggregator list self-check ────────────────────────────────────────────

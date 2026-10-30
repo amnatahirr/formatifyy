@@ -12,7 +12,7 @@ Optimisations:
 """
 
 from __future__ import annotations
-
+import numpy as np
 import base64
 import hashlib
 import io
@@ -107,7 +107,13 @@ def decode_base64_image(b64: str, for_inference: bool = True) -> Image.Image:
         raise ValueError("Empty base64 image data")
     raw = b64.split(",", 1)[-1] if b64.startswith("data:") else b64
     data = base64.b64decode(raw)
-    image = Image.open(io.BytesIO(data)).convert("RGB")
+    image = Image.open(io.BytesIO(data))
+    if image.mode in ("RGBA", "LA", "P"):
+        image = image.convert("RGBA")
+        _bg = Image.new("RGBA", image.size, (255, 255, 255, 255))
+        _bg.alpha_composite(image)
+        image = _bg
+    image = image.convert("RGB")
     if for_inference:
         image = resize_for_inference(image)
     return image
@@ -235,25 +241,78 @@ def clip_text_text_similarity(text_a: str, text_b: str) -> float:
 
 
 
+# ── Diagram detection ─────────────────────────────────────────────────────────
+
+_DIAGRAM_PROMPTS = [
+    "a UML use case diagram with actors and ovals",
+    "a UML class diagram",
+    "a UML sequence diagram",
+    "an entity relationship diagram",
+    "a data flow diagram",
+    "a flowchart with boxes and arrows",
+    "a system architecture diagram",
+    "a block diagram",
+    "a software engineering diagram",
+]
+_PHOTO_PROMPTS = [
+    "a photograph of a person",
+    "a photograph of an animal",
+    "a photograph of a landscape",
+    "a photograph of a building",
+    "a photograph of food",
+    "a photograph of an object",
+    "a cartoon or meme",
+]
+_DIAGRAM_CLIP_THRESHOLD = 0.60
+
+
+def _flat_colour_stats(image: Image.Image) -> Tuple[float, float]:
+    """(background_share, top10_share) on a coarse 16-level-per-channel palette."""
+    small = image.convert("RGB").resize((256, 256), Image.Resampling.BOX)
+    arr = np.asarray(small, dtype=np.uint8) >> 4
+    keys = (
+        (arr[..., 0].astype(np.int32) << 8)
+        | (arr[..., 1].astype(np.int32) << 4)
+        | arr[..., 2].astype(np.int32)
+    )
+    counts = np.sort(np.bincount(keys.ravel(), minlength=4096))[::-1]
+    total = float(keys.size)
+    return counts[0] / total, counts[:10].sum() / total
+
+
+@torch.inference_mode()
+def clip_diagram_probability(image: Image.Image) -> float:
+    """CLIP zero-shot: probability mass on 'diagram' prompts vs 'photo' prompts."""
+    processor, model = _load_clip()
+    texts = _DIAGRAM_PROMPTS + _PHOTO_PROMPTS
+    inputs = processor(
+        text=texts, images=image, return_tensors="pt", padding=True, truncation=True
+    ).to(_device)
+    probs = model(**inputs).logits_per_image.softmax(dim=-1).squeeze(0)
+    return float(probs[: len(_DIAGRAM_PROMPTS)].sum().item())
+
+
 def is_diagram_like_from_b64(b64: str) -> bool:
     """
-    Heuristic: UML / flowchart / DFD / use-case style diagrams are mostly a
-    white background with very few distinct colours. CLIP/BLIP are unreliable
-    on these, so callers should not use CLIP similarity to judge them.
+    Two-stage check:
+      1) Flat-colour heuristic: one dominant background colour + very few
+         other colours (works for white OR coloured/off-white backgrounds).
+      2) CLIP zero-shot 'diagram vs photo' as fallback when (1) misses.
     """
     try:
-        image = decode_base64_image(b64, for_inference=True).convert("RGB")
-        small = image.resize((128, 128), Image.Resampling.BILINEAR)
-        total = 128 * 128
+        image = decode_base64_image(b64, for_inference=True)
 
-        gray = small.convert("L")
-        near_white = sum(1 for p in gray.getdata() if p >= 235) / total
+        bg_share, top10 = _flat_colour_stats(image)
+        if bg_share >= 0.45 and top10 >= 0.85:
+            print(f"[local_vision] diagram check: flat colours "
+                  f"(bg={bg_share:.2f}, top10={top10:.2f}) -> True")
+            return True
 
-        quant = small.quantize(colors=32)
-        counts = sorted((c for c, _ in (quant.getcolors() or [])), reverse=True)
-        top6 = sum(counts[:6]) / total
-
-        return near_white >= 0.55 and top6 >= 0.85
+        p_diagram = clip_diagram_probability(image)
+        result = p_diagram >= _DIAGRAM_CLIP_THRESHOLD
+        print(f"[local_vision] diagram check: bg={bg_share:.2f} top10={top10:.2f} "
+              f"clip_diagram={p_diagram:.2f} -> {result}")
+        return result
     except Exception as exc:
         print(f"[local_vision] diagram heuristic failed: {exc}")
         return False
