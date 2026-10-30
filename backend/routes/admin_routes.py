@@ -483,6 +483,12 @@ def get_admin_users(
 ):
     _require_admin(user_id)
     org_id = _org_id(request)
+
+    org = getattr(request.state, "org", None)
+    if not isinstance(org, dict):
+        org = resolve_organization_from_request(request)
+    org_name = str(org.get("name") or org.get("org_name") or org.get("org_code") or "")
+
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute(
@@ -497,6 +503,8 @@ def get_admin_users(
     )
     users = [dict(row) for row in cursor.fetchall()]
     conn.close()
+    for u in users:
+        u["organization_name"] = org_name
     return {"users": users}
 
 

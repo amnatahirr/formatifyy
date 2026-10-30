@@ -2,6 +2,17 @@
 super_admin_routes.py — Platform Super Admin: manage all organizations.
 
 Protected by X-Super-Admin-Key header (SUPER_ADMIN_KEY env / .env).
+
+Real-data additions
+-------------------
+* GET /stats now also returns: growth series, billing breakdown, plan/module
+  catalogs (with live org counts), user/admin totals and the recent activity feed.
+* Every mutating action (create / update / toggle / delete / reset-key) is written
+  to the `super_admin_activity` table (created automatically; existing orgs are
+  back-filled once so the feed is never empty on first run).
+* GET /activity returns the audit trail on its own.
+* Plan list prices live in PLAN_CATALOG below and can be overridden with env vars
+  PLAN_PRICE_UNIVERSITY / PLAN_PRICE_ENTERPRISE / PLAN_PRICE_STARTER.
 """
 
 from __future__ import annotations
@@ -10,6 +21,7 @@ import logging
 import os
 import secrets
 import smtplib
+from datetime import datetime, timezone
 from email.message import EmailMessage
 from pathlib import Path
 from typing import Annotated, Any, Optional
@@ -26,13 +38,177 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/super-admin", tags=["Super Admin"])
 
+# ---------------------------------------------------------------------------
+# Catalogs (server-side source of truth for Billing + Settings screens)
+# ---------------------------------------------------------------------------
+
+PLAN_CATALOG: dict[str, dict[str, Any]] = {
+    "university": {
+        "label": "University",
+        "price_usd": 150,
+        "description": "Core + FYP modules for universities.",
+    },
+    "enterprise": {
+        "label": "Enterprise (Company)",
+        "price_usd": 99,
+        "description": "Company tenants with the core module.",
+    },
+    "starter": {
+        "label": "Starter",
+        "price_usd": 48,
+        "description": "Entry-level plan for small teams.",
+    },
+}
+
+MODULE_CATALOG: dict[str, dict[str, Any]] = {
+    "core": {
+        "label": "Core Module",
+        "price_usd": 99,
+        "description": "Base platform access, document workflows, reporting.",
+    },
+    "fyp": {
+        "label": "FYP Module",
+        "price_usd": 51,
+        "description": "Final-year project tracking, supervisor allocation, defenses.",
+    },
+}
+
+_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+
+
+def _plan_price(plan: str) -> int:
+    key = (plan or "").strip().lower()
+    env = os.getenv(f"PLAN_PRICE_{key.upper()}", "").strip()
+    if env:
+        try:
+            return int(float(env))
+        except ValueError:
+            pass
+    return int(PLAN_CATALOG.get(key, {}).get("price_usd", 0))
+
+
+def _plan_label(plan: str) -> str:
+    key = (plan or "").strip().lower()
+    if key in PLAN_CATALOG:
+        return PLAN_CATALOG[key]["label"]
+    return key.capitalize() if key else "—"
+
+
+# ---------------------------------------------------------------------------
+# Auth
+# ---------------------------------------------------------------------------
+
+_ACTIVITY_READY = False
+
 
 def _require_super_admin(
     x_super_admin_key: Annotated[Optional[str], Header()] = None,
 ) -> None:
     expected = get_super_admin_key()
-    if not x_super_admin_key or x_super_admin_key.strip() != expected:
+    provided = (x_super_admin_key or "").strip()
+    if not provided or not expected or not secrets.compare_digest(
+        provided.encode("utf-8"), str(expected).encode("utf-8")
+    ):
         raise HTTPException(status_code=401, detail="Invalid or missing X-Super-Admin-Key.")
+    _ensure_activity_table()
+
+
+# ---------------------------------------------------------------------------
+# Activity log
+# ---------------------------------------------------------------------------
+
+
+def _ensure_activity_table() -> None:
+    """Create the audit table once per process and back-fill from existing orgs."""
+    global _ACTIVITY_READY
+    if _ACTIVITY_READY:
+        return
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS super_admin_activity (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                kind TEXT NOT NULL,
+                text TEXT NOT NULL,
+                org_id INTEGER,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
+        cur.execute("SELECT COUNT(*) FROM super_admin_activity")
+        if int(cur.fetchone()[0] or 0) == 0:
+            cur.execute("SELECT id, name, plan, created_at FROM organizations ORDER BY id ASC")
+            for r in cur.fetchall():
+                cur.execute(
+                    """
+                    INSERT INTO super_admin_activity (kind, text, org_id, created_at)
+                    VALUES ('org', ?, ?, COALESCE(?, CURRENT_TIMESTAMP))
+                    """,
+                    (f"{r['name']} was created on plan {r['plan'] or 'university'}", r["id"], r["created_at"]),
+                )
+        conn.commit()
+        _ACTIVITY_READY = True
+    except Exception:  # noqa: BLE001
+        logger.exception("Could not prepare super_admin_activity table")
+        try:
+            conn.rollback()
+        except Exception:  # noqa: BLE001
+            pass
+    finally:
+        conn.close()
+
+
+def _log_activity(cursor, kind: str, text: str, org_id: Optional[int] = None) -> None:
+    """Best-effort audit entry — never breaks the calling request."""
+    try:
+        cursor.execute(
+            "INSERT INTO super_admin_activity (kind, text, org_id) VALUES (?, ?, ?)",
+            (kind, text, org_id),
+        )
+    except Exception:  # noqa: BLE001
+        logger.warning("Could not write activity entry: %s", text)
+
+
+def _iso(raw: Any) -> str:
+    s = str(raw or "").strip()
+    if not s:
+        return ""
+    s = s.replace(" ", "T")
+    if not (s.endswith("Z") or "+" in s[10:]):
+        s += "Z"
+    return s
+
+
+def _fetch_activity(cursor, limit: int = 50) -> list[dict[str, Any]]:
+    try:
+        cursor.execute(
+            """
+            SELECT id, kind, text, org_id, created_at
+            FROM super_admin_activity
+            ORDER BY id DESC
+            LIMIT ?
+            """,
+            (int(limit),),
+        )
+        return [
+            {
+                "id": int(r["id"]),
+                "kind": r["kind"] or "org",
+                "text": r["text"] or "",
+                "org_id": r["org_id"],
+                "created_at": _iso(r["created_at"]),
+            }
+            for r in cursor.fetchall()
+        ]
+    except Exception:  # noqa: BLE001
+        return []
+
+
+# ---------------------------------------------------------------------------
+# Email
+# ---------------------------------------------------------------------------
 
 
 def _send_org_admin_credentials_email(
@@ -109,6 +285,11 @@ def _send_org_admin_credentials_email(
         }
 
 
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
 def _org_dict(row) -> dict[str, Any]:
     """Client-facing org dict — api_key stays backend-internal (never returned)."""
     return {
@@ -138,6 +319,87 @@ def _sync_org_modules(cursor, org_id: int, modules_csv: str) -> None:
             """,
             (org_id, mod),
         )
+
+
+def _growth_series(orgs: list[dict[str, Any]], months: int = 6) -> dict[str, list]:
+    """Cumulative org count at the end of each of the last `months` months."""
+    now = datetime.now(timezone.utc)
+    keys: list[tuple[int, int]] = []
+    y, m = now.year, now.month
+    for _ in range(months):
+        keys.append((y, m))
+        m -= 1
+        if m == 0:
+            m, y = 12, y - 1
+    keys.reverse()
+
+    created: list[int] = []
+    for o in orgs:
+        raw = str(o.get("created_at") or "")
+        try:
+            created.append(int(raw[:4]) * 12 + int(raw[5:7]))
+        except (ValueError, IndexError):
+            created.append(0)  # unknown date → treated as existing before the window
+
+    labels, counts, new_counts = [], [], []
+    for (yy, mm) in keys:
+        idx = yy * 12 + mm
+        labels.append(_MONTHS[mm - 1])
+        counts.append(sum(1 for c in created if c <= idx))
+        new_counts.append(sum(1 for c in created if c == idx))
+    return {"labels": labels, "counts": counts, "new_counts": new_counts}
+
+
+def _billing_summary(orgs: list[dict[str, Any]]) -> dict[str, Any]:
+    """Estimated recurring revenue from plan list prices (suspended orgs excluded)."""
+    plan_keys = list(PLAN_CATALOG.keys())
+    for o in orgs:
+        p = (o["plan"] or "").lower()
+        if p and p not in plan_keys:
+            plan_keys.append(p)
+
+    by_plan = []
+    for key in plan_keys:
+        price = _plan_price(key)
+        members = [o for o in orgs if (o["plan"] or "").lower() == key]
+        active = [o for o in members if o["is_active"]]
+        by_plan.append(
+            {
+                "key": key,
+                "label": _plan_label(key),
+                "price_usd": price,
+                "org_count": len(members),
+                "active_count": len(active),
+                "monthly_usd": price * len(active),
+            }
+        )
+
+    rows = []
+    for o in orgs:
+        price = _plan_price(o["plan"])
+        rows.append(
+            {
+                "org_id": o["id"],
+                "name": o["name"],
+                "code": o["code"],
+                "plan": (o["plan"] or "").lower(),
+                "plan_label": _plan_label(o["plan"]),
+                "modules": o["modules_list"],
+                "is_active": o["is_active"],
+                "monthly_usd": price if o["is_active"] else 0,
+            }
+        )
+
+    return {
+        "total_monthly_usd": sum(p["monthly_usd"] for p in by_plan),
+        "by_plan": by_plan,
+        "rows": rows,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Routes
+# ---------------------------------------------------------------------------
 
 
 @router.get("/organizations")
@@ -194,6 +456,20 @@ def list_admins(_: None = Depends(_require_super_admin)):
         conn.close()
 
 
+@router.get("/activity")
+def list_activity(
+    limit: int = Query(50, ge=1, le=200),
+    _: None = Depends(_require_super_admin),
+):
+    conn = get_db()
+    cursor = conn.cursor()
+    try:
+        items = _fetch_activity(cursor, limit)
+        return {"activity": items, "count": len(items)}
+    finally:
+        conn.close()
+
+
 @router.post("/organizations")
 def create_organization(
     payload: dict[str, Any] = Body(default_factory=dict),
@@ -242,6 +518,7 @@ def create_organization(
         )
         org_id = int(cursor.lastrowid)
         _sync_org_modules(cursor, org_id, modules)
+        _log_activity(cursor, "org", f"{name} was created on plan {plan}", org_id)
 
         admin_payload = None
         if admin_email:
@@ -270,6 +547,7 @@ def create_organization(
                 "password": admin_password,
                 "password_auto_generated": auto_password,
             }
+            _log_activity(cursor, "admin", f"Admin account created for {admin_email} ({name})", org_id)
 
         conn.commit()
         cursor.execute("SELECT * FROM organizations WHERE id = ?", (org_id,))
@@ -285,6 +563,9 @@ def create_organization(
                 org_code=code,
             )
             admin_payload["credentials_email"] = email_result
+            if email_result.get("sent"):
+                _log_activity(cursor, "admin", f"Login credentials emailed to {admin_email}", org_id)
+                conn.commit()
 
         if admin_payload and email_result and email_result.get("sent"):
             message = (
@@ -332,6 +613,10 @@ def update_organization(
         if not row:
             raise HTTPException(status_code=404, detail="Organization not found.")
 
+        old_name = row["name"] or ""
+        old_plan = (row["plan"] or "").strip()
+        old_modules = {m.strip() for m in (row["modules"] or "core").split(",") if m.strip()}
+
         name = (payload.get("name") if payload.get("name") is not None else row["name"]) or ""
         code = (payload.get("code") if payload.get("code") is not None else row["code"]) or ""
         org_type = payload.get("type") if payload.get("type") is not None else row["type"]
@@ -371,6 +656,28 @@ def update_organization(
             ),
         )
         _sync_org_modules(cursor, org_id, str(modules))
+
+        # Audit trail
+        display = str(name).strip() or old_name
+        new_plan = str(plan).strip()
+        new_modules = {m.strip() for m in str(modules).split(",") if m.strip()}
+        changed = False
+        if new_plan != old_plan:
+            _log_activity(cursor, "plan", f"{display} plan changed from {old_plan or '—'} to {new_plan}", org_id)
+            changed = True
+        if new_modules != old_modules:
+            enabled = sorted(new_modules - old_modules)
+            disabled = sorted(old_modules - new_modules)
+            parts = []
+            if enabled:
+                parts.append(f"{', '.join(enabled)} enabled")
+            if disabled:
+                parts.append(f"{', '.join(disabled)} disabled")
+            _log_activity(cursor, "module", f"{display}: {'; '.join(parts)}", org_id)
+            changed = True
+        if not changed:
+            _log_activity(cursor, "org", f"{display} details were updated", org_id)
+
         conn.commit()
         cursor.execute("SELECT * FROM organizations WHERE id = ?", (org_id,))
         return {"success": True, "organization": _org_dict(cursor.fetchone())}
@@ -391,18 +698,24 @@ def toggle_organization(org_id: int, _: None = Depends(_require_super_admin)):
     conn = get_db()
     cursor = conn.cursor()
     try:
-        cursor.execute("SELECT id, is_active FROM organizations WHERE id = ?", (org_id,))
+        cursor.execute("SELECT id, name, is_active FROM organizations WHERE id = ?", (org_id,))
         row = cursor.fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Organization not found.")
-        if org_id == 1 and row["is_active"]:
-            # Allow toggle off of default? Safer to allow but warn — user asked for toggle
-            pass
         new_val = 0 if row["is_active"] else 1
         cursor.execute("UPDATE organizations SET is_active = ? WHERE id = ?", (new_val, org_id))
+        _log_activity(
+            cursor,
+            "toggle",
+            f"{row['name']} was {'reactivated' if new_val else 'suspended'}",
+            org_id,
+        )
         conn.commit()
         cursor.execute("SELECT * FROM organizations WHERE id = ?", (org_id,))
         return {"success": True, "organization": _org_dict(cursor.fetchone())}
+    except HTTPException:
+        conn.rollback()
+        raise
     finally:
         conn.close()
 
@@ -417,13 +730,14 @@ def delete_organization(org_id: int, _: None = Depends(_require_super_admin)):
     conn = get_db()
     cursor = conn.cursor()
     try:
-        cursor.execute("SELECT id, code FROM organizations WHERE id = ?", (org_id,))
+        cursor.execute("SELECT id, name, code FROM organizations WHERE id = ?", (org_id,))
         row = cursor.fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Organization not found.")
 
         summary = _purge_organization_data(cursor, org_id)
         cursor.execute("DELETE FROM organizations WHERE id = ?", (org_id,))
+        _log_activity(cursor, "delete", f"{row['name']} ({row['code']}) was deleted", None)
         conn.commit()
         return {
             "success": True,
@@ -432,6 +746,7 @@ def delete_organization(org_id: int, _: None = Depends(_require_super_admin)):
             "purged": summary,
         }
     except HTTPException:
+        conn.rollback()
         raise
     except Exception as exc:
         conn.rollback()
@@ -782,6 +1097,7 @@ def organization_stats(org_id: int, _: None = Depends(_require_super_admin)):
 
 @router.get("/stats")
 def platform_stats(_: None = Depends(_require_super_admin)):
+    """Platform-wide metrics. Powers Overview, Billing, Activity and Settings screens."""
     conn = get_db()
     cursor = conn.cursor()
     try:
@@ -790,14 +1106,58 @@ def platform_stats(_: None = Depends(_require_super_admin)):
         total_orgs = len(orgs)
         active_orgs = sum(1 for o in orgs if o["is_active"])
         total_docs = sum(o["documents_used"] for o in orgs)
-        # Rough revenue estimate: university plan ~ $99/mo notionally
-        revenue_estimate = active_orgs * 99
+
+        def _count(sql: str) -> int:
+            try:
+                cursor.execute(sql)
+                return int(cursor.fetchone()[0] or 0)
+            except Exception:
+                return 0
+
+        total_users = _count("SELECT COUNT(*) FROM users")
+        total_admins = _count("SELECT COUNT(*) FROM users WHERE LOWER(role) = 'admin'")
+
+        billing = _billing_summary(sorted(orgs, key=lambda o: o["id"]))
+        growth = _growth_series(orgs)
+
+        plan_catalog = []
+        for key, meta in PLAN_CATALOG.items():
+            plan_catalog.append(
+                {
+                    "key": key,
+                    "label": meta["label"],
+                    "description": meta["description"],
+                    "price_usd": _plan_price(key),
+                    "org_count": sum(1 for o in orgs if (o["plan"] or "").lower() == key),
+                }
+            )
+
+        module_catalog = []
+        for key, meta in MODULE_CATALOG.items():
+            module_catalog.append(
+                {
+                    "key": key,
+                    "label": meta["label"],
+                    "description": meta["description"],
+                    "price_usd": meta["price_usd"],
+                    "org_count": sum(1 for o in orgs if key in o["modules_list"]),
+                }
+            )
+
         return {
             "total_orgs": total_orgs,
             "active_orgs": active_orgs,
+            "suspended_orgs": total_orgs - active_orgs,
             "total_documents": total_docs,
-            "revenue_estimate_usd": revenue_estimate,
+            "total_users": total_users,
+            "total_admins": total_admins,
+            "revenue_estimate_usd": billing["total_monthly_usd"],
             "top_orgs": orgs[:10],
+            "growth": growth,
+            "billing": billing,
+            "plan_catalog": plan_catalog,
+            "module_catalog": module_catalog,
+            "activity": _fetch_activity(cursor, 50),
         }
     finally:
         conn.close()
@@ -809,14 +1169,16 @@ def reset_api_key(org_id: int, _: None = Depends(_require_super_admin)):
     conn = get_db()
     cursor = conn.cursor()
     try:
-        cursor.execute("SELECT id FROM organizations WHERE id = ?", (org_id,))
-        if not cursor.fetchone():
+        cursor.execute("SELECT id, name FROM organizations WHERE id = ?", (org_id,))
+        row = cursor.fetchone()
+        if not row:
             raise HTTPException(status_code=404, detail="Organization not found.")
         api_key = "fmt_live_" + secrets.token_urlsafe(16)
         cursor.execute(
             "UPDATE organizations SET api_key = ? WHERE id = ?",
             (api_key, org_id),
         )
+        _log_activity(cursor, "key", f"Internal API key regenerated for {row['name']}", org_id)
         conn.commit()
         cursor.execute("SELECT * FROM organizations WHERE id = ?", (org_id,))
         return {
@@ -824,5 +1186,8 @@ def reset_api_key(org_id: int, _: None = Depends(_require_super_admin)):
             "organization": _org_dict(cursor.fetchone()),
             "message": "Internal API key regenerated (not exposed to clients).",
         }
+    except HTTPException:
+        conn.rollback()
+        raise
     finally:
         conn.close()

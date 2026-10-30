@@ -8,6 +8,7 @@ import '../../utils/responsive.dart';
 import '../../widgets/admin/admin_ui.dart';
 
 import '../../widgets/tr.dart';
+
 class SupervisorHomeScreen extends StatefulWidget {
   final VoidCallback? onOpenAssignmentRequests;
   final VoidCallback? onOpenMyGroups;
@@ -65,10 +66,12 @@ class _SupervisorHomeScreenState extends State<SupervisorHomeScreen> {
   @override
   Widget build(BuildContext context) {
     if (_loading) {
-      return const AdminPage(child: AdminLoadingView(label: 'Loading your dashboard...'));
+      return const AdminPage(
+          child: AdminLoadingView(label: 'Loading your dashboard...'));
     }
     if (_error != null) {
-      return AdminPage(child: AdminErrorView(message: _error!, onRetry: _loadHome));
+      return AdminPage(
+          child: AdminErrorView(message: _error!, onRetry: _loadHome));
     }
 
     final home = _home;
@@ -78,7 +81,8 @@ class _SupervisorHomeScreenState extends State<SupervisorHomeScreen> {
         child: const AdminEmptyView(
           icon: Icons.dashboard_outlined,
           title: 'Dashboard not available',
-          message: 'Dashboard data is not available yet. Pull to refresh once the backend is running.',
+          message:
+              'Dashboard data is not available yet. Pull to refresh once the backend is running.',
         ),
       );
     }
@@ -87,413 +91,509 @@ class _SupervisorHomeScreenState extends State<SupervisorHomeScreen> {
     final displayName = home.supervisorName.isNotEmpty
         ? home.supervisorName
         : (auth.currentUser ?? 'Supervisor');
-
-    if (isCompact(context)) {
-      return AdminPage(
-        onRefresh: _loadHome,
-        child: _buildMobileHome(home, displayName),
-      );
-    }
+    final compact = isCompact(context);
 
     return AdminPage(
       onRefresh: _loadHome,
-      child: _buildDesktopHome(home, displayName),
+      child: _buildHome(home, displayName, compact),
     );
   }
 
-  Widget _buildMobileHome(SupervisorHomeModel home, String displayName) {
+  // ───────────────────────────── Layout ───────────────────────────────────
+
+  Widget _buildHome(
+      SupervisorHomeModel home, String displayName, bool compact) {
+    final pending = home.pendingAssignmentRequests;
+    final toReview = home.documentsToReview;
+    final unread = home.unreadReplies;
+    // Only real pending work (notifications are informational, not tasks).
+    final needsAttention = pending + toReview;
+
+    final stats = <_StatData>[
+      _StatData(
+        title: 'Pending requests',
+        caption: pending == 0 ? 'All caught up' : 'Awaiting your response',
+        value: '$pending',
+        icon: Icons.assignment_ind_rounded,
+        color: AdminColors.primary,
+        onTap: widget.onOpenAssignmentRequests,
+      ),
+      _StatData(
+        title: 'Documents to review',
+        caption: toReview == 0 ? 'Nothing to review' : 'Waiting for feedback',
+        value: '$toReview',
+        icon: Icons.description_outlined,
+        color: AdminColors.warning,
+        onTap: widget.onOpenSubmissions,
+      ),
+      _StatData(
+        title: 'Notifications',
+        caption: unread == 0 ? 'No new replies' : 'Unread replies',
+        value: '$unread',
+        icon: Icons.mark_email_unread_outlined,
+        color: AdminColors.accent,
+        onTap: widget.onOpenNotifications,
+      ),
+      _StatData(
+        title: 'Active groups',
+        caption: 'Accepted by you',
+        value: '${home.groups.length}',
+        icon: Icons.groups_rounded,
+        color: AdminColors.success,
+        onTap: widget.onOpenMyGroups,
+      ),
+    ];
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          'Hi, $displayName',
-          style: const TextStyle(
-            fontSize: 20,
-            fontWeight: FontWeight.w700,
-            color: Colors.white,
-          ),
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-        ),
-        const SizedBox(height: 4),
-        Tr('Your pending work',
-          style: TextStyle(fontSize: 13, color: Colors.white.withOpacity(0.55)),
-        ),
-        const SizedBox(height: 16),
-        Row(
-          children: [
-            Expanded(
-              child: _CompactStatTile(
-                label: 'Requests',
-                value: '${home.pendingAssignmentRequests}',
-                icon: Icons.assignment_ind_rounded,
-                color: AdminColors.primary,
-                onTap: widget.onOpenAssignmentRequests,
-              ),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: _CompactStatTile(
-                label: 'To review',
-                value: '${home.documentsToReview}',
-                icon: Icons.description_outlined,
-                color: AdminColors.warning,
-                onTap: widget.onOpenSubmissions,
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 10),
-        Row(
-          children: [
-            Expanded(
-              child: _CompactStatTile(
-                label: 'Alerts',
-                value: '${home.unreadReplies}',
-                icon: Icons.notifications_outlined,
-                color: AdminColors.accent,
-                onTap: widget.onOpenNotifications,
-              ),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: _CompactStatTile(
-                label: 'Groups',
-                value: '${home.groups.length}',
-                icon: Icons.groups_rounded,
-                color: AdminColors.success,
-                onTap: widget.onOpenMyGroups,
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 24),
-        const AdminSectionLabel(label: 'Groups'),
-        const SizedBox(height: 12),
-        if (home.groups.isEmpty)
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(16),
-            decoration: adminCardDecoration(),
-            child: Tr('No accepted groups yet. New requests appear under Requests.',
-              style: TextStyle(color: Colors.white.withOpacity(0.6), height: 1.4, fontSize: 13),
-            ),
-          )
-        else
-          ...home.groups.take(6).map(
-                (group) => Padding(
-                  padding: const EdgeInsets.only(bottom: 10),
-                  child: InkWell(
-                    onTap: widget.onOpenMyGroups,
-                    borderRadius: BorderRadius.circular(adminCardRadius),
-                    child: _MobileGroupCard(group: group),
-                  ),
-                ),
-              ),
-        if (home.groups.length > 6) ...[
-          const SizedBox(height: 4),
-          TextButton(
-            onPressed: widget.onOpenMyGroups,
-            child: const Tr('View all groups'),
-          ),
+        _header(displayName, needsAttention, compact),
+        SizedBox(height: compact ? 18 : 24),
+        _statGrid(stats, compact),
+        if (widget.onOpenPlagiarism != null) ...[
+          const SizedBox(height: 14),
+          _plagiarismBanner(),
         ],
-      ],
-    );
-  }
-
-  Widget _buildDesktopHome(SupervisorHomeModel home, String displayName) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'Welcome back, $displayName',
-          style: const TextStyle(
-            color: Colors.white,
-            fontSize: 21,
-            fontWeight: FontWeight.w700,
-            letterSpacing: -0.3,
-          ),
-        ),
-        const SizedBox(height: 8),
-        const AdminPageMeta(
-          text: 'Pending work and progress across your accepted groups',
-        ),
-        const SizedBox(height: 22),
-        adminResponsiveGrid(
-          itemCount: 4,
-          itemBuilder: (context, index) {
-            final cards = [
-              _TappableStatCard(
-                onTap: widget.onOpenAssignmentRequests,
-                child: AdminStatCard(
-                  title: 'Pending Requests',
-                  value: '${home.pendingAssignmentRequests}',
-                  icon: Icons.assignment_ind_rounded,
-                ),
-              ),
-              _TappableStatCard(
-                onTap: widget.onOpenSubmissions,
-                child: AdminStatCard(
-                  title: 'Documents to Review',
-                  value: '${home.documentsToReview}',
-                  icon: Icons.description_outlined,
-                  accent: AdminColors.warning,
-                ),
-              ),
-              _TappableStatCard(
-                onTap: widget.onOpenNotifications,
-                child: AdminStatCard(
-                  title: 'Notifications',
-                  value: '${home.unreadReplies}',
-                  icon: Icons.mark_email_unread_outlined,
-                  accent: AdminColors.accent,
-                ),
-              ),
-              _TappableStatCard(
-                onTap: widget.onOpenPlagiarism,
-                child: AdminStatCard(
-                  title: 'Plagiarism Monitor',
-                  value: 'Check',
-                  icon: Icons.policy_rounded,
-                  accent: AdminColors.danger,
-                ),
-              ),
-            ];
-            return cards[index];
-          },
-        ),
-        const SizedBox(height: 30),
+        SizedBox(height: compact ? 26 : 32),
         AdminSectionLabel(
-          label: 'Accepted Groups',
-          trailing: widget.onOpenMyGroups == null
+          label: compact ? 'Groups' : 'Accepted Groups',
+          trailing: widget.onOpenMyGroups == null || home.groups.isEmpty
               ? null
               : TextButton.icon(
                   onPressed: widget.onOpenMyGroups,
                   icon: const Icon(Icons.arrow_forward_rounded, size: 15),
-                  label: const Tr('View My Groups'),
+                  label: const Tr('View all'),
                   style: TextButton.styleFrom(
                     foregroundColor: AdminColors.accentBright,
-                    textStyle: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
+                    textStyle: const TextStyle(
+                        fontSize: 12.5, fontWeight: FontWeight.w600),
                   ),
                 ),
         ),
         const SizedBox(height: 14),
-        if (home.groups.isEmpty)
-          AdminSectionCard(
-            title: 'No groups yet',
-            icon: Icons.groups_outlined,
-            child: Tr('Accepted groups will appear here with their progress.',
-              style: TextStyle(color: Colors.white.withOpacity(0.65), height: 1.45),
-            ),
-          )
-        else
-          ...home.groups.map(
-            (group) => Padding(
-              padding: const EdgeInsets.only(bottom: 14),
-              child: InkWell(
-                onTap: widget.onOpenMyGroups,
-                borderRadius: BorderRadius.circular(adminCardRadius),
-                child: _SupervisorGroupProgressCard(group: group),
-              ),
-            ),
-          ),
+        _groups(home, compact),
       ],
     );
   }
-}
 
-class _CompactStatTile extends StatelessWidget {
-  final String label;
-  final String value;
-  final IconData icon;
-  final Color color;
-  final VoidCallback? onTap;
+  // ───────────────────────────── Header ───────────────────────────────────
 
-  const _CompactStatTile({
-    required this.label,
-    required this.value,
-    required this.icon,
-    required this.color,
-    this.onTap,
-  });
+  Widget _header(String name, int needsAttention, bool compact) {
+    final ok = needsAttention == 0;
+    final color = ok ? AdminColors.success : AdminColors.warning;
 
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(adminTileRadius + 2),
-        child: Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: AdminColors.card,
-            borderRadius: BorderRadius.circular(adminTileRadius + 2),
-            border: Border.all(color: color.withOpacity(0.3)),
-          ),
-          child: Row(
-            children: [
-              AdminIconBadge(icon: icon, color: color, size: 17, padding: 8),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      value,
-                      style: const TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w700,
-                        color: Colors.white,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      label,
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: Colors.white.withOpacity(0.55),
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
+    final summary = Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color.withOpacity(0.3)),
       ),
-    );
-  }
-}
-
-class _MobileGroupCard extends StatelessWidget {
-  final SupervisorGroupSummary group;
-
-  const _MobileGroupCard({required this.group});
-
-  @override
-  Widget build(BuildContext context) {
-    final progress = (group.progress / 100.0).clamp(0.0, 1.0);
-
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: adminCardDecoration(radius: adminCardRadius, glow: false),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  group.title,
-                  style: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                    color: Colors.white,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              const SizedBox(width: 8),
-              AdminPill(
-                label: '${group.progress.round()}%',
-                color: AdminColors.accentBright,
-              ),
-            ],
-          ),
-          if (group.projectTitle.isNotEmpty) ...[
-            const SizedBox(height: 4),
-            Text(
-              group.projectTitle,
-              style: TextStyle(fontSize: 12, color: Colors.white.withOpacity(0.5)),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
+          Icon(ok ? Icons.check_circle_outline : Icons.bolt_rounded,
+              size: 15, color: color),
+          const SizedBox(width: 6),
+          Text(
+            ok
+                ? 'Everything is up to date'
+                : '$needsAttention item${needsAttention == 1 ? '' : 's'} need attention',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              color: color,
             ),
-          ],
-          const SizedBox(height: 12),
-          AdminProgressBar(value: progress, height: 6),
+          ),
         ],
       ),
     );
+
+    final text = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          compact ? 'Hi, $name' : 'Welcome back, $name',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: compact ? 20 : 24,
+            fontWeight: FontWeight.w700,
+            letterSpacing: -0.3,
+          ),
+        ),
+        const SizedBox(height: 6),
+        Tr('Pending work and progress across your accepted groups',
+          style: TextStyle(
+            fontSize: 13,
+            color: Colors.white.withOpacity(0.55),
+          ),
+        ),
+      ],
+    );
+
+    if (compact) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [text, const SizedBox(height: 12), summary],
+      );
+    }
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [Expanded(child: text), const SizedBox(width: 16), summary],
+    );
   }
-}
 
-class _TappableStatCard extends StatelessWidget {
-  final Widget child;
-  final VoidCallback? onTap;
+  // ───────────────────────────── Stats ────────────────────────────────────
 
-  const _TappableStatCard({required this.child, this.onTap});
+  Widget _statGrid(List<_StatData> stats, bool compact) {
+    return LayoutBuilder(builder: (context, c) {
+      const gap = 14.0;
+      final cols = compact ? 2 : (c.maxWidth >= 900 ? 4 : 2);
+      final w = (c.maxWidth - gap * (cols - 1)) / cols;
+      return Wrap(
+        spacing: gap,
+        runSpacing: gap,
+        children: stats
+            .map((s) => SizedBox(
+                  width: w,
+                  child: _StatTile(data: s, compact: compact),
+                ))
+            .toList(),
+      );
+    });
+  }
 
-  @override
-  Widget build(BuildContext context) {
-    if (onTap == null) return child;
+  Widget _plagiarismBanner() {
     return Material(
       color: Colors.transparent,
       child: InkWell(
-        onTap: onTap,
+        onTap: widget.onOpenPlagiarism,
         borderRadius: BorderRadius.circular(adminCardRadius),
-        child: child,
-      ),
-    );
-  }
-}
-
-class _SupervisorGroupProgressCard extends StatelessWidget {
-  final SupervisorGroupSummary group;
-
-  const _SupervisorGroupProgressCard({required this.group});
-
-  @override
-  Widget build(BuildContext context) {
-    final progress = group.progress / 100.0;
-    final percentLabel = '${group.progress.round()}%';
-
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: adminCardDecoration(),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          decoration: BoxDecoration(
+            color: AdminColors.card,
+            borderRadius: BorderRadius.circular(adminCardRadius),
+            border: Border.all(color: AdminColors.danger.withOpacity(0.3)),
+          ),
+          child: Row(
             children: [
-              const AdminIconBadge(icon: Icons.groups_rounded, size: 20),
+              AdminIconBadge(
+                  icon: Icons.policy_rounded,
+                  color: AdminColors.danger,
+                  size: 18,
+                  padding: 9),
               const SizedBox(width: 14),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      group.title,
-                      style: const TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w700,
+                    const Tr('Plagiarism monitor',
+                      style: TextStyle(
                         color: Colors.white,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
                       ),
                     ),
-                    if (group.projectTitle.isNotEmpty) ...[
-                      const SizedBox(height: 4),
-                      Text(
-                        group.projectTitle,
-                        style: TextStyle(fontSize: 12, color: Colors.white.withOpacity(0.55)),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+                    const SizedBox(height: 2),
+                    Tr('Check similarity scores and matched sources',
+                      style: TextStyle(
+                        color: Colors.white.withOpacity(0.55),
+                        fontSize: 12,
                       ),
-                    ],
+                    ),
                   ],
                 ),
               ),
-              AdminPill(label: percentLabel, color: AdminColors.accentBright),
+              Icon(Icons.chevron_right_rounded,
+                  color: Colors.white.withOpacity(0.4)),
             ],
           ),
-          const SizedBox(height: 16),
-          AdminProgressBar(value: progress),
+        ),
+      ),
+    );
+  }
+
+  // ───────────────────────────── Groups ───────────────────────────────────
+
+  Widget _groups(SupervisorHomeModel home, bool compact) {
+    if (home.groups.isEmpty) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 34),
+        decoration: adminCardDecoration(),
+        child: Column(
+          children: [
+            AdminIconBadge(
+                icon: Icons.groups_outlined,
+                color: AdminColors.accent,
+                size: 24,
+                padding: 14),
+            const SizedBox(height: 14),
+            const Tr('No groups yet',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 15,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Tr('Accepted groups will appear here with their progress. New requests appear under Requests.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Colors.white.withOpacity(0.55),
+                fontSize: 12.5,
+                height: 1.45,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final groups = compact ? home.groups.take(6).toList() : home.groups;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        LayoutBuilder(builder: (context, c) {
+          const gap = 14.0;
+          final cols = (!compact && c.maxWidth >= 860) ? 2 : 1;
+          final w = (c.maxWidth - gap * (cols - 1)) / cols;
+          return Wrap(
+            spacing: gap,
+            runSpacing: gap,
+            children: groups
+                .map((g) => SizedBox(
+                      width: w,
+                      child: _GroupCard(
+                        group: g,
+                        compact: compact,
+                        onTap: widget.onOpenMyGroups,
+                      ),
+                    ))
+                .toList(),
+          );
+        }),
+        if (compact && home.groups.length > 6) ...[
+          const SizedBox(height: 8),
+          Center(
+            child: TextButton(
+              onPressed: widget.onOpenMyGroups,
+              child: const Tr('View all groups'),
+            ),
+          ),
         ],
+      ],
+    );
+  }
+}
+
+// ───────────────────────────── Widgets ──────────────────────────────────────
+
+class _StatData {
+  final String title;
+  final String caption;
+  final String value;
+  final IconData icon;
+  final Color color;
+  final VoidCallback? onTap;
+
+  const _StatData({
+    required this.title,
+    required this.caption,
+    required this.value,
+    required this.icon,
+    required this.color,
+    this.onTap,
+  });
+}
+
+class _StatTile extends StatelessWidget {
+  final _StatData data;
+  final bool compact;
+
+  const _StatTile({required this.data, required this.compact});
+
+  @override
+  Widget build(BuildContext context) {
+    final radius = BorderRadius.circular(adminCardRadius);
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: data.onTap,
+        borderRadius: radius,
+        child: Container(
+          padding: EdgeInsets.all(compact ? 14 : 18),
+          decoration: BoxDecoration(
+            color: AdminColors.card,
+            borderRadius: radius,
+            border: Border.all(color: data.color.withOpacity(0.28)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                children: [
+                  AdminIconBadge(
+                    icon: data.icon,
+                    color: data.color,
+                    size: compact ? 17 : 19,
+                    padding: compact ? 8 : 10,
+                  ),
+                  const Spacer(),
+                  if (data.onTap != null)
+                    Icon(Icons.arrow_outward_rounded,
+                        size: 15, color: Colors.white.withOpacity(0.3)),
+                ],
+              ),
+              SizedBox(height: compact ? 12 : 16),
+              Text(
+                data.value,
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: compact ? 24 : 30,
+                  fontWeight: FontWeight.w800,
+                  height: 1.0,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Tr(
+                data.title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: Colors.white.withOpacity(0.9),
+                  fontSize: compact ? 12 : 13,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              if (!compact) ...[
+                const SizedBox(height: 2),
+                Tr(
+                  data.caption,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: Colors.white.withOpacity(0.45),
+                    fontSize: 11.5,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _GroupCard extends StatelessWidget {
+  final SupervisorGroupSummary group;
+  final bool compact;
+  final VoidCallback? onTap;
+
+  const _GroupCard({
+    required this.group,
+    required this.compact,
+    this.onTap,
+  });
+
+  Color _progressColor(double pct) {
+    if (pct <= 0) return AdminColors.accent; // not started: neutral
+    if (pct >= 75) return AdminColors.success;
+    if (pct >= 40) return AdminColors.accentBright;
+    return AdminColors.warning;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final pct = group.progress.toDouble();
+    final value = (pct / 100.0).clamp(0.0, 1.0);
+    final color = _progressColor(pct);
+    final radius = BorderRadius.circular(adminCardRadius);
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: radius,
+        child: Container(
+          padding: EdgeInsets.all(compact ? 14 : 18),
+          decoration: adminCardDecoration(
+            radius: adminCardRadius,
+            glow: false,
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  AdminIconBadge(
+                    icon: Icons.groups_rounded,
+                    size: compact ? 18 : 20,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          group.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 14.5,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.white,
+                          ),
+                        ),
+                        if (group.projectTitle.isNotEmpty) ...[
+                          const SizedBox(height: 3),
+                          Text(
+                            group.projectTitle,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.white.withOpacity(0.5),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  AdminPill(
+                    label: pct <= 0 ? 'Not started' : '${group.progress.round()}%',
+                    color: color,
+                  ),
+                ],
+              ),
+              if (pct > 0) ...[
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Tr('Progress',
+                        style: TextStyle(
+                            fontSize: 11.5,
+                            color: Colors.white.withOpacity(0.5))),
+                    const Spacer(),
+                    Text('${group.progress.round()}%',
+                        style: TextStyle(
+                            fontSize: 11.5,
+                            color: Colors.white.withOpacity(0.5))),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                AdminProgressBar(value: value, height: 6),
+              ],
+            ],
+          ),
+        ),
       ),
     );
   }
