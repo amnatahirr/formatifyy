@@ -15,6 +15,7 @@ collect_candidate_headings(docx_path) -> list[dict]
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from difflib import SequenceMatcher
@@ -24,6 +25,9 @@ MATCH_THRESHOLD = 0.82
 MIN_HEADINGS_FOR_RELIABLE = 2
 
 _STOP = {"and", "of", "the", "a", "an", "for", "in", "on", "to"}
+
+# In-memory cache for AI suggestions: (document_id, section_name, doc_hash) -> suggested_content
+_SUGGESTION_CACHE: Dict[tuple, str] = {}
 
 # Headings in the same group count as the same section. Extend freely.
 _SYNONYM_GROUPS = [
@@ -395,21 +399,160 @@ def build_previews(info: Dict[str, Any]) -> List[Dict[str, Any]]:
     One entry per missing section, shaped for the Word preview: where to draw
     the faded 'Missing' heading (insert_before_paragraph_id, or None = end of
     document) and what placeholder / suggested text to show in it.
+    
+    Handles edge cases:
+    - Section at end of document (insert_before_paragraph_index = None)
+    - Adjacent missing sections (they share the same insert_before, but appear in order)
     """
     out: List[Dict[str, Any]] = []
-    for m in info.get("missing", []):
-        idx = m.get("insert_before_paragraph_index")
+    missing = info.get("missing", [])
+    
+    # Track the last paragraph index we're inserting after, to handle adjacent missing sections
+    last_insert_after_idx = None
+    
+    for i, m in enumerate(missing):
+        name = m["name"]
+        slug = re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_") or "section"
+        before_idx = m.get("insert_before_paragraph_index")
+        
+        # Determine insert_after_paragraph_id:
+        # - If this is the first missing section or before_idx changed from previous, 
+        #   insert_after is the paragraph before before_idx
+        # - If before_idx is None (end of doc), insert_after is the last existing paragraph
+        # - For adjacent missing sections (same before_idx), they all insert after the same paragraph
+        if before_idx is not None:
+            # Insert before an existing paragraph
+            if before_idx != last_insert_after_idx:
+                # New insertion point - calculate insert_after
+                insert_after_idx = before_idx - 1 if before_idx > 0 else None
+                last_insert_after_idx = before_idx
+            else:
+                # Same insertion point as previous (adjacent missing sections)
+                # Use the same insert_after_idx as calculated before
+                insert_after_idx = out[-1].get("insert_after_paragraph_index")
+                if isinstance(insert_after_idx, int):
+                    insert_after_idx = insert_after_idx
+        else:
+            # End of document - insert after the last found section or last paragraph
+            found = info.get("found", [])
+            if found:
+                insert_after_idx = found[-1].get("paragraph_index")
+            else:
+                insert_after_idx = None  # No existing sections at all
+        
+        insert_after_id = f"p{insert_after_idx}" if insert_after_idx is not None else None
+        insert_before_id = f"p{before_idx}" if before_idx is not None else None
+        
+        # Build guidance text for specific section types if AI fails
+        guidance = _section_guidance(name)
+        
         out.append({
-            "name": m["name"],
+            "issue_id": f"missing_section_{slug}",
+            "is_placeholder": True,
+            "name": name,
             "level": m.get("level", 1),
             "optional": bool(m.get("optional")),
-            "insert_before_paragraph_index": idx,
-            "insert_before_paragraph_id": f"p{idx}" if idx is not None else None,
-            "position": "before" if idx is not None else "end",
-            "placeholder_text": f"[Add your {m['name']} content here]",
+            "insert_before_paragraph_index": before_idx,
+            "insert_before_paragraph_id": insert_before_id,
+            "insert_after_paragraph_index": insert_after_idx,
+            "insert_after_paragraph_id": insert_after_id,
+            "position": "before" if before_idx is not None else "end",
+            "placeholder_text": f"[Add your {name} content here]",
+            "guidance_text": guidance,
             "suggested_content": None,
         })
+    
     return out
+
+
+def _section_guidance(section_name: str) -> str:
+    """Return guidance text for common section types when AI generation fails."""
+    name_lower = section_name.lower()
+    
+    guidance_map = {
+        "abstract": "Summarize the problem, approach, key results and conclusion in 150-250 words.",
+        "introduction": "Introduce the topic, state the problem, and outline the report structure.",
+        "literature review": "Summarize relevant prior work and identify gaps this project addresses.",
+        "methodology": "Describe the research methods, tools, and procedures used.",
+        "results": "Present findings with clear data, tables, and figures.",
+        "discussion": "Interpret results, explain significance, and compare with expectations.",
+        "conclusion": "Summarize main findings, limitations, and suggest future work.",
+        "references": "List all cited sources in the required citation format.",
+        "acknowledgements": "Thank individuals or organizations who helped with the project.",
+    }
+    
+    for key, guidance in guidance_map.items():
+        if key in name_lower:
+            return guidance
+    
+    return f"Write the content for the {section_name} section following your template guidelines."
+
+
+def _get_document_hash(docx_path: str) -> str:
+    """Hash the document text for cache invalidation."""
+    from docx import Document
+    doc = Document(docx_path)
+    text = " ".join(p.text for p in doc.paragraphs if p.text.strip())
+    return hashlib.md5(text.encode()).hexdigest()
+
+
+async def generate_suggestion_with_cache(
+    document_id: int,
+    section_name: str,
+    docx_path: str,
+    client: Any,
+    context: Dict[str, Any],
+    timeout_seconds: float = 20.0,
+) -> tuple[str | None, str | None]:
+    """
+    Generate AI suggestion for a missing section with caching.
+    Returns (suggested_content, error_message).
+    If AI fails or times out, returns (None, guidance_text).
+    """
+    import asyncio
+    
+    doc_hash = _get_document_hash(docx_path)
+    cache_key = (document_id, section_name, doc_hash)
+    
+    # Check cache
+    if cache_key in _SUGGESTION_CACHE:
+        return _SUGGESTION_CACHE[cache_key], None
+    
+    # Generate with timeout
+    try:
+        async def _generate():
+            prompt = build_suggestion_prompt(section_name, context)
+            resp = await asyncio.wait_for(
+                client.messages.create(
+                    model="claude-haiku-4-5-20251001",
+                    max_tokens=500,
+                    messages=[{
+                        "role": "user",
+                        "content": prompt,
+                    }],
+                ),
+                timeout=timeout_seconds,
+            )
+            content = "".join(
+                getattr(b, "text", "") or ""
+                for b in (getattr(resp, "content", None) or [])
+            ).strip()
+            return content
+        
+        suggested = await _generate()
+        if suggested:
+            _SUGGESTION_CACHE[cache_key] = suggested
+            return suggested, None
+    except asyncio.TimeoutError:
+        guidance = _section_guidance(section_name)
+        return None, f"AI generation timed out. {guidance}"
+    except Exception as exc:
+        guidance = _section_guidance(section_name)
+        return None, f"AI generation failed: {str(exc)[:100]}. {guidance}"
+    
+    # Fallback to guidance
+    guidance = _section_guidance(section_name)
+    return None, guidance
 
 
 def document_context(docx_path: str, max_chars: int = 1500) -> Dict[str, Any]:

@@ -45,7 +45,7 @@ import re
 import shutil
 import uuid
 from typing import Any, Dict, List, Optional
-
+from reminders import start_scheduler, stop_scheduler
 import anthropic
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile, Query, Body, Request
@@ -55,11 +55,11 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from aggregator import aggregate
-from admin_routes import router as admin_router
-from supervisor_routes import router as supervisor_router
-from student_routes import router as student_router
-from batcher import create_batches
+from pipeline.aggregator import aggregate
+from routes.admin_routes import router as admin_router
+from routes.supervisor_routes import router as supervisor_router
+from routes.student_routes import router as student_router
+from pipeline.batcher import create_batches
 from database import get_db, hash_password, init_db, verify_password
 from middleware.org_middleware import (
     resolve_organization_from_request,
@@ -75,7 +75,7 @@ import tempfile
 from starlette.background import BackgroundTasks
 from crypto_utils import encrypt_file, read_file_bytes
 
-from preview_elements import build_preview_elements
+from docx_tools.preview_elements import build_preview_elements
 def _resolve_org_for_auth(org_code: str | None, request: Request) -> dict:
     """Login/signup: prefer explicit org_code body field over headers."""
     code = (org_code or "").strip().upper()
@@ -88,16 +88,16 @@ def _resolve_org_for_auth(org_code: str | None, request: Request) -> dict:
         return org
     return resolve_organization_from_request(request)
 
-from dispatcher import dispatch_all, dispatch_freeform
+from pipeline.dispatcher import dispatch_all, dispatch_freeform
 from models import AnalysisReport, UserLoginRequest, UserSignupRequest, TemplateCreateRequest, TemplateUpdateRequest, ChangePasswordRequest
-from parser import parse_file, parse_text
-from reformatter import reformat_document, convert_docx_to_pdf
+from pipeline.parser import parse_file, parse_text
+from docx_tools.reformatter import reformat_document, convert_docx_to_pdf
 from issue_utils import (
     build_document_blocks,
     normalize_issues,
     save_document_images,
 )
-from image_formatter import format_document_images, fix_image_captions
+from docx_tools.image_formatter import format_document_images, fix_image_captions
 from services.image_formatting_service import run_image_formatting_pipeline
 from services.table_formatting_service import run_table_formatting_pipeline
 from services.image_config import DEFAULT_IMAGE_FORMAT_RULES
@@ -106,7 +106,7 @@ from services.table_config import (
     normalize_formatting_rules_table_section,
     validate_table_format_rules,
 )
-from docx_fields import (
+from docx_tools.docx_fields import (
     analyze_document_lists,
     apply_toc_heading_styles,
     collect_headings,
@@ -116,13 +116,13 @@ from docx_fields import (
     insert_lot_field,
     insert_toc_field,
 )
-from table_processor import (
+from docx_tools.table_processor import (
     detect_tables,
     format_tables_in_document,
     fill_table_cell,
     normalize_table_fonts,
 )
-from content_fixer import (
+from docx_tools.content_fixer import (
     apply_text_fix,
     apply_all_text_fixes,
     apply_heading_fix,
@@ -131,7 +131,7 @@ from content_fixer import (
     renumber_heading_prefixes,
     _is_instruction_suggestion,
 )
-from heading_analysis import (
+from docx_tools.heading_analysis import (
     analyze_document_headings,
     analyze_document_headings_with_claude,
     analyze_headings,
@@ -139,7 +139,7 @@ from heading_analysis import (
     enrich_matches_with_fix_status,
     heading_matches_to_issues,
 )
-from templates import (
+from template_logic.templates import (
     delete_template as delete_template_record,
     get_all_templates,
     get_freeform_placeholder_template_id,
@@ -150,6 +150,7 @@ from templates import (
 )
 from vc.routes import router as vc_router, set_analysis_runner
 from vc.reports_sync import sync_analysis_to_project_members
+from routes.translate_routes import router as translate_router
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # CONFIG
@@ -172,6 +173,8 @@ os.makedirs(OUTPUT_DIR, exist_ok=True)
 # Ensure database tables and seed data exist on startup
 init_db()
 
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # APP
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -192,14 +195,22 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+@app.on_event("startup")
+def _start_reminders():
+    start_scheduler()
+
+@app.on_event("shutdown")
+def _stop_reminders():
+    stop_scheduler()
 # Multi-tenancy: resolve org (default id=1) + gate FYP routes only
 from middleware.org_middleware import OrganizationMiddleware, get_organization
-from template_sample_preview import router as template_sample_router
+from template_logic.template_sample_preview import router as template_sample_router
 app.include_router(template_sample_router)
 app.add_middleware(OrganizationMiddleware)
+app.include_router(translate_router)
 
 app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
-from qr_routes import router as qr_router
+from routes.qr_routes import router as qr_router
 app.include_router(qr_router)
 # In-memory job store: job_id → {report, output_path, filename}
 _jobs: Dict[str, Dict] = {}
@@ -769,7 +780,7 @@ async def _run_analysis(
     # Skip cover / info / TOC / LOF / LOT (list of images) pages for scoring.
     # Reformat still uses the original file path below — front-matter untouched.
     try:
-        from review_blocks import strip_frontmatter_from_document
+        from docx_tools.review_blocks import strip_frontmatter_from_document
         doc_model = strip_frontmatter_from_document(doc_model)
     except Exception as exc:
         print(f"[analysis] frontmatter skip failed (non-fatal): {exc}")
@@ -837,15 +848,15 @@ app.include_router(supervisor_router)
 app.include_router(student_router)
 
 # Additive: draft-template extraction from prose guideline DOCX (does not alter create/update)
-from template_extract_routes import router as template_extract_router
+from routes.template_extract_routes import router as template_extract_router
 app.include_router(template_extract_router)
 
 # Frontmatter: cover / project-info detect + generate
-from frontmatter_routes import router as frontmatter_router
+from routes.frontmatter_routes import router as frontmatter_router
 app.include_router(frontmatter_router)
 
 # Super Admin — manage organizations (X-Super-Admin-Key)
-from super_admin_routes import router as super_admin_router
+from routes.super_admin_routes import router as super_admin_router
 app.include_router(super_admin_router)
 
 # Google Drive OAuth + import (auth + uploads)
@@ -855,7 +866,7 @@ app.include_router(google_auth_router)
 app.include_router(google_uploads_router)
 
 # Voice-enabled template patch (Whisper STT → GPT-4o-mini → JSON patch)
-from voice_template import router as voice_template_router
+from template_logic.voice_template import router as voice_template_router
 app.include_router(voice_template_router)
 
 
@@ -1113,7 +1124,7 @@ def _prepare_formatted_docx(doc: Any, document_id: int) -> str:
 
     # Prepend admin cover / project-info templates when those pages are missing
     try:
-        from frontmatter_apply import ensure_frontmatter_pages
+        from frontmatter.frontmatter_apply import ensure_frontmatter_pages
         fm = ensure_frontmatter_pages(document_id, working_copy)
         if fm.get("applied"):
             shutil.copy2(working_copy, output_path)
@@ -1210,7 +1221,7 @@ def _ensure_formatted_working_copy(
             f"from {_source_ext(original)} → docx"
         )
         try:
-            from frontmatter_apply import clear_frontmatter_marker, ensure_frontmatter_pages
+            from frontmatter.frontmatter_apply import clear_frontmatter_marker, ensure_frontmatter_pages
             clear_frontmatter_marker(int(doc["id"]))
             ensure_frontmatter_pages(int(doc["id"]), working_copy)
         except Exception as exc:
@@ -1219,8 +1230,8 @@ def _ensure_formatted_working_copy(
         # Existing copies: collapse duplicate page breaks + strip empty body gaps.
         try:
             from docx import Document as DocxDoc
-            from docx_fields import _collapse_consecutive_page_breaks
-            from reformatter import remove_empty_body_paragraph_gaps
+            from docx_tools.docx_fields import _collapse_consecutive_page_breaks
+            from docx_tools.reformatter import remove_empty_body_paragraph_gaps
 
             d = DocxDoc(working_copy)
             removed = _collapse_consecutive_page_breaks(d)
@@ -1279,8 +1290,8 @@ def _detect_missing_bullet_issues(docx_path: str) -> list:
     try:
         from docx import Document as DocxDoc
         from docx.oxml.ns import qn
-        from list_detection import detect_list_groups, list_groups_to_issues
-        from review_blocks import frontmatter_text_set
+        from docx_tools.list_detection import detect_list_groups, list_groups_to_issues
+        from docx_tools.review_blocks import frontmatter_text_set
 
         docx = DocxDoc(docx_path)
         fm_texts = frontmatter_text_set(docx_path)
@@ -1393,7 +1404,7 @@ def apply_section_bullets_to_file(docx_path: str, para_indices: list[int]):
     from docx.oxml import OxmlElement as _OE
     from docx.oxml.ns import qn
     import random
-    from list_detection import is_heading_paragraph
+    from docx_tools.list_detection import is_heading_paragraph
     
     docx = DocxDoc(docx_path)
     paras = docx.paragraphs
@@ -1859,7 +1870,7 @@ async def _run_analysis_freeform(
         raise HTTPException(status_code=400, detail=f"Failed to parse document: {exc}")
 
     try:
-        from review_blocks import strip_frontmatter_from_document
+        from docx_tools.review_blocks import strip_frontmatter_from_document
         doc_model = strip_frontmatter_from_document(doc_model)
     except Exception as exc:
         print(f"[analysis-freeform] frontmatter skip failed (non-fatal): {exc}")
@@ -2107,6 +2118,7 @@ def delete_document(document_id: int, user_id: int = Query(...)):
                 os.remove(str(path))
             except Exception:
                 pass
+    _remove_quiet(_analysis_result_path(document_id))
 
     cursor.execute("DELETE FROM documents WHERE id = ?", (document_id,))
     conn.commit()
@@ -2200,15 +2212,6 @@ async def analyze_document_endpoint(document_id: int, user_id: int = Query(...))
         style_issues.extend(bullets)
         normalized_issues.extend(bullets)
 
-    # Missing sections come from heading_analysis (whole document), added further
-    # down. Drop the formatting agent's per-batch guesses: it only sees 4 pages.
-    normalized_issues = [
-        i for i in normalized_issues if (i.get("type") or "").lower() != "missing_section"
-    ]
-    style_issues = [
-        i for i in style_issues if (i.get("type") or "").lower() != "missing_section"
-    ]
-
     major_count = len([i for i in normalized_issues if (i.get("severity") or "").lower() == "major"])
     minor_count = len([i for i in normalized_issues if (i.get("severity") or "").lower() == "minor"])
     critical_count = len([i for i in normalized_issues if (i.get("severity") or "").upper() == "CRITICAL"])
@@ -2236,7 +2239,7 @@ async def analyze_document_endpoint(document_id: int, user_id: int = Query(...))
     template_heading_matches: List[Dict[str, Any]] = []
     if doc_model and tmpl:
         try:
-            from review_blocks import strip_frontmatter_from_document
+            from docx_tools.review_blocks import strip_frontmatter_from_document
             heading_doc = strip_frontmatter_from_document(doc_model)
             decisions = _load_heading_decisions(document_id)
             client = None
@@ -2266,22 +2269,6 @@ async def analyze_document_endpoint(document_id: int, user_id: int = Query(...))
             heading_issues = heading_matches_to_issues(template_heading_matches)
             if heading_issues:
                 normalized_heading_issues = normalize_issues(heading_issues, image_paths)
-                for _it in normalized_heading_issues:
-                    if (_it.get("type") or "").lower() != "missing_section":
-                        continue
-                    _name = str(_it.get("matched_template_heading") or "").strip()
-                    if not _name:
-                        _m = re.search(
-                            r'"([^"]+)"',
-                            str(_it.get("suggestion") or _it.get("reason") or ""),
-                        )
-                        _name = _m.group(1).strip() if _m else ""
-                    if _name:
-                        _it["fix_type"] = "insert_missing_section"
-                        _it["fix_details"] = {
-                            "section_name": _name,
-                            "level": _it.get("heading_level") or 1,
-                        }
                 style_issues.extend(normalized_heading_issues)
                 normalized_issues.extend(normalized_heading_issues)
         except Exception as exc:
@@ -2321,6 +2308,96 @@ async def analyze_document_endpoint(document_id: int, user_id: int = Query(...))
         "critical_issues": critical_count,
         "warning_issues": warning_count,
     }
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# BACKGROUND ANALYSIS JOBS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+ANALYSIS_CACHE_DIR = os.path.join(UPLOAD_DIR, "analysis")
+os.makedirs(ANALYSIS_CACHE_DIR, exist_ok=True)
+
+# document_id -> {status, error, started_at, finished_at}
+_analysis_jobs: Dict[int, Dict[str, Any]] = {}
+
+
+def _analysis_result_path(document_id: int) -> str:
+    return os.path.join(ANALYSIS_CACHE_DIR, f"doc_{document_id}.json")
+
+
+def _assert_doc_owner(document_id: int, user_id: int) -> None:
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT id FROM documents WHERE id = ? AND user_id = ?", (document_id, user_id))
+    row = cur.fetchone()
+    conn.close()
+    if not row:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+
+def _analysis_in_thread(document_id: int, user_id: int, freeform: bool) -> Dict[str, Any]:
+    """Own event loop in a worker thread so blocking parse/reformat calls
+    never freeze the main server loop (status polling keeps working)."""
+    fn = analyze_document_freeform_endpoint if freeform else analyze_document_endpoint
+    return asyncio.run(fn(document_id, user_id))
+
+
+async def _analysis_worker(document_id: int, user_id: int, freeform: bool) -> None:
+    job = _analysis_jobs[document_id]
+    try:
+        result = await asyncio.to_thread(_analysis_in_thread, document_id, user_id, freeform)
+        path = _analysis_result_path(document_id)
+        tmp = path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(result, f, default=str)
+        os.replace(tmp, path)  # atomic auto-save
+        job.update(status="completed", error=None, finished_at=datetime.datetime.utcnow().isoformat())
+    except HTTPException as exc:
+        job.update(status="failed", error=str(exc.detail))
+    except Exception as exc:
+        job.update(status="failed", error=str(exc))
+
+
+@app.post("/api/documents/analyze-start/{document_id}", tags=["Documents"])
+async def analyze_start(
+    document_id: int,
+    user_id: int = Query(...),
+    freeform: bool = Query(False),
+):
+    """Kick off analysis in the background and return immediately."""
+    _assert_doc_owner(document_id, user_id)
+    job = _analysis_jobs.get(document_id)
+    if job and job["status"] == "processing":
+        return {"status": "processing", "already_running": True}
+
+    _analysis_jobs[document_id] = {
+        "status": "processing",
+        "error": None,
+        "started_at": datetime.datetime.utcnow().isoformat(),
+        "finished_at": None,
+    }
+    asyncio.create_task(_analysis_worker(document_id, user_id, freeform))
+    return {"status": "processing", "already_running": False}
+
+
+@app.get("/api/documents/analyze-status/{document_id}", tags=["Documents"])
+async def analyze_status(document_id: int, user_id: int = Query(...)):
+    _assert_doc_owner(document_id, user_id)
+    job = _analysis_jobs.get(document_id)
+    if job:
+        return {"status": job["status"], "error": job["error"],
+                "started_at": job["started_at"], "finished_at": job["finished_at"]}
+    if os.path.exists(_analysis_result_path(document_id)):
+        return {"status": "completed", "error": None}  # survives server restart
+    return {"status": "none", "error": None}
+
+
+@app.get("/api/documents/analyze-result/{document_id}", tags=["Documents"])
+async def analyze_result(document_id: int, user_id: int = Query(...)):
+    _assert_doc_owner(document_id, user_id)
+    path = _analysis_result_path(document_id)
+    if not os.path.exists(path):
+        raise HTTPException(status_code=404, detail="No saved analysis result yet.")
+    return FileResponse(path, media_type="application/json")
 
 
 class HeadingAnalysisRequest(BaseModel):
@@ -2984,7 +3061,7 @@ def apply_all_style_fixes(document_id: int, user_id: int = Query(...)):
     )
 
     try:
-        from frontmatter_apply import clear_frontmatter_marker, ensure_frontmatter_pages
+        from frontmatter.frontmatter_apply import clear_frontmatter_marker, ensure_frontmatter_pages
         clear_frontmatter_marker(document_id)
         ensure_frontmatter_pages(document_id, working_copy)
     except Exception as exc:
@@ -3071,6 +3148,12 @@ async def apply_content_fix(
         applied, skipped = apply_section_bullets_to_file(working_copy, para_indices)
         ok = len(applied) > 0
         msg = f"Bullets applied to {len(applied)} paragraph(s)." if ok else "No bullets applied."
+    elif fix_type == "formatting":
+        ok, msg = apply_template_reformat(
+            working_copy,
+            tmpl["formatting_rules"],
+            tmpl.get("required_sections", []),
+        )
     elif fix_type == "insert_missing_section":
         from missing_sections import insert_missing_section_by_name
 
@@ -3101,12 +3184,6 @@ async def apply_content_fix(
                 )
             except Exception as exc:
                 print(f"[apply-content-fix] reformat skipped (non-fatal): {exc}")
-    elif fix_type == "formatting":
-        ok, msg = apply_template_reformat(
-            working_copy,
-            tmpl["formatting_rules"],
-            tmpl.get("required_sections", []),
-        )
     else:
         suggestion = payload.get("suggestion", "")
         if _is_instruction_suggestion(suggestion):
@@ -3384,15 +3461,18 @@ async def apply_all_fixes(
     template_reformat_applied = False
     table_result: Dict[str, Any] = {"status": "skipped"}
 
-    # Split payload fixes into heading / bullets / text
+    # Split payload fixes into heading / bullets / text / missing sections
     heading_fixes = []
     bullet_fix_indices: list = []
     text_fixes = []
+    missing_section_fixes = []
     for fix in fixes:
         ftype = (fix.get("fix_type") or "text").lower()
         itype = (fix.get("type") or "").lower()
         if ftype in ("heading", "heading_style") or itype == "heading_style":
             heading_fixes.append(fix)
+        elif ftype == "insert_missing_section" or itype == "missing_section":
+            missing_section_fixes.append(fix)
         elif ftype in ("bullets", "apply_section_bullets", "list_formatting") or itype in (
             "missing_bullets", "list_formatting",
         ):
@@ -3441,7 +3521,7 @@ async def apply_all_fixes(
         try:
             from docx import Document as DocxDoc
             from docx.oxml.ns import qn
-            from list_detection import detect_list_groups, groups_needing_numpr
+            from docx_tools.list_detection import detect_list_groups, groups_needing_numpr
 
             _SAFE_APPLY_DETECTIONS = {
                 "infinitive",
@@ -3505,6 +3585,33 @@ async def apply_all_fixes(
             _strip_bullets_from_headings(working_copy)
         except Exception as exc:
             print(f"[apply-all] strip heading bullets error (non-fatal): {exc}")
+
+        # 5) Insert missing sections (before template reformat so they get styled)
+        if missing_section_fixes:
+            from missing_sections import insert_missing_section_by_name
+            for fix in missing_section_fixes:
+                details = fix.get("fix_details") if isinstance(fix.get("fix_details"), dict) else {}
+                section_name = str(
+                    fix.get("section_name") or details.get("section_name") or ""
+                ).strip()
+                if not section_name:
+                    print(f"[apply-all] skipping missing section fix: no section_name")
+                    continue
+                res = insert_missing_section_by_name(
+                    working_copy,
+                    tmpl.get("required_sections", []),
+                    section_name,
+                    content=fix.get("content"),
+                )
+                if res.get("inserted"):
+                    text_result["applied"] += 1
+                    if fix.get("issue_id"):
+                        resolved_issue_ids.append(str(fix["issue_id"]))
+                    print(f"[apply-all] inserted missing section: {section_name}")
+                else:
+                    text_result["skipped"] += 1
+                    text_result["errors"].append(res.get("reason", "Section not inserted"))
+                    print(f"[apply-all] failed to insert {section_name}: {res.get('reason')}")
 
     template_reformat_applied, _reformat_msg = apply_template_reformat(
         working_copy,
@@ -3589,7 +3696,7 @@ def _strip_bullets_from_headings(docx_path: str) -> int:
     """Remove Word list numbering / bullet glyphs from heading paragraphs."""
     from docx import Document as DocxDoc
     from docx.oxml.ns import qn
-    from list_detection import is_heading_paragraph
+    from docx_tools.list_detection import is_heading_paragraph
 
     docx = DocxDoc(docx_path)
     cleaned = 0
@@ -3772,7 +3879,7 @@ async def replace_image(
 
         # Refresh extracted preview image from working document
         try:
-            from parser import parse_file
+            from pipeline.parser import parse_file
             from issue_utils import save_document_images
             doc_model = parse_file(working_copy, _filename_for_parse(working_copy, doc["filename"]))
             save_document_images(doc_model, document_id, UPLOAD_DIR)
@@ -3954,105 +4061,8 @@ def _get_user_document(document_id: int, user_id: int):
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# TOC / LOT / LOF — Word field generation
+# Missing section previews — ghost headings for the Word preview
 # ═══════════════════════════════════════════════════════════════════════════════
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# MISSING SECTION DETECTION
-# ═══════════════════════════════════════════════════════════════════════════════
-
-@app.get("/api/documents/missing-sections/{document_id}", tags=["Documents"])
-def missing_sections_endpoint(document_id: int, user_id: int = Query(...)):
-    """Compare the template's required sections with the document's headings."""
-    from missing_sections import detect_missing_sections
-
-    doc_row, tmpl = _get_user_document(document_id, user_id)
-    working_copy = _ensure_formatted_working_copy(doc_row, tmpl)
-    info = detect_missing_sections(working_copy, tmpl.get("required_sections", []))
-    return {"status": "success", "document_id": document_id, **info}
-
-
-@app.post("/api/documents/insert-missing-section/{document_id}", tags=["Documents"])
-def insert_missing_section_endpoint(
-    document_id: int,
-    user_id: int = Query(...),
-    payload: Dict[str, Any] = Body(...),
-):
-    """Insert a heading + placeholder for a missing section, in template order."""
-    from missing_sections import insert_missing_section_by_name
-
-    name = str(payload.get("section_name") or "").strip()
-    if not name:
-        raise HTTPException(status_code=400, detail="section_name is required")
-
-    doc_row, tmpl = _get_user_document(document_id, user_id)
-    working_copy = _ensure_formatted_working_copy(doc_row, tmpl)
-    result = insert_missing_section_by_name(
-        working_copy,
-        tmpl.get("required_sections", []),
-        name,
-        content=payload.get("content"),
-    )
-    if not result.get("inserted"):
-        raise HTTPException(status_code=400, detail=result.get("reason", "Not inserted"))
-
-    try:
-        apply_template_reformat(
-            working_copy,
-            tmpl["formatting_rules"],
-            tmpl.get("required_sections", []),
-        )
-    except Exception as exc:
-        print(f"[insert-missing-section] reformat skipped (non-fatal): {exc}")
-
-    commit = _commit_working_document(document_id, working_copy, doc_row)
-    return {
-        "status": "success",
-        "message": f'Added a "{result["section_name"]}" section placeholder.',
-        **result,
-        **commit,
-    }
-
-
-@app.post("/api/documents/suggest-section/{document_id}", tags=["Documents"])
-async def suggest_section_endpoint(
-    document_id: int,
-    user_id: int = Query(...),
-    payload: Dict[str, Any] = Body(...),
-):
-    """Optional: AI outline of what a missing section should contain (sends heading titles only)."""
-    from missing_sections import collect_candidate_headings
-
-    name = str(payload.get("section_name") or "").strip()
-    if not name:
-        raise HTTPException(status_code=400, detail="section_name is required")
-
-    doc_row, tmpl = _get_user_document(document_id, user_id)
-    working_copy = _ensure_formatted_working_copy(doc_row, tmpl)
-    headings = [h["text"] for h in collect_candidate_headings(working_copy)][:60]
-
-    prompt = (
-        "A student is writing a university final year project report. "
-        f'The report is missing its "{name}" section.\n'
-        "Existing headings in the report:\n- " + "\n- ".join(headings) + "\n\n"
-        f'Give a short outline (4-6 plain bullet points) of what the "{name}" '
-        "section should cover for this report. No preamble."
-    )
-    try:
-        client = await _get_ai_client()
-        resp = await client.messages.create(
-            model=ANALYSIS_MODEL,
-            max_tokens=500,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        text = "".join(
-            getattr(b, "text", "") or "" for b in (getattr(resp, "content", None) or [])
-        ).strip()
-    except Exception as exc:
-        raise HTTPException(status_code=503, detail=f"AI suggestion unavailable: {exc}")
-    return {"status": "success", "section_name": name, "suggestion": text}
-
 
 @app.get("/api/documents/missing-section-previews/{document_id}", tags=["Documents"])
 async def missing_section_previews_endpoint(
@@ -4065,11 +4075,12 @@ async def missing_section_previews_endpoint(
     suggest=true also asks the AI for a short starting draft per missing section
     (sends heading titles + a ~1500 character excerpt; max 6 sections).
     """
+    import asyncio
     from missing_sections import (
         build_previews,
-        build_suggestion_prompt,
         detect_missing_sections,
         document_context,
+        generate_suggestion_with_cache,
     )
 
     doc_row, tmpl = _get_user_document(document_id, user_id)
@@ -4085,27 +4096,29 @@ async def missing_section_previews_endpoint(
             client = None
             print(f"[missing-previews] AI client unavailable: {exc}")
 
-        async def _draft(p):
-            if client is None:
+        if client is None:
+            # Use guidance text for all sections
+            for p in previews:
                 p["suggestion_error"] = "AI is not configured."
-                return
-            try:
-                resp = await client.messages.create(
-                    model=ANALYSIS_MODEL,
-                    max_tokens=500,
-                    messages=[{
-                        "role": "user",
-                        "content": build_suggestion_prompt(p["name"], context),
-                    }],
+                p["placeholder_text"] = p.get("guidance_text", p["placeholder_text"])
+        else:
+            # Generate suggestions in parallel with caching and timeout
+            async def _draft(p):
+                suggested, error = await generate_suggestion_with_cache(
+                    document_id=document_id,
+                    section_name=p["name"],
+                    docx_path=working_copy,
+                    client=client,
+                    context=context,
+                    timeout_seconds=20.0,
                 )
-                p["suggested_content"] = "".join(
-                    getattr(b, "text", "") or ""
-                    for b in (getattr(resp, "content", None) or [])
-                ).strip()
-            except Exception as exc:
-                p["suggestion_error"] = str(exc)[:200]
+                if suggested:
+                    p["suggested_content"] = suggested
+                if error:
+                    p["suggestion_error"] = error
+                    p["placeholder_text"] = p.get("guidance_text", p["placeholder_text"])
 
-        await asyncio.gather(*[_draft(p) for p in previews[:6]])
+            await asyncio.gather(*[_draft(p) for p in previews[:6]])
 
     return {
         "status": "success",
@@ -4115,6 +4128,10 @@ async def missing_section_previews_endpoint(
         "previews": previews,
     }
 
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# TOC / LOT / LOF — Word field generation
+# ═══════════════════════════════════════════════════════════════════════════════
 
 @app.get("/api/toc-check/{document_id}", tags=["Documents"])
 def toc_check(document_id: int, user_id: int = Query(...)):
@@ -4138,7 +4155,7 @@ def add_toc(document_id: int, user_id: int = Query(...)):
 
     from docx import Document as DocxDocument
 
-    from docx_fields import _toc_field_is_unpopulated
+    from docx_tools.docx_fields import _toc_field_is_unpopulated
 
     doc = DocxDocument(working_copy)
     if document_has_toc(doc) and not _toc_field_is_unpopulated(doc):
@@ -4200,8 +4217,8 @@ def add_lot(document_id: int, user_id: int = Query(...)):
     """Insert a dynamic List of Tables field (requires table captions)."""
     from docx import Document as DocxDocument
 
-    from docx_fields import document_has_lot
-    from table_processor import ensure_table_captions
+    from docx_tools.docx_fields import document_has_lot
+    from docx_tools.table_processor import ensure_table_captions
 
     doc_row, tmpl = _get_user_document(document_id, user_id)
     working_copy = _ensure_formatted_working_copy(doc_row, tmpl)
@@ -4233,7 +4250,7 @@ def add_lof(document_id: int, user_id: int = Query(...)):
     """Insert a dynamic List of Figures field (requires figure captions)."""
     from docx import Document as DocxDocument
 
-    from docx_fields import count_figures, document_has_lof
+    from docx_tools.docx_fields import count_figures, document_has_lof
 
     doc_row, tmpl = _get_user_document(document_id, user_id)
     working_copy = _ensure_formatted_working_copy(doc_row, tmpl)
