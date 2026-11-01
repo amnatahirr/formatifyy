@@ -8,6 +8,7 @@ import '../services/image_replacement_service.dart';
 import '../config/api_config.dart';
 import 'image_replacement_dialog.dart';
 
+import 'tr.dart';
 AppPalette _ap = AppPalette.dark;
 
 Color get _bg => _ap.scaffold;
@@ -39,6 +40,8 @@ class DocumentPreviewPanel extends StatefulWidget {
   final void Function(Map<String, dynamic> result, Map<String, dynamic> issue)? onImageReplaced;
   final void Function(Map<String, dynamic> result, Map<String, dynamic> issue)? onImageRemoved;
   final void Function(List<Map<String, dynamic>> blocks)? onBlocksChanged;
+  final Map<String, GlobalKey>? ghostKeys;
+  final String? flashGhostIssueId;
 
   final String defaultFont;
   final double bodyPt;
@@ -59,6 +62,8 @@ class DocumentPreviewPanel extends StatefulWidget {
     this.onImageReplaced,
     this.onImageRemoved,
     this.onBlocksChanged,
+    this.ghostKeys,
+    this.flashGhostIssueId,
     this.defaultFont = 'Times New Roman',
     this.bodyPt = 12,
     this.headingPt = const {1: 16, 2: 14, 3: 12},
@@ -87,6 +92,8 @@ class _DocumentPreviewPanelState extends State<DocumentPreviewPanel> {
   bool _showOriginal = true;
   bool _showStyleTags = false;
   double _zoom = 1.0;
+  final Set<String> _editingGhostIds = {};
+  final Map<String, TextEditingController> _ghostEditCtrls = {};
 
   static const double _pageW = 794;
   static const double _pageH = 1123;
@@ -148,6 +155,9 @@ class _DocumentPreviewPanelState extends State<DocumentPreviewPanel> {
   void dispose() {
     _editCtrl.dispose();
     _editFocus.dispose();
+    for (final c in _ghostEditCtrls.values) {
+      c.dispose();
+    }
     super.dispose();
   }
 
@@ -158,7 +168,7 @@ class _DocumentPreviewPanelState extends State<DocumentPreviewPanel> {
       m['_uid'] = _newUid();
 
       final rawType = (m['type'] ?? '').toString().toLowerCase();
-      const textTypes = {'paragraph', 'heading', 'list_item', 'toc_item'};
+      const textTypes = {'paragraph', 'heading', 'list_item', 'toc_item', 'ghost_heading'};
 
       if (rawType.contains('toc') ||
           rawType.contains('table_of_contents') ||
@@ -189,6 +199,8 @@ class _DocumentPreviewPanelState extends State<DocumentPreviewPanel> {
 
       return m;
     }).toList();
+    _blocks = _stripToc(_blocks);
+    _logSummary();
     _logSummary();
   }
 
@@ -212,6 +224,47 @@ class _DocumentPreviewPanelState extends State<DocumentPreviewPanel> {
     }
   }
 
+  /// Hides the Table of Contents / List of Figures / List of Tables pages
+  /// from the preview. Starts at a TOC-style heading and stops at the next
+  /// real heading (or at a page break to a later page).
+  List<Map<String, dynamic>> _stripToc(List<Map<String, dynamic>> blocks) {
+    const tocTitles = {
+      'table of contents',
+      'contents',
+      'list of figures',
+      'list of tables',
+    };
+
+    bool isTocTitle(Map<String, dynamic> b) {
+      final t = (b['text'] ?? b['title'] ?? '').toString().trim().toLowerCase();
+      return tocTitles.contains(t);
+    }
+
+    // A line that is just a page number, or "title ..... 3", or "title \t 3".
+    bool looksLikeTocLine(Map<String, dynamic> b) {
+      if (_type(b) == 'toc_item') return true;
+      final t = (b['text'] ?? b['title'] ?? '').toString().trim();
+      if (t.isEmpty) return true;
+      if (RegExp(r'^\d+$').hasMatch(t)) return true;
+      if (RegExp(r'^.+[\s.…\t]{2,}\d+$').hasMatch(t)) return true;
+      return false;
+    }
+
+    final out = <Map<String, dynamic>>[];
+    var skipping = false;
+    for (final b in blocks) {
+      if (isTocTitle(b)) {
+        skipping = true;
+        continue;
+      }
+      if (skipping) {
+        if (looksLikeTocLine(b)) continue;
+        skipping = false; // first real content after the TOC
+      }
+      out.add(b);
+    }
+    return out;
+  }
   /// First non-empty image path-like value found in the block.
   String _rawImagePath(Map<String, dynamic> b) {
     for (final k in const [
@@ -324,6 +377,10 @@ class _DocumentPreviewPanelState extends State<DocumentPreviewPanel> {
       }
       if (pid.isNotEmpty && issue['paragraph_id'] == pid) return true;
       if (iid.isNotEmpty && issue['image_id'] == iid) return true;
+      if ((block['issue_id'] as String? ?? '').isNotEmpty &&
+          issue['issue_id'] == block['issue_id']) {
+        return true;
+      }
       return false;
     }).map((e) => Map<String, dynamic>.from(e)).toList();
   }
@@ -360,8 +417,12 @@ class _DocumentPreviewPanelState extends State<DocumentPreviewPanel> {
 
   String _type(Map<String, dynamic> b) =>
       (b['type'] as String? ?? 'paragraph').toLowerCase();
+
+  bool _isGhost(Map<String, dynamic> b) =>
+      _type(b) == 'ghost_heading' || b['is_placeholder'] == true;
       
   bool _isTextual(Map<String, dynamic> b) {
+    if (_isGhost(b)) return false;
     final t = _type(b);
     return t != 'image' && t != 'table';
   }
@@ -491,6 +552,7 @@ class _DocumentPreviewPanelState extends State<DocumentPreviewPanel> {
   }
 
   void _pushUndo() {
+    if (_sel != null && _isGhost(_sel!)) return;
     _undo.add(jsonEncode(_blocks));
     if (_undo.length > 100) _undo.removeAt(0);
     _redo.clear();
@@ -499,7 +561,7 @@ class _DocumentPreviewPanelState extends State<DocumentPreviewPanel> {
   void _notify() {
     final cb = widget.onBlocksChanged;
     if (cb == null) return;
-    cb(_blocks.map((b) {
+    cb(_blocks.where((b) => !_isGhost(b)).map((b) {
       final m = Map<String, dynamic>.from(b);
       m.remove('_uid');
       return m;
@@ -624,6 +686,7 @@ class _DocumentPreviewPanelState extends State<DocumentPreviewPanel> {
   void _deleteSelected() {
     final b = _sel;
     if (b == null || _type(b) == 'image') return;
+    if (_isGhost(b)) return;
     _pushUndo();
     setState(() {
       _blocks.remove(b);
@@ -809,7 +872,7 @@ class _DocumentPreviewPanelState extends State<DocumentPreviewPanel> {
                       widget.onIgnoreIssue(issueId);
                       Navigator.pop(ctx);
                     },
-                    child: const Text('Ignore'),
+                    child: const Tr('Ignore'),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -828,10 +891,15 @@ class _DocumentPreviewPanelState extends State<DocumentPreviewPanel> {
                           _syncEditor();
                           _notify();
                         });
+                      } else if (_isGhost(block) ||
+                          (issue['type'] as String? ?? '') == 'missing_section' ||
+                          (issue['fix_type'] as String? ?? '') ==
+                              'insert_missing_section') {
+                        widget.onApplyFix(issueId, _ghostBody(block));
                       }
                       Navigator.pop(ctx);
                     },
-                    child: const Text('Apply Fix'),
+                    child: const Tr('Apply Fix'),
                   ),
                 ),
               ],
@@ -867,15 +935,14 @@ class _DocumentPreviewPanelState extends State<DocumentPreviewPanel> {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: _surface,
-        title: Text('Remove Image?', style: TextStyle(color: _textPri)),
-        content: Text(
-          'This permanently deletes the image from the document.',
+        title: Tr('Remove Image?', style: TextStyle(color: _textPri)),
+        content: Tr('This permanently deletes the image from the document.',
           style: TextStyle(color: _textSec, fontSize: 13),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: Text('Cancel', style: TextStyle(color: _textSec)),
+            child: Tr('Cancel', style: TextStyle(color: _textSec)),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
@@ -883,7 +950,7 @@ class _DocumentPreviewPanelState extends State<DocumentPreviewPanel> {
               foregroundColor: Colors.white,
             ),
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Remove'),
+            child: const Tr('Remove'),
           ),
         ],
       ),
@@ -927,17 +994,18 @@ class _DocumentPreviewPanelState extends State<DocumentPreviewPanel> {
             padding: const EdgeInsets.symmetric(horizontal: 14),
             alignment: Alignment.centerLeft,
             color: _textSec.withOpacity(0.12),
-            child: Text(
-              'Original',
+            child: Tr('Original',
               style: TextStyle(color: _textSec, fontWeight: FontWeight.w700, fontSize: 13),
             ),
           ),
           Expanded(
             child: ListView.builder(
               padding: const EdgeInsets.all(12),
-              itemCount: _blocks.length,
+              itemCount: _blocks.where((b) => !_isGhost(b)).length,
               itemBuilder: (ctx, i) {
-                final block = Map<String, dynamic>.from(_blocks[i]);
+                final originalBlocks =
+                    _blocks.where((b) => !_isGhost(b)).toList();
+                final block = Map<String, dynamic>.from(originalBlocks[i]);
                 final type = _type(block);
                 if (type == 'image') {
                   return _buildSimpleImage(block);
@@ -1061,8 +1129,7 @@ class _DocumentPreviewPanelState extends State<DocumentPreviewPanel> {
           const Icon(Icons.description, color: Colors.white, size: 18),
           const SizedBox(width: 8),
           Expanded(
-            child: Text(
-              'Corrected — Word preview',
+            child: Tr('Corrected — Word preview',
               style: const TextStyle(
                 color: Colors.white,
                 fontWeight: FontWeight.w700,
@@ -1084,7 +1151,7 @@ class _DocumentPreviewPanelState extends State<DocumentPreviewPanel> {
             ),
           ),
           const SizedBox(width: 4),
-          const Text('Styles', style: white),
+          const Tr('Styles', style: white),
           Transform.scale(
             scale: 0.8,
             child: Switch(
@@ -1302,6 +1369,7 @@ class _DocumentPreviewPanelState extends State<DocumentPreviewPanel> {
     var words = 0;
     var chars = 0;
     for (final b in _blocks) {
+      if (_isGhost(b)) continue;
       if (!_isTextual(b)) continue;
       final txt = _displayText(b, _issuesForBlock(b));
       chars += txt.length;
@@ -1409,6 +1477,9 @@ class _DocumentPreviewPanelState extends State<DocumentPreviewPanel> {
   Widget _buildWordBlock(Map<String, dynamic> block, double s, {int number = 0}) {
     final type = _type(block);
     final blockIssues = _issuesForBlock(block);
+    if (_isGhost(block)) {
+      return _buildGhostBlock(block, s);
+    }
 
     if (type == 'image') {
       return _buildWordImage(block, blockIssues, s);
@@ -1444,8 +1515,7 @@ class _DocumentPreviewPanelState extends State<DocumentPreviewPanel> {
             if (pageNum.toString().isNotEmpty) ...[
               Padding(
                 padding: EdgeInsets.symmetric(horizontal: 8 * s),
-                child: Text(
-                  '. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .',
+                child: Tr('. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .',
                   style: TextStyle(color: Colors.black38, fontSize: 10 * s),
                 ),
               ),
@@ -1575,6 +1645,156 @@ class _DocumentPreviewPanelState extends State<DocumentPreviewPanel> {
     );
   }
 
+  String _ghostBody(Map<String, dynamic> block) {
+    final suggested = (block['suggested_content'] as String? ?? '').trim();
+    if (suggested.isNotEmpty) return suggested;
+    final guidance = (block['guidance_text'] as String? ?? '').trim();
+    if (guidance.isNotEmpty) return guidance;
+    return (block['placeholder_text'] as String? ?? '').trim();
+  }
+
+  Widget _buildGhostBlock(Map<String, dynamic> block, double s) {
+    final issueId = block['issue_id'] as String? ?? '';
+    final title = (block['text'] as String? ?? '').trim();
+    final body = _ghostBody(block);
+    final editing = issueId.isNotEmpty && _editingGhostIds.contains(issueId);
+    final flash = issueId.isNotEmpty && widget.flashGhostIssueId == issueId;
+    GlobalKey? key;
+    if (issueId.isNotEmpty) {
+      final keys = widget.ghostKeys;
+      if (keys != null) key = keys[issueId];
+    }
+
+    final inner = Opacity(
+      opacity: 0.55,
+      child: Container(
+        margin: EdgeInsets.symmetric(vertical: 8 * s),
+        padding: EdgeInsets.all(10 * s),
+        decoration: BoxDecoration(
+          color: flash ? const Color(0xFFE5E7EB) : const Color(0xFFF3F4F6),
+          borderRadius: BorderRadius.circular(6),
+        ),
+        child: CustomPaint(
+          painter: _DashedRectPainter(
+            color: flash ? const Color(0xFF6B7280) : const Color(0xFF9CA3AF),
+          ),
+          child: Padding(
+            padding: EdgeInsets.all(8 * s),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFE5E7EB),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: const Color(0xFF9CA3AF)),
+                      ),
+                      child: const Tr(
+                        'Missing section',
+                        style: TextStyle(
+                          color: Color(0xFF4B5563),
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                    const Spacer(),
+                    Text(
+                      title.isEmpty ? 'Untitled section' : title,
+                      style: TextStyle(
+                        color: const Color(0xFF4B5563),
+                        fontSize: 13 * s,
+                        fontWeight: FontWeight.w700,
+                        fontStyle: FontStyle.italic,
+                      ),
+                    ),
+                  ],
+                ),
+                SizedBox(height: 8 * s),
+                if (editing)
+                  TextField(
+                    controller: _ghostEditCtrls.putIfAbsent(
+                      issueId,
+                      () => TextEditingController(text: body),
+                    ),
+                    maxLines: null,
+                    style: TextStyle(
+                      color: const Color(0xFF6B7280),
+                      fontSize: 12 * s,
+                      fontStyle: FontStyle.italic,
+                    ),
+                    decoration: const InputDecoration(
+                      isDense: true,
+                      border: InputBorder.none,
+                    ),
+                    onChanged: (v) => block['suggested_content'] = v,
+                  )
+                else
+                  Text(
+                    body.isEmpty ? ' ' : body,
+                    style: TextStyle(
+                      color: const Color(0xFF6B7280),
+                      fontSize: 12 * s,
+                      fontStyle: FontStyle.italic,
+                    ),
+                  ),
+                SizedBox(height: 10 * s),
+                Row(
+                  children: [
+                    Expanded(
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: _green,
+                          foregroundColor: Colors.white,
+                          visualDensity: VisualDensity.compact,
+                        ),
+                        onPressed: issueId.isEmpty
+                            ? null
+                            : () => widget.onApplyFix(issueId, _ghostBody(block)),
+                        child: const Tr('Accept'),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: issueId.isEmpty
+                            ? null
+                            : () {
+                                setState(() {
+                                  if (editing) {
+                                    _editingGhostIds.remove(issueId);
+                                  } else {
+                                    _editingGhostIds.add(issueId);
+                                  }
+                                });
+                              },
+                        child: Tr(editing ? 'Done' : 'Edit'),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: issueId.isEmpty
+                            ? null
+                            : () => widget.onIgnoreIssue(issueId),
+                        child: const Tr('Ignore'),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+
+    return KeyedSubtree(key: key, child: inner);
+  }
+
   Widget _styleTag(String label, bool fixed) {
     final c = fixed ? _green : _wordBlue;
     return Container(
@@ -1596,7 +1816,7 @@ class _DocumentPreviewPanelState extends State<DocumentPreviewPanel> {
     if (rows.isEmpty) {
       return Padding(
         padding: EdgeInsets.symmetric(vertical: 8 * s),
-        child: Text('[Table — no cell data received from server]',
+        child: Tr('[Table — no cell data received from server]',
             style: _wordStyle(font, 10, s, italic: true)),
       );
     }
@@ -1691,8 +1911,7 @@ class _DocumentPreviewPanelState extends State<DocumentPreviewPanel> {
                         children: const [
                           Icon(Icons.image_outlined, color: Colors.black45, size: 48),
                           SizedBox(height: 8),
-                          Text(
-                            '[Figure / Image Placeholder]',
+                          Tr('[Figure / Image Placeholder]',
                             style: TextStyle(color: Colors.black54, fontSize: 12, fontStyle: FontStyle.italic),
                           ),
                         ],
@@ -1719,7 +1938,7 @@ class _DocumentPreviewPanelState extends State<DocumentPreviewPanel> {
                     child: ElevatedButton.icon(
                       onPressed: () => _showReplaceDialog(block, issue),
                       icon: const Icon(Icons.image_search, size: 15),
-                      label: const Text('Replace', style: TextStyle(fontSize: 12)),
+                      label: const Tr('Replace', style: TextStyle(fontSize: 12)),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: _blue,
                         foregroundColor: Colors.white,
@@ -1731,7 +1950,7 @@ class _DocumentPreviewPanelState extends State<DocumentPreviewPanel> {
                     child: OutlinedButton.icon(
                       onPressed: () => _confirmAndRemove(block, issue),
                       icon: const Icon(Icons.delete_outline, size: 15),
-                      label: const Text('Remove', style: TextStyle(fontSize: 12)),
+                      label: const Tr('Remove', style: TextStyle(fontSize: 12)),
                       style: OutlinedButton.styleFrom(
                         foregroundColor: _red,
                         side: BorderSide(color: _red.withOpacity(0.55)),
@@ -1751,7 +1970,7 @@ class _DocumentPreviewPanelState extends State<DocumentPreviewPanel> {
     _ap = context.watch<ThemeProvider>().palette;
     if (_blocks.isEmpty && widget.blocks.isEmpty) {
       return Center(
-        child: Text('No document content available for preview.', style: TextStyle(color: _textSec)),
+        child: Tr('No document content available for preview.', style: TextStyle(color: _textSec)),
       );
     }
 
@@ -1779,6 +1998,38 @@ class _DocumentPreviewPanelState extends State<DocumentPreviewPanel> {
       ),
     );
   }
+}
+
+class _DashedRectPainter extends CustomPainter {
+  final Color color;
+  _DashedRectPainter({required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = 1.2
+      ..style = PaintingStyle.stroke;
+    const dash = 6.0;
+    const gap = 4.0;
+    final path = Path()..addRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromLTWH(0, 0, size.width, size.height),
+        const Radius.circular(4),
+      ),
+    );
+    for (final metric in path.computeMetrics()) {
+      var d = 0.0;
+      while (d < metric.length) {
+        final next = (d + dash).clamp(0.0, metric.length);
+        canvas.drawPath(metric.extractPath(d, next), paint);
+        d += dash + gap;
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _DashedRectPainter old) => old.color != color;
 }
 
 /// Tries each candidate URL in order until one loads; logs which one worked.

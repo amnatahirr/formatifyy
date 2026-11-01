@@ -11,7 +11,10 @@ import '../widgets/google_drive_browser_widget.dart';
 import '../widgets/admin/admin_ui.dart';
 import '../widgets/freeform_analyze_dialogs.dart';
 import 'analyze_screen.dart';
+import '../utils/analysis_nav.dart';
 
+
+import '../widgets/tr.dart';
 class MultiUploadScreen extends StatefulWidget {
   const MultiUploadScreen({Key? key}) : super(key: key);
 
@@ -53,7 +56,7 @@ class _MultiUploadScreenState extends State<MultiUploadScreen> {
       length: 4,
       child: Scaffold(
         appBar: AppBar(
-          title: const Text('Upload Documents'),
+          title: const Tr('Upload Documents'),
           elevation: 0,
           bottom: const TabBar(
             tabs: [
@@ -94,19 +97,18 @@ class _MultiUploadScreenState extends State<MultiUploadScreen> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           const SizedBox(height: 12),
-          const Text(
-            'Upload from Your Device',
+          const Tr('Upload from Your Device',
             style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 24),
 
           // Template Selection
-          const Text('Select Template', style: TextStyle(fontWeight: FontWeight.w600)),
+          const Tr('Select Template', style: TextStyle(fontWeight: FontWeight.w600)),
           const SizedBox(height: 8),
           DropdownButton<int>(
             isExpanded: true,
             value: _selectedTemplateId > 0 ? _selectedTemplateId : null,
-            hint: const Text('Choose a template'),
+            hint: const Tr('Choose a template'),
             items: templates.templates.map((template) {
               final id = template['id'] is int ? template['id'] : int.parse(template['id'].toString());
               return DropdownMenuItem<int>(
@@ -127,7 +129,7 @@ class _MultiUploadScreenState extends State<MultiUploadScreen> {
               child: OutlinedButton.icon(
                 onPressed: uploads.isUploading ? null : () => _analyzeWithoutTemplate(auth),
                 icon: const Icon(Icons.auto_awesome, size: 18),
-                label: const Text('Analyze without template'),
+                label: const Tr('Analyze without template'),
                 style: OutlinedButton.styleFrom(
                   foregroundColor: AdminColors.primary,
                   side: BorderSide(color: AdminColors.primary.withOpacity(0.7)),
@@ -158,7 +160,7 @@ class _MultiUploadScreenState extends State<MultiUploadScreen> {
                       if (mounted && uploads.uploadErrorMessage == null) {
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(
-                            content: Text('File uploaded successfully!'),
+                            content: Tr('File uploaded successfully!'),
                             backgroundColor: Colors.green,
                           ),
                         );
@@ -248,8 +250,7 @@ class _MultiUploadScreenState extends State<MultiUploadScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  'Google Drive Integration',
+                const Tr('Google Drive Integration',
                   style: TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.bold,
@@ -264,15 +265,14 @@ class _MultiUploadScreenState extends State<MultiUploadScreen> {
                   ),
                 ),
                 const SizedBox(height: 12),
-                const Text(
-                  'Select a template before importing files:',
+                const Tr('Select a template before importing files:',
                   style: TextStyle(fontSize: 12),
                 ),
                 const SizedBox(height: 8),
                 DropdownButton<int>(
                   isExpanded: true,
                   value: _selectedTemplateId > 0 ? _selectedTemplateId : null,
-                  hint: const Text('Choose a template'),
+                  hint: const Tr('Choose a template'),
                   items: templates.templates.map((template) {
                     final id = template['id'] is int
                         ? template['id']
@@ -344,10 +344,9 @@ class _MultiUploadScreenState extends State<MultiUploadScreen> {
                         color: Colors.grey.shade600,
                       ),
                       const SizedBox(height: 16),
-                      const Text('Select a template to continue'),
+                      const Tr('Select a template to continue'),
                       const SizedBox(height: 8),
-                      Text(
-                        'Templates help format your documents properly',
+                      Tr('Templates help format your documents properly',
                         style: TextStyle(
                           color: Colors.grey.shade600,
                           fontSize: 12,
@@ -410,18 +409,13 @@ class _MultiUploadScreenState extends State<MultiUploadScreen> {
       return;
     }
 
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => AnalyzeScreen(
-          documentId: response['document_id'] as int,
-          documentName: (response['filename'] ?? 'Document').toString(),
-          templateId: 0,
-          templateName: 'AI general analysis — no template applied',
-          freeformAnalysis: true,
-        ),
-      ),
-    );
+   AnalysisNav.open(AnalysisRequest(
+  documentId: response['document_id'] as int,
+  documentName: (response['filename'] ?? 'Document').toString(),
+  templateId: 0,
+  templateName: 'AI general analysis — no template applied',
+  freeform: true,
+));
   }
 
   // ============ MY UPLOADS TAB ============
@@ -444,10 +438,9 @@ class _MultiUploadScreenState extends State<MultiUploadScreen> {
                   color: Colors.grey.shade600,
                 ),
                 const SizedBox(height: 16),
-                const Text('No documents yet'),
+                const Tr('No documents yet'),
                 const SizedBox(height: 8),
-                Text(
-                  'Start uploading documents from any source',
+                Tr('Start uploading documents from any source',
                   style: TextStyle(color: Colors.grey.shade600),
                 ),
               ],
@@ -535,13 +528,13 @@ class _MultiUploadScreenState extends State<MultiUploadScreen> {
             PopupMenuButton(
               itemBuilder: (context) => [
                 const PopupMenuItem(
-                  child: Text('View Details'),
+                  child: Tr('View Details'),
                 ),
                 const PopupMenuItem(
-                  child: Text('Download'),
+                  child: Tr('Download'),
                 ),
                 const PopupMenuItem(
-                  child: Text('Share'),
+                  child: Tr('Share'),
                 ),
               ],
             ),

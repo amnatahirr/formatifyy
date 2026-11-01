@@ -8,6 +8,7 @@ import '../../services/admin_api_service.dart';
 import '../../services/super_admin_api_service.dart';
 import '../../widgets/admin/admin_ui.dart';
 
+import '../../widgets/tr.dart';
 class DepartmentManagerScreen extends StatefulWidget {
   final bool embedded;
 
@@ -127,7 +128,7 @@ class _DepartmentManagerScreenState extends State<DepartmentManagerScreen> {
               children: [
                 TextButton(
                   onPressed: () => Navigator.pop(context),
-                  child: const Text('Cancel'),
+                  child: const Tr('Cancel'),
                 ),
                 const SizedBox(width: 8),
                 ElevatedButton(
@@ -171,7 +172,7 @@ class _DepartmentManagerScreenState extends State<DepartmentManagerScreen> {
                       );
                     }
                   },
-                  child: const Text('Save'),
+                  child: const Tr('Save'),
                 ),
               ],
             ),
@@ -186,11 +187,11 @@ class _DepartmentManagerScreenState extends State<DepartmentManagerScreen> {
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: AdminColors.surface,
-        title: const Text('Delete Department'),
+        title: const Tr('Delete Department'),
         content: Text('Delete "${item.name}"? This cannot be undone.'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
-          TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('Delete')),
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Tr('Cancel')),
+          TextButton(onPressed: () => Navigator.pop(context, true), child: const Tr('Delete')),
         ],
       ),
     );
@@ -308,7 +309,7 @@ class _DepartmentManagerScreenState extends State<DepartmentManagerScreen> {
             child: ElevatedButton.icon(
               onPressed: () => _openDepartmentSheet(),
               icon: const Icon(Icons.add),
-              label: const Text('Add Department'),
+              label: const Tr('Add Department'),
             ),
           ),
           const SizedBox(height: 16),
@@ -330,7 +331,7 @@ class _DepartmentManagerScreenState extends State<DepartmentManagerScreen> {
         onPressed: () => _openDepartmentSheet(),
         backgroundColor: AdminColors.primary,
         icon: const Icon(Icons.add),
-        label: const Text('Add Department'),
+        label: const Tr('Add Department'),
       ),
       child: _buildBody(),
     );

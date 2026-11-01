@@ -6,7 +6,7 @@ import os
 import re
 from typing import Any, Dict, List, Optional
 
-from heading_analysis import (
+from docx_tools.heading_analysis import (
     MatchContext,
     _extract_numbering_prefix,
     _normalize,
@@ -18,7 +18,7 @@ from heading_analysis import (
     build_template_outline,
     detect_heading,
 )
-from parser import parse_file
+from pipeline.parser import parse_file
 
 
 _LIST_ITEM_RE = re.compile(r"^[\u2022\u2023\u25E6\u2043\u2219•\-*–·]\s+")

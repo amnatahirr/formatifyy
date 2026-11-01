@@ -7,6 +7,7 @@ import '../../services/supervisor_api_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/admin/admin_ui.dart';
 
+import '../../widgets/tr.dart';
 class PlagiarismMonitorDetailScreen extends StatefulWidget {
   final int groupId;
   final String? titleHint;
@@ -81,15 +82,14 @@ class _PlagiarismMonitorDetailScreenState extends State<PlagiarismMonitorDetailS
         return AlertDialog(
           backgroundColor: AdminColors.surface,
           shape: adminDialogShape(),
-          title: const Text('Flag plagiarism'),
+          title: const Tr('Flag plagiarism'),
           content: SizedBox(
             width: 420,
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  'Send a warning notification to the student group about plagiarism risk.',
+                Tr('Send a warning notification to the student group about plagiarism risk.',
                   style: TextStyle(color: Colors.white.withOpacity(0.7), height: 1.4),
                 ),
                 const SizedBox(height: 14),
@@ -107,11 +107,11 @@ class _PlagiarismMonitorDetailScreenState extends State<PlagiarismMonitorDetailS
             ),
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Cancel')),
+            TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Tr('Cancel')),
             ElevatedButton(
               style: ElevatedButton.styleFrom(backgroundColor: AdminColors.danger),
               onPressed: () => Navigator.pop(dialogContext, controller.text.trim()),
-              child: const Text('Send Flag'),
+              child: const Tr('Send Flag'),
             ),
           ],
         );
@@ -180,8 +180,7 @@ class _PlagiarismMonitorDetailScreenState extends State<PlagiarismMonitorDetailS
                           overflow: TextOverflow.ellipsis,
                         ),
                         const SizedBox(height: 2),
-                        Text(
-                          'Similarity report',
+                        Tr('Similarity report',
                           style: TextStyle(fontSize: 12, color: Colors.white.withOpacity(0.5)),
                         ),
                       ],
@@ -282,8 +281,7 @@ class _PlagiarismMonitorDetailScreenState extends State<PlagiarismMonitorDetailS
             icon: Icons.find_in_page_outlined,
             accent: AdminColors.warning,
             child: detail.matches.isEmpty
-                ? Text(
-                    'No matched sources were returned for this group.',
+                ? Tr('No matched sources were returned for this group.',
                     style: TextStyle(color: Colors.white.withOpacity(0.6)),
                   )
                 : Column(

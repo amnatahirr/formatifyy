@@ -9,6 +9,7 @@ import '../../utils/responsive.dart';
 import '../../widgets/admin/admin_ui.dart';
 import 'document_review_screen.dart';
 
+import '../../widgets/tr.dart';
 class SubmissionDetailScreen extends StatefulWidget {
   final int submissionId;
   final String? titleHint;
@@ -84,7 +85,7 @@ class _SubmissionDetailScreenState extends State<SubmissionDetailScreen> {
                 ),
               ),
               actions: [
-                TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Cancel')),
+                TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Tr('Cancel')),
                 ElevatedButton(
                   style: ElevatedButton.styleFrom(backgroundColor: confirmColor),
                   onPressed: () {
@@ -249,8 +250,7 @@ class _SubmissionDetailScreenState extends State<SubmissionDetailScreen> {
                           overflow: TextOverflow.ellipsis,
                         ),
                         const SizedBox(height: 2),
-                        Text(
-                          'Final submission review',
+                        Tr('Final submission review',
                           style: TextStyle(fontSize: 12, color: Colors.white.withOpacity(0.5)),
                         ),
                       ],
@@ -334,8 +334,7 @@ class _SubmissionDetailScreenState extends State<SubmissionDetailScreen> {
                   Text('Submitted: ${item.submittedAt}', style: TextStyle(color: Colors.white.withOpacity(0.45), fontSize: 12)),
                 ],
                 const SizedBox(height: 14),
-                Text(
-                  'Download the file, or preview paragraphs in-app and add comments for the student to resolve.',
+                Tr('Download the file, or preview paragraphs in-app and add comments for the student to resolve.',
                   style: TextStyle(color: Colors.white.withOpacity(0.55), fontSize: 12, height: 1.4),
                 ),
                 const SizedBox(height: 14),
@@ -367,14 +366,13 @@ class _SubmissionDetailScreenState extends State<SubmissionDetailScreen> {
                         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                       ),
                       icon: const Icon(Icons.rate_review_outlined, size: 18),
-                      label: const Text('Preview & Comment'),
+                      label: const Tr('Preview & Comment'),
                     ),
                   ],
                 ),
                 if (!item.canPreviewInApp) ...[
                   const SizedBox(height: 10),
-                  Text(
-                    'Preview & comments need a linked review document. Ask the student to re-submit if this is an older submission.',
+                  Tr('Preview & comments need a linked review document. Ask the student to re-submit if this is an older submission.',
                     style: TextStyle(color: AdminColors.warning.withOpacity(0.9), fontSize: 12, height: 1.35),
                   ),
                 ],
@@ -389,8 +387,7 @@ class _SubmissionDetailScreenState extends State<SubmissionDetailScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  'Same Formatify analysis shape used on the student analyze screen (grammar + plagiarism).',
+                Tr('Same Formatify analysis shape used on the student analyze screen (grammar + plagiarism).',
                   style: TextStyle(color: Colors.white.withOpacity(0.55), fontSize: 12, height: 1.4),
                 ),
                 const SizedBox(height: 14),
@@ -429,14 +426,14 @@ class _SubmissionDetailScreenState extends State<SubmissionDetailScreen> {
                 const AdminSectionLabel(label: 'Grammar findings'),
                 const SizedBox(height: 12),
                 if (item.grammarIssues.isEmpty)
-                  Text('No grammar issues reported.', style: TextStyle(color: Colors.white.withOpacity(0.55)))
+                  Tr('No grammar issues reported.', style: TextStyle(color: Colors.white.withOpacity(0.55)))
                 else
                   ...item.grammarIssues.map((issue) => _IssueTile(issue: issue, accent: AdminColors.primary)),
                 const SizedBox(height: 20),
                 const AdminSectionLabel(label: 'Plagiarism findings'),
                 const SizedBox(height: 12),
                 if (item.plagiarismIssues.isEmpty)
-                  Text('No plagiarism issues reported.', style: TextStyle(color: Colors.white.withOpacity(0.55)))
+                  Tr('No plagiarism issues reported.', style: TextStyle(color: Colors.white.withOpacity(0.55)))
                 else
                   ...item.plagiarismIssues.map((issue) => _IssueTile(issue: issue, accent: AdminColors.warning)),
               ],
@@ -493,7 +490,7 @@ class _DecisionActions extends StatelessWidget {
         padding: const EdgeInsets.symmetric(vertical: 14),
       ),
       icon: const Icon(Icons.check_rounded, size: 18),
-      label: const Text('Approve'),
+      label: const Tr('Approve'),
     );
     final revision = ElevatedButton.icon(
       onPressed: busy ? null : onRevision,
@@ -503,7 +500,7 @@ class _DecisionActions extends StatelessWidget {
         padding: const EdgeInsets.symmetric(vertical: 14),
       ),
       icon: const Icon(Icons.edit_note_rounded, size: 18),
-      label: const Text('Request Revision'),
+      label: const Tr('Request Revision'),
     );
     final reject = OutlinedButton.icon(
       onPressed: busy ? null : onReject,
@@ -513,7 +510,7 @@ class _DecisionActions extends StatelessWidget {
         padding: const EdgeInsets.symmetric(vertical: 14),
       ),
       icon: const Icon(Icons.close_rounded, size: 18),
-      label: const Text('Reject'),
+      label: const Tr('Reject'),
     );
 
     if (stacked) {

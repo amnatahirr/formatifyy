@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../providers/document_provider.dart';
 import '../providers/auth_provider.dart';
 
+import 'tr.dart';
 class DocumentListWidget extends StatefulWidget {
   const DocumentListWidget({Key? key}) : super(key: key);
 
@@ -29,8 +30,7 @@ class _DocumentListWidgetState extends State<DocumentListWidget> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'My Documents',
+          const Tr('My Documents',
             style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 24),
@@ -61,8 +61,7 @@ class _DocumentListWidgetState extends State<DocumentListWidget> {
         children: [
           Icon(Icons.folder_open, size: 64, color: Colors.grey.shade400),
           const SizedBox(height: 16),
-          const Text(
-            'No documents uploaded yet',
+          const Tr('No documents uploaded yet',
             style: TextStyle(color: Colors.grey),
           ),
         ],
@@ -221,7 +220,7 @@ class DocumentCard extends StatelessWidget {
                     foregroundColor: Colors.white,
                   ),
                   icon: const Icon(Icons.preview),
-                  label: const Text('Preview'),
+                  label: const Tr('Preview'),
                   onPressed: () =>
                       _showPreviewDialog(context, provider, auth.userId),
                 ),
@@ -232,7 +231,7 @@ class DocumentCard extends StatelessWidget {
                     foregroundColor: Colors.white,
                   ),
                   icon: const Icon(Icons.download),
-                  label: const Text('Export'),
+                  label: const Tr('Export'),
                   onPressed: () => _showExportDialog(
                     context,
                     provider,
@@ -294,7 +293,7 @@ class DocumentCard extends StatelessWidget {
           children: [
             const Icon(Icons.preview, color: Colors.blue),
             const SizedBox(width: 8),
-            const Text('Formatted Document Preview'),
+            const Tr('Formatted Document Preview'),
           ],
         ),
         content: FutureBuilder<Map<String, dynamic>?>(
@@ -320,7 +319,7 @@ class DocumentCard extends StatelessWidget {
                         color: Colors.red.withOpacity(0.5),
                       ),
                       const SizedBox(height: 12),
-                      const Text('Could not load preview'),
+                      const Tr('Could not load preview'),
                     ],
                   ),
                 ),
@@ -337,7 +336,7 @@ class DocumentCard extends StatelessWidget {
             if (formattedContent == null || formattedContent.isEmpty) {
               return const SizedBox(
                 height: 300,
-                child: Center(child: Text('No content available')),
+                child: Center(child: Tr('No content available')),
               );
             }
 
@@ -394,7 +393,7 @@ class DocumentCard extends StatelessWidget {
                           child: Row(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              const Text('• ', style: TextStyle(fontSize: 12)),
+                              const Tr('• ', style: TextStyle(fontSize: 12)),
                               Expanded(child: Text(text, style: style)),
                             ],
                           ),
@@ -438,7 +437,7 @@ class DocumentCard extends StatelessWidget {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Close'),
+            child: const Tr('Close'),
           ),
         ],
       ),
@@ -457,13 +456,13 @@ class DocumentCard extends StatelessWidget {
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
-        title: const Text('Export Document'),
+        title: const Tr('Export Document'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
               leading: const Icon(Icons.description),
-              title: const Text('Export as DOCX'),
+              title: const Tr('Export as DOCX'),
               onTap: () async {
                 Navigator.pop(context);
                 final success = await provider.downloadFormattedDocument(
@@ -485,7 +484,7 @@ class DocumentCard extends StatelessWidget {
             ),
             ListTile(
               leading: const Icon(Icons.picture_as_pdf),
-              title: const Text('Export as PDF'),
+              title: const Tr('Export as PDF'),
               onTap: () async {
                 Navigator.pop(context);
                 final success = await provider.downloadFormattedDocument(

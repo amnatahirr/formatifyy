@@ -23,6 +23,7 @@ import '../providers/image_formatter_provider.dart';
 import '../providers/auth_provider.dart';
 import '../widgets/app_sidebar.dart';
 
+import '../widgets/tr.dart';
 // ── Colour palette (matches your app's existing dark theme) ──────────────────
 const _bg      = Color(0xFF0D1117);
 const _surface = Color(0xFF161B22);
@@ -116,14 +117,14 @@ class _ImageFormatterBody extends StatelessWidget {
                 ),
                 const SizedBox(width: 10),
                 Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  const Text('FYP Image Formatter',
+                  const Tr('FYP Image Formatter',
                       style: TextStyle(color: _textPri, fontSize: 17,
                           fontWeight: FontWeight.w700)),
                   Text(documentName,
                       style: const TextStyle(color: _textSec, fontSize: 12)),
                 ]),
                 const Spacer(),
-                Text('Auto-caption · Centre-align · Table of Figures',
+                Tr('Auto-caption · Centre-align · Table of Figures',
                     style: const TextStyle(color: _textSec, fontSize: 11)),
               ]),
             ),
@@ -155,7 +156,7 @@ class _ImageFormatterBody extends StatelessWidget {
                   userId: auth.userId!,
                 ),
                 icon:  const Icon(Icons.auto_fix_high, size: 18),
-                label: const Text('Format All Images Now',
+                label: const Tr('Format All Images Now',
                     style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: _blue,
@@ -233,8 +234,7 @@ class _ResultSection extends StatelessWidget {
 
       if (!hasImages) ...[
         const Center(
-          child: Text(
-            'No images were found in this document.',
+          child: Tr('No images were found in this document.',
             style: TextStyle(color: _textSec, fontSize: 13),
           ),
         ),
@@ -336,7 +336,7 @@ class _ResultSection extends StatelessWidget {
         child: OutlinedButton.icon(
           onPressed: () => provider.reset(),
           icon:  const Icon(Icons.refresh, size: 16),
-          label: const Text('Format Again'),
+          label: const Tr('Format Again'),
           style: OutlinedButton.styleFrom(
             foregroundColor: _textSec,
             side: const BorderSide(color: _border),
@@ -379,7 +379,7 @@ class _SummaryBanner extends StatelessWidget {
             if (summary.tofAdded)
               const Padding(
                 padding: EdgeInsets.only(top: 4),
-                child: Text('✓  Table of Figures appended',
+                child: Tr('✓  Table of Figures appended',
                     style: TextStyle(color: _textSec, fontSize: 11)),
               ),
           ]),
@@ -487,7 +487,7 @@ class _ManualStepsCard extends StatelessWidget {
         Row(children: [
           const Icon(Icons.build_outlined, color: _yellow, size: 16),
           const SizedBox(width: 8),
-          const Text('Manual Steps Required in Word',
+          const Tr('Manual Steps Required in Word',
               style: TextStyle(color: _yellow, fontSize: 13,
                   fontWeight: FontWeight.w700)),
         ]),
@@ -528,7 +528,7 @@ class _ManualItemsCard extends StatelessWidget {
         Row(children: [
           const Icon(Icons.warning_amber_rounded, color: _red, size: 16),
           const SizedBox(width: 8),
-          const Text('Items Needing Manual Attention',
+          const Tr('Items Needing Manual Attention',
               style: TextStyle(color: _red, fontSize: 13,
                   fontWeight: FontWeight.w700)),
         ]),
@@ -536,7 +536,7 @@ class _ManualItemsCard extends StatelessWidget {
         ...items.map((item) => Padding(
           padding: const EdgeInsets.only(bottom: 6),
           child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            const Text('• ', style: TextStyle(color: _red, fontSize: 12)),
+            const Tr('• ', style: TextStyle(color: _red, fontSize: 12)),
             Expanded(
               child: Text(item,
                   style: const TextStyle(color: _textSec, fontSize: 12,

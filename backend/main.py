@@ -2212,6 +2212,15 @@ async def analyze_document_endpoint(document_id: int, user_id: int = Query(...))
         style_issues.extend(bullets)
         normalized_issues.extend(bullets)
 
+    # Missing sections come from heading_analysis (whole document), added further
+    # down. Drop the formatting agent's per-batch guesses: it only sees 4 pages.
+    normalized_issues = [
+        i for i in normalized_issues if (i.get("type") or "").lower() != "missing_section"
+    ]
+    style_issues = [
+        i for i in style_issues if (i.get("type") or "").lower() != "missing_section"
+    ]
+
     major_count = len([i for i in normalized_issues if (i.get("severity") or "").lower() == "major"])
     minor_count = len([i for i in normalized_issues if (i.get("severity") or "").lower() == "minor"])
     critical_count = len([i for i in normalized_issues if (i.get("severity") or "").upper() == "CRITICAL"])
@@ -2269,6 +2278,25 @@ async def analyze_document_endpoint(document_id: int, user_id: int = Query(...))
             heading_issues = heading_matches_to_issues(template_heading_matches)
             if heading_issues:
                 normalized_heading_issues = normalize_issues(heading_issues, image_paths)
+                for _it in normalized_heading_issues:
+                    if (_it.get("type") or "").lower() != "missing_section":
+                        continue
+                    _name = str(_it.get("matched_template_heading") or "").strip()
+                    if not _name:
+                        _m = re.search(
+                            r'"([^"]+)"',
+                            str(_it.get("suggestion") or _it.get("reason") or ""),
+                        )
+                        _name = _m.group(1).strip() if _m else ""
+                    if _name:
+                        _it["fix_type"] = "insert_missing_section"
+                        _it["fix_details"] = {
+                            "section_name": _name,
+                            "level": _it.get("heading_level") or 1,
+                        }
+                    if not str(_it.get("issue_id") or "").strip():
+                        from docx_tools.heading_analysis import missing_heading_issue_id
+                        _it["issue_id"] = missing_heading_issue_id(_name or "section")
                 style_issues.extend(normalized_heading_issues)
                 normalized_issues.extend(normalized_heading_issues)
         except Exception as exc:

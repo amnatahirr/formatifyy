@@ -7,7 +7,7 @@ from __future__ import annotations
 import re
 from typing import Any, Dict, List, Optional
 
-from docx_fields import (
+from docx_tools.docx_fields import (
     _element_is_before_body_start,
     _heading_level_from_paragraph,
     rebuild_caption_with_seq,
@@ -19,7 +19,7 @@ from services.table_caption_service import (
     set_plain_table_caption_text,
 )
 from services.table_config import format_table_caption_label, get_table_format_config
-from table_processor import _infer_table_description
+from docx_tools.table_processor import _infer_table_description
 
 _CHAPTER_NUM_RE = re.compile(r"^(\d+)")
 

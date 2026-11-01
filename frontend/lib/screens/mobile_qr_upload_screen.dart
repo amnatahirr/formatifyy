@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 import 'package:file_picker/file_picker.dart';
 
+import '../widgets/tr.dart';
 class MobileQrUploadScreen extends StatefulWidget {
   final String sessionId;
   final String host; 
@@ -198,16 +199,14 @@ class _MobileQrUploadScreenState extends State<MobileQrUploadScreen>
           const Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                'Formatify',
+              Tr('Formatify',
                 style: TextStyle(
                   color: Colors.white,
                   fontSize: 18,
                   fontWeight: FontWeight.w700,
                 ),
               ),
-              Text(
-                'Upload Document',
+              Tr('Upload Document',
                 style: TextStyle(
                   color: Color(0xFF64748B),
                   fontSize: 12,
@@ -257,8 +256,7 @@ class _MobileQrUploadScreenState extends State<MobileQrUploadScreen>
             ),
           ),
           const SizedBox(height: 24),
-          const Text(
-            'Validating QR Session...',
+          const Tr('Validating QR Session...',
             style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w600),
           ),
           const SizedBox(height: 8),
@@ -295,16 +293,14 @@ class _MobileQrUploadScreenState extends State<MobileQrUploadScreen>
                   ),
                 ),
                 const SizedBox(width: 8),
-                const Text(
-                  'Session Active',
+                const Tr('Session Active',
                   style: TextStyle(color: Color(0xFF10B981), fontSize: 13, fontWeight: FontWeight.w600),
                 ),
               ],
             ),
           ),
           const SizedBox(height: 32),
-          const Text(
-            'Send a file to your\ndesktop report',
+          const Tr('Send a file to your\ndesktop report',
             textAlign: TextAlign.center,
             style: TextStyle(
               color: Colors.white,
@@ -314,8 +310,7 @@ class _MobileQrUploadScreenState extends State<MobileQrUploadScreen>
             ),
           ),
           const SizedBox(height: 12),
-          Text(
-            'Choose how you want to add your document or image',
+          Tr('Choose how you want to add your document or image',
             textAlign: TextAlign.center,
             style: TextStyle(color: Colors.white.withOpacity(0.55), fontSize: 14, height: 1.5),
           ),
@@ -431,8 +426,7 @@ class _MobileQrUploadScreenState extends State<MobileQrUploadScreen>
               ),
             ),
             const SizedBox(height: 28),
-            const Text(
-              'Uploading...',
+            const Tr('Uploading...',
               style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w700),
             ),
             const SizedBox(height: 8),
@@ -453,8 +447,7 @@ class _MobileQrUploadScreenState extends State<MobileQrUploadScreen>
               ),
             ),
             const SizedBox(height: 16),
-            Text(
-              'Sending to your desktop app...',
+            Tr('Sending to your desktop app...',
               style: TextStyle(color: Colors.white.withOpacity(0.45), fontSize: 13),
             ),
           ],
@@ -480,8 +473,7 @@ class _MobileQrUploadScreenState extends State<MobileQrUploadScreen>
               child: const Icon(Icons.check_rounded, color: Color(0xFF10B981), size: 48),
             ),
             const SizedBox(height: 28),
-            const Text(
-              'Upload Successful!',
+            const Tr('Upload Successful!',
               style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w700),
             ),
             const SizedBox(height: 12),
@@ -505,8 +497,7 @@ class _MobileQrUploadScreenState extends State<MobileQrUploadScreen>
               ),
             ),
             const SizedBox(height: 20),
-            Text(
-              'Your file has been sent to your desktop Formatify app. You can close this screen.',
+            Tr('Your file has been sent to your desktop Formatify app. You can close this screen.',
               textAlign: TextAlign.center,
               style: TextStyle(color: Colors.white.withOpacity(0.55), fontSize: 14, height: 1.5),
             ),
@@ -517,7 +508,7 @@ class _MobileQrUploadScreenState extends State<MobileQrUploadScreen>
               child: ElevatedButton.icon(
                 onPressed: _reset,
                 icon: const Icon(Icons.add_photo_alternate_outlined, size: 18),
-                label: const Text('Upload Another File', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+                label: const Tr('Upload Another File', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
                 style: ElevatedButton.styleFrom(
                   foregroundColor: Colors.white,
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -547,8 +538,7 @@ class _MobileQrUploadScreenState extends State<MobileQrUploadScreen>
               child: const Icon(Icons.error_outline_rounded, color: Color(0xFFEF4444), size: 44),
             ),
             const SizedBox(height: 24),
-            const Text(
-              'Something went wrong',
+            const Tr('Something went wrong',
               style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w700),
             ),
             const SizedBox(height: 12),
@@ -572,7 +562,7 @@ class _MobileQrUploadScreenState extends State<MobileQrUploadScreen>
               child: ElevatedButton.icon(
                 onPressed: _reset,
                 icon: const Icon(Icons.refresh_rounded, size: 18),
-                label: const Text('Try Again', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+                label: const Tr('Try Again', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
                 style: ElevatedButton.styleFrom(
                   foregroundColor: Colors.white,
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -602,8 +592,7 @@ class _MobileQrUploadScreenState extends State<MobileQrUploadScreen>
               child: const Icon(Icons.timer_off_outlined, color: Color(0xFFD97706), size: 44),
             ),
             const SizedBox(height: 24),
-            const Text(
-              'QR Code Expired',
+            const Tr('QR Code Expired',
               style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w700),
             ),
             const SizedBox(height: 12),
@@ -620,8 +609,7 @@ class _MobileQrUploadScreenState extends State<MobileQrUploadScreen>
                 borderRadius: BorderRadius.circular(10),
                 border: Border.all(color: const Color(0xFFD97706).withOpacity(0.2)),
               ),
-              child: const Text(
-                'Go to your Formatify desktop app → New Report → Generate a new QR code',
+              child: const Tr('Go to your Formatify desktop app → New Report → Generate a new QR code',
                 textAlign: TextAlign.center,
                 style: TextStyle(color: Color(0xFFD97706), fontSize: 13, height: 1.5),
               ),

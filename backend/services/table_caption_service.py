@@ -15,7 +15,7 @@ from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.text.paragraph import Paragraph
 
-from docx_fields import (
+from docx_tools.docx_fields import (
     CAPTION_TEXT_RE,
     _body_children,
     _body_index,
@@ -25,7 +25,7 @@ from docx_fields import (
     paragraph_has_seq_caption,
 )
 from services.table_config import get_table_format_config
-from table_processor import _infer_table_description
+from docx_tools.table_processor import _infer_table_description
 
 W_P = qn("w:p")
 W_TBL = qn("w:tbl")
@@ -257,3 +257,90 @@ def detect_captions_for_tables(
         )
 
     return results
+
+
+_LEAD_PARAS_MAX = 3
+
+
+def _keep(para, with_next=None, together=None) -> None:
+    pf = para.paragraph_format
+    if with_next is not None:
+        pf.keep_with_next = with_next
+    if together is not None:
+        pf.keep_together = together
+
+
+def _is_heading_para(para) -> bool:
+    try:
+        name = (para.style.name or "").lower()
+    except Exception:
+        return False
+    return name.startswith("heading") or name == "title"
+
+
+def _flush_left(para) -> None:
+    """Force zero indent (overrides style/numbering) and strip leading tabs/spaces."""
+    from docx.shared import Inches
+    from docx.oxml.ns import qn
+
+    pf = para.paragraph_format
+    pf.left_indent = Inches(0)
+    pf.first_line_indent = Inches(0)
+
+    # Word gives priority to the *Chars attributes; remove them
+    pPr = para._element.pPr
+    ind = pPr.find(qn("w:ind")) if pPr is not None else None
+    if ind is not None:
+        for attr in ("leftChars", "startChars", "firstLineChars",
+                     "hangingChars", "start", "hanging"):
+            ind.attrib.pop(qn(f"w:{attr}"), None)
+
+    # leading tab / spaces in the first text run
+    for r in para._element.findall(qn("w:r")):
+        stop = False
+        for child in list(r):
+            if child.tag == qn("w:tab"):
+                r.remove(child)
+            elif child.tag == qn("w:t"):
+                child.text = (child.text or "").lstrip(" \t\u00a0")
+                if child.text:
+                    stop = True
+                    break
+        if stop:
+            break
+
+
+def apply_table_caption_keep_chain(doc, table) -> bool:
+    """Caption (+ intro paras + heading) stay on the same page as the table."""
+    cap_para, position, _ = find_caption_near_table(doc, table)
+    if cap_para is None:
+        return False
+
+    if position == "below":
+        for cell in table.rows[-1].cells:
+            for p in cell.paragraphs:
+                _keep(p, with_next=True)
+        _keep(cap_para, together=True)
+        return True
+
+    # caption ABOVE the table
+    _keep(cap_para, with_next=True, together=True)
+    el = cap_para._element.getprevious()
+    pulled = 0
+    while el is not None and el.tag == W_P and pulled < _LEAD_PARAS_MAX:
+        if el.find(".//" + qn("w:drawing")) is not None:
+            break
+        p = Paragraph(el, cap_para._parent)
+        if not (p.text or "").strip():
+            _keep(p, with_next=True)
+        elif _paragraph_is_table_caption(p):
+            break
+        else:
+            _keep(p, with_next=True, together=True)
+            if not _is_heading_para(p):
+                _flush_left(p)
+            pulled += 1
+            if _is_heading_para(p):
+                break
+        el = el.getprevious()
+    return True

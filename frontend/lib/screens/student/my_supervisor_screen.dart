@@ -5,6 +5,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/fyp_provider.dart';
 import '../../theme/app_theme.dart';
 
+import '../../widgets/tr.dart';
 /// Shows the student's latest assignment_requests status (email-matched).
 class MySupervisorScreen extends StatefulWidget {
   /// Opens the Choose Supervisor tab (e.g. after rejection).
@@ -89,7 +90,7 @@ class _MySupervisorScreenState extends State<MySupervisorScreen> {
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 16),
-              TextButton(onPressed: _load, child: const Text('Retry')),
+              TextButton(onPressed: _load, child: const Tr('Retry')),
             ],
           ),
         ),
@@ -107,8 +108,7 @@ class _MySupervisorScreenState extends State<MySupervisorScreen> {
       child: ListView(
         padding: const EdgeInsets.all(32),
         children: [
-          Text(
-            'Your FYP supervisor assignment status.',
+          Tr('Your FYP supervisor assignment status.',
             style: TextStyle(color: _p.textSecondary, fontSize: 14),
           ),
           const SizedBox(height: 22),
@@ -139,15 +139,14 @@ class _MySupervisorScreenState extends State<MySupervisorScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'No supervisor request yet.',
+          Tr('No supervisor request yet.',
             style: TextStyle(color: _p.textSecondary, height: 1.45),
           ),
           const SizedBox(height: 14),
           ElevatedButton.icon(
             onPressed: widget.onChooseSupervisor,
             icon: const Icon(Icons.school_outlined, size: 18),
-            label: const Text('Choose Supervisor'),
+            label: const Tr('Choose Supervisor'),
             style: ElevatedButton.styleFrom(
               backgroundColor: _p.accent,
               foregroundColor: Colors.white,
@@ -189,7 +188,7 @@ class _MySupervisorScreenState extends State<MySupervisorScreen> {
           ElevatedButton.icon(
             onPressed: widget.onChooseSupervisor,
             icon: const Icon(Icons.refresh, size: 18),
-            label: const Text('Choose another supervisor'),
+            label: const Tr('Choose another supervisor'),
             style: ElevatedButton.styleFrom(
               backgroundColor: _p.accent,
               foregroundColor: Colors.white,

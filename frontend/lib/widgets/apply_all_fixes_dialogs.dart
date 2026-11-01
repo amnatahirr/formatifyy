@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../theme/app_theme.dart';
 import '../models/json_parse.dart';
 
+import 'tr.dart';
 AppPalette _ap = AppPalette.dark;
 
 Color get _surface => _ap.surface;
@@ -336,8 +337,7 @@ class _ImageIssueTile extends StatelessWidget {
                   ElevatedButton.icon(
                     onPressed: busy ? null : onReplace,
                     icon: const Icon(Icons.image_search, size: 14),
-                    label: const Text(
-                      'Replace Image',
+                    label: const Tr('Replace Image',
                       style: TextStyle(fontSize: 12),
                     ),
                     style: ElevatedButton.styleFrom(
@@ -354,8 +354,7 @@ class _ImageIssueTile extends StatelessWidget {
                   OutlinedButton.icon(
                     onPressed: busy ? null : onRemove,
                     icon: const Icon(Icons.delete_outline, size: 14),
-                    label: const Text(
-                      'Remove Image',
+                    label: const Tr('Remove Image',
                       style: TextStyle(fontSize: 12),
                     ),
                     style: OutlinedButton.styleFrom(
@@ -635,16 +634,14 @@ class _ApplyAllReminderDialogState extends State<_ApplyAllReminderDialog> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  'Before applying all fixes',
+                Tr('Before applying all fixes',
                   style: TextStyle(
                     color: _textPri,
                     fontSize: 15,
                     fontWeight: FontWeight.w700,
                   ),
                 ),
-                Text(
-                  'Review what runs automatically and what still needs you',
+                Tr('Review what runs automatically and what still needs you',
                   style: TextStyle(color: _textSec, fontSize: 11.5),
                 ),
               ],
@@ -761,7 +758,7 @@ class _ApplyAllReminderDialogState extends State<_ApplyAllReminderDialog> {
           ),
           TextButton(
             onPressed: () => Navigator.of(context).pop(),
-            child: Text('Cancel', style: TextStyle(color: _textSec)),
+            child: Tr('Cancel', style: TextStyle(color: _textSec)),
           ),
           const SizedBox(width: 8),
           ElevatedButton.icon(
@@ -773,7 +770,7 @@ class _ApplyAllReminderDialogState extends State<_ApplyAllReminderDialog> {
               ),
             ),
             icon: const Icon(Icons.auto_fix_high, size: 16),
-            label: const Text('Apply All Fixes'),
+            label: const Tr('Apply All Fixes'),
             style: ElevatedButton.styleFrom(
               backgroundColor: _purple,
               foregroundColor: Colors.white,
@@ -900,8 +897,7 @@ class _ApplyAllSummaryDialogState extends State<_ApplyAllSummaryDialog> {
                           widget.onOpenListsTab();
                         },
                         icon: const Icon(Icons.open_in_new, size: 14),
-                        label: const Text(
-                          'Open Document Lists tab',
+                        label: const Tr('Open Document Lists tab',
                           style: TextStyle(fontSize: 12),
                         ),
                         style: TextButton.styleFrom(foregroundColor: _blue),
@@ -971,8 +967,7 @@ class _ApplyAllSummaryDialogState extends State<_ApplyAllSummaryDialog> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  'All fixes applied',
+                Tr('All fixes applied',
                   style: TextStyle(
                     color: _textPri,
                     fontSize: 15,
@@ -1030,7 +1025,7 @@ class _ApplyAllSummaryDialogState extends State<_ApplyAllSummaryDialog> {
                 widget.onOpenImagesTab();
               },
               icon: const Icon(Icons.image_outlined, size: 15),
-              label: const Text('Review Images'),
+              label: const Tr('Review Images'),
               style: OutlinedButton.styleFrom(
                 foregroundColor: _yellow,
                 side: BorderSide(color: _yellow.withOpacity(0.55)),
@@ -1052,7 +1047,7 @@ class _ApplyAllSummaryDialogState extends State<_ApplyAllSummaryDialog> {
                 vertical: 12,
               ),
             ),
-            child: const Text('Done'),
+            child: const Tr('Done'),
           ),
         ],
       ),

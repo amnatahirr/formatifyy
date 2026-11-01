@@ -5,6 +5,7 @@ import '../models/json_parse.dart';
 import '../services/image_replacement_service.dart';
 import 'image_replacement_dialog.dart';
 
+import 'tr.dart';
 AppPalette _ap = AppPalette.dark;
 
 Color get _bg => _ap.scaffold;
@@ -95,7 +96,7 @@ class _ImageIssueCardEnhancedState extends State<ImageIssueCardEnhanced> {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: _surface,
-        title: Text('Remove Image?', style: TextStyle(color: _textPri)),
+        title: Tr('Remove Image?', style: TextStyle(color: _textPri)),
         content: Text(
           'This permanently deletes the image from the document'
           '${widget.issue['image_id'] != null ? ' (${widget.issue['image_id']})' : ''}'
@@ -105,7 +106,7 @@ class _ImageIssueCardEnhancedState extends State<ImageIssueCardEnhanced> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: Text('Cancel', style: TextStyle(color: _textSec)),
+            child: Tr('Cancel', style: TextStyle(color: _textSec)),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
@@ -113,7 +114,7 @@ class _ImageIssueCardEnhancedState extends State<ImageIssueCardEnhanced> {
               foregroundColor: Colors.white,
             ),
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Remove'),
+            child: const Tr('Remove'),
           ),
         ],
       ),
@@ -192,8 +193,7 @@ class _ImageIssueCardEnhancedState extends State<ImageIssueCardEnhanced> {
                 children: [
                   const Icon(Icons.check_circle, color: _green, size: 16),
                   const SizedBox(width: 8),
-                  const Text(
-                    '✓  Image Replaced & Validated',
+                  const Tr('✓  Image Replaced & Validated',
                     style: TextStyle(
                       color: _green,
                       fontSize: 13,
@@ -210,8 +210,7 @@ class _ImageIssueCardEnhancedState extends State<ImageIssueCardEnhanced> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    'The new image has been validated and is now part of your document.',
+                  Tr('The new image has been validated and is now part of your document.',
                     style: TextStyle(
                       color: _textSec,
                       fontSize: 12,
@@ -254,8 +253,7 @@ class _ImageIssueCardEnhancedState extends State<ImageIssueCardEnhanced> {
               children: [
                 const Icon(Icons.image_not_supported, color: _red, size: 16),
                 const SizedBox(width: 8),
-                const Text(
-                  '❌  Irrelevant Image Detected',
+                const Tr('❌  Irrelevant Image Detected',
                   style: TextStyle(
                     color: _red,
                     fontSize: 13,
@@ -303,8 +301,7 @@ class _ImageIssueCardEnhancedState extends State<ImageIssueCardEnhanced> {
                 children: [
                   Icon(Icons.broken_image, color: _textSec, size: 28),
                   const SizedBox(height: 6),
-                  Text(
-                    'Failed to load image',
+                  Tr('Failed to load image',
                     style: TextStyle(color: _textSec, fontSize: 11),
                   ),
                   const SizedBox(height: 4),
@@ -368,8 +365,7 @@ class _ImageIssueCardEnhancedState extends State<ImageIssueCardEnhanced> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          'Checked against nearby text',
+                        Tr('Checked against nearby text',
                           style: TextStyle(
                             color: _textPri,
                             fontSize: 11,
@@ -411,8 +407,7 @@ class _ImageIssueCardEnhancedState extends State<ImageIssueCardEnhanced> {
                 // Confidence bar
                 Row(
                   children: [
-                    Text(
-                      'Irrelevance confidence: ',
+                    Tr('Irrelevance confidence: ',
                       style: TextStyle(color: _textSec, fontSize: 11),
                     ),
                     Expanded(
@@ -457,8 +452,7 @@ class _ImageIssueCardEnhancedState extends State<ImageIssueCardEnhanced> {
                       const Icon(Icons.info, color: _yellow, size: 16),
                       const SizedBox(width: 8),
                       const Expanded(
-                        child: Text(
-                          'Replace this image with one relevant to the section content.',
+                        child: Tr('Replace this image with one relevant to the section content.',
                           style: TextStyle(
                             color: _yellow,
                             fontSize: 11,
@@ -475,7 +469,7 @@ class _ImageIssueCardEnhancedState extends State<ImageIssueCardEnhanced> {
                   width: double.infinity,
                   child: ElevatedButton.icon(
                     icon: const Icon(Icons.image_search, size: 16),
-                    label: const Text('Replace Image'),
+                    label: const Tr('Replace Image'),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: _blue,
                       foregroundColor: Colors.white,
@@ -510,7 +504,7 @@ class _ImageIssueCardEnhancedState extends State<ImageIssueCardEnhanced> {
                     width: double.infinity,
                     child: OutlinedButton(
                       onPressed: _isRemoving ? null : widget.onIgnore,
-                      child: const Text('Ignore'),
+                      child: const Tr('Ignore'),
                     ),
                   ),
                 ],

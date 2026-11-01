@@ -6,6 +6,7 @@ import '../../providers/auth_provider.dart';
 import '../../services/admin_api_service.dart';
 import 'common_widgets.dart';
 
+import '../tr.dart';
 /// University / department / session branding for generated cover pages.
 /// Persists to admin_settings (same keys frontmatter_data already reads).
 class FrontmatterBrandingCard extends StatefulWidget {
@@ -86,7 +87,7 @@ class _FrontmatterBrandingCardState extends State<FrontmatterBrandingCard> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Cover page branding saved'),
+          content: Tr('Cover page branding saved'),
           backgroundColor: Color(0xFF10B981),
         ),
       );
@@ -152,14 +153,13 @@ class _FrontmatterBrandingCardState extends State<FrontmatterBrandingCard> {
                   children: [
                     Text(_error!, style: const TextStyle(color: Color(0xFFEF4444), fontSize: 12)),
                     const SizedBox(height: 8),
-                    TextButton(onPressed: _load, child: const Text('Retry')),
+                    TextButton(onPressed: _load, child: const Tr('Retry')),
                   ],
                 )
               : Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      'Organization name',
+                    Tr('Organization name',
                       style: TextStyle(fontSize: 12, color: Colors.white.withOpacity(0.7)),
                     ),
                     const SizedBox(height: 8),
@@ -198,8 +198,7 @@ class _FrontmatterBrandingCardState extends State<FrontmatterBrandingCard> {
                       ),
                     ),
                     const SizedBox(height: 16),
-                    Text(
-                      'Session / batch',
+                    Tr('Session / batch',
                       style: TextStyle(fontSize: 12, color: Colors.white.withOpacity(0.7)),
                     ),
                     const SizedBox(height: 8),

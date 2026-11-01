@@ -5,6 +5,7 @@ import '../../../providers/auth_provider.dart';
 import '../../../providers/collaboration_provider.dart';
 import '../../../providers/document_provider.dart';
 
+import '../../../widgets/tr.dart';
 /// Modal to join a project with an invite code.
 class JoinProjectDialog extends StatefulWidget {
   final void Function(int projectId)? onJoined;
@@ -65,8 +66,7 @@ class _JoinProjectDialogState extends State<JoinProjectDialog> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
-                'Join Project',
+              const Tr('Join Project',
                 style: TextStyle(
                   color: Colors.white,
                   fontSize: 18,
@@ -74,8 +74,7 @@ class _JoinProjectDialogState extends State<JoinProjectDialog> {
                 ),
               ),
               const SizedBox(height: 4),
-              const Text(
-                'Enter the invite code shared by a project member.',
+              const Tr('Enter the invite code shared by a project member.',
                 style: TextStyle(color: Color(0xFF94A3B8), fontSize: 12),
               ),
               const SizedBox(height: 20),
@@ -93,7 +92,7 @@ class _JoinProjectDialogState extends State<JoinProjectDialog> {
                 children: [
                   TextButton(
                     onPressed: _submitting ? null : () => Navigator.pop(context),
-                    child: const Text('Cancel'),
+                    child: const Tr('Cancel'),
                   ),
                   const SizedBox(width: 8),
                   ElevatedButton(
@@ -107,7 +106,7 @@ class _JoinProjectDialogState extends State<JoinProjectDialog> {
                               color: Colors.white,
                             ),
                           )
-                        : const Text('Join'),
+                        : const Tr('Join'),
                   ),
                 ],
               ),

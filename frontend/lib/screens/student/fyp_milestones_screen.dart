@@ -6,6 +6,7 @@ import '../../providers/fyp_provider.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/responsive.dart';
 
+import '../../widgets/tr.dart';
 /// Read-only FYP milestones — checklist on desktop, progress bars when compact.
 class FypMilestonesScreen extends StatefulWidget {
   final VoidCallback? onChooseSupervisor;
@@ -128,7 +129,7 @@ class _FypMilestonesScreenState extends State<FypMilestonesScreen> {
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 16),
-              TextButton(onPressed: _load, child: const Text('Retry')),
+              TextButton(onPressed: _load, child: const Tr('Retry')),
             ],
           ),
         ),
@@ -151,8 +152,7 @@ class _FypMilestonesScreenState extends State<FypMilestonesScreen> {
       child: ListView(
         padding: const EdgeInsets.all(32),
         children: [
-          Text(
-            'Track Proposal → Literature Review → Final Doc for your FYP group.',
+          Tr('Track Proposal → Literature Review → Final Doc for your FYP group.',
             style: TextStyle(color: _p.textSecondary, fontSize: 14),
           ),
           const SizedBox(height: 8),
@@ -170,8 +170,7 @@ class _FypMilestonesScreenState extends State<FypMilestonesScreen> {
                 border: Border.all(color: _p.isDark ? _p.borderStrong : _p.border),
                 boxShadow: _p.isDark ? _p.cardShadow : null,
               ),
-              child: Text(
-                'No milestones yet for this group.',
+              child: Tr('No milestones yet for this group.',
                 style: TextStyle(color: _p.textSecondary),
               ),
             )
@@ -244,8 +243,7 @@ class _FypMilestonesScreenState extends State<FypMilestonesScreen> {
                 ),
                 const SizedBox(height: 12),
                 if (deadline == null)
-                  Text(
-                    'Deadline not set',
+                  Tr('Deadline not set',
                     style: TextStyle(
                       color: _p.textMuted,
                       fontSize: 12,
@@ -278,8 +276,7 @@ class _FypMilestonesScreenState extends State<FypMilestonesScreen> {
                 border: Border.all(color: _p.isDark ? _p.borderStrong : _p.border),
                 boxShadow: _p.isDark ? _p.cardShadow : null,
               ),
-              child: Text(
-                'No milestones yet for this group.',
+              child: Tr('No milestones yet for this group.',
                 style: TextStyle(color: _p.textSecondary),
               ),
             )
@@ -381,8 +378,7 @@ class _FypMilestonesScreenState extends State<FypMilestonesScreen> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                'No active supervisor',
+              Tr('No active supervisor',
                 style: TextStyle(
                   color: _p.textPrimary,
                   fontSize: 16,
@@ -406,7 +402,7 @@ class _FypMilestonesScreenState extends State<FypMilestonesScreen> {
                   if (widget.onOpenMySupervisor != null)
                     OutlinedButton(
                       onPressed: widget.onOpenMySupervisor,
-                      child: const Text('My Supervisor'),
+                      child: const Tr('My Supervisor'),
                     ),
                   if (widget.onChooseSupervisor != null)
                     ElevatedButton(
@@ -415,7 +411,7 @@ class _FypMilestonesScreenState extends State<FypMilestonesScreen> {
                         backgroundColor: _p.accent,
                         foregroundColor: Colors.white,
                       ),
-                      child: const Text('Choose Supervisor'),
+                      child: const Tr('Choose Supervisor'),
                     ),
                 ],
               ),

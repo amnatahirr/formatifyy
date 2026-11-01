@@ -11,6 +11,7 @@ import 'tabs/project_members_tab.dart';
 import 'tabs/project_version_history_tab.dart';
 import 'widgets/invite_menu_dialog.dart';
 
+import '../../widgets/tr.dart';
 /// Project Detail — Document / Members / Version History / Activity.
 class ProjectDetailScreen extends StatefulWidget {
   final int projectId;
@@ -134,7 +135,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen>
     return TextButton.icon(
       onPressed: () => _openInvite(project),
       icon: const Icon(Icons.person_add_alt_1, size: 18, color: Color(0xFFA5B4FC)),
-      label: const Text('Invite', style: TextStyle(color: Color(0xFFA5B4FC))),
+      label: const Tr('Invite', style: TextStyle(color: Color(0xFFA5B4FC))),
     );
   }
 

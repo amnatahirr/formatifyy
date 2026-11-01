@@ -5,6 +5,8 @@ import 'package:frontend/providers/qr_service.dart';
 import 'package:frontend/widgets/qr_dialog.dart';
 import 'package:provider/provider.dart';
 import 'dart:io';
+import '../widgets/analysis_jobs_sidebar_item.dart';
+import '../utils/analysis_nav.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:open_file_plus/open_file_plus.dart';
@@ -34,6 +36,9 @@ import '../widgets/student/desktop_semester_deadline_card.dart';
 import '../utils/responsive.dart';
 import 'mobile_companion_screen.dart';
 import '../widgets/document_preview_panel.dart';
+import '../providers/lang_provider.dart';
+import '../widgets/tr.dart';
+import '../providers/analysis_job_provider.dart';
 
 /// Mobile bottom-nav → existing `_selectedIndex` targets.
 /// Notifications has no desktop sidebar entry; uses [kNotificationsTabIndex].
@@ -96,9 +101,23 @@ class _StudentDashboardState extends State<StudentDashboard> {
   String _searchQuery = '';
   String _selectedFilter = 'all';
   String _sortBy = 'recent';
+  bool _emailNotifications = true;
   int _currentPage = 1;
   int _itemsPerPage = 9;
   Timer? _refreshTimer;
+  AnalysisRequest? _activeAnalysis;
+  void _onAnalysisRequest() {
+    if (!mounted) return;
+    final req = AnalysisNav.request.value;
+    setState(() {
+      _activeAnalysis = req;
+      if (req != null) _selectedIndex = 2;
+    });
+    if (req == null) {
+      final uid = context.read<AuthProvider>().userId;
+      if (uid != null) context.read<DocumentProvider>().fetchDocuments(uid);
+    }
+  }
 
   @override
   void initState() {
@@ -106,6 +125,15 @@ class _StudentDashboardState extends State<StudentDashboard> {
     _selectedIndex = widget.initialIndex.clamp(0, kNotificationsTabIndex);
     _activeProjectId = widget.initialProjectId;
     _projectDetailTab = widget.initialProjectTab;
+
+    final pending = AnalysisNav.request.value;
+    if (pending != null) {
+      _activeAnalysis = pending;
+      _selectedIndex = 2;
+    }
+
+    AnalysisNav.attach(this);
+    AnalysisNav.request.addListener(_onAnalysisRequest);
     _loadInitialData();
   }
 
@@ -138,6 +166,8 @@ class _StudentDashboardState extends State<StudentDashboard> {
 
   @override
   void dispose() {
+    AnalysisNav.detach(this);
+    AnalysisNav.request.removeListener(_onAnalysisRequest);
     _refreshTimer?.cancel();
     super.dispose();
   }
@@ -237,7 +267,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
         children: [
           Icon(item.icon, size: 22, color: color),
           SizedBox(height: 4),
-          Text(
+          Tr(
             item.label,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
@@ -252,6 +282,19 @@ class _StudentDashboardState extends State<StudentDashboard> {
     );
   }
 
+  Widget _sidebarLabel(String text) => Padding(
+    padding: const EdgeInsets.fromLTRB(20, 18, 20, 4),
+    child: Text(
+      text.toUpperCase(),
+      style: TextStyle(
+        fontSize: 10,
+        letterSpacing: 0.8,
+        fontWeight: FontWeight.w700,
+        color: _p.textMuted,
+      ),
+    ),
+  );
+
   Widget _buildSidebar() {
     return Container(
       width: 200,
@@ -263,23 +306,28 @@ class _StudentDashboardState extends State<StudentDashboard> {
       ),
       child: Column(
         children: [
+          // ── Logo ──────────────────────────────────────────────
           Padding(
-            padding: EdgeInsets.all(20),
+            padding: const EdgeInsets.all(20),
             child: Row(
               children: [
                 Container(
-                  padding: EdgeInsets.all(8),
+                  padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
                     color: _p.accent,
                     borderRadius: BorderRadius.circular(6),
                   ),
-                  child: Icon(Icons.description, color: Colors.white, size: 20),
+                  child: const Icon(
+                    Icons.description,
+                    color: Colors.white,
+                    size: 20,
+                  ),
                 ),
-                SizedBox(width: 12),
+                const SizedBox(width: 12),
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
+                    Tr(
                       'FORMATIFY',
                       style: TextStyle(
                         fontSize: 14,
@@ -287,7 +335,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
                         color: _p.textPrimary,
                       ),
                     ),
-                    Text(
+                    Tr(
                       'Academic Edition',
                       style: TextStyle(
                         fontSize: 10,
@@ -300,16 +348,23 @@ class _StudentDashboardState extends State<StudentDashboard> {
               ],
             ),
           ),
+
+          // ── Menu ──────────────────────────────────────────────
           Expanded(
             child: ListView(
-              padding: EdgeInsets.symmetric(vertical: 8),
+              padding: const EdgeInsets.symmetric(vertical: 4),
               children: [
                 _buildSidebarItem(0, Icons.dashboard, 'Dashboard'),
                 _buildSidebarItem(1, Icons.add_circle_outline, 'New Report'),
                 _buildSidebarItem(2, Icons.folder, 'My Reports'),
+                const AnalysisJobsSidebarItem(),
+
+                _sidebarLabel('Workspace'),
                 _buildSidebarItem(3, Icons.people_outline, 'Collaboration'),
                 _buildSidebarItem(5, Icons.layers, 'Templates'),
+
                 if (DevUserConfig.hasFypModule) ...[
+                  _sidebarLabel('Final Year Project'),
                   Consumer<FypProvider>(
                     builder: (context, fyp, _) {
                       if (!fyp.canChooseSupervisor) {
@@ -318,7 +373,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
                       return _buildSidebarItem(
                         6,
                         Icons.school_outlined,
-                        'ChooseSupervisor',
+                        'Find Supervisor',
                       );
                     },
                   ),
@@ -340,12 +395,16 @@ class _StudentDashboardState extends State<StudentDashboard> {
                     'Status Tracker',
                   ),
                 ],
+
+                _sidebarLabel('Account'),
                 _buildSidebarItem(12, Icons.settings, 'Settings'),
               ],
             ),
           ),
+
+          // ── User card ─────────────────────────────────────────
           Padding(
-            padding: EdgeInsets.all(16),
+            padding: const EdgeInsets.all(16),
             child: Container(
               decoration: BoxDecoration(
                 color: _p.surfaceAlt,
@@ -358,7 +417,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
                 boxShadow: _p.isDark ? _p.cardShadow : null,
               ),
               child: Padding(
-                padding: EdgeInsets.all(12),
+                padding: const EdgeInsets.all(12),
                 child: Consumer<AuthProvider>(
                   builder: (context, auth, _) {
                     return Column(
@@ -376,14 +435,14 @@ class _StudentDashboardState extends State<StudentDashboard> {
                               (auth.currentUser?.isNotEmpty ?? false)
                                   ? auth.currentUser![0].toUpperCase()
                                   : 'U',
-                              style: TextStyle(
+                              style: const TextStyle(
                                 color: Colors.white,
                                 fontWeight: FontWeight.w700,
                               ),
                             ),
                           ),
                         ),
-                        SizedBox(height: 12),
+                        const SizedBox(height: 12),
                         Text(
                           auth.currentUser ?? 'User',
                           style: TextStyle(
@@ -400,18 +459,18 @@ class _StudentDashboardState extends State<StudentDashboard> {
                             fontWeight: FontWeight.w400,
                           ),
                         ),
-                        SizedBox(height: 12),
+                        const SizedBox(height: 12),
                         SizedBox(
                           width: double.infinity,
                           height: 32,
                           child: ElevatedButton.icon(
                             onPressed: () => _logout(context),
-                            icon: Icon(
+                            icon: const Icon(
                               Icons.logout,
                               size: 14,
                               color: Colors.white,
                             ),
-                            label: Text(
+                            label: const Tr(
                               'Logout',
                               style: TextStyle(
                                 fontSize: 11,
@@ -441,7 +500,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
 
   Widget _buildSidebarItem(int index, IconData icon, String label) {
     final isSelected = _selectedIndex == index;
-    // No Semantics/Tooltip/Focus wrappers existed here — onTap body unchanged.
+
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
@@ -452,13 +511,16 @@ class _StudentDashboardState extends State<StudentDashboard> {
       child: InkWell(
         borderRadius: BorderRadius.circular(10),
         onTap: () {
+          AnalysisNav.request.value = null;
+
           setState(() {
             _selectedIndex = index;
             _activeProjectId = null;
+            _activeAnalysis = null;
           });
         },
         child: Padding(
-          padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           child: Row(
             children: [
               Icon(
@@ -466,13 +528,18 @@ class _StudentDashboardState extends State<StudentDashboard> {
                 size: 20,
                 color: isSelected ? _p.accent : _p.textSecondary,
               ),
-              SizedBox(width: 12),
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
-                  color: isSelected ? _p.accent : _p.textSecondary,
+              const SizedBox(width: 12),
+
+              Expanded(
+                child: Tr(
+                  label,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
+                    color: isSelected ? _p.accent : _p.textSecondary,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
             ],
@@ -558,7 +625,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
+                  Tr(
                     title,
                     style: TextStyle(
                       fontSize: compact ? 20 : 28,
@@ -567,7 +634,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
                     ),
                   ),
                   if (!compact || _selectedIndex == 0)
-                    Text(
+                    Tr(
                       description,
                       maxLines: compact ? 1 : 3,
                       overflow: TextOverflow.ellipsis,
@@ -605,7 +672,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
                         children: [
                           Icon(Icons.add, size: 18, color: Colors.white),
                           SizedBox(width: 6),
-                          Text(
+                          Tr(
                             'New Report',
                             style: TextStyle(
                               fontSize: 12,
@@ -632,6 +699,18 @@ class _StudentDashboardState extends State<StudentDashboard> {
   }
 
   Widget _buildBody() {
+    if (_activeAnalysis != null) {
+      final r = _activeAnalysis!;
+      return AnalyzeScreen(
+        key: ValueKey('analysis-${r.documentId}-${r.freeform}'),
+        documentId: r.documentId,
+        documentName: r.documentName,
+        templateId: r.templateId,
+        templateName: r.templateName,
+        freeformAnalysis: r.freeform,
+        embedded: true,
+      );
+    }
     if (_activeProjectId != null) {
       return ProjectDetailScreen(
         key: ValueKey('project-$_activeProjectId-$_projectDetailTab'),
@@ -800,77 +879,6 @@ class _StudentDashboardState extends State<StudentDashboard> {
     }
   }
 
-  Widget _buildDashboardContent() {
-    final compact = isCompact(context);
-    return Consumer<DocumentProvider>(
-      builder: (context, docProvider, _) {
-        final totalReports = docProvider.documents.length;
-        final completedCount = docProvider.documents
-            .where((d) => d['status'] == 'formatted')
-            .length;
-        final draftCount = docProvider.documents
-            .where(
-              (d) => d['status'] == 'uploaded' || d['status'] == 'processing',
-            )
-            .length;
-
-        return SingleChildScrollView(
-          padding: EdgeInsets.all(compact ? 16 : 32),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              if (compact) ...[
-                if (DevUserConfig.hasFypModule) ...[
-                  const MobileStatusSummaryCard(),
-                  SizedBox(height: 16),
-                ],
-                _buildSendFromPhoneCard(),
-                SizedBox(height: 20),
-              ] else ...[
-                if (DevUserConfig.hasFypModule) ...[
-                  const DesktopSemesterDeadlineCard(),
-                  SizedBox(height: 20),
-                ],
-              ],
-              _buildStatsRow(
-                compact: compact,
-                totalReports: totalReports,
-                draftCount: draftCount,
-                completedCount: completedCount,
-              ),
-              SizedBox(height: 28),
-              if (compact) ...[
-                _buildRecentReportsSection(docProvider.documents),
-                SizedBox(height: 24),
-                _buildAIToolsSection(compact: true),
-                SizedBox(height: 24),
-                _buildSharedProjectsSection(),
-                SizedBox(height: 24),
-                _buildQuickActionsSection(compact: true),
-              ] else ...[
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      flex: 2,
-                      child: _buildRecentReportsSection(docProvider.documents),
-                    ),
-                    SizedBox(width: 16),
-                    Expanded(child: _buildAIToolsSection(compact: false)),
-                  ],
-                ),
-                SizedBox(height: 32),
-                _buildSharedProjectsSection(),
-                SizedBox(height: 32),
-                _buildQuickActionsSection(compact: false),
-              ],
-            ],
-          ),
-        );
-      },
-    );
-  }
-
   /// Mobile-only entry to Quick Access (Scan QR / Camera / Gallery).
   /// Navigates to [MobileCompanionScreen] — not rebuilt here.
   Widget _buildSendFromPhoneCard() {
@@ -906,7 +914,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
+                    Tr(
                       'Send Document from Phone',
                       style: TextStyle(
                         color: _p.textPrimary,
@@ -915,7 +923,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
                       ),
                     ),
                     SizedBox(height: 4),
-                    Text(
+                    Tr(
                       'Scan QR, camera, or gallery upload',
                       style: TextStyle(color: _p.textSecondary, fontSize: 12),
                     ),
@@ -930,137 +938,385 @@ class _StudentDashboardState extends State<StudentDashboard> {
     );
   }
 
+  void _goTo(int index) {
+    AnalysisNav.request.value = null;
+    setState(() {
+      _selectedIndex = index;
+      _activeProjectId = null;
+      _activeAnalysis = null;
+    });
+  }
+
+  Widget _fypChip(String label, IconData icon, int index) {
+    return InkWell(
+      onTap: () => _goTo(index),
+      borderRadius: BorderRadius.circular(999),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: _p.surface,
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: _p.isDark ? _p.borderStrong : _p.border),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 16, color: _p.accent),
+            const SizedBox(width: 8),
+            Tr(
+              label,
+              style: TextStyle(
+                fontSize: 12.5,
+                fontWeight: FontWeight.w600,
+                color: _p.textPrimary,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDashboardContent() {
+    final compact = isCompact(context);
+    return Consumer<DocumentProvider>(
+      builder: (context, docProvider, _) {
+        final docs = docProvider.documents;
+        final formatted = docs.where((d) => d['has_formatted'] == true).length;
+        final pending = docs.length - formatted;
+        final jobs = context.watch<AnalysisJobProvider>();
+        final readyAnalyses = jobs.jobs
+            .where((j) => j.status == AnalysisStatus.completed)
+            .length;
+
+        return SingleChildScrollView(
+          padding: EdgeInsets.all(compact ? 16 : 32),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (compact && DevUserConfig.hasFypModule) ...[
+                const MobileStatusSummaryCard(),
+                const SizedBox(height: 16),
+              ],
+              if (compact) ...[
+                _buildSendFromPhoneCard(),
+                const SizedBox(height: 20),
+              ],
+              if (!compact && DevUserConfig.hasFypModule) ...[
+                const DesktopSemesterDeadlineCard(),
+                const SizedBox(height: 20),
+              ],
+              _buildStatsRow(
+                compact: compact,
+                total: docs.length,
+                pending: pending,
+                formatted: formatted,
+                analysesRunning: jobs.runningCount,
+                analysesReady: readyAnalyses,
+              ),
+              const SizedBox(height: 32),
+              _sectionTitle(
+                'Workspace',
+                'Jump straight into the tools you use most',
+              ),
+              const SizedBox(height: 14),
+              _buildFeatureGrid(compact, docs.length, jobs),
+
+              // ── FYP strip (sirf FYP module par) ──────────────────
+              if (DevUserConfig.hasFypModule) ...[
+                const SizedBox(height: 28),
+                _sectionTitle(
+                  'Final Year Project',
+                  'Supervisor, milestones and submission',
+                ),
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 10,
+                  runSpacing: 10,
+                  children: [
+                    _fypChip('My Supervisor', Icons.badge_outlined, 7),
+                    _fypChip('Milestones', Icons.checklist_outlined, 8),
+                    _fypChip('Meeting Notes', Icons.sticky_note_2_outlined, 9),
+                    _fypChip('Plagiarism', Icons.policy_outlined, 10),
+                    _fypChip(
+                      'Status Tracker',
+                      Icons.track_changes_outlined,
+                      11,
+                    ),
+                  ],
+                ),
+              ],
+
+              const SizedBox(height: 32),
+              _buildRecentReportsSection(docs),
+              const SizedBox(height: 32),
+              _buildSharedProjectsSection(),
+              const SizedBox(height: 16),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _sectionTitle(String title, String subtitle) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Tr(
+          title,
+          style: TextStyle(
+            fontSize: 17,
+            fontWeight: FontWeight.w700,
+            color: _p.textPrimary,
+          ),
+        ),
+        const SizedBox(height: 2),
+        Tr(subtitle, style: TextStyle(fontSize: 12, color: _p.textSecondary)),
+      ],
+    );
+  }
+
   Widget _buildStatsRow({
     required bool compact,
-    required int totalReports,
-    required int draftCount,
-    required int completedCount,
+    required int total,
+    required int pending,
+    required int formatted,
+    required int analysesRunning,
+    required int analysesReady,
   }) {
     final cards = [
       _buildStatCard(
-        title: 'Total Reports',
-        value: totalReports.toString(),
-        change: '+12%',
-        icon: Icons.description,
-        changeColor: Color(0xFF10B981),
-        compact: compact,
+        'Total Reports',
+        '$total',
+        Icons.description_outlined,
+        const Color(0xFF6366F1),
+        compact,
+        'All uploaded documents',
       ),
       _buildStatCard(
-        title: 'Active Drafts',
-        value: draftCount.toString(),
-        change: 'In Progress',
-        icon: Icons.history,
-        changeColor: Color(0xFFD97706),
-        compact: compact,
+        'Awaiting Formatting',
+        '$pending',
+        Icons.pending_actions,
+        const Color(0xFFD97706),
+        compact,
+        'Not saved as formatted yet',
       ),
       _buildStatCard(
-        title: 'Completed',
-        value: completedCount.toString(),
-        change: '+8%',
-        icon: Icons.check_circle,
-        changeColor: Color(0xFF10B981),
-        compact: compact,
+        'Formatted',
+        '$formatted',
+        Icons.check_circle_outline,
+        const Color(0xFF10B981),
+        compact,
+        'Ready to download',
       ),
       _buildStatCard(
-        title: 'AI Suggestions Used',
-        value: (totalReports * 5).toString(),
-        change: 'AI',
-        icon: Icons.auto_awesome,
-        changeColor: Color(0xFF8B5CF6),
-        compact: compact,
+        'Analyses',
+        '${analysesRunning + analysesReady}',
+        Icons.analytics_outlined,
+        const Color(0xFF8B5CF6),
+        compact,
+        analysesRunning > 0
+            ? '$analysesRunning running · $analysesReady ready'
+            : '$analysesReady ready to review',
       ),
     ];
 
-    // Phones (~360–430px): 2×2 grid so labels/badges never overflow card edges.
     if (compact) {
       return LayoutBuilder(
-        builder: (context, constraints) {
-          final gap = 16.0;
-          final cardWidth = (constraints.maxWidth - gap) / 2;
+        builder: (context, c) {
+          const gap = 12.0;
+          final w = (c.maxWidth - gap) / 2;
           return Wrap(
             spacing: gap,
             runSpacing: gap,
-            children: cards
-                .map((card) => SizedBox(width: cardWidth, child: card))
-                .toList(),
+            children: cards.map((e) => SizedBox(width: w, child: e)).toList(),
           );
         },
       );
     }
-
     return Row(
       children: [
         for (var i = 0; i < cards.length; i++) ...[
-          if (i > 0) SizedBox(width: 24),
+          if (i > 0) const SizedBox(width: 20),
           Expanded(child: cards[i]),
         ],
       ],
     );
   }
 
-  Widget _buildStatCard({
-    required String title,
-    required String value,
-    required String change,
-    required IconData icon,
-    required Color changeColor,
-    bool compact = false,
-  }) {
+  Widget _buildStatCard(
+    String title,
+    String value,
+    IconData icon,
+    Color color,
+    bool compact,
+    String caption,
+  ) {
     return Container(
       decoration: _cardDeco(),
-      padding: EdgeInsets.all(compact ? 12 : 20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      padding: EdgeInsets.all(compact ? 14 : 20),
+      child: Row(
         children: [
-          Row(
-            children: [
-              Container(
-                padding: EdgeInsets.all(compact ? 8 : 10),
-                decoration: BoxDecoration(
-                  color: changeColor.withOpacity(0.15),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Icon(icon, color: changeColor, size: compact ? 16 : 20),
-              ),
-              SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  change,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  textAlign: TextAlign.right,
+          Container(
+            padding: EdgeInsets.all(compact ? 9 : 12),
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.14),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(icon, color: color, size: compact ? 18 : 22),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  value,
                   style: TextStyle(
-                    fontSize: compact ? 10 : 12,
-                    fontWeight: FontWeight.w600,
-                    color: changeColor,
+                    fontSize: compact ? 22 : 28,
+                    fontWeight: FontWeight.w700,
+                    color: _p.textPrimary,
+                    height: 1.1,
                   ),
                 ),
-              ),
-            ],
-          ),
-          SizedBox(height: compact ? 10 : 16),
-          Text(
-            value,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontSize: compact ? 22 : 32,
-              fontWeight: FontWeight.w700,
-              color: _p.textPrimary,
-            ),
-          ),
-          SizedBox(height: compact ? 2 : 4),
-          Text(
-            title,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontSize: compact ? 11 : 13,
-              fontWeight: FontWeight.w400,
-              color: _p.textSecondary,
+                const SizedBox(height: 2),
+                Tr(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: _p.textPrimary,
+                  ),
+                ),
+                if (!compact)
+                  Text(
+                    caption,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 10.5, color: _p.textSecondary),
+                  ),
+              ],
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildFeatureGrid(
+    bool compact,
+    int reportCount,
+    AnalysisJobProvider jobs,
+  ) {
+    final fyp = DevUserConfig.hasFypModule
+        ? context.watch<FypProvider>()
+        : null;
+
+    final items = <_Feature>[
+      _Feature(
+        'New Report',
+        'Upload a document and pick a template',
+        Icons.add_circle_outline,
+        _p.accent,
+        () => _goTo(1),
+      ),
+      _Feature(
+        'My Reports',
+        '$reportCount report${reportCount == 1 ? '' : 's'} · download versions',
+        Icons.folder_outlined,
+        const Color(0xFF6366F1),
+        () => _goTo(2),
+      ),
+      _Feature(
+        'Templates',
+        'Browse formatting templates',
+        Icons.layers_outlined,
+        const Color(0xFF06B6D4),
+        () => _goTo(5),
+      ),
+      _Feature(
+        'Collaboration',
+        'Shared projects and teammates',
+        Icons.people_outline,
+        const Color(0xFFEC4899),
+        () => _goTo(3),
+      ),
+    ];
+
+    return LayoutBuilder(
+      builder: (context, c) {
+        const gap = 14.0;
+        final cols = compact ? 2 : (c.maxWidth > 1200 ? 4 : 3);
+        final w = (c.maxWidth - gap * (cols - 1)) / cols;
+        return Wrap(
+          spacing: gap,
+          runSpacing: gap,
+          children: items
+              .map(
+                (f) => SizedBox(width: w, child: _buildFeatureCard(f, compact)),
+              )
+              .toList(),
+        );
+      },
+    );
+  }
+
+  Widget _buildFeatureCard(_Feature f, bool compact) {
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: InkWell(
+        onTap: f.onTap,
+        borderRadius: BorderRadius.circular(_p.isDark ? _p.cardRadius : 12),
+        child: Container(
+          decoration: _cardDeco(),
+          padding: EdgeInsets.all(compact ? 14 : 18),
+          child: Row(
+            children: [
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: f.color.withOpacity(0.14),
+                  borderRadius: BorderRadius.circular(11),
+                ),
+                child: Icon(f.icon, color: f.color, size: 21),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Tr(
+                      f.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w600,
+                        color: _p.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      f.subtitle,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: _p.textSecondary,
+                        height: 1.3,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(Icons.chevron_right_rounded, color: _p.textMuted, size: 18),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -1077,7 +1333,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
+              Tr(
                 'Recent Reports',
                 style: TextStyle(
                   fontSize: 16,
@@ -1092,7 +1348,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
                     _activeProjectId = null;
                   });
                 },
-                child: Text(
+                child: Tr(
                   'View All',
                   style: TextStyle(
                     fontSize: 12,
@@ -1108,7 +1364,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
             Center(
               child: Padding(
                 padding: EdgeInsets.symmetric(vertical: 24),
-                child: Text(
+                child: Tr(
                   'No reports yet',
                   style: TextStyle(fontSize: 13, color: _p.textSecondary),
                 ),
@@ -1118,290 +1374,84 @@ class _StudentDashboardState extends State<StudentDashboard> {
             ...recentDocs.asMap().entries.map((entry) {
               final doc = entry.value;
               final isLast = entry.key == recentDocs.length - 1;
-              final status = doc['status'] ?? 'uploaded';
-              final statusLabel = status == 'formatted'
-                  ? 'Complete'
-                  : status == 'processing'
-                  ? 'Processing'
-                  : 'Draft';
-              final statusColor = status == 'formatted'
-                  ? Color(0xFF10B981)
-                  : status == 'processing'
-                  ? Color(0xFFD97706)
-                  : _p.accent;
-
+              final formatted = doc['has_formatted'] == true;
+              final color = formatted ? const Color(0xFF10B981) : _p.accent;
               return Column(
                 children: [
-                  _buildReportItem(
-                    doc['filename'] ?? 'Untitled Report',
-                    'Last edited ${_getTimeAgo(doc['created_at'] ?? DateTime.now())}',
-                    statusLabel,
-                    statusColor,
-                    Icons.description,
-                    statusColor,
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: color.withOpacity(0.14),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Icon(
+                          Icons.description_outlined,
+                          color: color,
+                          size: 18,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              doc['filename'] ?? 'Untitled',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                color: _p.textPrimary,
+                              ),
+                            ),
+                            Text(
+                              '${doc['template_name'] ?? 'No template'} · ${_getTimeAgo(doc['created_at'])}',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: _p.textSecondary,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: color.withOpacity(0.14),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Tr(
+                          formatted ? 'Formatted' : 'Not formatted',
+                          style: TextStyle(
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w600,
+                            color: color,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      TextButton.icon(
+                        onPressed: () => _openAnalyzeScreen(doc),
+                        icon: const Icon(Icons.analytics_outlined, size: 15),
+                        label: const Tr(
+                          'Analyze',
+                          style: TextStyle(fontSize: 11.5),
+                        ),
+                      ),
+                    ],
                   ),
-                  if (!isLast) SizedBox(height: 12),
+                  if (!isLast) Divider(height: 24, color: _p.border),
                 ],
               );
-            }).toList(),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildReportItem(
-    String title,
-    String subtitle,
-    String status,
-    Color statusColor,
-    IconData icon,
-    Color iconColor,
-  ) {
-    return Row(
-      children: [
-        Container(
-          padding: EdgeInsets.all(10),
-          decoration: BoxDecoration(
-            color: iconColor.withOpacity(0.15),
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Icon(icon, color: iconColor, size: 18),
-        ),
-        SizedBox(width: 12),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                title,
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  color: _p.textPrimary,
-                ),
-              ),
-              Text(
-                subtitle,
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w400,
-                  color: _p.textSecondary,
-                ),
-              ),
-            ],
-          ),
-        ),
-        Container(
-          padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-          decoration: BoxDecoration(
-            color: statusColor.withOpacity(0.15),
-            borderRadius: BorderRadius.circular(6),
-          ),
-          child: Text(
-            status,
-            style: TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w600,
-              color: statusColor,
-            ),
-          ),
-        ),
-        SizedBox(width: 8),
-        Icon(Icons.more_vert, size: 16, color: _p.textMuted),
-      ],
-    );
-  }
-
-  Widget _buildAIToolsSection({bool compact = false}) {
-    final tools = [
-      (
-        'Auto Format',
-        DevUserConfig.hasFypModule
-            ? 'Format to academic standards'
-            : 'Format to your org template',
-        Icons.auto_awesome,
-        _p.accent,
-      ),
-      (
-        'Citation Helper',
-        'APA, MLA, Chicago citations',
-        Icons.format_quote,
-        Color(0xFF8B5CF6),
-      ),
-      (
-        'Grammar Check',
-        'Academic writing suggestions',
-        Icons.check_circle_outline,
-        Color(0xFF10B981),
-      ),
-    ];
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'AI Formatting Tools',
-          style: TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.w600,
-            color: _p.textPrimary,
-          ),
-        ),
-        SizedBox(height: 14),
-        if (compact)
-          Container(
-            decoration: _cardDeco(lightRadius: 14),
-            child: Column(
-              children: [
-                for (var i = 0; i < tools.length; i++) ...[
-                  if (i > 0) Divider(height: 1, color: _p.border),
-                  _buildAIToolTile(
-                    tools[i].$1,
-                    tools[i].$2,
-                    tools[i].$3,
-                    tools[i].$4,
-                  ),
-                ],
-              ],
-            ),
-          )
-        else ...[
-          for (var i = 0; i < tools.length; i++) ...[
-            if (i > 0) SizedBox(height: 12),
-            _buildAIToolCard(
-              tools[i].$1,
-              tools[i].$2,
-              tools[i].$3,
-              tools[i].$4,
-            ),
-          ],
-        ],
-      ],
-    );
-  }
-
-  Widget _buildAIToolTile(
-    String title,
-    String description,
-    IconData icon,
-    Color color,
-  ) {
-    return InkWell(
-      onTap: () => setState(() {
-        _selectedIndex = 1;
-        _activeProjectId = null;
-      }),
-      borderRadius: BorderRadius.circular(_p.isDark ? _p.cardRadius : 14),
-      child: Padding(
-        padding: EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        child: Row(
-          children: [
-            Container(
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
-                color: color.withOpacity(0.15),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Icon(icon, color: color, size: 20),
-            ),
-            SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: _p.textPrimary,
-                    ),
-                  ),
-                  SizedBox(height: 2),
-                  Text(
-                    description,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(fontSize: 12, color: _p.textSecondary),
-                  ),
-                ],
-              ),
-            ),
-            Icon(Icons.chevron_right_rounded, color: _p.textMuted, size: 20),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildAIToolCard(
-    String title,
-    String description,
-    IconData icon,
-    Color color,
-  ) {
-    return Container(
-      decoration: _cardDeco(),
-      padding: EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                padding: EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: color.withOpacity(0.15),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Icon(icon, color: color, size: 18),
-              ),
-              SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  title,
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: _p.textPrimary,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          SizedBox(height: 8),
-          Text(
-            description,
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w400,
-              color: _p.textSecondary,
-              height: 1.4,
-            ),
-          ),
-          SizedBox(height: 12),
-          SizedBox(
-            width: double.infinity,
-            height: 32,
-            child: ElevatedButton(
-              onPressed: () {},
-              style: ElevatedButton.styleFrom(
-                backgroundColor: color,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(6),
-                ),
-              ),
-              child: Text(
-                'Use Tool',
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                  color: _p.textPrimary,
-                ),
-              ),
-            ),
-          ),
+            }),
         ],
       ),
     );
@@ -1439,7 +1489,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
           children: [
             Row(
               children: [
-                Text(
+                Tr(
                   'Recent collaborations',
                   style: TextStyle(
                     fontSize: 16,
@@ -1471,7 +1521,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
                     foregroundColor: Color(0xFF6366F1),
                     padding: EdgeInsets.symmetric(horizontal: 8),
                   ),
-                  child: Text('View all'),
+                  child: Tr('View all'),
                 ),
               ],
             ),
@@ -1492,12 +1542,12 @@ class _StudentDashboardState extends State<StudentDashboard> {
                   children: [
                     Icon(Icons.people_outline, size: 32, color: _p.textMuted),
                     SizedBox(height: 8),
-                    Text(
+                    Tr(
                       'No collaborations yet',
                       style: TextStyle(color: _p.textSecondary, fontSize: 13),
                     ),
                     SizedBox(height: 4),
-                    Text(
+                    Tr(
                       'Create or join a project from Collaboration',
                       style: TextStyle(color: _p.textMuted, fontSize: 12),
                     ),
@@ -1508,7 +1558,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
                         foregroundColor: Color(0xFF10B981),
                         side: BorderSide(color: Color(0xFF10B981)),
                       ),
-                      child: Text('Open Collaboration'),
+                      child: Tr('Open Collaboration'),
                     ),
                   ],
                 ),
@@ -1530,162 +1580,6 @@ class _StudentDashboardState extends State<StudentDashboard> {
     );
   }
 
-  Widget _buildQuickActionsSection({bool compact = false}) {
-    final actions = [
-      (
-        'New Report',
-        'Start or use a template',
-        Icons.description_outlined,
-        _p.accent,
-        () => setState(() {
-          _selectedIndex = 1;
-          _activeProjectId = null;
-        }),
-      ),
-      (
-        'Import',
-        'Upload a document',
-        Icons.upload_file_outlined,
-        Color(0xFF8B5CF6),
-        () => setState(() {
-          _selectedIndex = 1;
-          _activeProjectId = null;
-        }),
-      ),
-      (
-        'Templates',
-        'Browse formats',
-        Icons.layers_outlined,
-        Color(0xFF06B6D4),
-        () => setState(() {
-          _selectedIndex = 5;
-          _activeProjectId = null;
-        }),
-      ),
-      (
-        'Collaborate',
-        'Work with team',
-        Icons.people_outline,
-        Color(0xFF10B981),
-        _openCollaborationHub,
-      ),
-    ];
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'Quick Actions',
-          style: TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.w600,
-            color: _p.textPrimary,
-          ),
-        ),
-        SizedBox(height: 14),
-        if (compact)
-          LayoutBuilder(
-            builder: (context, constraints) {
-              const gap = 10.0;
-              final width = (constraints.maxWidth - gap) / 2;
-              return Wrap(
-                spacing: gap,
-                runSpacing: gap,
-                children: actions
-                    .map(
-                      (a) => SizedBox(
-                        width: width,
-                        child: _buildQuickActionCard(
-                          a.$1,
-                          a.$2,
-                          a.$3,
-                          a.$4,
-                          onTap: a.$5,
-                          compact: true,
-                        ),
-                      ),
-                    )
-                    .toList(),
-              );
-            },
-          )
-        else
-          Row(
-            children: [
-              for (var i = 0; i < actions.length; i++) ...[
-                if (i > 0) SizedBox(width: 16),
-                Expanded(
-                  child: _buildQuickActionCard(
-                    actions[i].$1,
-                    actions[i].$2,
-                    actions[i].$3,
-                    actions[i].$4,
-                    onTap: actions[i].$5,
-                  ),
-                ),
-              ],
-            ],
-          ),
-      ],
-    );
-  }
-
-  Widget _buildQuickActionCard(
-    String title,
-    String description,
-    IconData icon,
-    Color color, {
-    required VoidCallback onTap,
-    bool compact = false,
-  }) {
-    return GestureDetector(
-      onTap: onTap,
-      child: MouseRegion(
-        cursor: SystemMouseCursors.click,
-        child: Container(
-          decoration: _cardDeco(lightRadius: 14),
-          padding: EdgeInsets.all(compact ? 14 : 16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Container(
-                padding: EdgeInsets.all(compact ? 8 : 10),
-                decoration: BoxDecoration(
-                  color: color.withOpacity(0.15),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Icon(icon, color: color, size: compact ? 18 : 20),
-              ),
-              SizedBox(height: compact ? 10 : 12),
-              Text(
-                title,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: compact ? 13 : 13,
-                  fontWeight: FontWeight.w600,
-                  color: _p.textPrimary,
-                ),
-              ),
-              SizedBox(height: 4),
-              Text(
-                description,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: compact ? 11 : 11,
-                  fontWeight: FontWeight.w400,
-                  color: _p.textSecondary,
-                  height: 1.35,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
   Widget _buildNewReportPage() {
     return NewReportScreen(selectedTemplate: _selectedTemplate, embedded: true);
   }
@@ -1696,45 +1590,37 @@ class _StudentDashboardState extends State<StudentDashboard> {
     if (docId == null || templateId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Cannot analyze — document info is missing'),
+          content: Tr('Cannot analyze — document info is missing'),
           backgroundColor: Color(0xFFEF4444),
         ),
       );
       return;
     }
 
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => AnalyzeScreen(
-          documentId: docId,
-          documentName: doc['filename'] as String? ?? 'Document',
-          templateId: templateId,
-          templateName: doc['template_name'] as String? ?? 'Template',
-        ),
+    AnalysisNav.open(
+      AnalysisRequest(
+        documentId: docId,
+        documentName: doc['filename'] as String? ?? 'Document',
+        templateId: templateId,
+        templateName: doc['template_name'] as String? ?? 'Template',
       ),
-    ).then((_) {
-      final auth = context.read<AuthProvider>();
-      if (auth.userId != null) {
-        context.read<DocumentProvider>().fetchDocuments(auth.userId!);
-      }
-    });
+    );
   }
 
   Widget _buildMyReportsPage() {
     final auth = context.read<AuthProvider>();
     return Consumer<DocumentProvider>(
       builder: (context, docProvider, _) {
-        // Apply search
+        // Search
         List<Map<String, dynamic>> filteredDocs = docProvider.documents
             .where(
-              (d) => (d['filename'] ?? '').toLowerCase().contains(
+              (d) => (d['filename'] ?? '').toString().toLowerCase().contains(
                 _searchQuery.toLowerCase(),
               ),
             )
             .toList();
 
-        // Sort by recent or name
+        // Sort
         if (_sortBy == 'name') {
           filteredDocs.sort(
             (a, b) => (a['filename'] ?? '').compareTo(b['filename'] ?? ''),
@@ -1749,15 +1635,15 @@ class _StudentDashboardState extends State<StudentDashboard> {
           });
         }
 
-        // Calculate pagination
+        // Pagination
         int totalPages = (filteredDocs.length / _itemsPerPage).ceil();
         if (totalPages < 1) totalPages = 1;
-        int startIndex = (_currentPage - 1) * _itemsPerPage;
-        int endIndex = startIndex + _itemsPerPage;
-        List<Map<String, dynamic>> paginatedDocs = filteredDocs.sublist(
-          startIndex,
-          endIndex > filteredDocs.length ? filteredDocs.length : endIndex,
-        );
+        final page = _currentPage.clamp(1, totalPages);
+        final startIndex = (page - 1) * _itemsPerPage;
+        final endIndex = (startIndex + _itemsPerPage > filteredDocs.length)
+            ? filteredDocs.length
+            : startIndex + _itemsPerPage;
+        final paginatedDocs = filteredDocs.sublist(startIndex, endIndex);
 
         final compact = isCompact(context);
 
@@ -1769,175 +1655,31 @@ class _StudentDashboardState extends State<StudentDashboard> {
             physics: const AlwaysScrollableScrollPhysics(),
             padding: EdgeInsets.fromLTRB(
               compact ? 16 : 32,
-              compact ? 12 : 32,
+              compact ? 12 : 28,
               compact ? 16 : 32,
               compact ? 100 : 32,
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Search + Sort only
-                if (compact) ...[
-                  Container(
-                    decoration: BoxDecoration(
-                      color: _p.surface,
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: _p.border),
-                    ),
-                    padding: EdgeInsets.symmetric(horizontal: 12),
-                    child: TextField(
-                      onChanged: (value) {
-                        setState(() {
-                          _searchQuery = value;
-                          _currentPage = 1;
-                        });
-                      },
-                      style: TextStyle(color: _p.textPrimary),
-                      decoration: InputDecoration(
-                        hintText: 'Search reports...',
-                        hintStyle: TextStyle(color: _p.textMuted, fontSize: 13),
-                        border: InputBorder.none,
-                        prefixIcon: Icon(
-                          Icons.search,
-                          color: _p.textSecondary,
-                          size: 20,
-                        ),
-                      ),
-                    ),
-                  ),
-                  SizedBox(height: 10),
-                  _buildReportsMenuButton(
-                    icon: Icons.swap_vert,
-                    label: _sortBy == 'name' ? 'Name A-Z' : 'Most Recent',
-                    items: const [
-                      PopupMenuItem(
-                        value: 'recent',
-                        child: Text('Most Recent'),
-                      ),
-                      PopupMenuItem(value: 'name', child: Text('Name A-Z')),
-                    ],
-                    onSelected: (value) {
-                      setState(() {
-                        _sortBy = value;
-                        _currentPage = 1;
-                      });
-                    },
-                  ),
-                ] else
-                  Row(
-                    children: [
-                      Expanded(
-                        flex: 2,
-                        child: Container(
-                          decoration: BoxDecoration(
-                            color: _p.surface,
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: _p.border),
-                          ),
-                          padding: EdgeInsets.symmetric(horizontal: 16),
-                          child: TextField(
-                            onChanged: (value) {
-                              setState(() {
-                                _searchQuery = value;
-                                _currentPage = 1;
-                              });
-                            },
-                            style: TextStyle(color: _p.textPrimary),
-                            decoration: InputDecoration(
-                              hintText: 'Search reports...',
-                              hintStyle: TextStyle(
-                                color: _p.textMuted,
-                                fontSize: 13,
-                              ),
-                              border: InputBorder.none,
-                              prefixIcon: Icon(
-                                Icons.search,
-                                color: _p.textSecondary,
-                                size: 20,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                      SizedBox(width: 12),
-                      Container(
-                        decoration: BoxDecoration(
-                          color: _p.surface,
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: _p.border),
-                        ),
-                        padding: EdgeInsets.symmetric(horizontal: 12),
-                        child: PopupMenuButton<String>(
-                          onSelected: (value) {
-                            setState(() {
-                              _sortBy = value;
-                              _currentPage = 1;
-                            });
-                          },
-                          itemBuilder: (context) => [
-                            const PopupMenuItem(
-                              value: 'recent',
-                              child: Text('Most Recent'),
-                            ),
-                            const PopupMenuItem(
-                              value: 'name',
-                              child: Text('Name A-Z'),
-                            ),
-                          ],
-                          child: Row(
-                            children: [
-                              Icon(
-                                Icons.swap_vert,
-                                color: _p.textSecondary,
-                                size: 18,
-                              ),
-                              SizedBox(width: 8),
-                              Text(
-                                _sortBy == 'name' ? 'Name A-Z' : 'Most Recent',
-                                style: TextStyle(
-                                  color: _p.textSecondary,
-                                  fontSize: 13,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                SizedBox(height: compact ? 20 : 28),
-                // Grid / list of Reports
+                _reportsToolbar(compact, filteredDocs.length),
+                SizedBox(height: compact ? 18 : 24),
+
                 if (docProvider.isLoading)
-                  Center(child: CircularProgressIndicator())
-                else if (paginatedDocs.isEmpty)
-                  Center(
+                  const Center(
                     child: Padding(
-                      padding: EdgeInsets.symmetric(vertical: 48),
-                      child: Column(
-                        children: [
-                          Icon(
-                            Icons.folder_open,
-                            size: 48,
-                            color: _p.textMuted,
-                          ),
-                          SizedBox(height: 16),
-                          Text(
-                            'No reports found',
-                            style: TextStyle(
-                              fontSize: 14,
-                              color: _p.textSecondary,
-                            ),
-                          ),
-                        ],
-                      ),
+                      padding: EdgeInsets.symmetric(vertical: 60),
+                      child: CircularProgressIndicator(),
                     ),
                   )
+                else if (paginatedDocs.isEmpty)
+                  _reportsEmptyState()
                 else if (compact)
                   Column(
                     children: [
                       for (final doc in paginatedDocs)
                         Padding(
-                          padding: EdgeInsets.only(bottom: 10),
+                          padding: const EdgeInsets.only(bottom: 10),
                           child: _buildMobileReportCard(doc),
                         ),
                     ],
@@ -1946,435 +1688,540 @@ class _StudentDashboardState extends State<StudentDashboard> {
                   GridView.builder(
                     shrinkWrap: true,
                     physics: const NeverScrollableScrollPhysics(),
-                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: 3,
-                      crossAxisSpacing: 24,
-                      mainAxisSpacing: 24,
-                      // Taller cards so Unformatted / Formatted actions fit cleanly.
-                      childAspectRatio: 0.72,
-                    ),
+                    gridDelegate:
+                        const SliverGridDelegateWithMaxCrossAxisExtent(
+                          maxCrossAxisExtent: 400,
+                          crossAxisSpacing: 20,
+                          mainAxisSpacing: 20,
+                          mainAxisExtent: 226,
+                        ),
                     itemCount: paginatedDocs.length,
-                    itemBuilder: (context, index) {
-                      final doc = paginatedDocs[index];
-                      final status = doc['status'] ?? 'draft';
-                      final statusColor = _getStatusColor(status);
-                      final statusLabel = _getStatusLabel(status);
-                      final iconColor = _getIconColor(status);
+                    itemBuilder: (context, index) =>
+                        _reportCard(paginatedDocs[index], auth),
+                  ),
 
-                      return Container(
-                        decoration: _cardDeco(),
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(
-                            _p.isDark ? _p.cardRadius : 12,
-                          ),
-                          child: Column(
-                            children: [
-                              // Top Section with Icon and Status Badge
-                              Container(
-                                height: 140,
-                                decoration: BoxDecoration(
-                                  color: iconColor.withOpacity(0.15),
-                                ),
-                                child: Stack(
-                                  children: [
-                                    Center(
-                                      child: Icon(
-                                        Icons.description,
-                                        size: 48,
-                                        color: iconColor,
-                                      ),
-                                    ),
-                                    Positioned(
-                                      top: 12,
-                                      right: 12,
-                                      child: Container(
-                                        padding: EdgeInsets.symmetric(
-                                          horizontal: 10,
-                                          vertical: 6,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          color: statusColor.withOpacity(0.8),
-                                          borderRadius: BorderRadius.circular(
-                                            6,
-                                          ),
-                                        ),
-                                        child: Text(
-                                          statusLabel,
-                                          style: TextStyle(
-                                            fontSize: 10,
-                                            fontWeight: FontWeight.w600,
-                                            color: _p.textPrimary,
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              // Bottom Section with Details
-                              Expanded(
-                                child: Padding(
-                                  padding: EdgeInsets.all(16),
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        doc['filename'] ?? 'Untitled',
-                                        style: TextStyle(
-                                          fontSize: 14,
-                                          fontWeight: FontWeight.w600,
-                                          color: _p.textPrimary,
-                                        ),
-                                        maxLines: 2,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                      SizedBox(height: 6),
-                                      Text(
-                                        doc['template_name'] ?? 'No template',
-                                        style: TextStyle(
-                                          fontSize: 11,
-                                          color: _p.textSecondary,
-                                        ),
-                                      ),
-                                      SizedBox(height: 8),
-                                      Text(
-                                        'Modified ${_getTimeAgo(doc['created_at'] ?? DateTime.now())}',
-                                        style: TextStyle(
-                                          fontSize: 10,
-                                          color: _p.textSecondary,
-                                        ),
-                                      ),
-                                      if (doc['has_formatted'] == true) ...[
-                                        SizedBox(height: 6),
-                                        Container(
-                                          padding: EdgeInsets.symmetric(
-                                            horizontal: 8,
-                                            vertical: 3,
-                                          ),
-                                          decoration: BoxDecoration(
-                                            color: Color(
-                                              0xFF10B981,
-                                            ).withOpacity(0.12),
-                                            borderRadius: BorderRadius.circular(
-                                              6,
-                                            ),
-                                          ),
-                                          child: Text(
-                                            'Formatted + Unformatted available',
-                                            style: TextStyle(
-                                              fontSize: 10,
-                                              fontWeight: FontWeight.w600,
-                                              color: Color(0xFF059669),
-                                            ),
-                                          ),
-                                        ),
-                                      ],
-                                      Spacer(),
-                                      // Version access + actions
-                                      Row(
-                                        children: [
-                                          Expanded(
-                                            child: OutlinedButton(
-                                              onPressed: () =>
-                                                  _handleDownloadVersion(
-                                                    doc,
-                                                    version: 'unformatted',
-                                                  ),
-                                              style: OutlinedButton.styleFrom(
-                                                foregroundColor: _p.textPrimary,
-                                                side: BorderSide(
-                                                  color: _p.border,
-                                                ),
-                                                padding: EdgeInsets.symmetric(
-                                                  vertical: 8,
-                                                ),
-                                                shape: RoundedRectangleBorder(
-                                                  borderRadius:
-                                                      BorderRadius.circular(6),
-                                                ),
-                                              ),
-                                              child: Text(
-                                                'Unformatted',
-                                                style: TextStyle(
-                                                  fontSize: 10,
-                                                  fontWeight: FontWeight.w700,
-                                                ),
-                                              ),
-                                            ),
-                                          ),
-                                          SizedBox(width: 6),
-                                          Expanded(
-                                            child: OutlinedButton(
-                                              onPressed:
-                                                  doc['has_formatted'] == true
-                                                  ? () =>
-                                                        _handleDownloadVersion(
-                                                          doc,
-                                                          version: 'formatted',
-                                                        )
-                                                  : () =>
-                                                        _showFormattedMissingHint(),
-                                              style: OutlinedButton.styleFrom(
-                                                foregroundColor:
-                                                    doc['has_formatted'] == true
-                                                    ? _p.accent
-                                                    : _p.textMuted,
-                                                side: BorderSide(
-                                                  color:
-                                                      doc['has_formatted'] ==
-                                                          true
-                                                      ? _p.accent
-                                                      : _p.border,
-                                                ),
-                                                padding: EdgeInsets.symmetric(
-                                                  vertical: 8,
-                                                ),
-                                                shape: RoundedRectangleBorder(
-                                                  borderRadius:
-                                                      BorderRadius.circular(6),
-                                                ),
-                                              ),
-                                              child: Text(
-                                                'Formatted',
-                                                style: TextStyle(
-                                                  fontSize: 10,
-                                                  fontWeight: FontWeight.w700,
-                                                ),
-                                              ),
-                                            ),
-                                          ),
-                                          SizedBox(width: 4),
-                                          PopupMenuButton<String>(
-                                            onSelected: (value) {
-                                              if (value == 'analyze') {
-                                                _openAnalyzeScreen(doc);
-                                              } else if (value == 'preview') {
-                                                _showPreview(doc);
-                                              } else if (value == 'rename') {
-                                                _showRenameDialog(doc);
-                                              } else if (value == 'edit') {
-                                                _showEditDialog(
-                                                  doc,
-                                                  auth.userId!,
-                                                );
-                                              } else if (value == 'send' &&
-                                                  DevUserConfig.hasFypModule) {
-                                                _sendReportToSupervisor(doc);
-                                              } else if (value == 'delete') {
-                                                _handleDelete(doc);
-                                              }
-                                            },
-                                            itemBuilder: (context) => [
-                                              const PopupMenuItem(
-                                                value: 'analyze',
-                                                child: Row(
-                                                  children: [
-                                                    Icon(
-                                                      Icons.analytics_outlined,
-                                                      size: 16,
-                                                      color: Color(0xFF10B981),
-                                                    ),
-                                                    SizedBox(width: 8),
-                                                    Text('Analyze'),
-                                                  ],
-                                                ),
-                                              ),
-                                              if (DevUserConfig.hasFypModule)
-                                                const PopupMenuItem(
-                                                  value: 'send',
-                                                  child: Row(
-                                                    children: [
-                                                      Icon(
-                                                        Icons.send_rounded,
-                                                        size: 16,
-                                                        color: Color(
-                                                          0xFF10B981,
-                                                        ),
-                                                      ),
-                                                      SizedBox(width: 8),
-                                                      Text(
-                                                        'Send to Supervisor',
-                                                      ),
-                                                    ],
-                                                  ),
-                                                ),
-                                              const PopupMenuItem(
-                                                value: 'preview',
-                                                child: Row(
-                                                  children: [
-                                                    Icon(
-                                                      Icons.preview,
-                                                      size: 16,
-                                                    ),
-                                                    SizedBox(width: 8),
-                                                    Text('Preview'),
-                                                  ],
-                                                ),
-                                              ),
-                                              const PopupMenuItem(
-                                                value: 'rename',
-                                                child: Row(
-                                                  children: [
-                                                    Icon(
-                                                      Icons
-                                                          .drive_file_rename_outline,
-                                                      size: 16,
-                                                    ),
-                                                    SizedBox(width: 8),
-                                                    Text('Rename'),
-                                                  ],
-                                                ),
-                                              ),
-                                              const PopupMenuItem(
-                                                value: 'edit',
-                                                child: Row(
-                                                  children: [
-                                                    Icon(
-                                                      Icons.edit_outlined,
-                                                      size: 16,
-                                                    ),
-                                                    SizedBox(width: 8),
-                                                    Text('Edit'),
-                                                  ],
-                                                ),
-                                              ),
-                                              const PopupMenuItem(
-                                                value: 'delete',
-                                                child: Row(
-                                                  children: [
-                                                    Icon(
-                                                      Icons.delete,
-                                                      size: 16,
-                                                      color: Colors.red,
-                                                    ),
-                                                    SizedBox(width: 8),
-                                                    Text(
-                                                      'Delete',
-                                                      style: TextStyle(
-                                                        color: Colors.red,
-                                                      ),
-                                                    ),
-                                                  ],
-                                                ),
-                                              ),
-                                            ],
-                                            child: Icon(
-                                              Icons.more_vert,
-                                              size: 16,
-                                              color: _p.textSecondary,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                SizedBox(height: 40),
-                // Pagination
-                if (filteredDocs.isNotEmpty)
-                  Center(
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        IconButton(
-                          icon: Icon(Icons.chevron_left),
-                          color: _p.textSecondary,
-                          onPressed: _currentPage > 1
-                              ? () => setState(() => _currentPage--)
-                              : null,
-                        ),
-                        for (int i = 1; i <= totalPages && i <= 3; i++)
-                          GestureDetector(
-                            onTap: () => setState(() => _currentPage = i),
-                            child: Padding(
-                              padding: EdgeInsets.symmetric(horizontal: 4),
-                              child: Container(
-                                width: 32,
-                                height: 32,
-                                decoration: BoxDecoration(
-                                  color: i == _currentPage
-                                      ? _p.accent
-                                      : _p.surface,
-                                  borderRadius: BorderRadius.circular(6),
-                                  border: Border.all(color: _p.border),
-                                ),
-                                child: Center(
-                                  child: Text(
-                                    '$i',
-                                    style: TextStyle(
-                                      color: i == _currentPage
-                                          ? Colors.white
-                                          : _p.textSecondary,
-                                      fontWeight: FontWeight.w600,
-                                      fontSize: 13,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                        if (totalPages > 3)
-                          Text(
-                            '...',
-                            style: TextStyle(
-                              color: _p.textSecondary,
-                              fontSize: 13,
-                            ),
-                          ),
-                        if (totalPages > 3)
-                          GestureDetector(
-                            onTap: () =>
-                                setState(() => _currentPage = totalPages),
-                            child: Padding(
-                              padding: EdgeInsets.symmetric(horizontal: 4),
-                              child: Container(
-                                width: 32,
-                                height: 32,
-                                decoration: BoxDecoration(
-                                  color: totalPages == _currentPage
-                                      ? _p.accent
-                                      : _p.surface,
-                                  borderRadius: BorderRadius.circular(6),
-                                  border: Border.all(color: _p.border),
-                                ),
-                                child: Center(
-                                  child: Text(
-                                    '$totalPages',
-                                    style: TextStyle(
-                                      color: totalPages == _currentPage
-                                          ? Colors.white
-                                          : _p.textSecondary,
-                                      fontWeight: FontWeight.w600,
-                                      fontSize: 13,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                        IconButton(
-                          icon: Icon(Icons.chevron_right),
-                          color: _p.textSecondary,
-                          onPressed: _currentPage < totalPages
-                              ? () => setState(() => _currentPage++)
-                              : null,
-                        ),
-                      ],
-                    ),
-                  ),
+                if (filteredDocs.isNotEmpty) ...[
+                  const SizedBox(height: 32),
+                  _reportsPagination(page, totalPages),
+                ],
               ],
             ),
           ),
         );
       },
+    );
+  }
+
+  // ── Toolbar: search + sort + count ─────────────────────────────────────
+
+  Widget _reportsToolbar(bool compact, int total) {
+    final search = Container(
+      height: 44,
+      decoration: BoxDecoration(
+        color: _p.surface,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: _p.isDark ? _p.borderStrong : _p.border),
+      ),
+      child: TextField(
+        onChanged: (value) {
+          setState(() {
+            _searchQuery = value;
+            _currentPage = 1;
+          });
+        },
+        style: TextStyle(color: _p.textPrimary, fontSize: 13.5),
+        decoration: InputDecoration(
+          hintText: 'Search reports...',
+          hintStyle: TextStyle(color: _p.textMuted, fontSize: 13),
+          border: InputBorder.none,
+          isCollapsed: true,
+          contentPadding: const EdgeInsets.symmetric(vertical: 14),
+          prefixIcon: Icon(Icons.search, color: _p.textSecondary, size: 20),
+        ),
+      ),
+    );
+
+    final sort = Container(
+      height: 44,
+      padding: const EdgeInsets.symmetric(horizontal: 14),
+      decoration: BoxDecoration(
+        color: _p.surface,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: _p.isDark ? _p.borderStrong : _p.border),
+      ),
+      child: PopupMenuButton<String>(
+        tooltip: 'Sort',
+        onSelected: (value) {
+          setState(() {
+            _sortBy = value;
+            _currentPage = 1;
+          });
+        },
+        itemBuilder: (context) => const [
+          PopupMenuItem(value: 'recent', child: Tr('Most Recent')),
+          PopupMenuItem(value: 'name', child: Tr('Name A-Z')),
+        ],
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.swap_vert, color: _p.textSecondary, size: 18),
+            const SizedBox(width: 8),
+            Tr(
+              _sortBy == 'name' ? 'Name A-Z' : 'Most Recent',
+              style: TextStyle(color: _p.textPrimary, fontSize: 13),
+            ),
+            const SizedBox(width: 4),
+            Icon(Icons.keyboard_arrow_down, color: _p.textSecondary, size: 18),
+          ],
+        ),
+      ),
+    );
+
+    final count = Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: _p.accentSoft,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        '$total report${total == 1 ? '' : 's'}',
+        style: TextStyle(
+          color: _p.accent,
+          fontSize: 12,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
+
+    if (compact) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          search,
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(child: sort),
+              const SizedBox(width: 10),
+              count,
+            ],
+          ),
+        ],
+      );
+    }
+
+    return Row(
+      children: [
+        Expanded(child: search),
+        const SizedBox(width: 12),
+        sort,
+        const SizedBox(width: 12),
+        count,
+      ],
+    );
+  }
+
+  // ── Empty state ────────────────────────────────────────────────────────
+
+  Widget _reportsEmptyState() {
+    final searching = _searchQuery.trim().isNotEmpty;
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 64),
+        child: Column(
+          children: [
+            Container(
+              width: 72,
+              height: 72,
+              decoration: BoxDecoration(
+                color: _p.accentSoft,
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                searching ? Icons.search_off : Icons.folder_open,
+                size: 32,
+                color: _p.accent,
+              ),
+            ),
+            const SizedBox(height: 18),
+            Tr(
+              searching ? 'No matching reports' : 'No reports found',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+                color: _p.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Tr(
+              searching
+                  ? 'Try a different search term.'
+                  : 'Upload a document from New Report to get started.',
+              style: TextStyle(fontSize: 13, color: _p.textSecondary),
+            ),
+            if (!searching) ...[
+              const SizedBox(height: 18),
+              ElevatedButton.icon(
+                onPressed: () => _goTo(1),
+                icon: const Icon(Icons.add, size: 18),
+                label: const Tr('New Report'),
+                style: ElevatedButton.styleFrom(
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 20,
+                    vertical: 12,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ── Report card ────────────────────────────────────────────────────────
+
+  Widget _reportCard(Map<String, dynamic> doc, AuthProvider auth) {
+    final status = doc['status'] ?? 'draft';
+    final statusColor = _getStatusColor(status);
+    final statusLabel = _getStatusLabel(status);
+    final iconColor = _getIconColor(status);
+    final hasFormatted = doc['has_formatted'] == true;
+    const green = Color(0xFF10B981);
+
+    return Container(
+      decoration: _cardDeco(),
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Icon + name + menu
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: iconColor.withOpacity(0.14),
+                  borderRadius: BorderRadius.circular(11),
+                ),
+                child: Icon(
+                  Icons.description_outlined,
+                  size: 21,
+                  color: iconColor,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      doc['filename'] ?? 'Untitled',
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w700,
+                        color: _p.textPrimary,
+                        height: 1.25,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      doc['template_name'] ?? 'No template',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(fontSize: 11.5, color: _p.textSecondary),
+                    ),
+                  ],
+                ),
+              ),
+              _reportMenu(doc, auth),
+            ],
+          ),
+
+          const SizedBox(height: 12),
+
+          // Status chips
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              _reportChip(statusLabel, statusColor),
+              if (hasFormatted)
+                _reportChip('Formatted saved', green, icon: Icons.check_circle),
+            ],
+          ),
+
+          const Spacer(),
+
+          // Modified time
+          Row(
+            children: [
+              Icon(Icons.schedule, size: 13, color: _p.textMuted),
+              const SizedBox(width: 5),
+              Text(
+                'Modified ${_getTimeAgo(doc['created_at'] ?? DateTime.now())}',
+                style: TextStyle(fontSize: 11, color: _p.textMuted),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Divider(height: 1, color: _p.border),
+          const SizedBox(height: 10),
+
+          // Download buttons
+          Row(
+            children: [
+              Expanded(
+                child: Tooltip(
+                  message: 'Download original file (unformatted)',
+                  child: OutlinedButton.icon(
+                    onPressed: () =>
+                        _handleDownloadVersion(doc, version: 'unformatted'),
+                    icon: const Icon(Icons.file_download_outlined, size: 15),
+                    label: const Tr(
+                      'Original',
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: _p.textPrimary,
+                      side: BorderSide(color: _p.border),
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Tooltip(
+                  message: hasFormatted
+                      ? 'Download formatted file'
+                      : 'Not available yet - open Analyze and save the formatted document',
+                  child: OutlinedButton.icon(
+                    onPressed: hasFormatted
+                        ? () =>
+                              _handleDownloadVersion(doc, version: 'formatted')
+                        : () => _showFormattedMissingHint(),
+                    icon: const Icon(Icons.file_download_outlined, size: 15),
+                    label: const Tr(
+                      'Formatted',
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: hasFormatted ? _p.accent : _p.textMuted,
+                      side: BorderSide(
+                        color: hasFormatted ? _p.accent : _p.border,
+                      ),
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _reportChip(String text, Color color, {IconData? icon}) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.13),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (icon != null) ...[
+            Icon(icon, size: 11, color: color),
+            const SizedBox(width: 4),
+          ],
+          Tr(
+            text,
+            style: TextStyle(
+              fontSize: 10.5,
+              fontWeight: FontWeight.w700,
+              color: color,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Actions menu (same actions as before) ──────────────────────────────
+
+  Widget _reportMenu(Map<String, dynamic> doc, AuthProvider auth) {
+    PopupMenuItem<String> item(
+      String value,
+      IconData icon,
+      String label, {
+      Color? color,
+    }) {
+      final c = color ?? _p.textPrimary;
+      return PopupMenuItem<String>(
+        value: value,
+        height: 40,
+        padding: const EdgeInsets.symmetric(horizontal: 14),
+        child: Row(
+          children: [
+            Icon(icon, size: 17, color: color ?? _p.textSecondary),
+            const SizedBox(width: 12),
+            Tr(
+              label,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+                color: c,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return PopupMenuButton<String>(
+      tooltip: 'More',
+      padding: EdgeInsets.zero,
+      offset: const Offset(0, 34),
+      elevation: 8,
+      color: _p.isDark ? _p.surfaceElevated : _p.surface,
+      surfaceTintColor: Colors.transparent,
+      constraints: const BoxConstraints(minWidth: 200),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: _p.isDark ? _p.borderStrong : _p.border),
+      ),
+      icon: Icon(Icons.more_vert, size: 18, color: _p.textSecondary),
+      onSelected: (value) {
+        if (value == 'analyze') {
+          _openAnalyzeScreen(doc);
+        } else if (value == 'preview') {
+          _showPreview(doc);
+        } else if (value == 'rename') {
+          _showRenameDialog(doc);
+        } else if (value == 'edit') {
+          _showEditDialog(doc, auth.userId!);
+        } else if (value == 'send' && DevUserConfig.hasFypModule) {
+          _sendReportToSupervisor(doc);
+        } else if (value == 'delete') {
+          _handleDelete(doc);
+        }
+      },
+      itemBuilder: (context) => [
+        item(
+          'analyze',
+          Icons.analytics_outlined,
+          'Analyze',
+          color: const Color(0xFF10B981),
+        ),
+        if (DevUserConfig.hasFypModule)
+          item(
+            'send',
+            Icons.send_rounded,
+            'Send to Supervisor',
+            color: const Color(0xFF10B981),
+          ),
+        const PopupMenuDivider(height: 8),
+        item('preview', Icons.visibility_outlined, 'Preview'),
+        item('rename', Icons.drive_file_rename_outline, 'Rename'),
+        item('edit', Icons.edit_outlined, 'Edit'),
+        const PopupMenuDivider(height: 8),
+        item(
+          'delete',
+          Icons.delete_outline,
+          'Delete',
+          color: const Color(0xFFEF4444),
+        ),
+      ],
+    );
+  }
+
+  // ── Pagination ─────────────────────────────────────────────────────────
+
+  Widget _reportsPagination(int page, int totalPages) {
+    Widget pageBtn(int n) {
+      final active = n == page;
+      return GestureDetector(
+        onTap: () => setState(() => _currentPage = n),
+        child: MouseRegion(
+          cursor: SystemMouseCursors.click,
+          child: Container(
+            width: 34,
+            height: 34,
+            margin: const EdgeInsets.symmetric(horizontal: 3),
+            decoration: BoxDecoration(
+              color: active ? _p.accent : _p.surface,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: active ? _p.accent : _p.border),
+            ),
+            child: Center(
+              child: Text(
+                '$n',
+                style: TextStyle(
+                  color: active ? Colors.white : _p.textSecondary,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 13,
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Center(
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          IconButton(
+            icon: const Icon(Icons.chevron_left),
+            color: _p.textSecondary,
+            onPressed: page > 1
+                ? () => setState(() => _currentPage = page - 1)
+                : null,
+          ),
+          for (int i = 1; i <= totalPages && i <= 3; i++) pageBtn(i),
+          if (totalPages > 3) ...[
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              child: Text(
+                '…',
+                style: TextStyle(color: _p.textSecondary, fontSize: 13),
+              ),
+            ),
+            pageBtn(totalPages),
+          ],
+          IconButton(
+            icon: const Icon(Icons.chevron_right),
+            color: _p.textSecondary,
+            onPressed: page < totalPages
+                ? () => setState(() => _currentPage = page + 1)
+                : null,
+          ),
+        ],
+      ),
     );
   }
 
@@ -2388,7 +2235,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
     if (userId == null || email.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Please sign in again to send'),
+          content: Tr('Please sign in again to send'),
           backgroundColor: Color(0xFFEF4444),
         ),
       );
@@ -2403,7 +2250,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
     if (groupId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(
+          content: Tr(
             'No accepted supervisor yet. Choose a supervisor and wait for acceptance first.',
           ),
           backgroundColor: Color(0xFFEF4444),
@@ -2416,7 +2263,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
     if (docId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Invalid document'),
+          content: Tr('Invalid document'),
           backgroundColor: Color(0xFFEF4444),
         ),
       );
@@ -2427,7 +2274,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: _p.surface,
-        title: Text(
+        title: Tr(
           'Send to Supervisor?',
           style: TextStyle(color: _p.textPrimary),
         ),
@@ -2438,7 +2285,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: Text('Cancel'),
+            child: Tr('Cancel'),
           ),
           ElevatedButton(
             onPressed: () => Navigator.pop(ctx, true),
@@ -2446,7 +2293,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
               backgroundColor: Color(0xFF10B981),
               foregroundColor: Colors.white,
             ),
-            child: Text('Send'),
+            child: Tr('Send'),
           ),
         ],
       ),
@@ -2478,7 +2325,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
     if (result != null) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Sent to supervisor for review'),
+          content: Tr('Sent to supervisor for review'),
           backgroundColor: Color(0xFF10B981),
         ),
       );
@@ -2513,10 +2360,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
           children: [
             Icon(icon, color: _p.textSecondary, size: 18),
             SizedBox(width: 8),
-            Text(
-              label,
-              style: TextStyle(color: _p.textSecondary, fontSize: 13),
-            ),
+            Tr(label, style: TextStyle(color: _p.textSecondary, fontSize: 13)),
           ],
         ),
       ),
@@ -2583,7 +2427,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
                   color: statusColor.withOpacity(0.15),
                   borderRadius: BorderRadius.circular(6),
                 ),
-                child: Text(
+                child: Tr(
                   statusLabel,
                   style: TextStyle(
                     fontSize: 10,
@@ -2610,7 +2454,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
                   color: Color(0xFF10B981).withOpacity(0.12),
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: Text(
+                child: Tr(
                   'Formatted + Unformatted available',
                   style: TextStyle(
                     fontSize: 11,
@@ -2627,7 +2471,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
               child: ElevatedButton.icon(
                 onPressed: () => _sendReportToSupervisor(doc),
                 icon: Icon(Icons.send_rounded, size: 16),
-                label: Text(
+                label: Tr(
                   'Send to Supervisor',
                   style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
                 ),
@@ -2647,7 +2491,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
             child: TextButton.icon(
               onPressed: () => _showRenameDialog(doc),
               icon: Icon(Icons.drive_file_rename_outline, size: 16),
-              label: Text('Rename', style: TextStyle(fontSize: 12)),
+              label: Tr('Rename', style: TextStyle(fontSize: 12)),
               style: TextButton.styleFrom(
                 foregroundColor: _p.textSecondary,
                 padding: EdgeInsets.zero,
@@ -2670,7 +2514,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
                         borderRadius: BorderRadius.circular(10),
                       ),
                     ),
-                    child: Text(
+                    child: Tr(
                       'Unformatted',
                       style: TextStyle(
                         fontWeight: FontWeight.w700,
@@ -2702,7 +2546,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
                         borderRadius: BorderRadius.circular(10),
                       ),
                     ),
-                    child: Text(
+                    child: Tr(
                       'Formatted',
                       style: TextStyle(
                         fontWeight: FontWeight.w700,
@@ -2783,7 +2627,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: _p.surface,
-        title: Text('Rename Report', style: TextStyle(color: _p.textPrimary)),
+        title: Tr('Rename Report', style: TextStyle(color: _p.textPrimary)),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -2809,13 +2653,10 @@ class _StudentDashboardState extends State<StudentDashboard> {
           ],
         ),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: Text('Cancel'),
-          ),
+          TextButton(onPressed: () => Navigator.pop(ctx), child: Tr('Cancel')),
           ElevatedButton(
             onPressed: () => Navigator.pop(ctx, controller.text.trim()),
-            child: Text('Save'),
+            child: Tr('Save'),
           ),
         ],
       ),
@@ -2894,7 +2735,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Text(
+                        Tr(
                           'Edit Document',
                           style: TextStyle(
                             fontSize: 18,
@@ -2969,7 +2810,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
                       children: [
                         TextButton(
                           onPressed: () => Navigator.pop(context),
-                          child: Text(
+                          child: Tr(
                             'Cancel',
                             style: TextStyle(color: _p.textPrimary),
                           ),
@@ -2988,7 +2829,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
                                   if (!mounted) return;
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     SnackBar(
-                                      content: Text(
+                                      content: Tr(
                                         success
                                             ? 'Document saved successfully'
                                             : 'Failed to save document',
@@ -3001,7 +2842,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
                                   if (success) Navigator.pop(context);
                                 },
                           style: ElevatedButton.styleFrom(),
-                          child: Text(
+                          child: Tr(
                             'Save Changes',
                             style: TextStyle(
                               fontSize: 13,
@@ -3148,7 +2989,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
 
                           if (snapshot.hasError || !snapshot.hasData) {
                             return Center(
-                              child: Text(
+                              child: Tr(
                                 'Failed to load preview or document empty',
                                 style: TextStyle(color: _p.textSecondary),
                               ),
@@ -3289,12 +3130,12 @@ class _StudentDashboardState extends State<StudentDashboard> {
                     onPressed: () {
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(
-                          content: Text('Request Template feature coming soon'),
+                          content: Tr('Request Template feature coming soon'),
                         ),
                       );
                     },
                     icon: Icon(Icons.add, size: 18),
-                    label: Text('Request Template'),
+                    label: Tr('Request Template'),
                     style: ElevatedButton.styleFrom(
                       foregroundColor: Colors.white,
                       padding: EdgeInsets.symmetric(
@@ -3358,23 +3199,23 @@ class _StudentDashboardState extends State<StudentDashboard> {
                       items: [
                         const DropdownMenuItem(
                           value: 'all',
-                          child: Text('All Categories'),
+                          child: Tr('All Categories'),
                         ),
                         const DropdownMenuItem(
                           value: 'engineering',
-                          child: Text('Engineering'),
+                          child: Tr('Engineering'),
                         ),
                         const DropdownMenuItem(
                           value: 'sciences',
-                          child: Text('Sciences'),
+                          child: Tr('Sciences'),
                         ),
                         const DropdownMenuItem(
                           value: 'business',
-                          child: Text('Business'),
+                          child: Tr('Business'),
                         ),
                         const DropdownMenuItem(
                           value: 'humanities',
-                          child: Text('Humanities'),
+                          child: Tr('Humanities'),
                         ),
                       ],
                     ),
@@ -3400,15 +3241,15 @@ class _StudentDashboardState extends State<StudentDashboard> {
                       items: [
                         const DropdownMenuItem(
                           value: 'popular',
-                          child: Text('Most Popular'),
+                          child: Tr('Most Popular'),
                         ),
                         const DropdownMenuItem(
                           value: 'recent',
-                          child: Text('Most Recent'),
+                          child: Tr('Most Recent'),
                         ),
                         const DropdownMenuItem(
                           value: 'name',
-                          child: Text('Name (A-Z)'),
+                          child: Tr('Name (A-Z)'),
                         ),
                       ],
                     ),
@@ -3456,7 +3297,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
                               ),
                             ),
                             SizedBox(height: 4),
-                            Text(
+                            Tr(
                               'This template is applied to your current document. You can switch templates anytime.',
                               style: TextStyle(
                                 fontSize: 13,
@@ -3478,7 +3319,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
                             borderRadius: BorderRadius.circular(6),
                           ),
                         ),
-                        child: Text('View Details'),
+                        child: Tr('View Details'),
                       ),
                     ],
                   ),
@@ -3510,7 +3351,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(
+                            Tr(
                               'No Template Selected',
                               style: TextStyle(
                                 fontSize: 15,
@@ -3519,7 +3360,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
                               ),
                             ),
                             SizedBox(height: 4),
-                            Text(
+                            Tr(
                               'Select a template below to get started with your document formatting.',
                               style: TextStyle(
                                 fontSize: 13,
@@ -3535,7 +3376,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
               SizedBox(height: 48),
 
               // Templates from database only
-              Text(
+              Tr(
                 'Available Templates',
                 style: TextStyle(
                   fontSize: 20,
@@ -3544,7 +3385,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
                 ),
               ),
               SizedBox(height: 8),
-              Text(
+              Tr(
                 DevUserConfig.hasFypModule
                     ? 'Loaded from your university database'
                     : 'Templates configured for your organization',
@@ -3575,7 +3416,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
                               templateProvider.fetchUserTemplates(userId);
                             }
                           },
-                          child: Text('Retry'),
+                          child: Tr('Retry'),
                         ),
                       ],
                     ),
@@ -3585,7 +3426,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
                 Center(
                   child: Padding(
                     padding: EdgeInsets.symmetric(vertical: 48),
-                    child: Text(
+                    child: Tr(
                       'No templates yet. Ask your admin to add templates in Template Manager.',
                       style: TextStyle(fontSize: 14, color: _p.textSecondary),
                       textAlign: TextAlign.center,
@@ -3632,7 +3473,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
                         ),
                       ),
                       SizedBox(height: 16),
-                      Text(
+                      Tr(
                         DevUserConfig.hasFypModule
                             ? 'Can\'t find your university template?'
                             : 'Need a custom template?',
@@ -3643,7 +3484,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
                         ),
                       ),
                       SizedBox(height: 8),
-                      Text(
+                      Tr(
                         'Request a custom template and we\'ll add it within 48 hours',
                         textAlign: TextAlign.center,
                         style: TextStyle(fontSize: 14, color: _p.textSecondary),
@@ -3653,9 +3494,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
                         onPressed: () {
                           ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(
-                              content: Text(
-                                'Custom template request submitted',
-                              ),
+                              content: Tr('Custom template request submitted'),
                             ),
                           );
                         },
@@ -3669,7 +3508,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
                             borderRadius: BorderRadius.circular(8),
                           ),
                         ),
-                        child: Text('Request Custom Template'),
+                        child: Tr('Request Custom Template'),
                       ),
                     ],
                   ),
@@ -3686,119 +3525,316 @@ class _StudentDashboardState extends State<StudentDashboard> {
   Widget _buildSettingsPage() {
     return Consumer2<AuthProvider, ThemeProvider>(
       builder: (context, auth, theme, _) {
-        return SingleChildScrollView(
-          padding: EdgeInsets.all(32),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Container(
-                decoration: _cardDeco(),
-                padding: EdgeInsets.all(20),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Account Information',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                        color: _p.textPrimary,
-                      ),
-                    ),
-                    SizedBox(height: 16),
-                    _buildSettingsItem('Username', auth.currentUser ?? 'N/A'),
-                    SizedBox(height: 12),
-                    _buildSettingsItem('Email', auth.email ?? 'N/A'),
-                    SizedBox(height: 12),
-                    _buildSettingsItem(
-                      'Account Type',
-                      DevUserConfig.displayRoleLabel(auth.userRole),
-                    ),
-                  ],
-                ),
-              ),
-              SizedBox(height: 24),
-              Container(
-                decoration: _cardDeco(),
-                padding: EdgeInsets.all(20),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Preferences',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                        color: _p.textPrimary,
-                      ),
-                    ),
-                    SizedBox(height: 16),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        final lang = context.watch<LangProvider>();
+        final name = auth.currentUser ?? 'User';
+
+        return Align(
+          alignment: Alignment.topCenter,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 760),
+            child: SingleChildScrollView(
+              padding: EdgeInsets.all(isCompact(context) ? 16 : 32),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // ── Profile header ─────────────────────────────
+                  Container(
+                    decoration: _cardDeco(),
+                    padding: const EdgeInsets.all(22),
+                    child: Row(
                       children: [
-                        Text(
-                          'Email Notifications',
-                          style: TextStyle(fontSize: 13, color: _p.textPrimary),
+                        Container(
+                          width: 60,
+                          height: 60,
+                          decoration: BoxDecoration(
+                            color: _p.accent,
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                          child: Center(
+                            child: Text(
+                              name.isNotEmpty ? name[0].toUpperCase() : 'U',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 24,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
                         ),
-                        Switch(
-                          value: true,
-                          onChanged: (value) {},
-                          activeColor: _p.accent,
+                        const SizedBox(width: 18),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                name,
+                                style: TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w700,
+                                  color: _p.textPrimary,
+                                ),
+                              ),
+                              const SizedBox(height: 3),
+                              Text(
+                                auth.email ?? 'No email',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: _p.textSecondary,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 6,
+                          ),
+                          decoration: BoxDecoration(
+                            color: _p.accentSoft,
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                          child: Text(
+                            DevUserConfig.displayRoleLabel(auth.userRole),
+                            style: TextStyle(
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w700,
+                              color: _p.accent,
+                            ),
+                          ),
                         ),
                       ],
                     ),
-                    SizedBox(height: 12),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  ),
+                  const SizedBox(height: 28),
+
+                  // ── Account ────────────────────────────────────
+                  _settingsSectionTitle('Account', Icons.person_outline),
+                  const SizedBox(height: 10),
+                  Container(
+                    decoration: _cardDeco(),
+                    child: Column(
                       children: [
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Dark Mode',
+                        _settingsInfoRow(
+                          Icons.badge_outlined,
+                          'Username',
+                          name,
+                        ),
+                        _settingsDivider(),
+                        _settingsInfoRow(
+                          Icons.mail_outline,
+                          'Email',
+                          auth.email ?? 'N/A',
+                        ),
+                        _settingsDivider(),
+                        _settingsInfoRow(
+                          Icons.shield_outlined,
+                          'Account type',
+                          DevUserConfig.displayRoleLabel(auth.userRole),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 28),
+
+                  // ── Preferences ────────────────────────────────
+                  _settingsSectionTitle('Preferences', Icons.tune),
+                  const SizedBox(height: 10),
+                  Container(
+                    decoration: _cardDeco(),
+                    child: Column(
+                      children: [
+                        _settingsRow(
+                          icon: Icons.language,
+                          title: 'Language',
+                          subtitle: 'Choose the app language',
+                          trailing: DropdownButtonHideUnderline(
+                            child: DropdownButton<String>(
+                              value: lang.code,
+                              dropdownColor: _p.surface,
+                              borderRadius: BorderRadius.circular(10),
                               style: TextStyle(
                                 fontSize: 13,
                                 color: _p.textPrimary,
                               ),
+                              items: kLanguages
+                                  .map(
+                                    (l) => DropdownMenuItem(
+                                      value: l.code,
+                                      child: Text(l.name),
+                                    ),
+                                  )
+                                  .toList(),
+                              onChanged: (v) {
+                                if (v != null) {
+                                  context.read<LangProvider>().setLang(v);
+                                }
+                              },
                             ),
-                            SizedBox(height: 2),
-                            Text(
-                              theme.isDarkMode ? 'On' : 'Off — Light Mode',
-                              style: TextStyle(
-                                fontSize: 11,
-                                color: _p.textSecondary,
-                              ),
-                            ),
-                          ],
+                          ),
                         ),
-                        Switch(
-                          value: theme.isDarkMode,
-                          onChanged: (value) => theme.setDarkMode(value),
-                          activeColor: _p.accent,
+                        _settingsDivider(),
+                        _settingsRow(
+                          icon: theme.isDarkMode
+                              ? Icons.dark_mode_outlined
+                              : Icons.light_mode_outlined,
+                          title: 'Dark mode',
+                          subtitle: theme.isDarkMode
+                              ? 'On'
+                              : 'Off · Light mode',
+                          trailing: Switch(
+                            value: theme.isDarkMode,
+                            onChanged: (v) => theme.setDarkMode(v),
+                            activeColor: _p.accent,
+                          ),
+                        ),
+                        _settingsDivider(),
+                        _settingsRow(
+                          icon: Icons.notifications_none,
+                          title: 'Email notifications',
+                          subtitle: 'Updates about your reports and reviews',
+                          trailing: Switch(
+                            value: _emailNotifications,
+                            onChanged: (v) =>
+                                setState(() => _emailNotifications = v),
+                            activeColor: _p.accent,
+                          ),
                         ),
                       ],
                     ),
-                  ],
-                ),
-              ),
-              SizedBox(height: 24),
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton.icon(
-                  onPressed: () => _logout(context),
-                  icon: Icon(Icons.logout_rounded),
-                  label: Text('Sign Out'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: _p.textPrimary,
-                    side: BorderSide(color: _p.borderStrong),
-                    padding: EdgeInsets.symmetric(vertical: 14),
                   ),
-                ),
+                  const SizedBox(height: 28),
+
+                  // ── Session ────────────────────────────────────
+                  _settingsSectionTitle('Session', Icons.lock_outline),
+                  const SizedBox(height: 10),
+                  Container(
+                    decoration: _cardDeco(),
+                    child: _settingsRow(
+                      icon: Icons.logout_rounded,
+                      iconColor: const Color(0xFFEF4444),
+                      title: 'Sign out',
+                      subtitle: 'You will need to sign in again',
+                      trailing: OutlinedButton(
+                        onPressed: () => _logout(context),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: const Color(0xFFEF4444),
+                          side: BorderSide(
+                            color: const Color(0xFFEF4444).withOpacity(0.5),
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
+                        child: const Tr('Sign out'),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                ],
               ),
-            ],
+            ),
           ),
         );
       },
+    );
+  }
+
+  Widget _settingsSectionTitle(String text, IconData icon) {
+    return Row(
+      children: [
+        Icon(icon, size: 16, color: _p.textSecondary),
+        const SizedBox(width: 8),
+        Tr(
+          text.toUpperCase(),
+          style: TextStyle(
+            fontSize: 11.5,
+            letterSpacing: 0.8,
+            fontWeight: FontWeight.w700,
+            color: _p.textSecondary,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _settingsDivider() =>
+      Divider(height: 1, thickness: 1, color: _p.border);
+
+  Widget _settingsInfoRow(IconData icon, String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 15),
+      child: Row(
+        children: [
+          Icon(icon, size: 19, color: _p.textSecondary),
+          const SizedBox(width: 14),
+          Tr(label, style: TextStyle(fontSize: 13, color: _p.textSecondary)),
+          const Spacer(),
+          Flexible(
+            child: Text(
+              value,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.right,
+              style: TextStyle(
+                fontSize: 13.5,
+                fontWeight: FontWeight.w600,
+                color: _p.textPrimary,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _settingsRow({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required Widget trailing,
+    Color? iconColor,
+  }) {
+    final c = iconColor ?? _p.accent;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+      child: Row(
+        children: [
+          Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              color: c.withOpacity(0.12),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(icon, size: 19, color: c),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Tr(
+                  title,
+                  style: TextStyle(
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w600,
+                    color: _p.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Tr(
+                  subtitle,
+                  style: TextStyle(fontSize: 11.5, color: _p.textSecondary),
+                ),
+              ],
+            ),
+          ),
+          trailing,
+        ],
+      ),
     );
   }
 
@@ -3915,7 +3951,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
                             padding: EdgeInsets.only(bottom: 6),
                             child: Row(
                               children: [
-                                Text(
+                                Tr(
                                   '• ',
                                   style: TextStyle(
                                     fontSize: 11,
@@ -3949,7 +3985,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
                                 borderRadius: BorderRadius.circular(6),
                               ),
                             ),
-                            child: Text(
+                            child: Tr(
                               'Preview',
                               style: TextStyle(
                                 fontSize: 11,
@@ -3977,7 +4013,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
                                 borderRadius: BorderRadius.circular(6),
                               ),
                             ),
-                            child: Text(
+                            child: Tr(
                               'Select',
                               style: TextStyle(
                                 fontSize: 11,
@@ -4019,7 +4055,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
+            Tr(
               'Upload Document',
               style: TextStyle(
                 fontSize: 20,
@@ -4051,7 +4087,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
                           borderRadius: BorderRadius.circular(6),
                         ),
                         child: Center(
-                          child: Text(
+                          child: Tr(
                             'Upload File',
                             style: TextStyle(
                               color: Colors.white,
@@ -4078,7 +4114,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
                           borderRadius: BorderRadius.circular(6),
                         ),
                         child: Center(
-                          child: Text(
+                          child: Tr(
                             'Paste Text',
                             style: TextStyle(
                               color: _p.textPrimary,
@@ -4094,7 +4130,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
               ),
             ),
             SizedBox(height: 20),
-            Text(
+            Tr(
               'Supported formats: PDF, DOCX, DOC, TXT',
               style: TextStyle(fontSize: 11, color: _p.textSecondary),
             ),
@@ -4104,7 +4140,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
               children: [
                 TextButton(
                   onPressed: () => Navigator.pop(context),
-                  child: Text(
+                  child: Tr(
                     'Cancel',
                     style: TextStyle(
                       color: _p.textSecondary,
@@ -4149,7 +4185,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
                 children: [
                   const CircularProgressIndicator(),
                   SizedBox(height: 16),
-                  Text(
+                  Tr(
                     'Uploading document...',
                     style: TextStyle(color: _p.textPrimary),
                   ),
@@ -4171,7 +4207,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
           if (success) {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
-                content: Text('Document uploaded successfully!'),
+                content: Tr('Document uploaded successfully!'),
                 backgroundColor: Color(0xFF10B981),
               ),
             );
@@ -4216,7 +4252,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
+              Tr(
                 'Paste Your Content',
                 style: TextStyle(
                   fontSize: 20,
@@ -4225,7 +4261,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
                 ),
               ),
               SizedBox(height: 8),
-              Text(
+              Tr(
                 'Paste your document text below',
                 style: TextStyle(fontSize: 12, color: _p.textSecondary),
               ),
@@ -4260,7 +4296,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
                 children: [
                   TextButton(
                     onPressed: () => Navigator.pop(context),
-                    child: Text(
+                    child: Tr(
                       'Cancel',
                       style: TextStyle(
                         color: _p.textSecondary,
@@ -4278,7 +4314,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
                         borderRadius: BorderRadius.circular(6),
                       ),
                     ),
-                    child: Text(
+                    child: Tr(
                       'Upload',
                       style: TextStyle(
                         fontSize: 12,
@@ -4303,7 +4339,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
     if (content.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Please paste some content'),
+          content: Tr('Please paste some content'),
           backgroundColor: Color(0xFFEF4444),
         ),
       );
@@ -4329,7 +4365,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
             children: [
               const CircularProgressIndicator(),
               SizedBox(height: 16),
-              Text(
+              Tr(
                 'Processing content...',
                 style: TextStyle(color: _p.textPrimary),
               ),
@@ -4351,7 +4387,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
       if (success) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Content uploaded successfully!'),
+            content: Tr('Content uploaded successfully!'),
             backgroundColor: Color(0xFF10B981),
           ),
         );
@@ -4374,7 +4410,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
+        Tr(
           label,
           style: TextStyle(
             fontSize: 12,
@@ -4400,29 +4436,22 @@ class _StudentDashboardState extends State<StudentDashboard> {
 
     DateTime parsedDateTime;
 
-    if (dateTime is String) {
-      // Parse timezone-less strings as UTC.
+    if (false /* Firestore removed */) {
+      // 1. Firebase Timestamp handling
+      parsedDateTime = dateTime.toDate().toLocal();
+    } else if (dateTime is String) {
+      // 2. String handling (Ensures string is parsed as UTC if not specified)
       String dateStr = dateTime.trim();
-      final hasTimezone = RegExp(
-        r'(Z|[+-]\d{2}(?::?\d{2})?)$',
-        caseSensitive: false,
-      ).hasMatch(dateStr);
-      if (!hasTimezone) {
-        dateStr += 'Z';
+      if (!dateStr.endsWith('Z') && !dateStr.contains('+')) {
+        dateStr += 'Z'; // Force UTC parsing if missing
       }
       final parsed = DateTime.tryParse(dateStr);
       parsedDateTime = parsed != null ? parsed.toLocal() : DateTime.now();
     } else if (dateTime is DateTime) {
+      // 3. DateTime object handling
       parsedDateTime = dateTime.isUtc ? dateTime.toLocal() : dateTime;
     } else {
-      // Handle Firebase Timestamp-like values without requiring its type import.
-      try {
-        final converted = (dateTime as dynamic).toDate();
-        if (converted is! DateTime) return 'just now';
-        parsedDateTime = converted.toLocal();
-      } catch (_) {
-        return 'just now';
-      }
+      return 'just now';
     }
 
     final now = DateTime.now();
@@ -4448,7 +4477,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
   void _showFormattedMissingHint() {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(
+        content: Tr(
           'No formatted version yet. Open Analyze, apply fixes, then tap Save Formatted Document.',
         ),
         backgroundColor: _p.accent,
@@ -4545,7 +4574,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
                     base64Decode(qrBase64),
                     width: 250,
                     height: 250,
-                    errorBuilder: (_, __, ___) => Text('Failed to load QR'),
+                    errorBuilder: (_, __, ___) => Tr('Failed to load QR'),
                   ),
                 ),
               ),
@@ -4578,7 +4607,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Downloading unformatted report...'),
+          content: Tr('Downloading unformatted report...'),
           backgroundColor: _p.accent,
         ),
       );
@@ -4666,7 +4695,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
                   ),
                 ),
                 SizedBox(height: 16),
-                Text(
+                Tr(
                   savedFormattedOnly ? 'Download formatted as' : 'Download as',
                   style: TextStyle(
                     color: _p.textPrimary,
@@ -4675,7 +4704,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
                   ),
                 ),
                 SizedBox(height: 6),
-                Text(
+                Tr(
                   'File will be saved to your phone',
                   style: TextStyle(color: _p.textSecondary, fontSize: 13),
                 ),
@@ -4752,7 +4781,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
+                    Tr(
                       title,
                       style: TextStyle(
                         color: _p.textPrimary,
@@ -4761,7 +4790,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
                       ),
                     ),
                     SizedBox(height: 2),
-                    Text(
+                    Tr(
                       subtitle,
                       style: TextStyle(color: _p.textSecondary, fontSize: 12),
                     ),
@@ -4786,7 +4815,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
     if (userId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Please sign in again to download'),
+          content: Tr('Please sign in again to download'),
           backgroundColor: Colors.red,
         ),
       );
@@ -4939,7 +4968,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
+              Tr(
                 'Delete Report',
                 style: TextStyle(
                   fontSize: 18,
@@ -4958,7 +4987,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
                 children: [
                   TextButton(
                     onPressed: () => Navigator.pop(context),
-                    child: Text(
+                    child: Tr(
                       'Cancel',
                       style: TextStyle(
                         color: _p.textSecondary,
@@ -4975,7 +5004,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Color(0xFFEF4444),
                     ),
-                    child: Text(
+                    child: Tr(
                       'Delete',
                       style: TextStyle(
                         color: Colors.white,
@@ -5010,7 +5039,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
               children: [
                 const CircularProgressIndicator(),
                 SizedBox(height: 16),
-                Text(
+                Tr(
                   'Deleting document...',
                   style: TextStyle(color: _p.textPrimary),
                 ),
@@ -5031,7 +5060,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
         if (success) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('Document deleted successfully'),
+              content: Tr('Document deleted successfully'),
               backgroundColor: Color(0xFF10B981),
               duration: Duration(seconds: 2),
             ),
@@ -5153,7 +5182,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('• ', style: TextStyle(fontSize: 12)),
+              Tr('• ', style: TextStyle(fontSize: 12)),
               Expanded(child: Text(text, style: style)),
             ],
           ),
@@ -5245,7 +5274,7 @@ class TemplatesPanel extends StatelessWidget {
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
+              Tr(
                 'Templates',
                 style: TextStyle(
                   fontSize: 28,
@@ -5255,7 +5284,7 @@ class TemplatesPanel extends StatelessWidget {
                 ),
               ),
               SizedBox(height: 8),
-              Text(
+              Tr(
                 'Select a template to apply formatting to your documents',
                 style: TextStyle(
                   fontSize: 14,
@@ -5298,7 +5327,7 @@ class TemplatesPanel extends StatelessWidget {
                       children: [
                         Icon(Icons.layers_clear, size: 48, color: p.textMuted),
                         SizedBox(height: 16),
-                        Text(
+                        Tr(
                           'No templates available yet',
                           style: TextStyle(
                             color: p.textSecondary,
@@ -5416,7 +5445,7 @@ class TemplatesPanel extends StatelessWidget {
                                                   color: Color(0xFF10B981),
                                                 ),
                                                 SizedBox(width: 4),
-                                                Text(
+                                                Tr(
                                                   'Selected',
                                                   style: TextStyle(
                                                     fontSize: 12,
@@ -5474,9 +5503,7 @@ class TemplatesPanel extends StatelessWidget {
                                           size: 18,
                                         ),
                                         SizedBox(width: 6),
-                                        Text(
-                                          isSelected ? 'Selected' : 'Select',
-                                        ),
+                                        Tr(isSelected ? 'Selected' : 'Select'),
                                       ],
                                     ),
                                   ),
@@ -5512,7 +5539,7 @@ class SettingsPanel extends StatelessWidget {
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
+              Tr(
                 'Settings',
                 style: TextStyle(
                   fontSize: 28,
@@ -5522,7 +5549,7 @@ class SettingsPanel extends StatelessWidget {
                 ),
               ),
               SizedBox(height: 8),
-              Text(
+              Tr(
                 'Manage your account settings and preferences',
                 style: TextStyle(
                   fontSize: 14,
@@ -5570,7 +5597,7 @@ class SettingsPanel extends StatelessWidget {
                             ),
                           ),
                           SizedBox(width: 12),
-                          Text(
+                          Tr(
                             'Account Settings',
                             style: TextStyle(
                               fontSize: 16,
@@ -5634,7 +5661,7 @@ class SettingsPanel extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
+                Tr(
                   label,
                   style: TextStyle(
                     fontSize: 12,
@@ -5659,4 +5686,12 @@ class SettingsPanel extends StatelessWidget {
       ),
     );
   }
+}
+
+class _Feature {
+  final String title, subtitle;
+  final IconData icon;
+  final Color color;
+  final VoidCallback onTap;
+  const _Feature(this.title, this.subtitle, this.icon, this.color, this.onTap);
 }

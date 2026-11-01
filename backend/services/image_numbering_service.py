@@ -7,7 +7,7 @@ from __future__ import annotations
 import re
 from typing import Any, Dict, List, Optional
 
-from docx_fields import (
+from docx_tools.docx_fields import (
     _heading_level_from_paragraph,
     is_paragraph_in_cover_or_info,
     paragraph_has_image,

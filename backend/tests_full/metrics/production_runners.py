@@ -122,7 +122,7 @@ def run_heading_analysis(
     Production heading matcher used by /api/heading-analysis and reformat:
     heading_analysis.analyze_headings + find_missing_template_headings.
     """
-    from heading_analysis import (
+    from docx_tools.heading_analysis import (
         analyze_headings,
         blocks_from_dicts,
         build_template_outline,
@@ -179,7 +179,7 @@ def run_heading_analysis(
 
 def run_list_detection(blocks: Sequence[dict]) -> Tuple[List[dict], Dict[str, Any]]:
     """Production: list_detection.detect_list_groups (also formatting pre-pass)."""
-    from list_detection import detect_list_groups
+    from docx_tools.list_detection import detect_list_groups
 
     groups = detect_list_groups(blocks) or []
     actual = []
@@ -413,12 +413,12 @@ async def run_full_analyze_pipeline(
     """
     import uuid
 
-    from aggregator import aggregate
-    from batcher import create_batches
-    from dispatcher import dispatch_all
-    from parser import parse_file
-    from reformatter import reformat_document
-    from review_blocks import strip_frontmatter_from_document
+    from pipeline.aggregator import aggregate
+    from pipeline.batcher import create_batches
+    from pipeline.dispatcher import dispatch_all
+    from pipeline.parser import parse_file
+    from docx_tools.reformatter import reformat_document
+    from docx_tools.review_blocks import strip_frontmatter_from_document
 
     client, provider = require_llm_client()
     doc_model = parse_file(saved_path, filename)

@@ -2,7 +2,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:provider/provider.dart';
-
+import '../utils/analysis_nav.dart';
 import '../providers/document_provider.dart';
 import '../providers/template_provider.dart';
 import '../providers/auth_provider.dart';
@@ -11,6 +11,7 @@ import './admin/admin_ui.dart';
 import './freeform_analyze_dialogs.dart';
 import '../screens/analyze_screen.dart';
 
+import 'tr.dart';
 class DocumentUploadWidget extends StatefulWidget {
   const DocumentUploadWidget({Key? key}) : super(key: key);
 
@@ -35,15 +36,13 @@ class _DocumentUploadWidgetState extends State<DocumentUploadWidget> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'Upload & Format Your Report',
+          Tr('Upload & Format Your Report',
             style: theme.textTheme.headlineSmall?.copyWith(
               fontWeight: FontWeight.bold,
             ),
           ),
           const SizedBox(height: 8),
-          Text(
-            'Apply professional formatting to your documents',
+          Tr('Apply professional formatting to your documents',
             style: theme.textTheme.bodySmall?.copyWith(color: Colors.white70),
           ),
           const SizedBox(height: 32),
@@ -57,8 +56,7 @@ class _DocumentUploadWidgetState extends State<DocumentUploadWidget> {
             child: Consumer<TemplateProvider>(
               builder: (_, templateProvider, __) {
                 if (templateProvider.templates.isEmpty) {
-                  return Text(
-                    'No templates available. Please contact admin.',
+                  return Tr('No templates available. Please contact admin.',
                     style: theme.textTheme.bodySmall,
                   );
                 }
@@ -81,7 +79,7 @@ class _DocumentUploadWidgetState extends State<DocumentUploadWidget> {
                         underline: const SizedBox(),
                         dropdownColor: theme.cardColor,
                         iconEnabledColor: Colors.white,
-                        hint: const Text('Choose a template'),
+                        hint: const Tr('Choose a template'),
                         style: theme.textTheme.bodyMedium,
                         items: templateProvider.templates.map((template) {
                           return DropdownMenuItem<int>(
@@ -102,8 +100,7 @@ class _DocumentUploadWidgetState extends State<DocumentUploadWidget> {
 
                     if (_selectedTemplate != null) ...[
                       const SizedBox(height: 16),
-                      Text(
-                        'Required Sections',
+                      Tr('Required Sections',
                         style: theme.textTheme.titleSmall,
                       ),
                       const SizedBox(height: 8),
@@ -126,7 +123,7 @@ class _DocumentUploadWidgetState extends State<DocumentUploadWidget> {
                       ),
                       const SizedBox(height: 12),
                       ExpansionTile(
-                        title: const Text('View Formatting Rules'),
+                        title: const Tr('View Formatting Rules'),
                         children: [
                           StylePreviewWidget(
                             formattingRules:
@@ -148,7 +145,7 @@ class _DocumentUploadWidgetState extends State<DocumentUploadWidget> {
               child: OutlinedButton.icon(
                 onPressed: _isUploading ? null : _analyzeWithoutTemplate,
                 icon: const Icon(Icons.auto_awesome, size: 18),
-                label: const Text('Analyze without template'),
+                label: const Tr('Analyze without template'),
                 style: OutlinedButton.styleFrom(
                   foregroundColor: AdminColors.primary,
                   side: BorderSide(color: AdminColors.primary.withOpacity(0.7)),
@@ -191,8 +188,7 @@ class _DocumentUploadWidgetState extends State<DocumentUploadWidget> {
                               borderRadius: BorderRadius.circular(6),
                             ),
                             padding: const EdgeInsets.symmetric(vertical: 10),
-                            child: Text(
-                              'Upload File',
+                            child: Tr('Upload File',
                               textAlign: TextAlign.center,
                               style: TextStyle(
                                 color: _isUploadMode
@@ -215,8 +211,7 @@ class _DocumentUploadWidgetState extends State<DocumentUploadWidget> {
                               borderRadius: BorderRadius.circular(6),
                             ),
                             padding: const EdgeInsets.symmetric(vertical: 10),
-                            child: Text(
-                              'Paste Content',
+                            child: Tr('Paste Content',
                               textAlign: TextAlign.center,
                               style: TextStyle(
                                 color: !_isUploadMode
@@ -263,7 +258,7 @@ class _DocumentUploadWidgetState extends State<DocumentUploadWidget> {
                         ElevatedButton.icon(
                           onPressed: _isUploading ? null : _selectFile,
                           icon: const Icon(Icons.folder_open),
-                          label: const Text('Choose File'),
+                          label: const Tr('Choose File'),
                         ),
                       ],
                     ),
@@ -282,8 +277,7 @@ class _DocumentUploadWidgetState extends State<DocumentUploadWidget> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          'Paste your content here:',
+                        Tr('Paste your content here:',
                           style: theme.textTheme.labelLarge,
                         ),
                         const SizedBox(height: 12),
@@ -523,7 +517,7 @@ class _DocumentUploadWidgetState extends State<DocumentUploadWidget> {
     }
     if (!_isUploadMode && _pasteController.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Paste content first'), backgroundColor: Colors.red),
+        const SnackBar(content: Tr('Paste content first'), backgroundColor: Colors.red),
       );
       return;
     }
@@ -555,17 +549,12 @@ class _DocumentUploadWidgetState extends State<DocumentUploadWidget> {
       return;
     }
 
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => AnalyzeScreen(
-          documentId: response!['document_id'] as int,
-          documentName: (response['filename'] ?? 'Document').toString(),
-          templateId: 0,
-          templateName: 'AI general analysis — no template applied',
-          freeformAnalysis: true,
-        ),
-      ),
-    );
+  AnalysisNav.open(AnalysisRequest(
+  documentId: response!['document_id'] as int,
+  documentName: (response['filename'] ?? 'Document').toString(),
+  templateId: 0,
+  templateName: 'AI general analysis — no template applied',
+  freeform: true,
+));
   }
 }

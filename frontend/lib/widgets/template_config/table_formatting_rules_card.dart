@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'common_widgets.dart';
 
+import '../tr.dart';
 /// Admin settings for table captions / LOT / validation.
 /// Layout matches Heading Styles / Table Styles section cards.
 class TableFormattingRulesCard extends StatelessWidget {
@@ -210,8 +211,7 @@ class TableFormattingRulesCard extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 6),
-                Text(
-                  'Placeholders: {n}, {number}, {chapter}, {description}, {caption}',
+                Tr('Placeholders: {n}, {number}, {chapter}, {description}, {caption}',
                   style: TextStyle(
                     fontSize: 11,
                     color: Colors.white.withOpacity(0.4),
@@ -273,8 +273,7 @@ class TableFormattingRulesCard extends StatelessWidget {
                   '%',
                 ),
                 const SizedBox(height: 4),
-                Text(
-                  'Warn when empty cells exceed this percentage',
+                Tr('Warn when empty cells exceed this percentage',
                   style: TextStyle(
                     fontSize: 11,
                     color: Colors.white.withOpacity(0.4),

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/upload_provider.dart';
 
+import 'tr.dart';
 class GoogleDriveBrowserWidget extends StatefulWidget {
   final int userId;
   final int templateId;
@@ -82,7 +83,7 @@ class _GoogleDriveBrowserWidgetState extends State<GoogleDriveBrowserWidget> {
                       const SizedBox(height: 12),
                       ElevatedButton(
                         onPressed: _loadFiles,
-                        child: const Text('Retry'),
+                        child: const Tr('Retry'),
                       ),
                     ],
                   ),
@@ -102,7 +103,7 @@ class _GoogleDriveBrowserWidgetState extends State<GoogleDriveBrowserWidget> {
                         color: Colors.grey.shade600,
                       ),
                       const SizedBox(height: 12),
-                      const Text('No files found'),
+                      const Tr('No files found'),
                       const SizedBox(height: 24),
                       ElevatedButton.icon(
                         onPressed: () {
@@ -112,7 +113,7 @@ class _GoogleDriveBrowserWidgetState extends State<GoogleDriveBrowserWidget> {
                           _loadFiles();
                         },
                         icon: const Icon(Icons.refresh),
-                        label: const Text('Clear Search'),
+                        label: const Tr('Clear Search'),
                       ),
                     ],
                   ),
@@ -200,7 +201,7 @@ class _GoogleDriveBrowserWidgetState extends State<GoogleDriveBrowserWidget> {
                         if (uploads.uploadErrorMessage == null) {
                           ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(
-                              content: Text('File imported successfully!'),
+                              content: Tr('File imported successfully!'),
                               backgroundColor: Colors.green,
                             ),
                           );
@@ -213,7 +214,7 @@ class _GoogleDriveBrowserWidgetState extends State<GoogleDriveBrowserWidget> {
                       height: 20,
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
-                  : const Text('Import'),
+                  : const Tr('Import'),
             )
           : Tooltip(
               message: 'Only PDF and Word documents can be imported',

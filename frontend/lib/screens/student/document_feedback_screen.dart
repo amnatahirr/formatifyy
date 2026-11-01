@@ -6,6 +6,7 @@ import '../../providers/auth_provider.dart';
 import '../../services/student_api_service.dart';
 import '../../theme/app_theme.dart';
 
+import '../../widgets/tr.dart';
 /// Student view of supervisor paragraph comments — reply + mark resolved.
 class DocumentFeedbackScreen extends StatefulWidget {
   final int groupId;
@@ -134,7 +135,7 @@ class _DocumentFeedbackScreenState extends State<DocumentFeedbackScreen> {
       await _load();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Comment marked as resolved.')),
+          const SnackBar(content: Tr('Comment marked as resolved.')),
         );
       }
     } catch (e) {
@@ -154,7 +155,7 @@ class _DocumentFeedbackScreenState extends State<DocumentFeedbackScreen> {
     final text = _controllerFor(comment.id).text.trim();
     if (text.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Enter a reply first.')),
+        const SnackBar(content: Tr('Enter a reply first.')),
       );
       return;
     }
@@ -170,7 +171,7 @@ class _DocumentFeedbackScreenState extends State<DocumentFeedbackScreen> {
       await _load();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Reply sent.')),
+          const SnackBar(content: Tr('Reply sent.')),
         );
       }
     } catch (e) {
@@ -221,7 +222,7 @@ class _DocumentFeedbackScreenState extends State<DocumentFeedbackScreen> {
                 style: TextStyle(color: Colors.white.withOpacity(0.7)),
               ),
               const SizedBox(height: 12),
-              TextButton(onPressed: _load, child: const Text('Retry')),
+              TextButton(onPressed: _load, child: const Tr('Retry')),
             ],
           ),
         ),
@@ -231,8 +232,7 @@ class _DocumentFeedbackScreenState extends State<DocumentFeedbackScreen> {
     final review = _review;
     if (review == null || review.paragraphs.isEmpty) {
       return Center(
-        child: Text(
-          'No paragraphs yet for this document.',
+        child: Tr('No paragraphs yet for this document.',
           style: TextStyle(color: Colors.white.withOpacity(0.55)),
         ),
       );
@@ -289,8 +289,7 @@ class _DocumentFeedbackScreenState extends State<DocumentFeedbackScreen> {
                 border: Border.all(color: _border),
                 boxShadow: _p.isDark ? _p.cardShadow : null,
               ),
-              child: Text(
-                'No comments on this document yet.',
+              child: Tr('No comments on this document yet.',
                 style: TextStyle(color: Colors.white.withOpacity(0.65)),
               ),
             ),
@@ -454,7 +453,7 @@ class _DocumentFeedbackScreenState extends State<DocumentFeedbackScreen> {
                               height: 16,
                               child: CircularProgressIndicator(strokeWidth: 2),
                             )
-                          : const Text('Reply'),
+                          : const Tr('Reply'),
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -465,15 +464,14 @@ class _DocumentFeedbackScreenState extends State<DocumentFeedbackScreen> {
                         backgroundColor: const Color(0xFF10B981),
                         foregroundColor: Colors.white,
                       ),
-                      child: const Text('Mark Resolved'),
+                      child: const Tr('Mark Resolved'),
                     ),
                   ),
                 ],
               ),
             ] else if (comment.isResolved && !isReply) ...[
               const SizedBox(height: 8),
-              Text(
-                'Resolved',
+              Tr('Resolved',
                 style: TextStyle(
                   color: const Color(0xFF10B981),
                   fontSize: 12,

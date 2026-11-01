@@ -19,7 +19,11 @@ import '../models/json_parse.dart';
 import '../services/image_replacement_service.dart';
 import ' image_formatter_screen.dart';
 import '../widgets/reference_formatter_widget.dart';
-
+import '../providers/analysis_job_provider.dart';
+import '../main.dart' show navigatorKey; 
+import '../utils/analysis_nav.dart';
+import 'dart:async';
+import '../widgets/tr.dart';
 // ─────────────────────────────────────────────────────────────────────────────
 // Color palette — follows ThemeProvider (light / dark)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -191,6 +195,7 @@ class AnalyzeScreen extends StatefulWidget {
   final String templateName;
   /// When true, uses /documents/analyze-freeform and AI-guided export UI.
   final bool freeformAnalysis;
+  final bool embedded;
 
   const AnalyzeScreen({
     Key? key,
@@ -199,6 +204,7 @@ class AnalyzeScreen extends StatefulWidget {
     required this.templateId,
     required this.templateName,
     this.freeformAnalysis = false,
+    this.embedded = false,
   }) : super(key: key);
 
   @override
@@ -217,6 +223,10 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
   bool _isDownloading = false;
   bool _isSavingFormatted = false;
   bool _formattedSaved = false;
+  Timer? _autoSaveDebounce;
+Timer? _autoSavePeriodic;
+bool _autoSaveDirty = false;
+DateTime? _lastSavedAt;
   /// True briefly after analyze HTTP succeeds so the progress UI can show Finalizing.
   bool _analysisComplete = false;
   /// Bumped on each analyze run so the progress panel resets its stages.
@@ -234,9 +244,20 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
   List<Map<String, dynamic>> _freeformSuggestedFixes = [];
   List<Map<String, dynamic>> _freeformManualNotes = [];
 
+late final AnalysisJobProvider _jobs;
+late final DocumentProvider _docs;
+late final AuthProvider _auth;
+
+
+
+
   // Document review preview state
   Map<String, dynamic> _analysisData = {};
   List<Map<String, dynamic>> _previewBlocks = [];
+  List<Map<String, dynamic>> _documentBlocks = [];
+  List<Map<String, dynamic>> _missingSectionPreviews = [];
+  final Map<String, GlobalKey> _ghostKeys = {};
+  String? _flashGhostIssueId;
   int _imageVersion = 0; // replace ke baad image URLs ka cache todne ke liye
   List<Map<String, dynamic>> _pipelineIssues = [];
   final Map<String, String> _appliedFixes = {};
@@ -307,6 +328,13 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
   @override
   void initState() {
     super.initState();
+     if (!widget.embedded) {
+    debugPrint('!!! AnalyzeScreen opened NON-embedded. Caller:\n${StackTrace.current}');
+  }
+    _jobs = context.read<AnalysisJobProvider>();
+    _docs = context.read<DocumentProvider>();
+_auth = context.read<AuthProvider>();
+  _jobs.activeDocId = widget.documentId;
     _tabController = TabController(length: 9, vsync: this);
     _tabController.addListener(_onAnalysisTabChanged);
     _baseUrl = ApiConfig.getBaseUrl();
@@ -327,27 +355,27 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
 
 
     /// Runs analysis while the staged progress panel advances through named steps.
-  Future<Map<String, dynamic>> _runAnalysisWithProgress() async {
-    _analysisComplete = false;
-    _analyzeProgressGen++;
-    try {
-      final data = await _fetchAnalysis();
-      if (mounted) {
-        setState(() {
-          _seedFromAnalysis(data);
-          _analysisComplete = true;
-        });
-        // After analyze finishes (it rebuilds the working copy), not in parallel.
-        _loadTables();
-        // Let the user see "Finalizing" before swapping to results.
-        await Future.delayed(const Duration(milliseconds: 500));
-      }
-      return data;
-    } catch (_) {
-      if (mounted) setState(() => _analysisComplete = false);
-      rethrow;
+ Future<Map<String, dynamic>> _runAnalysisWithProgress({bool force = false}) async {
+  _analysisComplete = false;
+  _analyzeProgressGen++;
+  try {
+    final data = await _fetchAnalysis(force: force);
+    if (mounted) {
+      setState(() {
+        _seedFromAnalysis(data);
+        _analysisComplete = true;
+      });
+      _loadTables();
+      _startAutoSaveTimer();
+      _markDirty();
+      await Future.delayed(const Duration(milliseconds: 500));
     }
+    return data;
+  } catch (_) {
+    if (mounted) setState(() => _analysisComplete = false);
+    rethrow;
   }
+}
 
   void _onAnalysisTabChanged() {
     if (_tabController.indexIsChanging) return;
@@ -365,11 +393,23 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
   }
 
   @override
-  void dispose() {
-    _tabController.removeListener(_onAnalysisTabChanged);
-    _tabController.dispose();
-    super.dispose();
+void dispose() {
+  // Auto-save timers band karo
+  _autoSaveDebounce?.cancel();
+  _autoSavePeriodic?.cancel();
+
+  // Aakhri pending save (best effort). dispose mein setState nahi chalta,
+  // isliye yahan _autoSave ki jagah seedha provider call karte hain.
+  final userId = _auth.userId;
+  if (_autoSaveDirty && userId != null) {
+    _docs.saveFormattedDocument(widget.documentId, userId);
   }
+
+  if (_jobs.activeDocId == widget.documentId) _jobs.activeDocId = null;
+  _tabController.removeListener(_onAnalysisTabChanged);
+  _tabController.dispose();
+  super.dispose();
+}
 
   String get _imageHostBase {
     final uri = Uri.tryParse(_baseUrl);
@@ -458,11 +498,12 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
   /// build(): doing so reset every applied fix on the next rebuild.
   void _seedFromAnalysis(Map<String, dynamic> data) {
     _analysisData = data;
-    _previewBlocks = _asBlockList(
+    _documentBlocks = _asBlockList(
       data['document_blocks'] as List<dynamic>? ??
           data['document_content'] as List<dynamic>? ??
           [],
     );
+    _previewBlocks = List<Map<String, dynamic>>.from(_documentBlocks);
     _pipelineIssues = (data['issues'] as List<dynamic>? ?? [])
         .map((i) => Map<String, dynamic>.from(i as Map))
         .toList();
@@ -473,6 +514,120 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
     _appliedTemplateHeadingFixes.clear();
     _ignoredIssueIds.clear();
     _resolvedIssueIds.clear();
+    _missingSectionPreviews = [];
+    _rebuildGhostDisplay();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadMissingSectionPreviews();
+    });
+  }
+
+  void _rebuildGhostDisplay() {
+    _previewBlocks = _mergeGhostBlocks(_documentBlocks, _missingSectionPreviews);
+  }
+
+  List<Map<String, dynamic>> _mergeGhostBlocks(
+    List<Map<String, dynamic>> real,
+    List<Map<String, dynamic>> previews,
+  ) {
+    final ghosts = <Map<String, dynamic>>[];
+    for (final p in previews) {
+      final id = p['issue_id'] as String? ?? '';
+      if (id.isNotEmpty &&
+          (_ignoredIssueIds.contains(id) || _resolvedIssueIds.contains(id))) {
+        continue;
+      }
+      if (id.isNotEmpty) {
+        _ghostKeys.putIfAbsent(id, () => GlobalKey());
+      }
+      ghosts.add({
+        'type': 'ghost_heading',
+        'issue_id': id,
+        'text': p['name'] ?? '',
+        'level': p['level'] ?? 1,
+        'guidance_text': p['guidance_text'],
+        'suggested_content': p['suggested_content'],
+        'placeholder_text': p['placeholder_text'],
+        'is_placeholder': true,
+        'insert_before_paragraph_id': p['insert_before_paragraph_id'],
+        'page': p['page'] ?? 1,
+      });
+    }
+    final out = <Map<String, dynamic>>[];
+    final used = <int>{};
+    for (final b in real) {
+      final pid = b['paragraph_id'] as String? ?? '';
+      for (var i = 0; i < ghosts.length; i++) {
+        if (used.contains(i)) continue;
+        final before = ghosts[i]['insert_before_paragraph_id'];
+        if (before != null && before.toString() == pid) {
+          out.add(ghosts[i]);
+          used.add(i);
+        }
+      }
+      out.add(b);
+    }
+    for (var i = 0; i < ghosts.length; i++) {
+      if (!used.contains(i)) out.add(ghosts[i]);
+    }
+    return out;
+  }
+
+  Future<void> _loadMissingSectionPreviews() async {
+    final userId = _auth.userId;
+    if (userId == null || !mounted) return;
+    try {
+      final guidance = await _docs.fetchMissingSectionPreviews(
+        widget.documentId,
+        suggest: false,
+        userId: userId,
+      );
+      if (!mounted) return;
+      setState(() {
+        _missingSectionPreviews = guidance;
+        _rebuildGhostDisplay();
+      });
+      final withAi = await _docs.fetchMissingSectionPreviews(
+        widget.documentId,
+        suggest: true,
+        userId: userId,
+      );
+      if (!mounted) return;
+      setState(() {
+        _missingSectionPreviews = withAi;
+        _rebuildGhostDisplay();
+      });
+    } catch (_) {}
+  }
+
+  void _showGhostInPreview(String issueId) {
+    _goToTab(0);
+    setState(() => _flashGhostIssueId = issueId);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final ctx = _ghostKeys[issueId]?.currentContext;
+      if (ctx != null) {
+        Scrollable.ensureVisible(
+          ctx,
+          duration: const Duration(milliseconds: 280),
+          alignment: 0.2,
+        );
+      } else {
+        Future<void>.delayed(const Duration(milliseconds: 350), () {
+          final later = _ghostKeys[issueId]?.currentContext;
+          if (later != null) {
+            Scrollable.ensureVisible(
+              later,
+              duration: const Duration(milliseconds: 280),
+              alignment: 0.2,
+            );
+          }
+        });
+      }
+      Future<void>.delayed(const Duration(milliseconds: 900), () {
+        if (mounted && _flashGhostIssueId == issueId) {
+          setState(() => _flashGhostIssueId = null);
+        }
+      });
+    });
   }
 
 
@@ -503,12 +658,14 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
       }
       final blocks = data['document_blocks'] as List<dynamic>?;
       if (blocks != null && blocks.isNotEmpty) {
-        _previewBlocks = _bustImageUrls(
+        _documentBlocks = _bustImageUrls(
           blocks.map((b) => Map<String, dynamic>.from(b as Map)).toList(),
         );
+        _rebuildGhostDisplay();
       }
       _isFixApplied = true;
     });
+     _markDirty();
   }
 
   int _headingLevelFromMatch(Map<String, dynamic> match) {
@@ -774,6 +931,9 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
     final isHeadingFix = fn.contains('format') && issueType == 'heading_style';
     final isBulletFix = issueType == 'missing_bullets';
     final isParaRel = fn.contains('para') && fn.contains('relevance');
+    final isMissingSection =
+        issueType == 'missing_section' ||
+            (issue['fix_type'] as String? ?? '') == 'insert_missing_section';
 
     if (isParaRel) {
       _showSnack(
@@ -783,7 +943,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
       return false;
     }
 
-    if (!isBulletFix && pid.isEmpty) return false;
+    if (!isBulletFix && !isMissingSection && pid.isEmpty) return false;
 
     final body = <String, dynamic>{
       'paragraph_id': pid,
@@ -798,6 +958,27 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
       body['para_indices'] = issue['para_indices'] ??
           (issue['fix_details'] as Map<String, dynamic>?)?['para_indices'] ??
           [];
+    } else if (isMissingSection) {
+      final details = (issue['fix_details'] as Map?)?.cast<String, dynamic>() ??
+          <String, dynamic>{};
+      final sectionName = (issue['section_name'] as String? ??
+              details['section_name'] as String? ??
+              issue['matched_template_heading'] as String? ??
+              '')
+          .toString()
+          .trim();
+      final level = issue['level'] ??
+          issue['heading_level'] ??
+          details['level'] ??
+          1;
+      body['fix_type'] = 'insert_missing_section';
+      body['section_name'] = sectionName;
+      body['level'] = level;
+      body['content'] = correctedText;
+      body['fix_details'] = {
+        'section_name': sectionName,
+        'level': level,
+      };
     }
     try {
       final resp = await http.post(
@@ -865,12 +1046,13 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
       } else if (passed && issueId != null && issueId.isNotEmpty) {
         _resolvedIssueIds.add(issueId);
       }
-      _previewBlocks = _previewBlocks.map((b) {
+      _documentBlocks = _documentBlocks.map((b) {
         if (newPath.isNotEmpty && jsonIntOr(b['image_index'], -1) == imageIndex) {
           return {...b, 'image_path': '$newPath?v=$cacheBust'};
         }
         return b;
       }).toList();
+      _rebuildGhostDisplay();
       _isFixApplied = true;
     });
     _showSnack(
@@ -945,26 +1127,71 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
   }
 
   void _handlePreviewApplyFix(String issueId, String correctedText) {
-    final issue = _pipelineIssues.firstWhere(
+    var issue = _pipelineIssues.firstWhere(
       (i) => i['issue_id'] == issueId,
       orElse: () => {},
     );
+    Map<String, dynamic> preview = {};
+    for (final p in _missingSectionPreviews) {
+      if ((p['issue_id'] as String? ?? '') == issueId) {
+        preview = p;
+        break;
+      }
+    }
+    if (issue.isEmpty && preview.isNotEmpty) {
+      issue = {
+        'issue_id': issueId,
+        'type': 'missing_section',
+        'fix_type': 'insert_missing_section',
+        'section_name': preview['name'],
+        'level': preview['level'] ?? 1,
+        'fix_details': {
+          'section_name': preview['name'],
+          'level': preview['level'] ?? 1,
+        },
+      };
+    }
     if (issue.isEmpty) return;
+    if (preview.isNotEmpty) {
+      issue['section_name'] ??= preview['name'];
+      issue['level'] ??= preview['level'] ?? 1;
+      issue['fix_type'] ??= 'insert_missing_section';
+      final details = (issue['fix_details'] as Map?)?.cast<String, dynamic>() ??
+          <String, dynamic>{};
+      details['section_name'] ??= preview['name'];
+      details['level'] ??= preview['level'] ?? 1;
+      issue['fix_details'] = details;
+    }
     final pid = issue['paragraph_id'] as String? ?? '';
+    final isMissingSection =
+        (issue['type'] as String? ?? '') == 'missing_section' ||
+            (issue['fix_type'] as String? ?? '') == 'insert_missing_section';
     setState(() {
       if (pid.isNotEmpty) _appliedFixes[pid] = correctedText;
       _ignoredIssueIds.remove(issueId);
       _isFixApplied = true;
     });
     _applyContentFixToBackend(issue, correctedText).then((ok) {
-      if (!ok && mounted) {
+      if (!mounted) return;
+      if (!ok) {
         setState(() => _resolvedIssueIds.remove(issueId));
+        return;
+      }
+      setState(() {
+        _resolvedIssueIds.add(issueId);
+        _rebuildGhostDisplay();
+      });
+      if (isMissingSection) {
+        _loadMissingSectionPreviews();
       }
     });
   }
 
   void _handlePreviewIgnore(String issueId) {
-    setState(() => _ignoredIssueIds.add(issueId));
+    setState(() {
+      _ignoredIssueIds.add(issueId);
+      _rebuildGhostDisplay();
+    });
   }
 
   /// Collects every fix "Apply All Fixes" can push to the backend.
@@ -1487,7 +1714,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: _surface,
-        title: Text('Remove Image?', style: TextStyle(color: _textPri)),
+        title: Tr('Remove Image?', style: TextStyle(color: _textPri)),
         content: Text(
           'This permanently deletes the image from the document. '
           'A nearby figure caption will also be removed if present.',
@@ -1496,7 +1723,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: Text('Cancel', style: TextStyle(color: _textSec)),
+            child: Tr('Cancel', style: TextStyle(color: _textSec)),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
@@ -1504,7 +1731,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
               foregroundColor: Colors.white,
             ),
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Remove'),
+            child: const Tr('Remove'),
           ),
         ],
       ),
@@ -1528,52 +1755,50 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
     }
   }
 
-  // ── API — analysis ────────────────────────────────────────────────────────
+ Future<Map<String, dynamic>> _fetchAnalysis({bool force = false}) async {
+  _styleIssuesInitialized = false;
+  final userId = context.read<AuthProvider>().userId!;
+  final docProvider = context.read<DocumentProvider>();
 
-  Future<Map<String, dynamic>> _fetchAnalysis() async {
-    // Reset so _buildBody re-seeds _styleIssues from fresh server data
-    _styleIssuesInitialized = false;
-    final auth = context.read<AuthProvider>();
-    final path = widget.freeformAnalysis
-        ? '$_baseUrl/documents/analyze-freeform/${widget.documentId}'
-        : '$_baseUrl/documents/analyze/${widget.documentId}';
-    final resp = await http.get(
-      Uri.parse('$path?user_id=${auth.userId}'),
-      headers: ApiConfig.getHeaders(),
+  // Closure captures plain values only (screen may be gone when it runs).
+  final id = widget.documentId;
+  final name = widget.documentName;
+  final tId = widget.templateId;
+  final tName = widget.templateName;
+  final freeform = widget.freeformAnalysis;
+
+  final data = await _jobs.startOrAttach(
+    documentId: id,
+    userId: userId,
+    name: name,
+    freeform: freeform,
+    force: force,
+  onOpen: () => AnalysisNav.open(AnalysisRequest(
+  documentId: id,
+  documentName: name,
+  templateId: tId,
+  templateName: tName,
+  freeform: freeform,
+)),
+  );
+
+  if (freeform) {
+    _freeformSuggestedFixes = List<Map<String, dynamic>>.from(
+      ((data['suggested_fixes'] as List?) ?? const [])
+          .map((e) => Map<String, dynamic>.from(e as Map)),
     );
-    if (resp.statusCode != 200) {
-      throw Exception('Analysis failed (${resp.statusCode}): ${resp.body}');
-    }
-    final data = jsonDecode(resp.body) as Map<String, dynamic>;
-    debugPrint(
-      '[AnalyzeScreen] structure score : ${(data["structure"] as Map?)?["score"]}',
+    _freeformManualNotes = List<Map<String, dynamic>>.from(
+      ((data['suggested_manual_notes'] as List?) ?? const [])
+          .map((e) => Map<String, dynamic>.from(e as Map)),
     );
-    debugPrint(
-      '[AnalyzeScreen] table_issues    : ${(data["table_issues"] as List?)?.length}',
-    );
-    if (widget.freeformAnalysis) {
-      _freeformSuggestedFixes = List<Map<String, dynamic>>.from(
-        ((data['suggested_fixes'] as List?) ?? const []).map(
-          (e) => Map<String, dynamic>.from(e as Map),
-        ),
-      );
-      _freeformManualNotes = List<Map<String, dynamic>>.from(
-        ((data['suggested_manual_notes'] as List?) ?? const []).map(
-          (e) => Map<String, dynamic>.from(e as Map),
-        ),
-      );
-    }
-    // Persist slim report on DocumentProvider for final_submissions (no recompute).
-    try {
-      context.read<DocumentProvider>().cacheAnalysisReport(
-        widget.documentId,
-        data,
-      );
-    } catch (e) {
-      debugPrint('[AnalyzeScreen] cacheAnalysisReport skipped: $e');
-    }
-    return data;
   }
+  try {
+    docProvider.cacheAnalysisReport(id, data);
+  } catch (e) {
+    debugPrint('[AnalyzeScreen] cacheAnalysisReport skipped: $e');
+  }
+  return data;
+}
 
   // ── API — heading style check ─────────────────────────────────────────────
 
@@ -1993,8 +2218,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
       builder: (ctx) {
         return AlertDialog(
           backgroundColor: _surface,
-          title: Text(
-            'Fill empty cell',
+          title: Tr('Fill empty cell',
             style: TextStyle(color: _textPri, fontSize: 16, fontWeight: FontWeight.w700),
           ),
           content: Column(
@@ -2036,7 +2260,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
           actions: [
             TextButton(
               onPressed: () => Navigator.of(ctx).pop(),
-              child: Text('Cancel', style: TextStyle(color: _textSec)),
+              child: Tr('Cancel', style: TextStyle(color: _textSec)),
             ),
             ElevatedButton(
               onPressed: () => Navigator.of(ctx).pop(controller.text.trim()),
@@ -2044,7 +2268,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
                 backgroundColor: _blue,
                 foregroundColor: Colors.white,
               ),
-              child: const Text('Save to cell'),
+              child: const Tr('Save to cell'),
             ),
           ],
         );
@@ -2498,41 +2722,61 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
     }
   }
 
-  Future<void> _saveFormattedDocument() async {
-    if (_isSavingFormatted) return;
-    final auth = context.read<AuthProvider>();
-    final userId = auth.userId;
-    if (userId == null) {
-      _showSnack('Please sign in again to save.', _red);
-      return;
-    }
 
-    setState(() { _isSavingFormatted = true; });
-    try {
-      final docProvider = context.read<DocumentProvider>();
-      final success = await docProvider.saveFormattedDocument(
-        widget.documentId,
-        userId,
-      );
-      if (!mounted) return;
-      if (success) {
-        setState(() { _formattedSaved = true; });
-        _showSnack(
-          'Formatted document saved to My Reports. Open the report card to access Unformatted and Formatted versions.',
-          _green,
-        );
-      } else {
-        _showSnack(
-          docProvider.errorMessage ?? 'Could not save formatted document.',
-          _red,
-        );
-      }
-    } catch (e) {
-      if (mounted) _showSnack('Save error: $e', _red);
-    } finally {
-      if (mounted) setState(() { _isSavingFormatted = false; });
+void _markDirty() {
+  if (!_analysisComplete) return;
+  _autoSaveDirty = true;
+  _autoSaveDebounce?.cancel();
+  _autoSaveDebounce = Timer(const Duration(seconds: 2), _autoSave);
+}
+
+void _startAutoSaveTimer() {
+  _autoSavePeriodic?.cancel();
+  _autoSavePeriodic = Timer.periodic(const Duration(seconds: 20), (_) {
+    if (_autoSaveDirty) _autoSave();
+  });
+}
+
+
+
+String get _autoSaveLabel {
+  if (_isSavingFormatted) return 'Saving...';
+  if (_autoSaveDirty) return 'Unsaved changes';
+  if (_lastSavedAt != null) return 'All changes saved';
+  return 'Not saved yet';
+}
+
+
+
+
+Future<void> _autoSave() async {
+  if (_isSavingFormatted || !mounted) return;
+  final userId = _auth.userId;
+  if (userId == null) return;
+  debugPrint('[AutoSave] saving... ${DateTime.now()}');
+
+  _autoSaveDirty = false;
+  setState(() => _isSavingFormatted = true);
+  try {
+    final ok = await _docs.saveFormattedDocument(widget.documentId, userId);
+    debugPrint('[AutoSave] result: $ok'); 
+    if (!mounted) return;
+    if (ok) {
+      setState(() {
+        _formattedSaved = true;
+        _lastSavedAt = DateTime.now();
+      });
+    } else {
+      _autoSaveDirty = true;
     }
+  } catch (e) {
+    _autoSaveDirty = true;
+    debugPrint('[AutoSave] failed: $e');
+  } finally {
+    if (mounted) setState(() => _isSavingFormatted = false);
   }
+}
+
 
   Future<void> _renameThisDocument() async {
     final userId = context.read<AuthProvider>().userId;
@@ -2548,7 +2792,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: _surface,
-        title: Text('Rename Report', style: TextStyle(color: _textPri)),
+        title: Tr('Rename Report', style: TextStyle(color: _textPri)),
         content: TextField(
           controller: controller,
           autofocus: true,
@@ -2563,11 +2807,11 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: Text('Cancel', style: TextStyle(color: _textSec)),
+            child: Tr('Cancel', style: TextStyle(color: _textSec)),
           ),
           ElevatedButton(
             onPressed: () => Navigator.pop(ctx, controller.text.trim()),
-            child: const Text('Save'),
+            child: const Tr('Save'),
           ),
         ],
       ),
@@ -2692,42 +2936,44 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
 
   // ── Build ─────────────────────────────────────────────────────────────────
 
-  @override
-  Widget build(BuildContext context) {
-    _ap = context.watch<ThemeProvider>().palette;
-    return Scaffold(
-      backgroundColor: Colors.transparent,
-      body: _ap.ambientGlowBackdrop(
-        child: Row(
-          children: [
-            AppSidebar(
-              selectedIndex: _selectedSidebarIndex,
-              onItemSelected: _handleSidebarSelection,
-            ),
-            Expanded(
-              child: Column(
-                children: [
-                  _buildTopBar(),
-                  Expanded(
-                    child: FutureBuilder<Map<String, dynamic>>(
-                      future: _analysisFuture,
-                      builder: (ctx, snap) {
-                        if (snap.connectionState == ConnectionState.waiting)
-                          return _buildLoading();
-                        if (snap.hasError)
-                          return _buildError(snap.error.toString());
-                        return _buildBody(snap.data ?? {});
-                      },
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
+  Widget _buildMain() => Column(
+  children: [
+    _buildTopBar(),
+    Expanded(
+      child: FutureBuilder<Map<String, dynamic>>(
+        future: _analysisFuture,
+        builder: (ctx, snap) {
+          if (snap.connectionState == ConnectionState.waiting) return _buildLoading();
+          if (snap.hasError) return _buildError(snap.error.toString());
+          return _buildBody(snap.data ?? {});
+        },
       ),
-    );
+    ),
+  ],
+);
+
+@override
+Widget build(BuildContext context) {
+  _ap = context.watch<ThemeProvider>().palette;
+  if (widget.embedded) {
+    return Material(color: Colors.transparent, child: _buildMain());
   }
+  return Scaffold(
+    backgroundColor: Colors.transparent,
+    body: _ap.ambientGlowBackdrop(
+      child: Row(
+        children: [
+          AppSidebar(
+            selectedIndex: _selectedSidebarIndex,
+            onItemSelected: _handleSidebarSelection,
+          ),
+          Expanded(child: _buildMain()),
+        ],
+      ),
+    ),
+  );
+}
+           
 
   // ── Top bar ───────────────────────────────────────────────────────────────
 
@@ -2742,14 +2988,13 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
         children: [
           IconButton(
             icon: Icon(Icons.arrow_back, color: _textPri),
-            onPressed: () => Navigator.pop(context),
+           onPressed: () => widget.embedded ? AnalysisNav.close() : Navigator.pop(context),
           ),
           const SizedBox(width: 10),
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                'Analysis Report',
+              Tr('Analysis Report',
                 style: TextStyle(
                   color: _textPri,
                   fontSize: 17,
@@ -2818,17 +3063,33 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
     );
   }
 
-  Widget _buildLoading() => AnalyzeProgressPanel(
-        key: ValueKey('analyze_progress_$_analyzeProgressGen'),
-        documentName: widget.documentName,
-        accent: _blue,
-        textPrimary: _textPri,
-        textSecondary: _textSec,
-        surface: _surface,
-        border: _border,
-        track: _surface2,
-        isComplete: _analysisComplete,
-      );
+ Widget _buildLoading() => Stack(
+  children: [
+    AnalyzeProgressPanel(
+      key: ValueKey('analyze_progress_$_analyzeProgressGen'),
+      documentName: widget.documentName,
+      accent: _blue,
+      textPrimary: _textPri,
+      textSecondary: _textSec,
+      surface: _surface,
+      border: _border,
+      track: _surface2,
+      isComplete: _analysisComplete,
+    ),
+    Positioned(
+      left: 0, right: 0, bottom: 24,
+      child: Center(
+        child: OutlinedButton.icon(
+          icon: const Icon(Icons.open_in_new, size: 16),
+          label: const Tr('Continue in background'),
+         onPressed: () => widget.embedded
+    ? AnalysisNav.close()
+    : _handleSidebarSelection(0),
+        ),
+      ),
+    ),
+  ],
+);
 
   Widget _buildError(String msg) => Center(
     child: Column(
@@ -2847,9 +3108,9 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
         const SizedBox(height: 16),
         ElevatedButton(
           onPressed: () => setState(() {
-            _analysisFuture = _runAnalysisWithProgress();
+            _analysisFuture = _runAnalysisWithProgress(force:true);
           }),
-          child: const Text('Retry'),
+          child: const Tr('Retry'),
         ),
       ],
     ),
@@ -3233,7 +3494,7 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
                             ? null
                             : () => _decideExtraHeading(match, 'discard'),
                         icon: const Icon(Icons.close, size: 16),
-                        label: const Text('Discard'),
+                        label: const Tr('Discard'),
                         style: OutlinedButton.styleFrom(
                           foregroundColor: _textSec,
                           side: BorderSide(color: _textSec.withOpacity(0.4)),
@@ -3276,8 +3537,7 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
                 !isUnnumberedSub &&
                 !isClaudeExtra) ...[
               const SizedBox(height: 8),
-              Text(
-                'This heading is not in your template outline. No automatic rename is applied.',
+              Tr('This heading is not in your template outline. No automatic rename is applied.',
                 style: TextStyle(color: _yellow.withOpacity(0.9), fontSize: 11),
               ),
             ],
@@ -3372,8 +3632,7 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
                   children: [
                     _StatusBadge(status),
                     const SizedBox(width: 12),
-                    Text(
-                      'Structure Score',
+                    Tr('Structure Score',
                       style: TextStyle(
                         color: _textPri,
                         fontSize: 15,
@@ -3442,6 +3701,8 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
       appliedFixes: _appliedFixes,
       ignoredIssueIds: _ignoredIssueIds,
       resolvedIssueIds: _resolvedIssueIds,
+      ghostKeys: _ghostKeys,
+      flashGhostIssueId: _flashGhostIssueId,
       onApplyFix: _handlePreviewApplyFix,
       onIgnoreIssue: _handlePreviewIgnore,
       onImageReplaced: (result, issue) => _handleImageReplaceSuccess(
@@ -3516,8 +3777,7 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
           children: [
             const Icon(Icons.format_size, color: _blue, size: 18),
             const SizedBox(width: 8),
-            Text(
-              'Heading Style Compliance',
+            Tr('Heading Style Compliance',
               style: TextStyle(
                 color: _textPri,
                 fontSize: 15,
@@ -3538,14 +3798,13 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
                   _loadHeadingStyleCheck();
                 },
                 icon: const Icon(Icons.refresh, size: 13),
-                label: const Text('Refresh', style: TextStyle(fontSize: 11)),
+                label: const Tr('Refresh', style: TextStyle(fontSize: 11)),
                 style: TextButton.styleFrom(foregroundColor: _textSec),
               ),
           ],
         ),
         const SizedBox(height: 4),
-        Text(
-          'Checks if each required heading exists and has the correct font, size, and bold settings per the template.',
+        Tr('Checks if each required heading exists and has the correct font, size, and bold settings per the template.',
           style: TextStyle(color: _textSec, fontSize: 11, height: 1.4),
         ),
         const SizedBox(height: 12),
@@ -3574,8 +3833,7 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
                     Icon(Icons.info_outline, color: _blue, size: 16),
                     SizedBox(width: 8),
                     Expanded(
-                      child: Text(
-                        'Heading styles have not been applied yet.',
+                      child: Tr('Heading styles have not been applied yet.',
                         style: TextStyle(
                           color: _blue,
                           fontSize: 13,
@@ -3586,8 +3844,7 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
                   ],
                 ),
                 const SizedBox(height: 6),
-                Text(
-                  'Apply template heading styles first so the compliance check can accurately report PASS/FAIL for each section.',
+                Tr('Apply template heading styles first so the compliance check can accurately report PASS/FAIL for each section.',
                   style: TextStyle(color: _textSec, fontSize: 11, height: 1.4),
                 ),
                 const SizedBox(height: 14),
@@ -3645,8 +3902,7 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
               children: [
                 Icon(Icons.check_circle_outline, color: _green, size: 16),
                 SizedBox(width: 10),
-                Text(
-                  'All headings have correct template styling  ✓',
+                Tr('All headings have correct template styling  ✓',
                   style: TextStyle(color: _green, fontSize: 13),
                 ),
               ],
@@ -3734,8 +3990,7 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
                       ),
                       const SizedBox(height: 3),
                       if (status == 'missing')
-                        Text(
-                          'Heading not found in document',
+                        Tr('Heading not found in document',
                           style: TextStyle(
                             color: _red.withOpacity(0.8),
                             fontSize: 11,
@@ -3781,8 +4036,7 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Text(
-                              'EXPECTED',
+                            const Tr('EXPECTED',
                               style: TextStyle(
                                 color: _green,
                                 fontSize: 9,
@@ -3828,8 +4082,7 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Text(
-                              'ACTUAL',
+                            const Tr('ACTUAL',
                               style: TextStyle(
                                 color: _red,
                                 fontSize: 9,
@@ -3890,8 +4143,7 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
                           children: [
                             Icon(Icons.check, color: _green, size: 14),
                             SizedBox(width: 8),
-                            Text(
-                              'Heading styling matches template',
+                            Tr('Heading styling matches template',
                               style: TextStyle(
                                 color: _green,
                                 fontSize: 12,
@@ -3967,8 +4219,7 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
           children: [
             const Icon(Icons.article_outlined, color: _purple, size: 18),
             const SizedBox(width: 8),
-            Text(
-              'Paragraph Style Compliance',
+            Tr('Paragraph Style Compliance',
               style: TextStyle(
                 color: _textPri,
                 fontSize: 15,
@@ -4011,14 +4262,13 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
                   _loadParagraphStyleCheck();
                 },
                 icon: const Icon(Icons.refresh, size: 13),
-                label: const Text('Refresh', style: TextStyle(fontSize: 11)),
+                label: const Tr('Refresh', style: TextStyle(fontSize: 11)),
                 style: TextButton.styleFrom(foregroundColor: _textSec),
               ),
           ],
         ),
         const SizedBox(height: 4),
-        Text(
-          'Scans all body paragraphs for font, size, alignment, and line-spacing compliance.',
+        Tr('Scans all body paragraphs for font, size, alignment, and line-spacing compliance.',
           style: TextStyle(color: _textSec, fontSize: 11, height: 1.4),
         ),
         const SizedBox(height: 12),
@@ -4042,8 +4292,7 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
               children: [
                 Icon(Icons.check_circle_outline, color: _green, size: 16),
                 SizedBox(width: 10),
-                Text(
-                  'All paragraphs match template styling  ✓',
+                Tr('All paragraphs match template styling  ✓',
                   style: TextStyle(color: _green, fontSize: 13),
                 ),
               ],
@@ -4404,8 +4653,7 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'Layer 2 — Heading Match Method',
+          Tr('Layer 2 — Heading Match Method',
             style: TextStyle(
               color: _textSec,
               fontSize: 11,
@@ -4648,8 +4896,7 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
           const SizedBox(height: 10),
           Row(
             children: [
-              Text(
-                'Mismatch confidence: ',
+              Tr('Mismatch confidence: ',
                 style: TextStyle(color: _textSec, fontSize: 10),
               ),
               Expanded(
@@ -4772,15 +5019,27 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
               child: _DiffRow(label: 'Suggestion', text: suggestion, color: _green),
             ),
           const SizedBox(height: 12),
+          if (issueType == 'missing_section' && issueId.isNotEmpty) ...[
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: () => _showGhostInPreview(issueId),
+                icon: const Icon(Icons.visibility_outlined, size: 16),
+                label: const Tr('Show in preview'),
+              ),
+            ),
+            const SizedBox(height: 8),
+          ],
           Row(
             children: [
               Expanded(
                 child: OutlinedButton(
                   onPressed: () {
                     setState(() => _ignoredIssueIds.add(issueId));
+                    _rebuildGhostDisplay();
                     _showSnack('Issue ignored', _textSec);
                   },
-                  child: const Text('Ignore'),
+                  child: const Tr('Ignore'),
                 ),
               ),
               const SizedBox(width: 10),
@@ -5261,16 +5520,14 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      'FYP Image Formatter',
+                    Tr('FYP Image Formatter',
                       style: TextStyle(
                         color: _textPri,
                         fontSize: 14,
                         fontWeight: FontWeight.w700,
                       ),
                     ),
-                    Text(
-                      'Academic-standard formatting for all images',
+                    Tr('Academic-standard formatting for all images',
                       style: TextStyle(color: _textSec, fontSize: 11),
                     ),
                   ],
@@ -5307,7 +5564,7 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
                     ),
                   ),
               icon: const Icon(Icons.auto_fix_high, size: 16),
-              label: const Text('Open Image Formatter'),
+              label: const Tr('Open Image Formatter'),
             ),
           ),
         ],
@@ -5398,6 +5655,19 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
               ),
             ],
           ],
+          if (((issue['type'] as String? ?? '') == 'missing_section') &&
+              ((issue['issue_id'] as String? ?? '').isNotEmpty)) ...[
+            const SizedBox(height: 10),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: () =>
+                    _showGhostInPreview(issue['issue_id'] as String),
+                icon: const Icon(Icons.visibility_outlined, size: 16),
+                label: const Tr('Show in preview'),
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -5471,8 +5741,7 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
               children: [
                 const Icon(Icons.block, color: _red, size: 16),
                 const SizedBox(width: 8),
-                const Text(
-                  '🚫  Unethical Image Detected',
+                const Tr('🚫  Unethical Image Detected',
                   style: TextStyle(
                     color: _red,
                     fontSize: 13,
@@ -5495,8 +5764,7 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
               children: [
                 Icon(Icons.label_outline, color: _textSec, size: 13),
                 const SizedBox(width: 6),
-                Text(
-                  'Category: ',
+                Tr('Category: ',
                   style: TextStyle(color: _textSec, fontSize: 11),
                 ),
                 _Tag(category, _red),
@@ -5513,8 +5781,7 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
                       children: [
                         Icon(Icons.broken_image, color: _textSec, size: 40),
                         const SizedBox(height: 8),
-                        Text(
-                          'Image preview unavailable',
+                        Tr('Image preview unavailable',
                           style: TextStyle(color: _textSec, fontSize: 12),
                         ),
                       ],
@@ -5545,8 +5812,7 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
                             children: [
                               Icon(Icons.broken_image, color: _textSec, size: 28),
                               const SizedBox(height: 6),
-                              Text(
-                                'Failed to load image',
+                              Tr('Failed to load image',
                                 style: TextStyle(color: _textSec, fontSize: 11),
                               ),
                             ],
@@ -5563,8 +5829,7 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
                             horizontal: 10,
                             vertical: 6,
                           ),
-                          child: const Text(
-                            'Unethical — review and replace this image',
+                          child: const Tr('Unethical — review and replace this image',
                             textAlign: TextAlign.center,
                             style: TextStyle(
                               color: Colors.white,
@@ -5611,8 +5876,7 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
                 const SizedBox(height: 10),
                 Row(
                   children: [
-                    Text(
-                      'Detection confidence: ',
+                    Tr('Detection confidence: ',
                       style: TextStyle(color: _textSec, fontSize: 11),
                     ),
                     Expanded(
@@ -5648,7 +5912,7 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
                   width: double.infinity,
                   child: ElevatedButton.icon(
                     icon: const Icon(Icons.image_search, size: 16),
-                    label: const Text('Replace Image'),
+                    label: const Tr('Replace Image'),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: _blue,
                       foregroundColor: Colors.white,
@@ -5661,7 +5925,7 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
                   width: double.infinity,
                   child: OutlinedButton.icon(
                     icon: const Icon(Icons.delete_outline, size: 16),
-                    label: const Text('Remove Image'),
+                    label: const Tr('Remove Image'),
                     style: OutlinedButton.styleFrom(
                       foregroundColor: _red,
                       side: BorderSide(color: _red.withOpacity(0.55)),
@@ -5678,7 +5942,7 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
                       setState(() => _ignoredIssueIds.add(issueId));
                       _showSnack('Issue ignored', _textSec);
                     },
-                    child: const Text('Ignore'),
+                    child: const Tr('Ignore'),
                   ),
                 ),
               ],
@@ -5712,8 +5976,7 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
           children: [
             CircularProgressIndicator(color: _blue),
             SizedBox(height: 16),
-            Text(
-              'Scanning document for tables…',
+            Tr('Scanning document for tables…',
               style: TextStyle(color: _textSec, fontSize: 13),
             ),
           ],
@@ -5733,7 +5996,7 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
               style: const TextStyle(color: _red, fontSize: 13),
             ),
             const SizedBox(height: 16),
-            ElevatedButton(onPressed: _loadTables, child: const Text('Retry')),
+            ElevatedButton(onPressed: _loadTables, child: const Tr('Retry')),
           ],
         ),
       );
@@ -5966,8 +6229,7 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
                             if (table.hasHeaderRow) ...[
                               const Icon(Icons.title, color: _green, size: 11),
                               const SizedBox(width: 3),
-                              const Text(
-                                'Header row',
+                              const Tr('Header row',
                                 style: TextStyle(color: _green, fontSize: 10),
                               ),
                               const SizedBox(width: 8),
@@ -5978,8 +6240,7 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
                                 size: 11,
                               ),
                               const SizedBox(width: 3),
-                              const Text(
-                                'No header',
+                              const Tr('No header',
                                 style: TextStyle(color: _yellow, fontSize: 10),
                               ),
                               const SizedBox(width: 8),
@@ -6038,8 +6299,7 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
                   if (table.previewRows.isNotEmpty) ...[
                     Padding(
                       padding: EdgeInsets.fromLTRB(14, 12, 14, 6),
-                      child: Text(
-                        'PREVIEW',
+                      child: Tr('PREVIEW',
                         style: TextStyle(
                           color: _textSec,
                           fontSize: 10,
@@ -6120,8 +6380,7 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
                   if (table.issues.isNotEmpty) ...[
                     Padding(
                       padding: EdgeInsets.fromLTRB(14, 0, 14, 6),
-                      child: Text(
-                        'ISSUES',
+                      child: Tr('ISSUES',
                         style: TextStyle(
                           color: _textSec,
                           fontSize: 10,
@@ -6190,8 +6449,7 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
                                           Icons.edit_note,
                                           size: 14,
                                         ),
-                                        label: const Text(
-                                          'Fill empty cell',
+                                        label: const Tr('Fill empty cell',
                                           style: TextStyle(fontSize: 11),
                                         ),
                                         style: OutlinedButton.styleFrom(
@@ -6218,8 +6476,7 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
                                           Icons.font_download_outlined,
                                           size: 14,
                                         ),
-                                        label: const Text(
-                                          'Normalize font',
+                                        label: const Tr('Normalize font',
                                           style: TextStyle(fontSize: 11),
                                         ),
                                         style: OutlinedButton.styleFrom(
@@ -6255,8 +6512,7 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
                             size: 14,
                           ),
                           SizedBox(width: 6),
-                          Text(
-                            'No issues detected',
+                          Tr('No issues detected',
                             style: TextStyle(color: _green, fontSize: 12),
                           ),
                         ],
@@ -6293,8 +6549,7 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // ── Header ────────────────────────────────────────────────────────
-            Text(
-              'TEMPLATE STYLE',
+            Tr('TEMPLATE STYLE',
               style: TextStyle(
                 color: _textSec,
                 fontSize: 10,
@@ -6343,8 +6598,7 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
                           ),
                           overflow: TextOverflow.ellipsis,
                         ),
-                        Text(
-                          'Configured by admin',
+                        Tr('Configured by admin',
                           style: TextStyle(color: _textSec, fontSize: 10),
                         ),
                       ],
@@ -6360,8 +6614,7 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
                       color: _purple.withOpacity(0.18),
                       borderRadius: BorderRadius.circular(10),
                     ),
-                    child: const Text(
-                      'ACTIVE',
+                    child: const Tr('ACTIVE',
                       style: TextStyle(
                         color: _purple,
                         fontSize: 9,
@@ -6377,8 +6630,7 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
             const SizedBox(height: 16),
 
             // ── What will be applied ──────────────────────────────────────────
-            Text(
-              'WHAT GETS APPLIED',
+            Tr('WHAT GETS APPLIED',
               style: TextStyle(
                 color: _textSec,
                 fontSize: 10,
@@ -6534,7 +6786,7 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
           TextButton.icon(
             onPressed: _tablesLoading ? null : _loadTables,
             icon: const Icon(Icons.refresh, size: 14),
-            label: const Text('Re-scan', style: TextStyle(fontSize: 12)),
+            label: const Tr('Re-scan', style: TextStyle(fontSize: 12)),
             style: TextButton.styleFrom(foregroundColor: _textSec),
           ),
           const SizedBox(width: 12),
@@ -6590,8 +6842,7 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
           children: [
             CircularProgressIndicator(color: _blue),
             SizedBox(height: 14),
-            Text(
-              'Scanning document structure…',
+            Tr('Scanning document structure…',
               style: TextStyle(color: _textSec, fontSize: 12),
             ),
           ],
@@ -6610,7 +6861,7 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
             const SizedBox(height: 14),
             ElevatedButton(
               onPressed: _loadTocCheck,
-              child: const Text('Retry'),
+              child: const Tr('Retry'),
             ),
           ],
         ),
@@ -6658,16 +6909,14 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
-                            'Document Lists',
+                          Tr('Document Lists',
                             style: TextStyle(
                               color: _textPri,
                               fontSize: 16,
                               fontWeight: FontWeight.w700,
                             ),
                           ),
-                          Text(
-                            'Generate dynamic Word fields for TOC, tables, and figures',
+                          Tr('Generate dynamic Word fields for TOC, tables, and figures',
                             style: TextStyle(color: _textSec, fontSize: 12),
                           ),
                         ],
@@ -6755,8 +7004,7 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
                 ),
                 if (headings.isNotEmpty) ...[
                   const SizedBox(height: 24),
-                  Text(
-                    'Detected Headings',
+                  Tr('Detected Headings',
                     style: TextStyle(
                       color: _textPri,
                       fontSize: 13,
@@ -6953,8 +7201,7 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
                   fontWeight: FontWeight.w600,
                 ),
               ),
-              Text(
-                'Fields update page numbers in Microsoft Word',
+              Tr('Fields update page numbers in Microsoft Word',
                 style: TextStyle(color: _textSec, fontSize: 11),
               ),
             ],
@@ -6963,7 +7210,7 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
           TextButton.icon(
             onPressed: _tocLoading ? null : _loadTocCheck,
             icon: const Icon(Icons.refresh, size: 14),
-            label: const Text('Re-scan', style: TextStyle(fontSize: 12)),
+            label: const Tr('Re-scan', style: TextStyle(fontSize: 12)),
             style: TextButton.styleFrom(foregroundColor: _textSec),
           ),
           const SizedBox(width: 12),
@@ -7129,16 +7376,14 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    'Reference Formatter',
+                  Tr('Reference Formatter',
                     style: TextStyle(
                       color: _textPri,
                       fontSize: 16,
                       fontWeight: FontWeight.w700,
                     ),
                   ),
-                  Text(
-                    'Detect, clean and reformat your References section',
+                  Tr('Detect, clean and reformat your References section',
                     style: TextStyle(color: _textSec, fontSize: 12),
                   ),
                 ],
@@ -7182,148 +7427,142 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
   }
 
   // ── Action bar ────────────────────────────────────────────────────────────
+Widget _buildActionBar(List<dynamic> oldIssues) {
+  final openIssues = _visibleIssues(oldIssues);
+  final activeIssues = openIssues.length;
+  final majorCount = openIssues.where((i) {
+    final sev = ((i as Map)['severity'] as String? ?? '').toLowerCase();
+    return sev == 'major' || sev == 'critical' || sev == 'error';
+  }).length;
+  final pendingImages = _pendingImageIssues.length;
 
-  Widget _buildActionBar(List<dynamic> oldIssues) {
-    final openIssues = _visibleIssues(oldIssues);
-    final activeIssues = openIssues.length;
-    final majorCount = openIssues.where((i) {
-      final sev = ((i as Map)['severity'] as String? ?? '').toLowerCase();
-      return sev == 'major' || sev == 'critical' || sev == 'error';
-    }).length;
-    final pendingImages = _pendingImageIssues.length;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
-      decoration: BoxDecoration(
-        color: _surface,
-        border: Border(top: BorderSide(color: _border)),
-      ),
-      child: Row(
-        children: [
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                '$activeIssues issues  ·  $majorCount major',
-                style: TextStyle(color: _textPri, fontSize: 13),
-              ),
-              pendingImages > 0
-                  ? Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(
-                          Icons.warning_amber_rounded,
-                          color: _yellow,
-                          size: 12,
-                        ),
-                        const SizedBox(width: 4),
-                        Text(
-                          '$pendingImages image${pendingImages == 1 ? '' : 's'} '
-                          'need${pendingImages == 1 ? 's' : ''} to be replaced '
-                          'or removed manually',
-                          style: const TextStyle(color: _yellow, fontSize: 11),
-                        ),
-                      ],
+  return Container(
+    padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+    decoration: BoxDecoration(
+      color: _surface,
+      border: Border(top: BorderSide(color: _border)),
+    ),
+    child: Row(
+      children: [
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '$activeIssues issues  ·  $majorCount major',
+              style: TextStyle(color: _textPri, fontSize: 13),
+            ),
+            pendingImages > 0
+                ? Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.warning_amber_rounded,
+                        color: _yellow,
+                        size: 12,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        '$pendingImages image${pendingImages == 1 ? '' : 's'} '
+                        'need${pendingImages == 1 ? 's' : ''} to be replaced '
+                        'or removed manually',
+                        style: const TextStyle(color: _yellow, fontSize: 11),
+                      ),
+                    ],
+                  )
+                : Tr('Review highlights, apply fixes, then download',
+                    style: TextStyle(color: _textSec, fontSize: 11),
+                  ),
+          ],
+        ),
+        const Spacer(),
+        TextButton(
+          onPressed: () {
+            setState(() {
+              for (final i in _visibleIssues(oldIssues)) {
+                _ignoredIssueIds.add((i as Map)['issue_id'] as String? ?? '');
+              }
+            });
+            _showSnack('All issues ignored', _textSec);
+          },
+          child: Tr('Ignore All', style: TextStyle(color: _textSec)),
+        ),
+        const SizedBox(width: 12),
+        _isFixApplied
+            ? Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // ── Auto-save status ──────────────────────────────
+                  if (_isSavingFormatted)
+                    const SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: _green,
+                      ),
                     )
-                  : Text(
-                      'Review highlights, apply fixes, then download',
-                      style: TextStyle(color: _textSec, fontSize: 11),
+                  else
+                    Icon(
+                      _autoSaveDirty
+                          ? Icons.cloud_upload_outlined
+                          : (_lastSavedAt != null
+                              ? Icons.cloud_done_outlined
+                              : Icons.cloud_off_outlined),
+                      size: 16,
+                      color: _autoSaveDirty ? _yellow : _green,
                     ),
-            ],
-          ),
-          const Spacer(),
-          TextButton(
-            onPressed: () {
-              setState(() {
-                for (final i in _visibleIssues(oldIssues)) {
-                  _ignoredIssueIds.add((i as Map)['issue_id'] as String? ?? '');
-                }
-              });
-              _showSnack('All issues ignored', _textSec);
-            },
-            child: Text('Ignore All', style: TextStyle(color: _textSec)),
-          ),
-          const SizedBox(width: 12),
-          _isFixApplied
-              ? Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    OutlinedButton.icon(
-                      onPressed:
-                          _isSavingFormatted ? null : _saveFormattedDocument,
-                      icon: _isSavingFormatted
-                          ? const SizedBox(
-                              width: 14,
-                              height: 14,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : Icon(
-                              _formattedSaved
-                                  ? Icons.check_circle_outline
-                                  : Icons.save_outlined,
-                              size: 16,
-                            ),
-                      label: Text(
-                        _isSavingFormatted
-                            ? 'Saving...'
-                            : (_formattedSaved
-                                ? 'Saved'
-                                : 'Save Formatted Document'),
-                      ),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: _green,
-                        side: BorderSide(color: _green),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 12,
-                        ),
-                      ),
+                  const SizedBox(width: 6),
+                  Text(
+                    _autoSaveLabel,
+                    style: TextStyle(
+                      color: _autoSaveDirty ? _yellow : _green,
+                      fontSize: 12,
                     ),
-                    const SizedBox(width: 10),
-                    ElevatedButton.icon(
-                      onPressed: _isDownloading ? null : _downloadDirectly,
-                      icon: _isDownloading
-                          ? const SizedBox(
-                              width: 14,
-                              height: 14,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: Colors.white,
-                              ),
-                            )
-                          : const Icon(Icons.download, size: 16),
-                      label: Text(
-                        _isDownloading
-                            ? 'Downloading...'
-                            : 'Download Formatted Document',
-                      ),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: _green,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 20,
-                          vertical: 12,
-                        ),
-                      ),
-                    ),
-                  ],
-                )
-              : ElevatedButton.icon(
-                onPressed: _isApplyingFix ? null : _applyAllFixesAndStyles,
-                icon:
-                    _isApplyingFix
+                  ),
+                  const SizedBox(width: 16),
+                  // ── Download ──────────────────────────────────────
+                  ElevatedButton.icon(
+                    onPressed: _isDownloading ? null : _downloadDirectly,
+                    icon: _isDownloading
                         ? const SizedBox(
-                          width: 14,
-                          height: 14,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
-                          ),
-                        )
-                        : const Icon(Icons.auto_fix_high, size: 16),
+                            width: 14,
+                            height: 14,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : const Icon(Icons.download, size: 16),
+                    label: Text(
+                      _isDownloading
+                          ? 'Downloading...'
+                          : 'Download Formatted Document',
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: _green,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 20,
+                        vertical: 12,
+                      ),
+                    ),
+                  ),
+                ],
+              )
+            : ElevatedButton.icon(
+                onPressed: _isApplyingFix ? null : _applyAllFixesAndStyles,
+                icon: _isApplyingFix
+                    ? const SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                    : const Icon(Icons.auto_fix_high, size: 16),
                 label: Text(
-                  _isApplyingFix
-                      ? 'Applying all fixes...'
-                      : 'Apply All Fixes',
+                  _isApplyingFix ? 'Applying all fixes...' : 'Apply All Fixes',
                 ),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: _purple,
@@ -7334,11 +7573,10 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
                   ),
                 ),
               ),
-        ],
-      ),
-    );
-  }
-
+      ],
+    ),
+  );
+}
   // ── Empty state ───────────────────────────────────────────────────────────
 
   Widget _buildEmptyState(
@@ -7405,7 +7643,7 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
                 _contentLoaded = false;
                 _loadContentCheck();
               },
-              child: const Text('Retry'),
+              child: const Tr('Retry'),
             ),
           ],
         ),
@@ -7416,7 +7654,7 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
         child: ElevatedButton.icon(
           onPressed: _loadContentCheck,
           icon: const Icon(Icons.search),
-          label: const Text('Run Content Check'),
+          label: const Tr('Run Content Check'),
         ),
       );
     }
@@ -7472,15 +7710,13 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
       const SizedBox(height: 32),
       Icon(Icons.check_circle_outline, color: Colors.green.shade400, size: 52),
       const SizedBox(height: 12),
-      Text(
-        'Content looks good!',
+      Tr('Content looks good!',
         style: Theme.of(
           context,
         ).textTheme.titleMedium?.copyWith(color: Colors.green.shade400),
       ),
       const SizedBox(height: 6),
-      Text(
-        'No content mismatches or synonym headings detected.',
+      Tr('No content mismatches or synonym headings detected.',
         textAlign: TextAlign.center,
         style: Theme.of(context).textTheme.bodySmall,
       ),
@@ -7602,8 +7838,7 @@ class _BulletsTabContentState extends State<_BulletsTabContent> {
               children: [
                 const Icon(Icons.error_outline, size: 48, color: _red),
                 const SizedBox(height: 12),
-                Text(
-                  'Error analyzing bullets',
+                Tr('Error analyzing bullets',
                   style: TextStyle(color: _textPri, fontSize: 14),
                 ),
               ],
@@ -7694,8 +7929,7 @@ class _BulletsTabContentState extends State<_BulletsTabContent> {
                       size: 18,
                     ),
                     const SizedBox(width: 8),
-                    Text(
-                      'Detected Bullet Groups',
+                    Tr('Detected Bullet Groups',
                       style: TextStyle(
                         color: _textPri,
                         fontSize: 16,
@@ -8367,8 +8601,7 @@ class _ContentIssueCard extends StatelessWidget {
               const SizedBox(height: 8),
               Row(
                 children: [
-                  Text(
-                    'Confidence: ',
+                  Tr('Confidence: ',
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                   Text(

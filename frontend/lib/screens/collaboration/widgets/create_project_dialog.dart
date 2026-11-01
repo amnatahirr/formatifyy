@@ -8,6 +8,7 @@ import '../../../providers/collaboration_provider.dart';
 import '../../../providers/document_provider.dart';
 import '../../../providers/template_provider.dart';
 
+import '../../../widgets/tr.dart';
 /// Modal form to create a collaboration project (document optional).
 class CreateProjectDialog extends StatefulWidget {
   final void Function(int projectId)? onCreated;
@@ -110,8 +111,7 @@ class _CreateProjectDialogState extends State<CreateProjectDialog> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
-                'Create Project',
+              const Tr('Create Project',
                 style: TextStyle(
                   color: Colors.white,
                   fontSize: 18,
@@ -119,8 +119,7 @@ class _CreateProjectDialogState extends State<CreateProjectDialog> {
                 ),
               ),
               const SizedBox(height: 4),
-              const Text(
-                'Document upload is optional — you can add one later.',
+              const Tr('Document upload is optional — you can add one later.',
                 style: TextStyle(color: Color(0xFF94A3B8), fontSize: 12),
               ),
               const SizedBox(height: 20),
@@ -169,7 +168,7 @@ class _CreateProjectDialogState extends State<CreateProjectDialog> {
                     _document = null;
                     _documentName = null;
                   }),
-                  child: const Text('Remove file'),
+                  child: const Tr('Remove file'),
                 ),
               ],
               const SizedBox(height: 24),
@@ -178,7 +177,7 @@ class _CreateProjectDialogState extends State<CreateProjectDialog> {
                 children: [
                   TextButton(
                     onPressed: _submitting ? null : () => Navigator.pop(context),
-                    child: const Text('Cancel'),
+                    child: const Tr('Cancel'),
                   ),
                   const SizedBox(width: 8),
                   ElevatedButton(
@@ -192,7 +191,7 @@ class _CreateProjectDialogState extends State<CreateProjectDialog> {
                               color: Colors.white,
                             ),
                           )
-                        : const Text('Create'),
+                        : const Tr('Create'),
                   ),
                 ],
               ),

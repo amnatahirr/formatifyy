@@ -412,7 +412,14 @@ def build_previews(info: Dict[str, Any]) -> List[Dict[str, Any]]:
     
     for i, m in enumerate(missing):
         name = m["name"]
-        slug = re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_") or "section"
+        # Match the issue_id format used by heading_matches_to_issues()
+        # _normalize strips leading numbers/roman numerals and trailing colons
+        normalized = (name or "").strip().rstrip(":").strip()
+        normalized = re.sub(r"^[\d]+(?:\.[\d]+)*\.?\s+", "", normalized).strip()
+        normalized = re.sub(r"^[IVXLC]+\.\s+", "", normalized, flags=re.IGNORECASE).strip()
+        slug = normalized.lower() or "section"
+        from docx_tools.heading_analysis import missing_heading_issue_id
+        preview_issue_id = missing_heading_issue_id(name)
         before_idx = m.get("insert_before_paragraph_index")
         
         # Determine insert_after_paragraph_id:
@@ -447,7 +454,7 @@ def build_previews(info: Dict[str, Any]) -> List[Dict[str, Any]]:
         guidance = _section_guidance(name)
         
         out.append({
-            "issue_id": f"missing_section_{slug}",
+            "issue_id": preview_issue_id,
             "is_placeholder": True,
             "name": name,
             "level": m.get("level", 1),

@@ -7,7 +7,7 @@ import 'package:provider/provider.dart';
 import '../config/api_config.dart';
 import '../config/dev_user_config.dart';
 import '../providers/auth_provider.dart';
-
+import 'package:shared_preferences/shared_preferences.dart';
 import '../services/login_credentials_store.dart';
 
 import '../services/super_admin_api_service.dart';
@@ -15,6 +15,7 @@ import '../services/super_admin_api_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/responsive.dart';
 
+import '../widgets/tr.dart';
 /// Auth palette for the dark two-panel login / signup experience.
 class _AuthColors {
   static const navy = Color(0xFF0B0F2E);
@@ -49,6 +50,8 @@ class _LoginScreenState extends State<LoginScreen> {
   List<SavedLoginAccount> _savedAccounts = const [];
 
   final _orgCodeController = TextEditingController();
+  static const _recentOrgsKey = 'recent_org_codes';
+List<String> _recentOrgCodes = const [];
   /// false until user continues with a valid organization code
   bool _orgResolved = false;
   bool _resolvingOrg = false;
@@ -73,6 +76,7 @@ class _LoginScreenState extends State<LoginScreen> {
     super.initState();
     _emailFocusNode.addListener(_onEmailFocusChanged);
     _loadSavedCredentials();
+    _loadRecentOrgCodes();
   }
 
   void _onEmailFocusChanged() {
@@ -100,6 +104,34 @@ class _LoginScreenState extends State<LoginScreen> {
       }
     });
   }
+
+  Future<void> _loadRecentOrgCodes() async {
+  final prefs = await SharedPreferences.getInstance();
+  final list = prefs.getStringList(_recentOrgsKey) ?? const [];
+  if (!mounted) return;
+  setState(() => _recentOrgCodes = list);
+}
+
+Future<void> _saveRecentOrgCode(String code) async {
+  final normalized = code.trim().toUpperCase();
+  if (normalized.isEmpty) return;
+  final updated = [
+    normalized,
+    ..._recentOrgCodes.where((c) => c != normalized),
+  ].take(5).toList();
+  final prefs = await SharedPreferences.getInstance();
+  await prefs.setStringList(_recentOrgsKey, updated);
+  if (mounted) setState(() => _recentOrgCodes = updated);
+}
+
+Future<void> _removeRecentOrgCode(String code) async {
+  final updated = _recentOrgCodes.where((c) => c != code).toList();
+  final prefs = await SharedPreferences.getInstance();
+  await prefs.setStringList(_recentOrgsKey, updated);
+  if (mounted) setState(() => _recentOrgCodes = updated);
+}
+
+  
 
   Future<void> _applySuggestedAccount(String email) async {
     final normalized = email.trim().toLowerCase();
@@ -341,8 +373,7 @@ class _LoginScreenState extends State<LoginScreen> {
           child: const Icon(Icons.auto_awesome, color: Colors.white, size: 24),
         ),
         const SizedBox(width: 14),
-        const Text(
-          'FORMATIFY',
+        const Tr('FORMATIFY',
           style: TextStyle(
             fontSize: 20,
             fontWeight: FontWeight.w800,
@@ -423,8 +454,7 @@ class _LoginScreenState extends State<LoginScreen> {
           _buildBrandMark(centered: true),
           const SizedBox(height: 28),
         ],
-        const Text(
-          'Welcome to Formatify',
+        const Tr('Welcome to Formatify',
           style: TextStyle(
             fontSize: 26,
             fontWeight: FontWeight.w800,
@@ -433,8 +463,7 @@ class _LoginScreenState extends State<LoginScreen> {
           ),
         ),
         const SizedBox(height: 8),
-        const Text(
-          'Enter your organization code to continue.',
+        const Tr('Enter your organization code to continue.',
           style: TextStyle(fontSize: 14, color: _AuthColors.muted, height: 1.4),
         ),
         const SizedBox(height: 28),
@@ -444,6 +473,67 @@ class _LoginScreenState extends State<LoginScreen> {
           icon: Icons.apartment_rounded,
           textCapitalization: TextCapitalization.characters,
         ),
+        if (_recentOrgCodes.isNotEmpty) ...[
+  const SizedBox(height: 14),
+  const Tr('Recently used',
+    style: TextStyle(
+      fontSize: 11.5,
+      fontWeight: FontWeight.w700,
+      letterSpacing: 0.6,
+      color: _AuthColors.mutedSoft,
+    ),
+  ),
+  const SizedBox(height: 8),
+  Wrap(
+    spacing: 8,
+    runSpacing: 8,
+    children: _recentOrgCodes.map((code) {
+      return InkWell(
+        borderRadius: BorderRadius.circular(999),
+        onTap: _resolvingOrg
+            ? null
+            : () {
+                _orgCodeController.text = code;
+                _resolveOrganization();
+              },
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(12, 7, 6, 7),
+          decoration: BoxDecoration(
+            color: _AuthColors.inputFill,
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(color: _AuthColors.border),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.history,
+                  size: 14, color: _AuthColors.accent),
+              const SizedBox(width: 6),
+              Text(
+                code,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(width: 4),
+              InkWell(
+                onTap: () => _removeRecentOrgCode(code),
+                borderRadius: BorderRadius.circular(999),
+                child: const Padding(
+                  padding: EdgeInsets.all(3),
+                  child: Icon(Icons.close,
+                      size: 13, color: _AuthColors.mutedSoft),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }).toList(),
+  ),
+],
         const SizedBox(height: 14),
         if (_orgResolveError != null) ...[
           Container(
@@ -489,6 +579,7 @@ class _LoginScreenState extends State<LoginScreen> {
         allowSignup: info['allow_self_signup'] == true,
         color: (info['primary_color'] ?? '').toString(),
       );
+      await _saveRecentOrgCode((info['org_code'] ?? code).toString());
       if (!mounted) return;
       setState(() {
         _orgResolved = true;
@@ -513,8 +604,7 @@ Widget _buildLoginFields({required bool showCompactBrand}) {
           const SizedBox(height: 28),
         ],
 
-        const Text(
-          'Welcome Back',
+        const Tr('Welcome Back',
           style: TextStyle(
             fontSize: 26,
             fontWeight: FontWeight.w800,
@@ -559,8 +649,7 @@ Widget _buildLoginFields({required bool showCompactBrand}) {
                 minimumSize: Size.zero,
                 tapTargetSize: MaterialTapTargetSize.shrinkWrap,
               ),
-              child: const Text(
-                'Change',
+              child: const Tr('Change',
                 style: TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.w600,
@@ -572,8 +661,7 @@ Widget _buildLoginFields({required bool showCompactBrand}) {
 
         const SizedBox(height: 8),
 
-        const Text(
-          'Enter your details to access your dashboard.',
+        const Tr('Enter your details to access your dashboard.',
           style: TextStyle(
             fontSize: 14,
             color: _AuthColors.muted,
@@ -632,8 +720,7 @@ Widget _buildLoginFields({required bool showCompactBrand}) {
               ),
             ),
             const SizedBox(width: 8),
-            const Text(
-              'Remember me',
+            const Tr('Remember me',
               style: TextStyle(
                 fontSize: 13,
                 color: _AuthColors.muted,
@@ -649,8 +736,7 @@ Widget _buildLoginFields({required bool showCompactBrand}) {
                 minimumSize: Size.zero,
                 tapTargetSize: MaterialTapTargetSize.shrinkWrap,
               ),
-              child: const Text(
-                'Forgot password?',
+              child: const Tr('Forgot password?',
                 style: TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w600,
@@ -700,8 +786,7 @@ Widget _buildLoginFields({required bool showCompactBrand}) {
           _buildBrandMark(centered: true),
           const SizedBox(height: 28),
         ],
-        const Text(
-          'Create Account',
+        const Tr('Create Account',
           style: TextStyle(
             fontSize: 26,
             fontWeight: FontWeight.w800,
@@ -802,7 +887,7 @@ Widget _buildLoginFields({required bool showCompactBrand}) {
             ),
             TextButton(
               onPressed: _loadDepartments,
-              child: const Text('Retry', style: TextStyle(fontSize: 12)),
+              child: const Tr('Retry', style: TextStyle(fontSize: 12)),
             ),
           ],
         ),
@@ -819,8 +904,7 @@ Widget _buildLoginFields({required bool showCompactBrand}) {
         hint: 'Department',
         icon: Icons.apartment_outlined,
       ),
-      hint: const Text(
-        'Department',
+      hint: const Tr('Department',
         style: TextStyle(color: _AuthColors.mutedSoft, fontSize: 14),
       ),
       items: _departments
@@ -849,13 +933,12 @@ Widget _buildLoginFields({required bool showCompactBrand}) {
         hint: 'Current semester',
         icon: Icons.school_outlined,
       ),
-      hint: const Text(
-        'Current semester',
+      hint: const Tr('Current semester',
         style: TextStyle(color: _AuthColors.mutedSoft, fontSize: 14),
       ),
       items: const [
-        DropdownMenuItem(value: 6, child: Text('Semester 6')),
-        DropdownMenuItem(value: 7, child: Text('Semester 7')),
+        DropdownMenuItem(value: 6, child: Tr('Semester 6')),
+        DropdownMenuItem(value: 7, child: Tr('Semester 7')),
       ],
       onChanged: (v) => setState(() => _selectedSemester = v),
     );
@@ -1197,8 +1280,7 @@ Widget _buildTextField({
         ),
         const Padding(
           padding: EdgeInsets.symmetric(horizontal: 14),
-          child: Text(
-            'OR',
+          child: Tr('OR',
             style: TextStyle(
               fontSize: 12,
               fontWeight: FontWeight.w600,
@@ -1232,8 +1314,7 @@ Widget _buildTextField({
           children: [
             const _GoogleGIcon(size: 18),
             const SizedBox(width: 10),
-            Text(
-              'Continue with Google',
+            Tr('Continue with Google',
               style: TextStyle(
                 fontSize: 14,
                 fontWeight: FontWeight.w600,
@@ -1253,8 +1334,7 @@ Widget _buildTextField({
         onPressed: () {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text(
-                'Microsoft sign-in is not wired up yet — ask if you want it next.',
+              content: Tr('Microsoft sign-in is not wired up yet — ask if you want it next.',
               ),
             ),
           );
@@ -1272,8 +1352,7 @@ Widget _buildTextField({
           children: [
             _MicrosoftLogo(size: 16),
             SizedBox(width: 10),
-            Text(
-              'Continue with Microsoft',
+            Tr('Continue with Microsoft',
               style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
             ),
           ],
@@ -1354,7 +1433,7 @@ Widget _buildTextField({
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('Login successful!')));
+      ).showSnackBar(const SnackBar(content: Tr('Login successful!')));
     }
   }
 
@@ -1364,14 +1443,14 @@ Widget _buildTextField({
 
     if (_selectedDepartmentId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please select your department.')),
+        const SnackBar(content: Tr('Please select your department.')),
       );
       return;
     }
     final requiresSemester = DevUserConfig.requiresSemesterOnSignup;
     if (requiresSemester && _selectedSemester == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please select your current semester.')),
+        const SnackBar(content: Tr('Please select your current semester.')),
       );
       return;
     }
@@ -1398,7 +1477,7 @@ Widget _buildTextField({
       await theme.bindToUser(auth.userId);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Signup successful!')),
+        const SnackBar(content: Tr('Signup successful!')),
       );
     }
   }
@@ -1412,7 +1491,7 @@ Widget _buildTextField({
       await theme.bindToUser(auth.userId);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Google Sign-In successful!')),
+        const SnackBar(content: Tr('Google Sign-In successful!')),
       );
     }
   }
@@ -1429,7 +1508,7 @@ Widget _buildTextField({
       await theme.bindToUser(auth.userId);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('GitHub Sign-In successful!')),
+        const SnackBar(content: Tr('GitHub Sign-In successful!')),
       );
     }
   }

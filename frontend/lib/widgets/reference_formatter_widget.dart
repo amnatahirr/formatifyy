@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import '../config/api_config.dart';
 
+import 'tr.dart';
 class ReferenceFormatterWidget extends StatefulWidget {
   final int documentId;
   final int userId;
@@ -210,12 +211,12 @@ class _ReferenceFormatterWidgetState extends State<ReferenceFormatterWidget> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Reference Formatter',
+                  Tr('Reference Formatter',
                       style: TextStyle(
                           fontSize: 14,
                           fontWeight: FontWeight.w700,
                           color: Colors.white)),
-                  Text('Auto-format your References section',
+                  Tr('Auto-format your References section',
                       style:
                           TextStyle(fontSize: 11, color: Colors.white54)),
                 ],

@@ -127,6 +127,28 @@ class AdminApiService {
     return List<Map<String, dynamic>>.from(data).map(SupervisorModel.fromJson).toList();
   }
 
+Future<Map<String, dynamic>> fetchPromotePreview(int userId) async {
+  final data = await _request('GET', '/admin/promote-semester/preview', queryParameters: {'user_id': userId});
+  return Map<String, dynamic>.from(data as Map);
+}
+
+
+Future<List<Map<String, dynamic>>> fetchPromoteStudents(int userId) async {
+  final data = await _request('GET', '/admin/promote-semester/students', queryParameters: {'user_id': userId});
+  final list = (data as Map)['students'] as List;
+  return list.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+}
+
+Future<Map<String, dynamic>> promoteSemester(int userId, {List<int> excludeIds = const []}) async {
+  final data = await _request(
+    'POST',
+    '/admin/promote-semester',
+    queryParameters: {'user_id': userId},
+    body: {'exclude_ids': excludeIds},
+  );
+  return Map<String, dynamic>.from(data as Map);
+}
+
   Future<Map<String, dynamic>> createSupervisor(int userId, Map<String, dynamic> body) async {
     final data = await _request('POST', '/admin/supervisors', queryParameters: {'user_id': userId}, body: body);
     return Map<String, dynamic>.from(data as Map);

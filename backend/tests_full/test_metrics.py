@@ -62,7 +62,7 @@ def test_accuracy_schema_guard_refuses_silent_empty():
 @pytest.mark.pipeline
 @pytest.mark.p2
 def test_performance_real_pipelines(benchmark, perf_recorder):
-    from batcher import create_batches
+    from pipeline.batcher import create_batches
     from tests_full.metrics.performance_report import _make_doc
 
     doc = _make_doc(16, 2)
@@ -88,7 +88,7 @@ def test_performance_real_pipelines(benchmark, perf_recorder):
 @pytest.mark.performance
 @pytest.mark.p2
 def test_performance_parse_text_throughput(perf_recorder):
-    from parser import parse_text
+    from pipeline.parser import parse_text
 
     blob = "\n\n".join(
         [f"Section {i}\n\nBody paragraph number {i} with enough words." for i in range(50)]

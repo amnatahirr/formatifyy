@@ -11,6 +11,7 @@
 
 import 'package:flutter/material.dart';
 
+import '../tr.dart';
 // ─────────────────────────────────────────────────────────────────────────────
 // Data model (mirrors backend RequiredSection)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -172,7 +173,7 @@ class _RequiredSectionsCardState extends State<RequiredSectionsCard> {
       context: context,
       builder: (_) => AlertDialog(
         backgroundColor: _cardBg,
-        title: const Text('Rename Section',
+        title: const Tr('Rename Section',
             style: TextStyle(color: _textPrimary, fontSize: 16)),
         content: TextField(
           controller: ctrl,
@@ -198,14 +199,14 @@ class _RequiredSectionsCardState extends State<RequiredSectionsCard> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel', style: TextStyle(color: _textSecondary)),
+            child: const Tr('Cancel', style: TextStyle(color: _textSecondary)),
           ),
           TextButton(
             onPressed: () {
               _renameSection(index, ctrl.text);
               Navigator.pop(context);
             },
-            child: const Text('Save', style: TextStyle(color: _accent)),
+            child: const Tr('Save', style: TextStyle(color: _accent)),
           ),
         ],
       ),
@@ -269,7 +270,7 @@ class _RequiredSectionsCardState extends State<RequiredSectionsCard> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('Required Sections',
+                const Tr('Required Sections',
                     style: TextStyle(
                         color: _textPrimary,
                         fontSize: 16,
@@ -302,10 +303,10 @@ class _RequiredSectionsCardState extends State<RequiredSectionsCard> {
           children: [
             Icon(Icons.playlist_add, color: _textSecondary.withOpacity(0.5), size: 40),
             const SizedBox(height: 12),
-            const Text('No sections yet',
+            const Tr('No sections yet',
                 style: TextStyle(color: _textSecondary, fontSize: 14)),
             const SizedBox(height: 4),
-            const Text('Add sections below or use Presets',
+            const Tr('Add sections below or use Presets',
                 style: TextStyle(color: _textSecondary, fontSize: 12)),
           ],
         ),
@@ -393,7 +394,7 @@ class _RequiredSectionsCardState extends State<RequiredSectionsCard> {
                 children: [
                   Icon(Icons.add, color: Colors.white, size: 16),
                   SizedBox(width: 6),
-                  Text('Add', style: TextStyle(color: Colors.white, fontSize: 14)),
+                  Tr('Add', style: TextStyle(color: Colors.white, fontSize: 14)),
                 ],
               ),
             ),
@@ -419,11 +420,11 @@ class _RequiredSectionsCardState extends State<RequiredSectionsCard> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Common FYP Sections — tap to add',
+          const Tr('Common FYP Sections — tap to add',
               style: TextStyle(color: _textSecondary, fontSize: 12)),
           const SizedBox(height: 10),
           available.isEmpty
-              ? const Text('All presets already added ✓',
+              ? const Tr('All presets already added ✓',
                   style: TextStyle(color: _accentGreen, fontSize: 12))
               : Wrap(
                   spacing: 8,
@@ -542,10 +543,10 @@ class _SectionTile extends StatelessWidget {
                 dropdownColor: _cardBg,
                 style: const TextStyle(color: _textPrimary, fontSize: 11),
                 items: const [
-                  DropdownMenuItem(value: 1, child: Text('H1')),
-                  DropdownMenuItem(value: 2, child: Text('H2')),
-                  DropdownMenuItem(value: 3, child: Text('H3')),
-                  DropdownMenuItem(value: 4, child: Text('H4')),
+                  DropdownMenuItem(value: 1, child: Tr('H1')),
+                  DropdownMenuItem(value: 2, child: Tr('H2')),
+                  DropdownMenuItem(value: 3, child: Tr('H3')),
+                  DropdownMenuItem(value: 4, child: Tr('H4')),
                 ],
                 onChanged: (v) {
                   if (v != null) onHeadingLevelChanged(v);

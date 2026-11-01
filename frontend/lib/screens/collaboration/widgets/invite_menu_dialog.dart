@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../../../providers/collaboration_provider.dart';
 
+import '../../../widgets/tr.dart';
 /// Invite menu: share code or invite by email.
 class InviteMenuDialog extends StatefulWidget {
   final int projectId;
@@ -81,8 +82,7 @@ class _InviteMenuDialogState extends State<InviteMenuDialog> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
-                'Invite',
+              const Tr('Invite',
                 style: TextStyle(
                   color: Colors.white,
                   fontSize: 18,
@@ -93,7 +93,7 @@ class _InviteMenuDialogState extends State<InviteMenuDialog> {
               Row(
                 children: [
                   ChoiceChip(
-                    label: const Text('Invite with code'),
+                    label: const Tr('Invite with code'),
                     selected: !_byEmail,
                     onSelected: (_) => setState(() {
                       _byEmail = false;
@@ -113,7 +113,7 @@ class _InviteMenuDialogState extends State<InviteMenuDialog> {
                   ),
                   const SizedBox(width: 8),
                   ChoiceChip(
-                    label: const Text('Invite by email'),
+                    label: const Tr('Invite by email'),
                     selected: _byEmail,
                     onSelected: (_) => setState(() {
                       _byEmail = true;
@@ -135,8 +135,7 @@ class _InviteMenuDialogState extends State<InviteMenuDialog> {
               ),
               const SizedBox(height: 20),
               if (!_byEmail) ...[
-                const Text(
-                  'Share this invite code',
+                const Tr('Share this invite code',
                   style: TextStyle(color: Color(0xFF94A3B8), fontSize: 12),
                 ),
                 const SizedBox(height: 8),
@@ -163,7 +162,7 @@ class _InviteMenuDialogState extends State<InviteMenuDialog> {
                               );
                               if (!context.mounted) return;
                               ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text('Invite code copied')),
+                                const SnackBar(content: Tr('Invite code copied')),
                               );
                             },
                       icon: const Icon(Icons.copy, size: 18, color: Color(0xFF94A3B8)),
@@ -171,8 +170,7 @@ class _InviteMenuDialogState extends State<InviteMenuDialog> {
                   ],
                 ),
               ] else ...[
-                const Text(
-                  'We\'ll email them this project\'s invite code. They join via Collaboration → Join Project (sign up first if needed).',
+                const Tr('We\'ll email them this project\'s invite code. They join via Collaboration → Join Project (sign up first if needed).',
                   style: TextStyle(color: Color(0xFF94A3B8), fontSize: 12),
                 ),
                 const SizedBox(height: 12),
@@ -232,7 +230,7 @@ class _InviteMenuDialogState extends State<InviteMenuDialog> {
                 alignment: Alignment.centerRight,
                 child: TextButton(
                   onPressed: _sending ? null : () => Navigator.pop(context),
-                  child: const Text('Close'),
+                  child: const Tr('Close'),
                 ),
               ),
             ],

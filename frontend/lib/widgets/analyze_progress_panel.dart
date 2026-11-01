@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import 'tr.dart';
 /// Named stages shown while document analysis is in flight.
 class AnalyzeProgressStage {
   final String title;
@@ -141,8 +142,7 @@ class _AnalyzeProgressPanelState extends State<AnalyzeProgressPanel> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text(
-                'Analyzing',
+              Tr('Analyzing',
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   color: widget.textPrimary,

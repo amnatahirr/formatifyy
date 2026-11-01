@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../tr.dart';
 class TemplateNameField extends StatelessWidget {
   final TextEditingController controller;
 
@@ -24,8 +25,7 @@ class TemplateNameField extends StatelessWidget {
             children: [
               const Icon(Icons.title, color: Color(0xFF6366F1), size: 20),
               const SizedBox(width: 12),
-              const Text(
-                'Template Name',
+              const Tr('Template Name',
                 style: TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.w600,

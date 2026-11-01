@@ -197,7 +197,7 @@ async def check_formatting(
         return []
 
     # ── Deterministic list pre-pass (before LLM) ─────────────────────────────
-    from list_detection import (
+    from docx_tools.list_detection import (
         build_list_hint_payload,
         detect_list_groups,
         list_groups_to_issues,

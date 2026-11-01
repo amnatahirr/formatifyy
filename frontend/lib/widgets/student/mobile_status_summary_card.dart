@@ -5,6 +5,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/fyp_provider.dart';
 import '../../theme/app_theme.dart';
 
+import '../tr.dart';
 /// Compact FYP status summary for the mobile Dashboard tab.
 ///
 /// Loads the same FypProvider sources as My Supervisor + Status Tracker
@@ -140,7 +141,7 @@ class _MobileStatusSummaryCardState extends State<MobileStatusSummaryCard> {
                     ),
                     TextButton(
                       onPressed: _load,
-                      child: const Text('Retry'),
+                      child: const Tr('Retry'),
                     ),
                   ],
                 )
@@ -154,8 +155,7 @@ class _MobileStatusSummaryCardState extends State<MobileStatusSummaryCard> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          'FYP status',
+        Tr('FYP status',
           style: TextStyle(
             color: Colors.white.withOpacity(0.5),
             fontSize: 11,
@@ -164,8 +164,7 @@ class _MobileStatusSummaryCardState extends State<MobileStatusSummaryCard> {
           ),
         ),
         const SizedBox(height: 8),
-        const Text(
-          'No active FYP group yet',
+        const Tr('No active FYP group yet',
           style: TextStyle(
             color: Colors.white,
             fontSize: 15,
@@ -173,8 +172,7 @@ class _MobileStatusSummaryCardState extends State<MobileStatusSummaryCard> {
           ),
         ),
         const SizedBox(height: 4),
-        Text(
-          'Status appears after a supervisor accepts your request.',
+        Tr('Status appears after a supervisor accepts your request.',
           style: TextStyle(
             color: Colors.white.withOpacity(0.55),
             fontSize: 12,
@@ -233,8 +231,7 @@ class _MobileStatusSummaryCardState extends State<MobileStatusSummaryCard> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          'FYP status',
+        Tr('FYP status',
           style: TextStyle(
             color: Colors.white.withOpacity(0.5),
             fontSize: 11,
@@ -253,8 +250,7 @@ class _MobileStatusSummaryCardState extends State<MobileStatusSummaryCard> {
             ),
           )
         else
-          Text(
-            'Supervisor assigned',
+          Tr('Supervisor assigned',
             style: TextStyle(
               color: Colors.white.withOpacity(0.85),
               fontSize: 16,

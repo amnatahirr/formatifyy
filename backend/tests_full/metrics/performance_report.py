@@ -276,12 +276,12 @@ def run_all_benchmarks(rounds: int = 5) -> List[dict]:
     Run REAL pipeline benches. Returns rows ready to print/persist.
     Does NOT include slow LLM e2e — call bench_e2e_full_analyze_with_llm separately.
     """
-    from aggregator import aggregate
-    from batcher import create_batches
-    from parser import parse_file, parse_text
+    from pipeline.aggregator import aggregate
+    from pipeline.batcher import create_batches
+    from pipeline.parser import parse_file, parse_text
     from plagiarism.web_verify import word_jaccard
-    from reformatter import reformat_document
-    from list_detection import detect_list_groups
+    from docx_tools.reformatter import reformat_document
+    from docx_tools.list_detection import detect_list_groups
     from models import AnalysisReport, Stats
     from vc.merge import assemble_merged_docx
     from vc.utils import word_overlap_ratio

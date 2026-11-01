@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../models/supervisor_models.dart';
 
+import '../../widgets/tr.dart';
 /// Normalised (0..1) box of one paragraph on one page.
 class PageRegion {
   final int paragraphId;
@@ -143,7 +144,7 @@ class _DocumentPageViewState extends State<DocumentPageView> {
                           child: TextButton.icon(
                             onPressed: () => setState(() => _cache.remove(info.index)),
                             icon: const Icon(Icons.refresh),
-                            label: const Text('Page failed to load. Retry'),
+                            label: const Tr('Page failed to load. Retry'),
                           ),
                         );
                       }

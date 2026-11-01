@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'common_widgets.dart';
 
+import '../tr.dart';
 class DocumentSettingsCard extends StatelessWidget {
   final String pageSize;
   final String spacingUnit;
@@ -62,9 +63,9 @@ class DocumentSettingsCard extends StatelessWidget {
               underline: const SizedBox(),
               dropdownColor: const Color(0xFF1A1F2E),
               items: const [
-                DropdownMenuItem(value: 'mm', child: Text('Millimeters (mm)', style: TextStyle(color: Colors.white))),
-                DropdownMenuItem(value: 'cm', child: Text('Centimeters (cm)', style: TextStyle(color: Colors.white))),
-                DropdownMenuItem(value: 'in', child: Text('Inches (in)', style: TextStyle(color: Colors.white))),
+                DropdownMenuItem(value: 'mm', child: Tr('Millimeters (mm)', style: TextStyle(color: Colors.white))),
+                DropdownMenuItem(value: 'cm', child: Tr('Centimeters (cm)', style: TextStyle(color: Colors.white))),
+                DropdownMenuItem(value: 'in', child: Tr('Inches (in)', style: TextStyle(color: Colors.white))),
               ],
               onChanged: (value) => onSpacingUnitChanged(value ?? 'mm'),
             ),

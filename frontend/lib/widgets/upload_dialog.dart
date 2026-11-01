@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'tr.dart';
 class UploadDialog extends StatelessWidget {
   final Map<String, dynamic> template;
   final Function(Map<String, dynamic>) onUploadFile;
@@ -24,8 +25,7 @@ class UploadDialog extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              'Upload Document',
+            const Tr('Upload Document',
               style: TextStyle(
                 fontSize: 20,
                 fontWeight: FontWeight.w700,
@@ -61,8 +61,7 @@ class UploadDialog extends StatelessWidget {
                           borderRadius: BorderRadius.circular(6),
                         ),
                         child: const Center(
-                          child: Text(
-                            'Upload File',
+                          child: Tr('Upload File',
                             style: TextStyle(
                               color: Colors.white,
                               fontWeight: FontWeight.w600,
@@ -90,8 +89,7 @@ class UploadDialog extends StatelessWidget {
                           borderRadius: BorderRadius.circular(6),
                         ),
                         child: Center(
-                          child: Text(
-                            'Paste Text',
+                          child: Tr('Paste Text',
                             style: TextStyle(
                               color: Colors.white,
                               fontWeight: FontWeight.w600,
@@ -106,8 +104,7 @@ class UploadDialog extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 20),
-            Text(
-              'Supported formats: PDF, DOCX, DOC, TXT',
+            Tr('Supported formats: PDF, DOCX, DOC, TXT',
               style: TextStyle(
                 fontSize: 11,
                 color: Colors.white.withOpacity(0.5),
@@ -119,8 +116,7 @@ class UploadDialog extends StatelessWidget {
               children: [
                 TextButton(
                   onPressed: () => Navigator.pop(context),
-                  child: Text(
-                    'Cancel',
+                  child: Tr('Cancel',
                     style: TextStyle(
                       color: Colors.white.withOpacity(0.6),
                       fontSize: 12,

@@ -30,7 +30,7 @@ def test_build_previews_one_missing():
     previews = build_previews(info)
 
     assert len(previews) == 1
-    assert previews[0]["issue_id"] == "missing_section_abstract"
+    assert previews[0]["issue_id"] == "missing_heading_abstract"
     assert previews[0]["is_placeholder"] is True
     assert previews[0]["name"] == "Abstract"
     assert previews[0]["level"] == 1
@@ -73,7 +73,7 @@ def test_build_previews_two_adjacent_missing():
     assert len(previews) == 2
     
     # First missing section
-    assert previews[0]["issue_id"] == "missing_section_abstract"
+    assert previews[0]["issue_id"] == "missing_heading_abstract"
     assert previews[0]["name"] == "Abstract"
     assert previews[0]["insert_before_paragraph_index"] == 5
     assert previews[0]["insert_before_paragraph_id"] == "p5"
@@ -81,7 +81,7 @@ def test_build_previews_two_adjacent_missing():
     assert previews[0]["insert_after_paragraph_id"] == "p4"
     
     # Second missing section (adjacent, same insertion point)
-    assert previews[1]["issue_id"] == "missing_section_introduction"
+    assert previews[1]["issue_id"] == "missing_heading_introduction"
     assert previews[1]["name"] == "Introduction"
     assert previews[1]["insert_before_paragraph_index"] == 5
     assert previews[1]["insert_before_paragraph_id"] == "p5"
@@ -116,7 +116,7 @@ def test_build_previews_missing_at_end():
     previews = build_previews(info)
 
     assert len(previews) == 1
-    assert previews[0]["issue_id"] == "missing_section_references"
+    assert previews[0]["issue_id"] == "missing_heading_references"
     assert previews[0]["name"] == "References"
     assert previews[0]["insert_before_paragraph_index"] is None
     assert previews[0]["insert_before_paragraph_id"] is None
@@ -213,8 +213,8 @@ def test_build_previews_section_with_special_chars():
     previews = build_previews(info)
 
     assert len(previews) == 1
-    # Special chars should be sanitized in issue_id
-    assert previews[0]["issue_id"] == "missing_section_problem_statement_objectives"
+    # Same helper as heading_matches_to_issues (normalize, do not slugify)
+    assert previews[0]["issue_id"] == "missing_heading_problem statement & objectives"
     assert previews[0]["name"] == "Problem Statement & Objectives"
 
 

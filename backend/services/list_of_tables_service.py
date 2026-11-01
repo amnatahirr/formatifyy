@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List
 
-from docx_fields import (
+from docx_tools.docx_fields import (
     _LOT_HEADING_RE,
     _element_is_before_body_start,
     _ensure_bookmark_on_paragraph,

@@ -199,6 +199,7 @@ class DeadlineModel {
   final int? departmentId;
   final String? departmentName;
   final bool appliesToAll;
+  final int? targetSemester;
 
   const DeadlineModel({
     required this.id,
@@ -208,6 +209,7 @@ class DeadlineModel {
     required this.departmentId,
     required this.departmentName,
     required this.appliesToAll,
+     this.targetSemester,
   });
 
   factory DeadlineModel.fromJson(Map<String, dynamic> json) => DeadlineModel(
@@ -218,6 +220,7 @@ class DeadlineModel {
         departmentId: json['department_id'] == null ? null : _asInt(json['department_id']),
         departmentName: json['department_name']?.toString(),
         appliesToAll: (json['applies_to_all'] ?? 0) == 1 || json['applies_to_all'] == true,
+        targetSemester: json['target_semester'] as int?,
       );
 }
 

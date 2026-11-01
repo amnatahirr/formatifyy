@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../providers/collaboration_provider.dart';
 
+import '../../../widgets/tr.dart';
 /// Activity tab — who uploaded / changed what and when, most recent first.
 class ProjectActivityTab extends StatefulWidget {
   final int projectId;
@@ -143,8 +144,7 @@ class _ProjectActivityTabState extends State<ProjectActivityTab> {
           children: const [
             SizedBox(height: 160),
             Center(
-              child: Text(
-                'No activity yet',
+              child: Tr('No activity yet',
                 style: TextStyle(color: Color(0xFF94A3B8)),
               ),
             ),

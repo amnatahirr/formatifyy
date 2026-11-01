@@ -33,6 +33,7 @@ import '../widgets/template_config/sample_document_dialog.dart';
 import '../widgets/template_config/voice_template_button.dart';
 
 
+import '../widgets/tr.dart';
 class TemplateConfigurationScreen extends StatefulWidget {
   final int? departmentId;
   final bool standalone;
@@ -899,7 +900,7 @@ class _TemplateConfigurationScreenState
   Future<void> _createTemplate() async {
     if (_templateNameController.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Please enter a template name')));
+          const SnackBar(content: Tr('Please enter a template name')));
       return;
     }
 
@@ -910,7 +911,7 @@ class _TemplateConfigurationScreenState
         _bodyFontSizeController.text.isEmpty ||
         _lineSpacingController.text.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Please fill in required margin and font fields')));
+          content: Tr('Please fill in required margin and font fields')));
       return;
     }
 
@@ -938,7 +939,7 @@ class _TemplateConfigurationScreenState
       if (response.statusCode == 200 || response.statusCode == 201) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-              content: Text('Template created successfully!'),
+              content: Tr('Template created successfully!'),
               backgroundColor: Colors.green));
           if (widget.standalone) {
             Navigator.of(context).pop(true);
@@ -968,7 +969,7 @@ class _TemplateConfigurationScreenState
   Future<void> _saveTemplate() async {
     if (_selectedTemplateId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('No template selected to save')));
+          const SnackBar(content: Tr('No template selected to save')));
       return;
     }
 
@@ -996,7 +997,7 @@ class _TemplateConfigurationScreenState
       if (response.statusCode == 200) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-              content: Text('Template saved successfully!'),
+              content: Tr('Template saved successfully!'),
               backgroundColor: Colors.green));
         }
         // CRITICAL FIX: Reload the template immediately after saving to verify changes
@@ -1509,16 +1510,14 @@ class _TemplateConfigurationScreenState
             const Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  'Reference Formatting Rules',
+                Tr('Reference Formatting Rules',
                   style: TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.w700,
                     color: Colors.white,
                   ),
                 ),
-                Text(
-                  'Set citation style, font, spacing and behaviour for the References section',
+                Tr('Set citation style, font, spacing and behaviour for the References section',
                   style: TextStyle(fontSize: 11, color: Color(0xFF8B949E)),
                 ),
               ],
@@ -1543,8 +1542,7 @@ class _TemplateConfigurationScreenState
                 }
               },
               icon: const Icon(Icons.tune, size: 16, color: Color(0xFF6366F1)),
-              label: const Text(
-                'Configure Reference Rules',
+              label: const Tr('Configure Reference Rules',
                 style: TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w600,
@@ -1900,7 +1898,7 @@ class _TemplateConfigurationScreenState
                   heroTag: 'template_preview_fab',
                   onPressed: _showPreviewSheet,
                   icon: const Icon(Icons.visibility_outlined),
-                  label: const Text('Preview'),
+                  label: const Tr('Preview'),
                 ),
               ),
             ),

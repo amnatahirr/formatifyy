@@ -14,7 +14,7 @@ from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.text.paragraph import Paragraph
 
-from docx_fields import (
+from docx_tools.docx_fields import (
     is_paragraph_in_cover_or_info,
     paragraph_has_image,
     paragraph_has_seq_caption,
@@ -45,7 +45,7 @@ def _prev_body_paragraphs(doc, img_para, limit: int = 3):
 
 
 def _next_body_paragraphs(doc, img_para, limit: int = 3):
-    from docx_fields import _next_body_paragraphs as _nxt
+    from docx_tools.docx_fields import _next_body_paragraphs as _nxt
 
     yield from _nxt(doc, img_para, limit=limit)
 

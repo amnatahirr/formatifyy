@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'common_widgets.dart';
 
+import '../tr.dart';
 class HeadingStylesCard extends StatelessWidget {
   final String spacingUnit;
   final String numberingStyle;
@@ -207,7 +208,7 @@ class HeadingStylesCard extends StatelessWidget {
                 value: italic,
                 onChanged: (value) => onItalicChanged(value ?? false),
               ),
-              const Text('Italic', style: TextStyle(color: Colors.white70)),
+              const Tr('Italic', style: TextStyle(color: Colors.white70)),
             ],
           ),
           const SizedBox(height: 12),

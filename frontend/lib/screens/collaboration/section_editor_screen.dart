@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/collaboration_provider.dart';
 
+import '../../widgets/tr.dart';
 class SectionEditorScreen extends StatefulWidget {
   final int projectId;
   final String sectionId;
@@ -147,7 +148,7 @@ class _SectionEditorScreenState extends State<SectionEditorScreen> {
       setState(() => _images.add(uploaded));
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Image uploaded'),
+          content: Tr('Image uploaded'),
           backgroundColor: Color(0xFF10B981),
         ),
       );
@@ -267,7 +268,7 @@ class _SectionEditorScreenState extends State<SectionEditorScreen> {
                     height: 18,
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
-                : const Text('Save Commit'),
+                : const Tr('Save Commit'),
           ),
         ],
       ),
@@ -302,8 +303,7 @@ class _SectionEditorScreenState extends State<SectionEditorScreen> {
             const SizedBox(height: 16),
             Row(
               children: [
-                const Text(
-                  'Attached Images',
+                const Tr('Attached Images',
                   style: TextStyle(
                     color: Colors.white,
                     fontWeight: FontWeight.w600,
@@ -314,7 +314,7 @@ class _SectionEditorScreenState extends State<SectionEditorScreen> {
                 OutlinedButton.icon(
                   onPressed: _pickAndUploadImage,
                   icon: const Icon(Icons.image, size: 16),
-                  label: const Text('Upload Image'),
+                  label: const Tr('Upload Image'),
                   style: OutlinedButton.styleFrom(
                     foregroundColor: const Color(0xFF6366F1),
                     side: const BorderSide(color: Color(0xFF6366F1)),
@@ -341,8 +341,7 @@ class _SectionEditorScreenState extends State<SectionEditorScreen> {
                   borderRadius: BorderRadius.circular(8),
                   border: Border.all(color: const Color(0xFF2D3748)),
                 ),
-                child: const Text(
-                  'No images attached. Upload images to include them in the merged document.',
+                child: const Tr('No images attached. Upload images to include them in the merged document.',
                   style: TextStyle(color: Color(0xFF94A3B8), fontSize: 11),
                   textAlign: TextAlign.center,
                 ),
@@ -409,8 +408,7 @@ class _SectionEditorScreenState extends State<SectionEditorScreen> {
             const SizedBox(height: 12),
             const Align(
               alignment: Alignment.centerLeft,
-              child: Text(
-                'Auto-saved as a draft. Save Commit creates a permanent version. Images are included when the section is merged.',
+              child: Tr('Auto-saved as a draft. Save Commit creates a permanent version. Images are included when the section is merged.',
                 style: TextStyle(color: Color(0xFF94A3B8), fontSize: 11),
               ),
             ),

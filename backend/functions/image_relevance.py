@@ -35,6 +35,52 @@ _CAPTION_LIKE_RE = re.compile(
 )
 
 
+_DIAGRAM_KEYWORDS_RE = re.compile(
+    r"\b(use[\s-]?case|actors?|uml|erd|entity[\s-]relationship|dfd|data[\s-]flow|"
+    r"sequence|class[\s-]diagram|activity[\s-]diagram|state[\s-](?:chart|machine|diagram)|"
+    r"flow[\s-]?chart|architecture|block[\s-]diagram|deployment|component[\s-]diagram|"
+    r"context[\s-]diagram|schema)\b",
+    re.IGNORECASE,
+)
+
+
+def nearby_caption_text(
+    batch: Batch, img: ImageBlock, *, before_n: int = 2, after_n: int = 3
+) -> str:
+    """Figure caption(s) right next to the image, e.g. 'Figure 3.2: Use Case Diagram'."""
+    img_num = _para_num((img.paragraph_id or "").strip())
+    if img_num is None:
+        return ""
+    parts: List[str] = []
+    for p in _ordered_paragraphs(batch):
+        pn = _para_num(p.paragraph_id)
+        if pn is None or not (img_num - before_n <= pn <= img_num + after_n):
+            continue
+        t = (p.text or "").strip()
+        if t and _CAPTION_LIKE_RE.match(t) and len(t.split()) <= 30:
+            parts.append(t)
+    return " ".join(parts)
+
+
+def _diagram_relevant_result(reason, threshold, caption, heading, before_text, after_text):
+    return {
+        "similarity": 1.0,
+        "clip_similarity": 0.0,
+        "caption_alignment": 0.0,
+        "relevant": True,
+        "is_relevant": True,
+        "verdict": "relevant",
+        "confidence": 1.0,
+        "threshold": threshold,
+        "caption": caption or "",
+        "heading": heading,
+        "before_text": before_text,
+        "after_text": after_text,
+        "keyword_matches": [],
+        "reason": reason,
+    }
+
+
 def _build_section_text(heading: str, before: str, after: str) -> str:
     parts = [
         p.strip()
@@ -273,6 +319,7 @@ def analyze_image_relevance_sync(
     skip_caption: bool = False,
     before_text: str = "",
     after_text: str = "",
+    figure_caption: str = "",
 ) -> dict:
     """
     Local CLIP relevance analysis against surrounding section text.
@@ -295,25 +342,22 @@ def analyze_image_relevance_sync(
 
     # Diagrams (use case, class, ER, DFD, flowcharts...) cannot be judged by
     # CLIP — treat them as relevant instead of flagging them falsely.
+        # 1) Figure caption explicitly says it's a diagram (strongest signal).
+    if figure_caption and _DIAGRAM_KEYWORDS_RE.search(figure_caption):
+        print(f"[image_relevance] RELEVANT | diagram caption: '{figure_caption[:60]}'")
+        return _diagram_relevant_result(
+            f"Figure caption identifies a technical diagram: '{figure_caption[:80]}'.",
+            threshold, caption, heading, before_text, after_text,
+        )
+
+    # 2) Image itself looks like a diagram (UML/flowchart/architecture...).
     if is_diagram_like_from_b64(b64):
         print("[image_relevance] RELEVANT | diagram-like image, CLIP skipped")
-        return {
-            "similarity": 1.0,
-            "clip_similarity": 0.0,
-            "caption_alignment": 0.0,
-            "relevant": True,
-            "is_relevant": True,
-            "verdict": "relevant",
-            "confidence": 1.0,
-            "threshold": threshold,
-            "caption": caption or "",
-            "heading": heading,
-            "before_text": before_text,
-            "after_text": after_text,
-            "keyword_matches": [],
-            "reason": "Diagram-style image (UML/flowchart/architecture); "
-                      "photo-based CLIP scoring is not applicable.",
-        }
+        return _diagram_relevant_result(
+            "Diagram-style image (UML/flowchart/architecture); "
+            "photo-based CLIP scoring is not applicable.",
+            threshold, caption, heading, before_text, after_text,
+        )
 
     if before_text or after_text:
         section_text = _build_section_text(heading, before_text, after_text)
@@ -496,6 +540,7 @@ async def _evaluate_relevance(
     caption: str | None = None,
     before_text: str = "",
     after_text: str = "",
+    figure_caption: str = "",
 ) -> Optional[Dict[str, Any]]:
     result = await asyncio.to_thread(
         lambda: analyze_image_relevance_sync(
@@ -506,6 +551,7 @@ async def _evaluate_relevance(
             skip_caption=False,
             before_text=before_text,
             after_text=after_text,
+            figure_caption=figure_caption,
         )
     )
     if result["relevant"]:
@@ -541,6 +587,7 @@ async def check_image_relevance(
                 ctx["section_text"],
                 before_text=ctx["before"],
                 after_text=ctx["after"],
+                figure_caption=ctx.get("figure_caption") or nearby_caption_text(batch, img),
             )
             if issue:
                 results.append(issue)
@@ -612,6 +659,7 @@ async def check_images_combined(
                     skip_caption=bool(caption),
                     before_text=before,
                     after_text=after,
+                    figure_caption=nearby_caption_text(batch, img),
                 )
                 if not rel["relevant"]:
                     issues.append(

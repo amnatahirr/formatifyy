@@ -30,6 +30,10 @@ class DocumentProvider extends ChangeNotifier {
   /// Cached AI Tools analyze payloads (grammar/plagiarism/stats) keyed by document id.
   final Map<int, Map<String, dynamic>> _analysisByDocumentId = {};
 
+  /// Cached GET /documents/missing-section-previews payloads keyed by document id.
+  final Map<int, List<Map<String, dynamic>>> _missingSectionPreviews = {};
+  int? _lastFetchedUserId;
+
   /// Last document created/uploaded on New Report — used for supervisor submit.
   int? _pendingSubmitDocumentId;
   String? _pendingSubmitFilename;
@@ -57,6 +61,11 @@ class DocumentProvider extends ChangeNotifier {
 
   Map<String, dynamic>? analysisReportFor(int documentId) =>
       _analysisByDocumentId[documentId];
+
+  List<Map<String, dynamic>> missingSectionPreviewsFor(int documentId) =>
+      List<Map<String, dynamic>>.from(
+        _missingSectionPreviews[documentId] ?? const [],
+      );
 
   /// Slim snapshot matching final_submissions / supervisor analysis_report shape.
   static Map<String, dynamic> slimAnalysisReport(Map<String, dynamic> raw) {
@@ -135,6 +144,7 @@ class DocumentProvider extends ChangeNotifier {
       );
 
       if (response.statusCode == 200) {
+        _lastFetchedUserId = userId;
         _documents = List<Map<String, dynamic>>.from(
           json.decode(response.body),
         );
@@ -912,6 +922,42 @@ class DocumentProvider extends ChangeNotifier {
       _errorMessage = "Rename error: $e";
       notifyListeners();
       return null;
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> fetchMissingSectionPreviews(
+    int documentId, {
+    bool suggest = false,
+    int? userId,
+  }) async {
+    try {
+      final uid = userId ?? _lastFetchedUserId;
+      if (uid == null) {
+        return missingSectionPreviewsFor(documentId);
+      }
+      final url =
+          '${ApiConfig.getBaseUrl()}/documents/missing-section-previews/$documentId'
+          '?user_id=$uid&suggest=$suggest';
+      final response = await http.get(
+        Uri.parse(url),
+        headers: ApiConfig.getHeaders(),
+      );
+      if (response.statusCode != 200) {
+        debugPrint(
+          '[v0] missing section previews failed: ${response.statusCode} ${response.body}',
+        );
+        return missingSectionPreviewsFor(documentId);
+      }
+      final data = json.decode(response.body) as Map<String, dynamic>;
+      final previews = (data['previews'] as List? ?? [])
+          .map((e) => Map<String, dynamic>.from(e as Map))
+          .toList();
+      _missingSectionPreviews[documentId] = previews;
+      notifyListeners();
+      return previews;
+    } catch (e) {
+      debugPrint('[v0] missing section previews error: $e');
+      return missingSectionPreviewsFor(documentId);
     }
   }
 

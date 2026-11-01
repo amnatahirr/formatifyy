@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
+import 'tr.dart';
 class QRDialog extends StatelessWidget {
   final String qrUrl;
 
@@ -9,7 +10,7 @@ class QRDialog extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text("Scan to Download"),
+      title: const Tr("Scan to Download"),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -18,8 +19,7 @@ class QRDialog extends StatelessWidget {
             size: 220,
           ),
           const SizedBox(height: 10),
-          const Text(
-            "Scan with phone camera\nValid for 5 minutes",
+          const Tr("Scan with phone camera\nValid for 5 minutes",
             textAlign: TextAlign.center,
           ),
         ],

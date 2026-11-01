@@ -11,6 +11,7 @@ import '../../theme/app_theme.dart';
 import '../../widgets/admin/admin_ui.dart';
 import 'document_page_view.dart';
 
+import '../../widgets/tr.dart';
 /// Yellow for unresolved comments, gray for resolved-only paragraphs.
 const Color _unresolvedHighlight = Color(0xFFFFF3C4);
 const Color _resolvedHighlight = Color(0xFFE5E7EB);
@@ -137,15 +138,14 @@ class _DocumentReviewScreenState extends State<DocumentReviewScreen> {
             return AlertDialog(
               backgroundColor: AdminColors.surface,
               shape: adminDialogShape(),
-              title: const Text('Add Comment'),
+              title: const Tr('Add Comment'),
               content: SizedBox(
                 width: 440,
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      'This comment will be linked to the selected paragraph and the student will be notified.',
+                    Tr('This comment will be linked to the selected paragraph and the student will be notified.',
                       style: TextStyle(color: Colors.white.withOpacity(0.7), height: 1.4),
                     ),
                     const SizedBox(height: 14),
@@ -181,7 +181,7 @@ class _DocumentReviewScreenState extends State<DocumentReviewScreen> {
               actions: [
                 TextButton(
                   onPressed: () => Navigator.pop(dialogContext),
-                  child: const Text('Cancel'),
+                  child: const Tr('Cancel'),
                 ),
                 ElevatedButton(
                   onPressed: () {
@@ -192,7 +192,7 @@ class _DocumentReviewScreenState extends State<DocumentReviewScreen> {
                     }
                     Navigator.pop(dialogContext, text);
                   },
-                  child: const Text('Add Comment'),
+                  child: const Tr('Add Comment'),
                 ),
               ],
             );
@@ -275,22 +275,21 @@ class _DocumentReviewScreenState extends State<DocumentReviewScreen> {
                 ),
                 ListTile(
                   leading: const Icon(Icons.add_comment_outlined, color: AdminColors.primary),
-                  title: const Text('Add Comment', style: TextStyle(color: Colors.white)),
+                  title: const Tr('Add Comment', style: TextStyle(color: Colors.white)),
                   onTap: () => Navigator.pop(sheetContext, 'comment'),
                 ),
                 if (paragraph.hasUnresolvedComments)
                   ListTile(
                     leading: const Icon(Icons.check_circle_outline, color: AdminColors.success),
-                    title: const Text('Mark Resolved', style: TextStyle(color: Colors.white)),
-                    subtitle: Text(
-                      'Turns this paragraph gray',
+                    title: const Tr('Mark Resolved', style: TextStyle(color: Colors.white)),
+                    subtitle: Tr('Turns this paragraph gray',
                       style: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 12),
                     ),
                     onTap: () => Navigator.pop(sheetContext, 'resolve'),
                   ),
                 ListTile(
                   leading: Icon(Icons.close_rounded, color: Colors.white.withOpacity(0.6)),
-                  title: Text('Cancel', style: TextStyle(color: Colors.white.withOpacity(0.75))),
+                  title: Tr('Cancel', style: TextStyle(color: Colors.white.withOpacity(0.75))),
                   onTap: () => Navigator.pop(sheetContext),
                 ),
                 const SizedBox(height: 8),
@@ -345,8 +344,7 @@ class _DocumentReviewScreenState extends State<DocumentReviewScreen> {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
-                        Text(
-                          'Long-press a paragraph, table or image to add a comment',
+                        Tr('Long-press a paragraph, table or image to add a comment',
                           style: TextStyle(fontSize: 12, color: Colors.white.withOpacity(0.5)),
                         ),
                       ],
