@@ -264,7 +264,28 @@ class _NewReportScreenState extends State<NewReportScreen> {
   ));
 }
       } else {
-        _showError(docProvider.errorMessage ?? 'Failed to upload file');
+        if (mounted) {
+          showDialog(
+            context: context,
+            builder: (ctx) => AlertDialog(
+              backgroundColor: _p.surface,
+              title: Text(
+                'File could not be uploaded',
+                style: TextStyle(color: _p.textPrimary),
+              ),
+              content: Text(
+                docProvider.errorMessage ?? 'Upload failed. Please try again.',
+                style: TextStyle(color: _p.textSecondary),
+              ),
+              actions: [
+                ElevatedButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('OK'),
+                ),
+              ],
+            ),
+          );
+        }
       }
     } catch (e) {
       _showError('Error: $e');
@@ -290,13 +311,16 @@ class _NewReportScreenState extends State<NewReportScreen> {
       var response = await request.send();
       final responseBody = await response.stream.bytesToString();
 
-      if (response.statusCode == 200) {
+      if (response.statusCode >= 200 && response.statusCode < 300) {
         final data = jsonDecode(responseBody);
         return {
           'document_id': data['document_id'],
           'filename': data['filename'],
         };
       } else {
+        final docProvider = context.read<DocumentProvider>();
+        final parsedMsg = docProvider.parseErrorMessage(responseBody) ?? 'Upload failed. Please try again.';
+        docProvider.setErrorMessage(parsedMsg);
         debugPrint('[v0] Upload failed: $responseBody');
         return null;
       }
@@ -339,7 +363,28 @@ class _NewReportScreenState extends State<NewReportScreen> {
       }
 
       if (response == null) {
-        _showError(docs.errorMessage ?? 'Freeform upload failed');
+        if (mounted) {
+          showDialog(
+            context: context,
+            builder: (ctx) => AlertDialog(
+              backgroundColor: _p.surface,
+              title: Text(
+                'File could not be uploaded',
+                style: TextStyle(color: _p.textPrimary),
+              ),
+              content: Text(
+                docs.errorMessage ?? 'Upload failed. Please try again.',
+                style: TextStyle(color: _p.textSecondary),
+              ),
+              actions: [
+                ElevatedButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('OK'),
+                ),
+              ],
+            ),
+          );
+        }
         return;
       }
 

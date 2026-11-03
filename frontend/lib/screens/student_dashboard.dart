@@ -30,7 +30,9 @@ import 'student/my_supervisor_screen.dart';
 import 'student/fyp_milestones_screen.dart';
 import 'student/plagiarism_report_screen.dart';
 import 'student/status_tracker_screen.dart';
+import '../widgets/notification_bell.dart';
 import '../widgets/notifications_panel.dart';
+import '../screens/notifications_screen.dart';
 import '../widgets/student/mobile_status_summary_card.dart';
 import '../widgets/student/desktop_semester_deadline_card.dart';
 import '../utils/responsive.dart';
@@ -650,8 +652,8 @@ class _StudentDashboardState extends State<StudentDashboard> {
             if (!compact)
               Row(
                 children: [
-                  NotificationsPanelButton(),
-                  SizedBox(width: 12),
+                  const NotificationBell(),
+                  const SizedBox(width: 12),
                   GestureDetector(
                     onTap: () {
                       setState(() {
@@ -873,7 +875,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
       case 12:
         return _buildSettingsPage();
       case kNotificationsTabIndex:
-        return const StudentNotificationsPage();
+        return const NotificationsScreen();
       default:
         return const SizedBox.shrink();
     }
@@ -4216,10 +4218,24 @@ class _StudentDashboardState extends State<StudentDashboard> {
               docProvider.fetchDocuments(auth.userId!);
             }
           } else {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text('Upload failed: ${docProvider.errorMessage}'),
-                backgroundColor: Color(0xFFEF4444),
+            showDialog(
+              context: context,
+              builder: (ctx) => AlertDialog(
+                backgroundColor: _p.surface,
+                title: Text(
+                  'File could not be uploaded',
+                  style: TextStyle(color: _p.textPrimary),
+                ),
+                content: Text(
+                  docProvider.errorMessage ?? 'Upload failed. Please try again.',
+                  style: TextStyle(color: _p.textSecondary),
+                ),
+                actions: [
+                  ElevatedButton(
+                    onPressed: () => Navigator.pop(ctx),
+                    child: const Text('OK'),
+                  ),
+                ],
               ),
             );
           }

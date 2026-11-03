@@ -297,5 +297,135 @@ def test_build_previews_backward_compatibility():
     assert "guidance_text" in previews[0]
 
 
+def test_normalize_required_sections_filters_frontmatter():
+    """Test that normalize_required_sections filters out front-matter entries."""
+    from missing_sections import normalize_required_sections
+
+    # Template with front-matter and body sections
+    sections = [
+        "Title Page",
+        "Declaration",
+        "Table of Contents",
+        "List of Figures",
+        "List of Tables",
+        "Abstract",
+        "Introduction",
+        "Methodology",
+        "Results",
+        "Conclusion",
+        "References",
+        "Appendix",
+    ]
+
+    normalized = normalize_required_sections(sections)
+
+    # Front-matter entries should be filtered out
+    frontmatter_names = {"title page", "declaration", "table of contents", 
+                        "list of figures", "list of tables"}
+    for section in normalized:
+        assert section["name"].lower() not in frontmatter_names
+    
+    # Body sections should remain
+    body_names = {"abstract", "introduction", "methodology", "results", 
+                  "conclusion", "references", "appendix"}
+    normalized_names = {s["name"].lower() for s in normalized}
+    for name in body_names:
+        assert name in normalized_names
+
+
+def test_is_frontmatter_section():
+    """Test _is_frontmatter_section correctly identifies front-matter entries."""
+    from missing_sections import _is_frontmatter_section
+
+    # Front-matter entries
+    assert _is_frontmatter_section("Title Page") is True
+    assert _is_frontmatter_section("Cover Page") is True
+    assert _is_frontmatter_section("Declaration") is True
+    assert _is_frontmatter_section("Certification") is True
+    assert _is_frontmatter_section("Table of Contents") is True
+    assert _is_frontmatter_section("Contents") is True
+    assert _is_frontmatter_section("List of Figures") is True
+    assert _is_frontmatter_section("List of Tables") is True
+    assert _is_frontmatter_section("List of Abbreviations") is True
+    assert _is_frontmatter_section("{{ logo }}") is True
+
+    # Body sections (should return False)
+    assert _is_frontmatter_section("Abstract") is False
+    assert _is_frontmatter_section("Introduction") is False
+    assert _is_frontmatter_section("Methodology") is False
+    assert _is_frontmatter_section("Results") is False
+    assert _is_frontmatter_section("Conclusion") is False
+    assert _is_frontmatter_section("References") is False
+    assert _is_frontmatter_section("Appendix") is False
+
+
+def test_normalize_required_sections_with_dict():
+    """Test normalize_required_sections with dict input and front-matter filtering."""
+    from missing_sections import normalize_required_sections
+
+    sections = [
+        {"name": "Title Page", "level": 1},
+        {"name": "Abstract", "level": 1},
+        {"name": "Introduction", "level": 1},
+        {"name": "Table of Contents", "level": 1},
+        {"name": "Methodology", "level": 1},
+    ]
+
+    normalized = normalize_required_sections(sections)
+
+    # Should only include body sections
+    assert len(normalized) == 3
+    normalized_names = [s["name"] for s in normalized]
+    assert "Abstract" in normalized_names
+    assert "Introduction" in normalized_names
+    assert "Methodology" in normalized_names
+    assert "Title Page" not in normalized_names
+    assert "Table of Contents" not in normalized_names
+
+
+def test_build_template_outline_filters_frontmatter():
+    """Test that build_template_outline filters out front-matter entries."""
+    from docx_tools.heading_analysis import build_template_outline
+
+    sections = [
+        "Title Page",
+        "Declaration",
+        "Table of Contents",
+        "Abstract",
+        "Introduction",
+        "Methodology",
+    ]
+
+    outline = build_template_outline(sections)
+
+    # Front-matter should be filtered out
+    outline_names = [entry.name for entry in outline]
+    assert "Title Page" not in outline_names
+    assert "Declaration" not in outline_names
+    assert "Table of Contents" not in outline_names
+    
+    # Body sections should remain
+    assert "Abstract" in outline_names
+    assert "Introduction" in outline_names
+    assert "Methodology" in outline_names
+
+
+def test_heading_analysis_is_frontmatter_section():
+    """Test _is_frontmatter_section in heading_analysis."""
+    from docx_tools.heading_analysis import _is_frontmatter_section
+
+    # Front-matter entries
+    assert _is_frontmatter_section("Title Page") is True
+    assert _is_frontmatter_section("Cover Page") is True
+    assert _is_frontmatter_section("Declaration") is True
+    assert _is_frontmatter_section("Table of Contents") is True
+    assert _is_frontmatter_section("List of Figures") is True
+
+    # Body sections
+    assert _is_frontmatter_section("Abstract") is False
+    assert _is_frontmatter_section("Introduction") is False
+    assert _is_frontmatter_section("Methodology") is False
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

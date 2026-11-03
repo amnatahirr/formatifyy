@@ -19,6 +19,7 @@ import '../utils/logout_confirm.dart';
 import '../utils/responsive.dart';
 import '../theme/app_theme.dart';
 import '../widgets/admin/admin_ui.dart';
+import '../widgets/notification_bell.dart';
 
 import '../widgets/tr.dart';
 
@@ -769,6 +770,8 @@ class _AdminDashboardState extends State<AdminDashboard> {
             ),
             const SizedBox(width: 12),
           ],
+          const NotificationBell(),
+          const SizedBox(width: 12),
           Tooltip(
             message: 'Logout',
             child: InkWell(

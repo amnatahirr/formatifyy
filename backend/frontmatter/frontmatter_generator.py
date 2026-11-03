@@ -19,6 +19,10 @@ from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Pt, Mm
 from docxtpl import DocxTemplate, InlineImage
+import docx.section
+if not hasattr(docx.section.Section, 'part'):
+    docx.section.Section.part = property(lambda self: self._document_part)
+
 
 from models import FrontmatterContext
 
@@ -558,6 +562,7 @@ def render_template_to_bytes(
             doc, ask_ctx, keep_result=keep_ask_result
         )
         _strip_paragraph_numbering(doc)
+        _remove_empty_cover_paragraphs(doc)
         return _document_to_bytes(doc)
 
     if not _docx_has_jinja_markers(template_path):
@@ -573,6 +578,7 @@ def render_template_to_bytes(
             doc, ask_ctx, keep_result=keep_ask_result
         )
         _strip_paragraph_numbering(doc)
+        _remove_empty_cover_paragraphs(doc)
         return _document_to_bytes(doc)
     except Exception as exc:
         print(
@@ -591,6 +597,93 @@ def _strip_paragraph_numbering(doc: Document) -> None:
         num_pr = p_pr.find(qn("w:numPr"))
         if num_pr is not None:
             p_pr.remove(num_pr)
+
+
+def _remove_empty_cover_paragraphs(doc: Document) -> None:
+    """
+    Remove empty paragraphs from the *cover page only* (before the first page
+    break) after Jinja rendering.
+
+    When a field like ``{{ logo }}`` renders to ``""`` the paragraph becomes
+    empty. We strip those so the cover looks clean. Paragraphs with text,
+    images, or page breaks are always kept. The rest of the document (after
+    the first page break) is never touched.
+
+    Label-only lines ("Submitted by:", "Supervisor:", "Co-Supervisor:") are
+    removed when they would appear with no following content (no members /
+    no supervisor name).
+    """
+    body = doc.element.body
+    cover_children: list = []
+    for child in list(body):
+        if child.tag == qn("w:sectPr"):
+            break
+        is_page_break = (
+            child.tag == qn("w:p")
+            and any(
+                br.get(qn("w:type")) == "page"
+                for br in child.iter(qn("w:br"))
+            )
+        )
+        cover_children.append(child)
+        if is_page_break:
+            break
+
+    to_remove: list = []
+    for i, child in enumerate(cover_children):
+        if child.tag != qn("w:p"):
+            continue
+        text = "".join((t.text or "") for t in child.iter(qn("w:t"))).strip()
+        has_media = bool(
+            list(child.iter(qn("w:drawing")))
+            or list(child.iter(qn("w:pict")))
+            or list(child.iter(
+                "{http://schemas.openxmlformats.org/drawingml/2006/main}blip"
+            ))
+        )
+        has_break = any(
+            br.get(qn("w:type")) == "page" for br in child.iter(qn("w:br"))
+        )
+
+        # Keep paragraphs that carry text, images, or a page break
+        if has_media or has_break:
+            continue
+        if not text:
+            to_remove.append(child)
+            continue
+
+        # Label-only lines where field was empty (e.g. "Supervisor: ", "Session: ")
+        if text in ("Supervisor:", "Co-Supervisor:", "Session:"):
+            to_remove.append(child)
+            continue
+
+        if text == "Submitted by:":
+            # Peek at subsequent cover paragraphs to see if any member line follows
+            has_members = False
+            for j in range(i + 1, len(cover_children)):
+                nc = cover_children[j]
+                if nc.tag != qn("w:p"):
+                    continue
+                next_text = "".join(
+                    (t.text or "") for t in nc.iter(qn("w:t"))
+                ).strip()
+                if not next_text:
+                    continue
+                if next_text not in (
+                    "Supervisor:", "Co-Supervisor:", "Session:",
+                    "Final Year Project Report",
+                ) and not next_text.startswith(("Supervisor:", "Co-Supervisor:", "Session:")):
+                    has_members = True
+                break
+            if not has_members:
+                to_remove.append(child)
+                continue
+
+    for child in to_remove:
+        try:
+            body.remove(child)
+        except ValueError:
+            pass
 
 
 def _docx_has_jinja_markers(template_path: str) -> bool:
@@ -669,10 +762,17 @@ def _strip_leading_cover_page(doc: Document) -> bool:
     return True
 
 
-def refresh_leading_cover_from_template(docx_path: str) -> bool:
+def refresh_leading_cover_from_template(
+    docx_path: str,
+    ctx: Optional[FrontmatterContext] = None,
+) -> bool:
     """
     Replace the leading cover page in ``docx_path`` with a freshly rendered
-    admin cover template (exact RESULT text, no context injection).
+    admin cover template.
+
+    When *ctx* carries real project data the Jinja cover is rendered with that
+    data (university, members, supervisor, etc).  When *ctx* is None only
+    ASK/FILLIN fields are stripped.
 
     Preserves everything after the first page break (info / TOC / body).
     """
@@ -683,8 +783,7 @@ def refresh_leading_cover_from_template(docx_path: str) -> bool:
     try:
         from docxcompose.composer import Composer
 
-        # Minimal context — cover ASK fields are stripped, not filled.
-        cover_bytes = render_cover_page(FrontmatterContext())
+        cover_bytes = render_cover_page(ctx or FrontmatterContext())
         cover_doc = _bytes_to_document(cover_bytes)
         _strip_trailing_empty_paragraphs(cover_doc)
         _strip_trailing_page_breaks(cover_doc)

@@ -14,7 +14,7 @@ REMINDER_WINDOW_DAYS = 3  # is se pehle reminder shuru nahi hota
 
 def students_for_deadline(cursor, org_id, department_id, target_semester):
     sql = (
-        "SELECT id, email,username FROM users "
+        "SELECT id, email, username, org_id FROM users "
         "WHERE org_id = ? AND role = 'student' AND COALESCE(is_graduated, 0) = 0"
     )
     params: list[Any] = [org_id]
@@ -29,16 +29,23 @@ def students_for_deadline(cursor, org_id, department_id, target_semester):
 
 
 def notify_students(cursor, students, title, message, deadline_id) -> int:
+    from services.notification_service import notify, NotificationType
+    
+    count = 0
     for s in students:
-        cursor.execute(
-            """
-            INSERT INTO notifications
-                (user_id, recipient_email, title, message, type, related_type, related_id)
-            VALUES (?, ?, ?, ?, 'deadline', 'deadline', ?)
-            """,
-            (s["id"], s["email"], title, message, deadline_id),
+        s_org_id = int(s["org_id"] if "org_id" in s.keys() and s["org_id"] else 1)
+        notify(
+            org_id=s_org_id,
+            user_id=s["id"],
+            type=NotificationType.DEADLINE_TODAY,
+            title=title,
+            body=message,
+            entity_type="deadline",
+            entity_id=deadline_id,
+            payload={"screen": "deadlines", "deadline_id": deadline_id},
         )
-    return len(students)
+        count += 1
+    return count
 
 
 def _stage_for(days_left: int) -> int:

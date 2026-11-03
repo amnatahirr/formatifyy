@@ -135,11 +135,14 @@ def build_frontmatter_context(
                     LEFT JOIN supervisors s ON s.id = g.supervisor_id
                     LEFT JOIN departments d ON d.id = g.department_id
                     WHERE g.status = 'accepted'
-                      AND LOWER(TRIM(g.student_contact_email)) = LOWER(?)
+                      AND (
+                        LOWER(TRIM(g.student_contact_email)) = LOWER(?)
+                        OR LOWER(g.member_names) LIKE '%' || LOWER(?) || '%'
+                      )
                     ORDER BY g.id DESC
                     LIMIT 1
                     """,
-                    (email,),
+                    (email, email),
                 )
                 group_row = cursor.fetchone()
 

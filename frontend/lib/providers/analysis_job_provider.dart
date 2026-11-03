@@ -142,10 +142,21 @@ void _safeNotify() {
       );
 
       if (resp.statusCode != 200) {
-        throw Exception(
-          'Could not start analysis '
-          '(${resp.statusCode}): ${resp.body}',
-        );
+        String errorMsg = 'Could not start analysis';
+        try {
+          final data = jsonDecode(resp.body);
+          if (data is Map && data['detail'] != null) {
+            final detail = data['detail'];
+            errorMsg = detail is Map
+                ? (detail['message'] ?? detail['detail'] ?? detail).toString()
+                : detail.toString();
+          } else if (data is Map && data['message'] != null) {
+            errorMsg = data['message'].toString();
+          }
+        } catch (_) {
+          errorMsg = 'Could not start analysis (${resp.statusCode})';
+        }
+        throw Exception(errorMsg);
       }
 
       _poll(job, userId, base);
@@ -249,11 +260,15 @@ void _safeNotify() {
 
   /// Marks the job as failed and displays an error notification.
   void _fail(AnalysisJob job, String msg) {
+    String cleanMsg = msg.trim();
+    while (cleanMsg.startsWith('Exception: ')) {
+      cleanMsg = cleanMsg.substring('Exception: '.length).trim();
+    }
     job.status = AnalysisStatus.failed;
-    job.error = msg;
+    job.error = cleanMsg;
 
     if (!job.completer.isCompleted) {
-      job.completer.completeError(Exception(msg));
+      job.completer.completeError(Exception(cleanMsg));
     }
 
     notifyListeners();

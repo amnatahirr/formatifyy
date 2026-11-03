@@ -17,13 +17,14 @@ import '../widgets/image_replacement_dialog.dart';
 import '../widgets/apply_all_fixes_dialogs.dart';
 import '../models/json_parse.dart';
 import '../services/image_replacement_service.dart';
-import ' image_formatter_screen.dart';
+import 'image_formatter_screen.dart';
 import '../widgets/reference_formatter_widget.dart';
 import '../providers/analysis_job_provider.dart';
 import '../main.dart' show navigatorKey; 
 import '../utils/analysis_nav.dart';
 import 'dart:async';
 import '../widgets/tr.dart';
+import '../widgets/notification_bell.dart';
 // ─────────────────────────────────────────────────────────────────────────────
 // Color palette — follows ThemeProvider (light / dark)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -257,6 +258,7 @@ late final AuthProvider _auth;
   List<Map<String, dynamic>> _documentBlocks = [];
   List<Map<String, dynamic>> _missingSectionPreviews = [];
   final Map<String, GlobalKey> _ghostKeys = {};
+  final Map<String, TextEditingController> _missingControllers = {};
   String? _flashGhostIssueId;
   int _imageVersion = 0; // replace ke baad image URLs ka cache todne ke liye
   List<Map<String, dynamic>> _pipelineIssues = [];
@@ -335,7 +337,7 @@ late final AuthProvider _auth;
     _docs = context.read<DocumentProvider>();
 _auth = context.read<AuthProvider>();
   _jobs.activeDocId = widget.documentId;
-    _tabController = TabController(length: 9, vsync: this);
+    _tabController = TabController(length: 10, vsync: this);
     _tabController.addListener(_onAnalysisTabChanged);
     _baseUrl = ApiConfig.getBaseUrl();
     _analysisFuture = _runAnalysisWithProgress();
@@ -380,14 +382,14 @@ _auth = context.read<AuthProvider>();
   void _onAnalysisTabChanged() {
     if (_tabController.indexIsChanging) return;
     // Tables tab (after Image Relevance)
-    if (_tabController.index == 5) {
+    if (_tabController.index == 6) {
       if (!_tablesLoading) {
         _loadTables();
       }
       return;
     }
     // Document Lists tab
-    if (_tabController.index == 8) {
+    if (_tabController.index == 9) {
       _loadTocCheck();
     }
   }
@@ -407,6 +409,7 @@ void dispose() {
 
   if (_jobs.activeDocId == widget.documentId) _jobs.activeDocId = null;
   _tabController.removeListener(_onAnalysisTabChanged);
+  for (final c in _missingControllers.values) { c.dispose(); }
   _tabController.dispose();
   super.dispose();
 }
@@ -549,26 +552,69 @@ void dispose() {
         'placeholder_text': p['placeholder_text'],
         'is_placeholder': true,
         'insert_before_paragraph_id': p['insert_before_paragraph_id'],
+        'insert_after_paragraph_id': p['insert_after_paragraph_id'],
         'page': p['page'] ?? 1,
       });
     }
+    
+    // Build a map of paragraph_id -> real block index for O(1) lookups
+    final pidToIndex = <String, int>{};
+    for (var i = 0; i < real.length; i++) {
+      final pid = real[i]['paragraph_id'] as String? ?? '';
+      if (pid.isNotEmpty) {
+        pidToIndex[pid] = i;
+      }
+    }
+    
     final out = <Map<String, dynamic>>[];
     final used = <int>{};
-    for (final b in real) {
+    
+    // First pass: insert ghosts that have insert_before_paragraph_id
+    for (var i = 0; i < real.length; i++) {
+      final b = real[i];
       final pid = b['paragraph_id'] as String? ?? '';
-      for (var i = 0; i < ghosts.length; i++) {
-        if (used.contains(i)) continue;
-        final before = ghosts[i]['insert_before_paragraph_id'];
-        if (before != null && before.toString() == pid) {
-          out.add(ghosts[i]);
-          used.add(i);
+      
+      // Check if any ghost should be inserted before this paragraph
+      for (var j = 0; j < ghosts.length; j++) {
+        if (used.contains(j)) continue;
+        final before = ghosts[j]['insert_before_paragraph_id'] as String?;
+        if (before != null && before == pid) {
+          out.add(ghosts[j]);
+          used.add(j);
         }
       }
+      
       out.add(b);
     }
+    
+    // Second pass: insert ghosts that have insert_after_paragraph_id
+    // (these are positioned after specific paragraphs)
+    for (var i = 0; i < real.length; i++) {
+      final b = real[i];
+      final pid = b['paragraph_id'] as String? ?? '';
+      
+      for (var j = 0; j < ghosts.length; j++) {
+        if (used.contains(j)) continue;
+        final after = ghosts[j]['insert_after_paragraph_id'] as String?;
+        if (after != null && after == pid) {
+          // Find the index where this paragraph was added in out
+          final outIndex = out.indexWhere((block) {
+            final blockPid = block['paragraph_id'] as String?;
+            return blockPid == pid;
+          });
+          if (outIndex >= 0) {
+            out.insert(outIndex + 1, ghosts[j]);
+            used.add(j);
+          }
+        }
+      }
+    }
+    
+    // Third pass: append any remaining ghosts (end of document)
     for (var i = 0; i < ghosts.length; i++) {
       if (!used.contains(i)) out.add(ghosts[i]);
     }
+    
     return out;
   }
 
@@ -1671,9 +1717,10 @@ void dispose() {
     );
   }
 
-  static const int _imageEthicsTabIndex = 3;
-  static const int _imageRelevanceTabIndex = 4;
-  static const int _documentListsTabIndex = 8;
+  static const int _missingSectionsTabIndex = 3;
+  static const int _imageEthicsTabIndex = 4;
+  static const int _imageRelevanceTabIndex = 5;
+  static const int _documentListsTabIndex = 9;
 
   void _goToTab(int index) {
     if (!mounted) return;
@@ -1684,6 +1731,10 @@ void dispose() {
   void _goToImageIssuesTab() {
     final hasEthics = _pendingImageIssues.any(_isImageEthicsIssue);
     _goToTab(hasEthics ? _imageEthicsTabIndex : _imageRelevanceTabIndex);
+  }
+
+  void _goToMissingSectionsTab() {
+    _goToTab(_missingSectionsTabIndex);
   }
 
   /// Opens the image replacement dialog for a flagged image and resolves once
@@ -3033,6 +3084,8 @@ Widget build(BuildContext context) {
             ),
           ),
           const SizedBox(width: 12),
+          const NotificationBell(),
+          const SizedBox(width: 12),
           Tooltip(
             message: _exportBlockedReason ?? _exportReadyHint,
             child: ElevatedButton.icon(
@@ -3091,30 +3144,36 @@ Widget build(BuildContext context) {
   ],
 );
 
-  Widget _buildError(String msg) => Center(
-    child: Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        const Icon(Icons.error_outline, color: _red, size: 48),
-        const SizedBox(height: 12),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 32),
-          child: Text(
-            msg,
-            style: const TextStyle(color: _red),
-            textAlign: TextAlign.center,
+  Widget _buildError(String msg) {
+    String cleanMsg = msg.trim();
+    while (cleanMsg.startsWith('Exception: ')) {
+      cleanMsg = cleanMsg.substring('Exception: '.length).trim();
+    }
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.error_outline, color: _red, size: 48),
+          const SizedBox(height: 12),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 32),
+            child: Text(
+              cleanMsg,
+              style: const TextStyle(color: _red),
+              textAlign: TextAlign.center,
+            ),
           ),
-        ),
-        const SizedBox(height: 16),
-        ElevatedButton(
-          onPressed: () => setState(() {
-            _analysisFuture = _runAnalysisWithProgress(force:true);
-          }),
-          child: const Tr('Retry'),
-        ),
-      ],
-    ),
-  );
+          const SizedBox(height: 16),
+          ElevatedButton(
+            onPressed: () => setState(() {
+              _analysisFuture = _runAnalysisWithProgress(force: true);
+            }),
+            child: const Tr('Retry'),
+          ),
+        ],
+      ),
+    );
+  }
 
   // ── Main body ─────────────────────────────────────────────────────────────
 
@@ -3159,11 +3218,18 @@ Widget build(BuildContext context) {
 
 final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
   final formattingIssues = _visibleIssues(_issuesForFunction(oldIssues, 'formatting'));
-  final formattingTabCount = formattingIssues.length;
+  // Filter out missing_section issues from formatting tab - they now have their own tab
+  final formattingTabCount = formattingIssues.where((i) => 
+    (i['type'] as String? ?? '') != 'missing_section'
+  ).length;
   final imageEthicsIssues = _visibleIssues(_issuesForFunction(oldIssues, 'image_ethics'));
   final imageIssues = _visibleIssues(_issuesForFunction(oldIssues, 'image_relevance'));
   final paraRelevanceIssues = _visibleIssues(_issuesForFunction(oldIssues, 'para_relevance'));
   final plagiarismIssues = _visibleIssues(_issuesForFunction(oldIssues, 'plagiarism'));
+  final missingSectionIssues = _visibleIssues(_issuesForFunction(oldIssues, 'formatting'))
+      .where((i) => (i['type'] as String? ?? '') == 'missing_section')
+      .toList();
+  final missingSectionCount = missingSectionIssues.length;
     final openIssueCount = _visibleIssues(oldIssues).length;
 
     return Column(
@@ -3188,6 +3254,7 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
               Tab(text: 'Review  ($openIssueCount)'),
               Tab(text: 'Grammar  (${grammarIssues.length})'),
               Tab(text: 'Formatting  ($formattingTabCount)'),
+              Tab(text: 'Missing Sections  ($missingSectionCount)'),
               Tab(text: 'Image Ethics  (${imageEthicsIssues.length})'),
               Tab(text: 'Image Relevance  (${imageIssues.length})'),
               Tab(
@@ -3213,6 +3280,7 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
                 'Checks spelling, punctuation, and grammar errors.',
               ),
               _buildFormattingTab(formattingIssues),
+              _buildMissingSectionsTab(missingSectionIssues),
               _buildImageEthicsTab(imageEthicsIssues),
               _buildImageRelevancyTab(imageIssues, const []),
               _buildTablesTab(),
@@ -3240,6 +3308,9 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
   Widget _buildFormattingTab(List<dynamic> issues) {
     final visible = issues.where((i) {
       final id = (i as Map)['issue_id'] as String? ?? '';
+      final type = (i as Map)['type'] as String? ?? '';
+      // Filter out missing_section issues - they have their own tab
+      if (type == 'missing_section') return false;
       return !_ignoredIssueIds.contains(id) && !_resolvedIssueIds.contains(id);
     }).toList();
 
@@ -3315,6 +3386,181 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
             ),
           ],
         ],
+      ),
+    );
+  }
+
+  Widget _buildMissingSectionsTab(List<dynamic> issues) {
+    final visible = issues.where((i) {
+      final id = (i as Map)['issue_id'] as String? ?? '';
+      return !_ignoredIssueIds.contains(id) && !_resolvedIssueIds.contains(id);
+    }).toList();
+
+    if (visible.isEmpty) {
+      return _buildEmptyState(
+        Icons.library_add,
+        'No missing sections',
+        'All required sections from your template are present in the document.',
+        color: _green,
+      );
+    }
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildInfoBanner(
+            'Missing Sections',
+            'These required sections from your template are not in the document. '
+                'You can add them with suggested content or ignore them.',
+            _orange,
+          ),
+          const SizedBox(height: 16),
+          ...visible.map((i) => _buildMissingSectionCard(i as Map<String, dynamic>)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMissingSectionCard(Map<String, dynamic> issue) {
+    final issueId = issue['issue_id'] as String? ?? '';
+    final heading = issue['heading'] as String? ?? issue['text'] as String? ?? 'Untitled';
+    final level = issue['level'] as int? ?? 1;
+    final fixDetails = issue['fix_details'] as Map<String, dynamic>? ?? {};
+    final sectionName = fixDetails['section_name'] as String? ?? heading;
+    final insertBefore = fixDetails['insert_before'] as String? ?? '';
+    
+    // Get the preview data for this section
+    final preview = _missingSectionPreviews.firstWhere(
+      (p) => p['issue_id'] == issueId,
+      orElse: () => <String, dynamic>{},
+    );
+    
+    final suggestedContent =
+    (preview['suggested_content'] ?? issue['suggested_content'] ?? '').toString();
+final guidanceText =
+    (preview['guidance_text'] ?? issue['guidance_text'] ?? '').toString();
+final contentController = _missingControllers.putIfAbsent(
+  issueId,
+  () => TextEditingController(
+    text: suggestedContent.isNotEmpty ? suggestedContent : guidanceText,
+  ),
+);
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      decoration: BoxDecoration(
+        color: _surface,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: _orange.withOpacity(0.35)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: _orange.withOpacity(0.12),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  alignment: Alignment.center,
+                  child: Text(
+                    'H$level',
+                    style: TextStyle(
+                      color: _orange,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 14,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        sectionName,
+                        style: TextStyle(
+                          color: _textPri,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                        ),
+                      ),
+                      if (insertBefore.isNotEmpty)
+                        Text(
+                          'Will be added before: $insertBefore',
+                          style: TextStyle(
+                            color: _textSec,
+                            fontSize: 12,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: contentController,
+              maxLines: 4,
+              style: TextStyle(color: _textPri),
+              decoration: InputDecoration(
+                labelText: 'Section content',
+                hintText: 'Enter content for this section...',
+                labelStyle: TextStyle(color: _textSec),
+                hintStyle: TextStyle(color: _textSec.withOpacity(0.6)),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: BorderSide(color: _border),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: BorderSide(color: _border),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: BorderSide(color: _blue),
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: ElevatedButton.icon(
+                    icon: const Icon(Icons.add, size: 18),
+                    label: const Tr('Add Section'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: _green,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                    ),
+                    onPressed: () {
+                      final content = contentController.text.trim();
+                      _handlePreviewApplyFix(issueId, content);
+},
+                  ),
+                ),
+                const SizedBox(width: 12),
+                OutlinedButton.icon(
+                  icon: const Icon(Icons.close, size: 18),
+                  label: const Tr('Ignore'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: _textSec,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                  ),
+                  onPressed: () => _handlePreviewIgnore(issueId),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }

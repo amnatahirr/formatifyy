@@ -26,6 +26,18 @@ MIN_HEADINGS_FOR_RELIABLE = 2
 
 _STOP = {"and", "of", "the", "a", "an", "for", "in", "on", "to"}
 
+# Front-matter section names to exclude from missing-section detection
+# These are structural pages (cover, info, TOC, lists) not body content headings
+_FRONTMATTER_PATTERNS = [
+    re.compile(r"^(title\s*page|cover\s*page|title|cover)$", re.I),
+    re.compile(r"^(declaration|certification|certificate|undertaking)$", re.I),
+    re.compile(r"^(table\s+of\s+contents|contents|toc)$", re.I),
+    re.compile(r"^(list\s+of\s+figures|list\s+of\s+images|lof|table\s+of\s+figures)$", re.I),
+    re.compile(r"^(list\s+of\s+tables|lot)$", re.I),
+    re.compile(r"^(list\s+of\s+(abbreviations|symbols|appendices))$", re.I),
+    re.compile(r"^\{\{.*\}\}$", re.I),  # Placeholder-style entries
+]
+
 # In-memory cache for AI suggestions: (document_id, section_name, doc_hash) -> suggested_content
 _SUGGESTION_CACHE: Dict[tuple, str] = {}
 
@@ -61,6 +73,20 @@ _PREFIXES = [
     re.compile(r"^[ivxlcdm]+[.)]\s+", re.I),
     re.compile(r"^[a-z][.)]\s+", re.I),
 ]
+
+
+def _is_frontmatter_section(name: str) -> bool:
+    """
+    Return True if the section name is a front-matter entry (cover, info, TOC, lists)
+    that should be excluded from missing-section detection.
+    """
+    text = (name or "").strip()
+    if not text:
+        return True
+    for pattern in _FRONTMATTER_PATTERNS:
+        if pattern.match(text):
+            return True
+    return False
 
 
 def normalize_title(text: str) -> str:
@@ -116,6 +142,9 @@ def normalize_required_sections(raw: Any) -> List[Dict[str, Any]]:
     Accepts: list of strings, list of dicts (name/title/heading/section,
     optional level, children/subsections/sections), JSON string, or
     newline-separated string.
+
+    Filters out front-matter entries (cover, info, TOC, lists) - only real
+    body content headings are considered for missing-section detection.
     """
     if isinstance(raw, str):
         s = raw.strip()
@@ -132,7 +161,7 @@ def normalize_required_sections(raw: Any) -> List[Dict[str, Any]]:
         for it in items or []:
             if isinstance(it, str):
                 name = it.strip()
-                if name:
+                if name and not _is_frontmatter_section(name):
                     out.append({"name": name, "level": level, "optional": False})
             elif isinstance(it, dict):
                 name = str(
@@ -147,7 +176,7 @@ def normalize_required_sections(raw: Any) -> List[Dict[str, Any]]:
                 except (TypeError, ValueError):
                     lvl = level
                 optional = bool(it.get("optional")) or it.get("required") is False
-                if name:
+                if name and not _is_frontmatter_section(name):
                     out.append({"name": name, "level": lvl, "optional": optional})
                 kids = (
                     it.get("children") or it.get("subsections")
@@ -318,13 +347,17 @@ def insert_missing_section_by_name(
     required_sections: Any,
     section_name: str,
     content: Optional[str] = None,
+    formatting_rules: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """
     Re-runs detection (paragraph indexes may have moved since the user saw the
-    result), then inserts a heading + highlighted placeholder in template order.
+    result), then inserts a heading + body text in template order with proper
+    template formatting applied.
     """
     from docx import Document
-    from docx.enum.text import WD_COLOR_INDEX
+    from docx.shared import Pt
+    from docx.oxml.ns import qn
+    from docx_tools.docx_styles import force_heading_style
 
     info = detect_missing_sections(docx_path, required_sections)
     target = next(
@@ -372,14 +405,30 @@ def insert_missing_section_by_name(
         heading = doc.add_paragraph(name)
         bodies = [doc.add_paragraph(t) for t in body_texts]
 
-    try:
-        heading.style = doc.styles[f"Heading {level}"]
-    except KeyError:
-        for r in heading.runs:
-            r.bold = True
-    for body in bodies:  # highlighted so the student reviews it
+    # Apply Word Heading style first
+    force_heading_style(heading, doc, level)
+
+    # Apply template-specific heading formatting (font, size, bold, spacing, alignment)
+    if formatting_rules:
+        _apply_template_heading_style(heading, level, formatting_rules, doc)
+    else:
+        # Fallback: copy formatting from nearest existing heading of same level
+        _copy_heading_style_from_nearest(heading, level, doc, before)
+
+    # Body text: use document's Normal style, NO yellow highlight
+    for body in bodies:
+        try:
+            body.style = doc.styles["Normal"]
+        except Exception:
+            body.style = "Normal"
+        
+        # Apply body style from template if available
+        if formatting_rules:
+            _apply_template_body_style(body, formatting_rules, doc)
+        
+        # Ensure no highlight
         for r in body.runs:
-            r.font.highlight_color = WD_COLOR_INDEX.YELLOW
+            r.font.highlight_color = None
 
     doc.save(docx_path)
     return {
@@ -388,6 +437,162 @@ def insert_missing_section_by_name(
         "level": level,
         "used_suggested_content": bool(content and content.strip()),
     }
+
+
+def _apply_template_heading_style(para, level: int, rules: Dict[str, Any], doc) -> None:
+    """Apply template heading formatting (font, size, bold, spacing, alignment) to a paragraph."""
+    from docx.shared import Pt
+    from docx.oxml.ns import qn
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+
+    level_key = f"heading{level}"
+    font_name = rules.get(f"{level_key}_font", "Times New Roman")
+    font_size = rules.get(f"{level_key}_size", 16)
+    bold = rules.get(f"{level_key}_bold", True)
+    italic = rules.get(f"{level_key}_italic", False)
+    line_spacing = rules.get(f"{level_key}_line_spacing", 1.5)
+    space_before = rules.get(f"{level_key}_space_before", 0.0)
+    space_after = rules.get(f"{level_key}_space_after", 6.0)
+    color_hex = rules.get(f"{level_key}_color", "#000000")
+
+    # Apply to all runs
+    for run in para.runs:
+        if not run.text:
+            continue
+        run.font.name = font_name
+        run.font.size = Pt(font_size)
+        run.font.bold = bold
+        run.font.italic = italic
+        
+        # Set color from hex
+        if color_hex and color_hex.startswith("#"):
+            try:
+                from docx.shared import RGBColor
+                rgb = RGBColor.from_string(color_hex[1:])
+                run.font.color.rgb = rgb
+            except Exception:
+                pass
+        
+        # Set font for both ASCII and Unicode
+        r_pr = run._element.get_or_add_rPr()
+        r_fonts = r_pr.get_or_add_rFonts()
+        r_fonts.set(qn("w:ascii"), font_name)
+        r_fonts.set(qn("w:hAnsi"), font_name)
+        r_fonts.set(qn("w:eastAsia"), font_name)
+        r_fonts.set(qn("w:cs"), font_name)
+
+    # Paragraph formatting
+    pf = para.paragraph_format
+    pf.line_spacing = line_spacing
+    pf.space_before = Pt(space_before)
+    pf.space_after = Pt(space_after)
+    
+    # Alignment
+    alignment_map = {
+        "left": WD_ALIGN_PARAGRAPH.LEFT,
+        "center": WD_ALIGN_PARAGRAPH.CENTER,
+        "right": WD_ALIGN_PARAGRAPH.RIGHT,
+        "justify": WD_ALIGN_PARAGRAPH.JUSTIFY,
+    }
+    align_key = rules.get(f"{level_key}_alignment", "left")
+    if align_key in alignment_map:
+        pf.alignment = alignment_map[align_key]
+
+    # Headings should not have first-line indent
+    pf.first_line_indent = None
+    pf.left_indent = None
+
+
+def _copy_heading_style_from_nearest(para, level: int, doc, insert_before_idx: Optional[int]) -> None:
+    """Fallback: copy formatting from the nearest existing heading of the same level."""
+    from docx.shared import Pt
+    from docx.oxml.ns import qn
+
+    paras = doc.paragraphs
+    # Search backwards from insertion point
+    start_idx = min(insert_before_idx if insert_before_idx is not None else len(paras), len(paras))
+    
+    for i in range(start_idx - 1, -1, -1):
+        p = paras[i]
+        if not p.style or not p.style.name:
+            continue
+        style_name = p.style.name.lower()
+        if f"heading {level}" in style_name or f"heading{level}" in style_name:
+            # Copy run formatting
+            if p.runs and para.runs:
+                source_run = p.runs[0]
+                for run in para.runs:
+                    if not run.text:
+                        continue
+                    run.font.name = source_run.font.name
+                    run.font.size = source_run.font.size
+                    run.font.bold = source_run.font.bold
+                    run.font.italic = source_run.font.italic
+                    if source_run.font.color and source_run.font.color.rgb:
+                        run.font.color.rgb = source_run.font.color.rgb
+            
+            # Copy paragraph formatting
+            para.paragraph_format.line_spacing = p.paragraph_format.line_spacing
+            para.paragraph_format.space_before = p.paragraph_format.space_before
+            para.paragraph_format.space_after = p.paragraph_format.space_after
+            para.paragraph_format.alignment = p.paragraph_format.alignment
+            return
+    
+    # No matching heading found - apply basic fallback
+    for run in para.runs:
+        if not run.text:
+            continue
+        run.font.name = "Times New Roman"
+        run.font.size = Pt(16 if level == 1 else 14)
+        run.font.bold = True
+        r_pr = run._element.get_or_add_rPr()
+        r_fonts = r_pr.get_or_add_rFonts()
+        r_fonts.set(qn("w:ascii"), "Times New Roman")
+        r_fonts.set(qn("w:hAnsi"), "Times New Roman")
+
+
+def _apply_template_body_style(para, rules: Dict[str, Any], doc) -> None:
+    """Apply template body formatting to a paragraph."""
+    from docx.shared import Pt
+    from docx.oxml.ns import qn
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+
+    font_name = rules.get("body_font", "Times New Roman")
+    font_size = rules.get("body_size", 12)
+    line_spacing = rules.get("body_line_spacing", 1.5)
+    space_before = rules.get("body_space_before", 0.0)
+    space_after = rules.get("body_space_after", 6.0)
+    color_hex = rules.get("body_color", "#000000")
+    justified = rules.get("body_justified", True)
+
+    for run in para.runs:
+        if not run.text:
+            continue
+        run.font.name = font_name
+        run.font.size = Pt(font_size)
+        
+        if color_hex and color_hex.startswith("#"):
+            try:
+                from docx.shared import RGBColor
+                rgb = RGBColor.from_string(color_hex[1:])
+                run.font.color.rgb = rgb
+            except Exception:
+                pass
+        
+        r_pr = run._element.get_or_add_rPr()
+        r_fonts = r_pr.get_or_add_rFonts()
+        r_fonts.set(qn("w:ascii"), font_name)
+        r_fonts.set(qn("w:hAnsi"), font_name)
+
+    pf = para.paragraph_format
+    pf.line_spacing = line_spacing
+    pf.space_before = Pt(space_before)
+    pf.space_after = Pt(space_after)
+    
+    if justified:
+        pf.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+    else:
+        pf.alignment = WD_ALIGN_PARAGRAPH.LEFT
 
 
 # ---------------------------------------------------------------------------

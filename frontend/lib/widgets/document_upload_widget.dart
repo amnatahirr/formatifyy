@@ -452,16 +452,28 @@ class _DocumentUploadWidgetState extends State<DocumentUploadWidget> {
 
     setState(() => _isUploading = false);
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          success
-              ? 'Document uploaded & formatted successfully'
-              : 'Upload failed',
+    if (success) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Document uploaded & formatted successfully'),
+          backgroundColor: Colors.green,
         ),
-        backgroundColor: success ? Colors.green : Colors.red,
-      ),
-    );
+      );
+    } else {
+      showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('File could not be uploaded'),
+          content: Text(docs.errorMessage ?? 'Upload failed. Please try again.'),
+          actions: [
+            ElevatedButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('OK'),
+            ),
+          ],
+        ),
+      );
+    }
 
     if (success) {
       setState(() {

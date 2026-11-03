@@ -273,13 +273,22 @@ class DocumentProvider extends ChangeNotifier {
       if (data is Map && data['detail'] != null) {
         final detail = data['detail'];
         if (detail is Map) {
-          return (detail['message'] ?? detail).toString();
+          return (detail['message'] ?? detail['detail'] ?? detail).toString();
         }
         return detail.toString();
+      } else if (data is Map && data['message'] != null) {
+        return data['message'].toString();
       }
     } catch (_) {}
     return null;
   }
+
+  void setErrorMessage(String? msg) {
+    _errorMessage = msg;
+    notifyListeners();
+  }
+
+  String? parseErrorMessage(String body) => _detail(body);
 
   Future<bool> uploadDocument(File file, int templateId, int userId) async {
     try {
@@ -293,19 +302,21 @@ class DocumentProvider extends ChangeNotifier {
       var response = await request.send();
       final responseBody = await response.stream.bytesToString();
 
-      if (response.statusCode == 200) {
+      if (response.statusCode >= 200 && response.statusCode < 300) {
         await fetchDocuments(userId); // refresh list
         return true;
       } else {
-        _errorMessage = "Upload failed: $responseBody";
+        _errorMessage = _detail(responseBody) ?? "Upload failed. Please try again.";
         debugPrint(
           "[v0] Upload failed with status ${response.statusCode}: $responseBody",
         );
+        notifyListeners();
         return false;
       }
     } catch (e) {
       _errorMessage = "Upload error: $e";
       debugPrint("[v0] Upload error: $e");
+      notifyListeners();
       return false;
     }
   }
@@ -321,7 +332,7 @@ class DocumentProvider extends ChangeNotifier {
       request.files.add(await http.MultipartFile.fromPath("file", file.path));
       var response = await request.send();
       final responseBody = await response.stream.bytesToString();
-      if (response.statusCode == 200) {
+      if (response.statusCode >= 200 && response.statusCode < 300) {
         final data = jsonDecode(responseBody) as Map<String, dynamic>;
         await fetchDocuments(userId);
         return {
@@ -330,10 +341,12 @@ class DocumentProvider extends ChangeNotifier {
           'is_freeform': true,
         };
       }
-      _errorMessage = "Freeform upload failed: $responseBody";
+      _errorMessage = _detail(responseBody) ?? "Upload failed. Please try again.";
+      notifyListeners();
       return null;
     } catch (e) {
       _errorMessage = "Freeform upload error: $e";
+      notifyListeners();
       return null;
     }
   }

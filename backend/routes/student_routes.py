@@ -1046,6 +1046,44 @@ def create_assignment_request(
         request_id = cursor.lastrowid
         conn.commit()
 
+        # Notify the supervisor of the new assignment request
+        try:
+            cursor.execute(
+                "SELECT email, name FROM supervisors WHERE id = ? AND COALESCE(org_id, 1) = ?",
+                (supervisor_id, org_id),
+            )
+            sup_row = cursor.fetchone()
+            if sup_row and sup_row["email"]:
+                sup_email = sup_row["email"]
+                cursor.execute(
+                    "SELECT id, org_id FROM users WHERE LOWER(email) = LOWER(?) AND COALESCE(org_id, 1) = ?",
+                    (sup_email, org_id),
+                )
+                user_row = cursor.fetchone()
+                notify_user_id = user_row["id"] if user_row else None
+                notify_org_id = int(user_row["org_id"] if user_row and user_row["org_id"] else org_id)
+
+                student_name = student_leader_name or (student.get("username") or "A student").strip()
+                if project_title:
+                    message_text = f"{student_name} requested supervision for '{project_title}'."
+                else:
+                    message_text = f"{student_name} submitted a supervision request for group '{group_name}'."
+
+                from services.notification_service import notify, NotificationType
+                notify(
+                    org_id=notify_org_id,
+                    user_id=notify_user_id,
+                    type=NotificationType.NEW_ASSIGNMENT_REQUEST,
+                    title="New supervision request",
+                    body=message_text,
+                    entity_type="assignment_request",
+                    entity_id=request_id,
+                    payload={"screen": "assignment_requests", "request_id": request_id},
+                )
+                conn.commit()
+        except Exception:
+            logger.exception("Failed to send assignment request notification for request_id=%s", request_id)
+
         cursor.execute(
             """
             SELECT
@@ -1418,27 +1456,45 @@ def create_final_submission(
         supervisor = cursor.fetchone()
         if supervisor and supervisor["email"]:
             cursor.execute(
-                "SELECT id FROM users WHERE LOWER(email) = LOWER(?) AND COALESCE(org_id, 1) = ?",
+                "SELECT id, org_id FROM users WHERE LOWER(email) = LOWER(?) AND COALESCE(org_id, 1) = ?",
                 (supervisor["email"], org_id),
             )
             user_row = cursor.fetchone()
             notify_user_id = user_row["id"] if user_row else None
-            cursor.execute(
-                """
-                INSERT INTO notifications
-                    (user_id, recipient_email, title, message, type, is_read, related_type, related_id)
-                VALUES (?, ?, ?, ?, ?, 0, ?, ?)
-                """,
-                (
-                    notify_user_id,
-                    supervisor["email"],
-                    "New final submission",
-                    f"{group['title']} submitted '{title}' for review.",
-                    "final_submission",
-                    "final_submission",
-                    submission_id,
-                ),
+            notify_org_id = int(user_row["org_id"] if user_row and user_row["org_id"] else org_id)
+            
+            from services.notification_service import notify, NotificationType
+            notify(
+                org_id=notify_org_id,
+                user_id=notify_user_id,
+                type=NotificationType.STUDENT_SUBMITTED,
+                title="New final submission",
+                body=f"{group['title']} submitted '{title}' for review.",
+                entity_type="final_submission",
+                entity_id=submission_id,
+                payload={"screen": "submissions", "submission_id": submission_id},
             )
+            
+            # Check plagiarism score and notify if high
+            try:
+                report = json.loads(report_json) if report_json else {}
+                stats = report.get("stats", {})
+                plagiarism_score = float(stats.get("avg_plagiarism_risk") or 0)
+                if 0 < plagiarism_score <= 1:
+                    plagiarism_score = round(plagiarism_score * 100, 1)
+                if plagiarism_score > 30:  # Threshold for high plagiarism
+                    notify(
+                        org_id=notify_org_id,
+                        user_id=notify_user_id,
+                        type=NotificationType.PLAGIARISM_HIGH,
+                        title="High plagiarism score detected",
+                        body=f"Submission '{title}' has {plagiarism_score}% plagiarism score.",
+                        entity_type="final_submission",
+                        entity_id=submission_id,
+                        payload={"screen": "submissions", "submission_id": submission_id},
+                    )
+            except Exception as exc:
+                logger.exception("Failed to check plagiarism for notification: %s", exc)
 
         conn.commit()
 
@@ -1875,6 +1931,7 @@ def _serialize_notification(row, cursor=None) -> dict[str, Any]:
     """
     result: dict[str, Any] = {
         "id": row["id"],
+        "user_id": row["user_id"] if "user_id" in row.keys() else None,
         "recipient_email": row["recipient_email"] or "",
         "title": row["title"] or "",
         "message": row["message"] or "",
@@ -1883,6 +1940,7 @@ def _serialize_notification(row, cursor=None) -> dict[str, Any]:
         "related_type": row["related_type"] or "",
         "related_id": row["related_id"],
         "created_at": row["created_at"] or "",
+        "org_id": row["org_id"] if "org_id" in row.keys() else 1,
     }
 
     related_type = (result["related_type"] or "").strip().lower()
@@ -2203,26 +2261,23 @@ def reply_to_student_comment(
         if supervisor and supervisor["email"]:
             snippet = reply_text[:120] + ("…" if len(reply_text) > 120 else "")
             cursor.execute(
-                "SELECT id FROM users WHERE LOWER(email) = LOWER(?) AND COALESCE(org_id, 1) = ?",
+                "SELECT id, org_id FROM users WHERE LOWER(email) = LOWER(?) AND COALESCE(org_id, 1) = ?",
                 (supervisor["email"], org_id),
             )
             user_row = cursor.fetchone()
             notify_user_id = user_row["id"] if user_row else None
-            cursor.execute(
-                """
-                INSERT INTO notifications
-                    (user_id, recipient_email, title, message, type, is_read, related_type, related_id)
-                VALUES (?, ?, ?, ?, ?, 0, ?, ?)
-                """,
-                (
-                    notify_user_id,
-                    supervisor["email"],
-                    "Student replied to your comment",
-                    f"{student_name}: {snippet}",
-                    "student_reply",
-                    "document_comment",
-                    reply_id,
-                ),
+            notify_org_id = int(user_row["org_id"] if user_row and user_row["org_id"] else org_id)
+            
+            from services.notification_service import notify, NotificationType
+            notify(
+                org_id=notify_org_id,
+                user_id=notify_user_id,
+                type=NotificationType.STUDENT_REPLY,
+                title="Student replied to your comment",
+                body=f"{student_name}: {snippet}",
+                entity_type="document_comment",
+                entity_id=reply_id,
+                payload={"screen": "comments", "comment_id": reply_id},
             )
 
         conn.commit()
@@ -2254,8 +2309,9 @@ def list_student_notifications(
     unread_only: Annotated[bool, Query()] = False,
 ):
     """
-    List notifications for a student by recipient_email (not user_id).
+    List notifications for a student by user_id AND org_id (falling back to recipient_email if user_id is NULL).
     Requires student login; email query must match the account email when provided.
+    Wrapper over unified notification table for backward compatibility.
     """
     student = _require_student(user_id)
     account_email = (student.get("email") or "").strip().lower()
@@ -2269,16 +2325,20 @@ def list_student_notifications(
             detail="email must match the logged-in student account.",
         )
 
+    student_id = int(student["id"])
+    student_org_id = int(student.get("org_id") or 1)
+
     conn = get_db()
     cursor = conn.cursor()
     try:
         sql = """
-            SELECT id, recipient_email, title, message, type, is_read,
-                   related_type, related_id, created_at
+            SELECT id, user_id, recipient_email, title, message, type, is_read,
+                   related_type, related_id, created_at, org_id
             FROM notifications
-            WHERE LOWER(TRIM(recipient_email)) = LOWER(?)
+            WHERE ((user_id = ?) OR (user_id IS NULL AND LOWER(TRIM(recipient_email)) = LOWER(?)))
+              AND COALESCE(org_id, 1) = ?
         """
-        params: list[Any] = [query_email]
+        params: list[Any] = [student_id, query_email, student_org_id]
         if unread_only:
             sql += " AND is_read = 0"
         sql += " ORDER BY datetime(created_at) DESC, id DESC"
@@ -2301,7 +2361,7 @@ def mark_student_notification_read(
     email: Annotated[str | None, Query()] = None,
     user_id: Annotated[int | None, Query()] = None,
 ):
-    """Mark a notification as read — ownership checked via recipient_email."""
+    """Mark a notification as read — filtered by user_id AND org_id (fallback to recipient_email if user_id is NULL)."""
     student = _require_student(user_id)
     account_email = (student.get("email") or "").strip().lower()
     if not account_email:
@@ -2314,18 +2374,22 @@ def mark_student_notification_read(
             detail="email must match the logged-in student account.",
         )
 
+    student_id = int(student["id"])
+    student_org_id = int(student.get("org_id") or 1)
+
     conn = get_db()
     cursor = conn.cursor()
     try:
         cursor.execute(
             """
-            SELECT id, recipient_email, title, message, type, is_read,
-                   related_type, related_id, created_at
+            SELECT id, user_id, recipient_email, title, message, type, is_read,
+                   related_type, related_id, created_at, org_id
             FROM notifications
             WHERE id = ?
-              AND LOWER(TRIM(recipient_email)) = LOWER(?)
+              AND ((user_id = ?) OR (user_id IS NULL AND LOWER(TRIM(recipient_email)) = LOWER(?)))
+              AND COALESCE(org_id, 1) = ?
             """,
-            (notification_id, query_email),
+            (notification_id, student_id, query_email, student_org_id),
         )
         row = cursor.fetchone()
         if not row:
@@ -2338,8 +2402,8 @@ def mark_student_notification_read(
         conn.commit()
         cursor.execute(
             """
-            SELECT id, recipient_email, title, message, type, is_read,
-                   related_type, related_id, created_at
+            SELECT id, user_id, recipient_email, title, message, type, is_read,
+                   related_type, related_id, created_at, org_id
             FROM notifications
             WHERE id = ?
             """,

@@ -92,8 +92,6 @@ class _DocumentPreviewPanelState extends State<DocumentPreviewPanel> {
   bool _showOriginal = true;
   bool _showStyleTags = false;
   double _zoom = 1.0;
-  final Set<String> _editingGhostIds = {};
-  final Map<String, TextEditingController> _ghostEditCtrls = {};
 
   static const double _pageW = 794;
   static const double _pageH = 1123;
@@ -155,9 +153,6 @@ class _DocumentPreviewPanelState extends State<DocumentPreviewPanel> {
   void dispose() {
     _editCtrl.dispose();
     _editFocus.dispose();
-    for (final c in _ghostEditCtrls.values) {
-      c.dispose();
-    }
     super.dispose();
   }
 
@@ -1656,8 +1651,7 @@ class _DocumentPreviewPanelState extends State<DocumentPreviewPanel> {
   Widget _buildGhostBlock(Map<String, dynamic> block, double s) {
     final issueId = block['issue_id'] as String? ?? '';
     final title = (block['text'] as String? ?? '').trim();
-    final body = _ghostBody(block);
-    final editing = issueId.isNotEmpty && _editingGhostIds.contains(issueId);
+    final level = _level(block);
     final flash = issueId.isNotEmpty && widget.flashGhostIssueId == issueId;
     GlobalKey? key;
     if (issueId.isNotEmpty) {
@@ -1665,127 +1659,29 @@ class _DocumentPreviewPanelState extends State<DocumentPreviewPanel> {
       if (keys != null) key = keys[issueId];
     }
 
-    final inner = Opacity(
-      opacity: 0.55,
-      child: Container(
-        margin: EdgeInsets.symmetric(vertical: 8 * s),
-        padding: EdgeInsets.all(10 * s),
-        decoration: BoxDecoration(
-          color: flash ? const Color(0xFFE5E7EB) : const Color(0xFFF3F4F6),
-          borderRadius: BorderRadius.circular(6),
-        ),
-        child: CustomPaint(
-          painter: _DashedRectPainter(
-            color: flash ? const Color(0xFF6B7280) : const Color(0xFF9CA3AF),
-          ),
-          child: Padding(
-            padding: EdgeInsets.all(8 * s),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFE5E7EB),
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: const Color(0xFF9CA3AF)),
-                      ),
-                      child: const Tr(
-                        'Missing section',
-                        style: TextStyle(
-                          color: Color(0xFF4B5563),
-                          fontSize: 10,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ),
-                    const Spacer(),
-                    Text(
-                      title.isEmpty ? 'Untitled section' : title,
-                      style: TextStyle(
-                        color: const Color(0xFF4B5563),
-                        fontSize: 13 * s,
-                        fontWeight: FontWeight.w700,
-                        fontStyle: FontStyle.italic,
-                      ),
-                    ),
-                  ],
-                ),
-                SizedBox(height: 8 * s),
-                if (editing)
-                  TextField(
-                    controller: _ghostEditCtrls.putIfAbsent(
-                      issueId,
-                      () => TextEditingController(text: body),
-                    ),
-                    maxLines: null,
-                    style: TextStyle(
-                      color: const Color(0xFF6B7280),
-                      fontSize: 12 * s,
-                      fontStyle: FontStyle.italic,
-                    ),
-                    decoration: const InputDecoration(
-                      isDense: true,
-                      border: InputBorder.none,
-                    ),
-                    onChanged: (v) => block['suggested_content'] = v,
-                  )
-                else
-                  Text(
-                    body.isEmpty ? ' ' : body,
-                    style: TextStyle(
-                      color: const Color(0xFF6B7280),
-                      fontSize: 12 * s,
-                      fontStyle: FontStyle.italic,
-                    ),
-                  ),
-                SizedBox(height: 10 * s),
-                Row(
-                  children: [
-                    Expanded(
-                      child: ElevatedButton(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: _green,
-                          foregroundColor: Colors.white,
-                          visualDensity: VisualDensity.compact,
-                        ),
-                        onPressed: issueId.isEmpty
-                            ? null
-                            : () => widget.onApplyFix(issueId, _ghostBody(block)),
-                        child: const Tr('Accept'),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: OutlinedButton(
-                        onPressed: issueId.isEmpty
-                            ? null
-                            : () {
-                                setState(() {
-                                  if (editing) {
-                                    _editingGhostIds.remove(issueId);
-                                  } else {
-                                    _editingGhostIds.add(issueId);
-                                  }
-                                });
-                              },
-                        child: Tr(editing ? 'Done' : 'Edit'),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: OutlinedButton(
-                        onPressed: issueId.isEmpty
-                            ? null
-                            : () => widget.onIgnoreIssue(issueId),
-                        child: const Tr('Ignore'),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
+    // Get heading style for this level
+    final headingSize = widget.headingPt[level] ?? 16;
+    final headingFont = _fontOf(block);
+
+    final inner = GestureDetector(
+      onTap: issueId.isEmpty
+          ? null
+          : () {
+              // Navigate to Missing Sections tab and highlight this card
+              // This will be handled by the parent widget via a callback
+              // For now, just flash to indicate interaction
+            },
+      child: Opacity(
+        opacity: 0.45,
+        child: Container(
+          margin: EdgeInsets.symmetric(vertical: 6 * s),
+          child: Text(
+            title.isEmpty ? 'Untitled section' : title,
+            style: TextStyle(
+              fontFamily: headingFont,
+              fontSize: headingSize * s,
+              fontWeight: FontWeight.bold,
+              color: flash ? const Color(0xFF6B7280) : const Color(0xFF9CA3AF),
             ),
           ),
         ),

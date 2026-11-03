@@ -22,6 +22,7 @@ import 'providers/fyp_provider.dart';
 import 'theme/app_theme.dart';
 import 'providers/analysis_job_provider.dart';
 import 'providers/lang_provider.dart';
+import 'providers/notification_provider.dart';
 import 'package:provider/provider.dart'; 
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
@@ -143,6 +144,7 @@ final messengerKey = GlobalKey<ScaffoldMessengerState>();
         ChangeNotifierProvider(
   create: (_) => AnalysisJobProvider()..messengerKey = messengerKey,
 ),
+        ChangeNotifierProvider(create: (_) => NotificationProvider()..messengerKey = messengerKey),
       ],
       child: Consumer<ThemeProvider>(
         builder: (context, themeProvider, _) {
@@ -253,6 +255,13 @@ class _AuthCheckState extends State<AuthCheck> {
               context.read<ThemeProvider>().bindToUser(userId);
             });
           }
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!context.mounted) return;
+            final notificationProvider = context.read<NotificationProvider>();
+            authProvider.setNotificationProvider(notificationProvider);
+            notificationProvider.startPolling();
+            notificationProvider.refreshUnreadCount();
+          });
           // Explicit --dart-define=USER_ID=… collab bootstrap stays on student shell.
           if (authProvider.isDevBootstrap) {
             return const StudentDashboard();

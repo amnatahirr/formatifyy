@@ -216,7 +216,13 @@ def ensure_frontmatter_pages(document_id: int, docx_path: str) -> Dict[str, Any]
     )
     if generated_cover:
         try:
-            if refresh_leading_cover_from_template(docx_path):
+            # Build real context so the Jinja cover template renders with
+            # actual university, members, supervisor, etc.
+            try:
+                _refresh_ctx = build_frontmatter_context(document_id)
+            except Exception:
+                _refresh_ctx = None
+            if refresh_leading_cover_from_template(docx_path, ctx=_refresh_ctx):
                 status["cover_refreshed"] = True
                 status["applied"] = True
                 status["generated_cover"] = True

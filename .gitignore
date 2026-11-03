@@ -88,3 +88,5 @@ backend/plagiarism/fyp_corpus/*
 !backend/plagiarism/fyp_corpus/.gitkeep
 backend/plagiarism/cache/*
 !backend/plagiarism/cache/.gitkeep
+
+backend/outputs/
