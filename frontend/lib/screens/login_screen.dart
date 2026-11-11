@@ -352,26 +352,15 @@ Future<void> _removeRecentOrgCode(String code) async {
     final mark = Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Container(
-          width: 48,
-          height: 48,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(14),
-            gradient: const LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [_AuthColors.accentDeep, _AuthColors.purple],
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: _AuthColors.accentDeep.withOpacity(0.45),
-                blurRadius: 18,
-                offset: const Offset(0, 8),
-              ),
-            ],
-          ),
-          child: const Icon(Icons.auto_awesome, color: Colors.white, size: 24),
-        ),
+        ClipRRect(
+  borderRadius: BorderRadius.circular(14),
+  child: Image.asset(
+    'assets/images/formatify-icon.png',
+    width: 48,
+    height: 48,
+    fit: BoxFit.cover,
+  ),
+),
         const SizedBox(width: 14),
         const Tr('FORMATIFY',
           style: TextStyle(
