@@ -24,7 +24,10 @@ import '../main.dart' show navigatorKey;
 import '../utils/analysis_nav.dart';
 import 'dart:async';
 import '../widgets/tr.dart';
+<<<<<<< HEAD
 import '../widgets/notification_bell.dart';
+=======
+>>>>>>> origin/main
 // ─────────────────────────────────────────────────────────────────────────────
 // Color palette — follows ThemeProvider (light / dark)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -337,7 +340,11 @@ late final AuthProvider _auth;
     _docs = context.read<DocumentProvider>();
 _auth = context.read<AuthProvider>();
   _jobs.activeDocId = widget.documentId;
+<<<<<<< HEAD
     _tabController = TabController(length: 10, vsync: this);
+=======
+    _tabController = TabController(length: 9, vsync: this);
+>>>>>>> origin/main
     _tabController.addListener(_onAnalysisTabChanged);
     _baseUrl = ApiConfig.getBaseUrl();
     _analysisFuture = _runAnalysisWithProgress();
@@ -409,7 +416,10 @@ void dispose() {
 
   if (_jobs.activeDocId == widget.documentId) _jobs.activeDocId = null;
   _tabController.removeListener(_onAnalysisTabChanged);
+<<<<<<< HEAD
   for (final c in _missingControllers.values) { c.dispose(); }
+=======
+>>>>>>> origin/main
   _tabController.dispose();
   super.dispose();
 }
@@ -3128,6 +3138,47 @@ Widget build(BuildContext context) {
       border: _border,
       track: _surface2,
       isComplete: _analysisComplete,
+<<<<<<< HEAD
+=======
+    ),
+    Positioned(
+      left: 0, right: 0, bottom: 24,
+      child: Center(
+        child: OutlinedButton.icon(
+          icon: const Icon(Icons.open_in_new, size: 16),
+          label: const Tr('Continue in background'),
+         onPressed: () => widget.embedded
+    ? AnalysisNav.close()
+    : _handleSidebarSelection(0),
+        ),
+      ),
+    ),
+  ],
+);
+
+  Widget _buildError(String msg) => Center(
+    child: Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const Icon(Icons.error_outline, color: _red, size: 48),
+        const SizedBox(height: 12),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 32),
+          child: Text(
+            msg,
+            style: const TextStyle(color: _red),
+            textAlign: TextAlign.center,
+          ),
+        ),
+        const SizedBox(height: 16),
+        ElevatedButton(
+          onPressed: () => setState(() {
+            _analysisFuture = _runAnalysisWithProgress(force:true);
+          }),
+          child: const Tr('Retry'),
+        ),
+      ],
+>>>>>>> origin/main
     ),
     Positioned(
       left: 0, right: 0, bottom: 24,

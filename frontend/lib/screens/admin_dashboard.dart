@@ -23,6 +23,8 @@ import '../widgets/notification_bell.dart';
 
 import '../widgets/tr.dart';
 
+import '../widgets/tr.dart';
+
 class _AdminNavItem {
   final int id;
   final String label;
@@ -92,13 +94,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
       icon: Icons.event_note_rounded,
       requiresFyp: true,
     ),
-    _AdminNavItem(
-      id: 5,
-      label: 'Semester Deadlines',
-      shortLabel: 'Sem',
-      icon: Icons.event_available_rounded,
-      requiresFyp: true,
-    ),
+   
     _AdminNavItem(
       id: 6,
       label: 'Users',
@@ -770,8 +766,11 @@ class _AdminDashboardState extends State<AdminDashboard> {
             ),
             const SizedBox(width: 12),
           ],
+<<<<<<< HEAD
           const NotificationBell(),
           const SizedBox(width: 12),
+=======
+>>>>>>> origin/main
           Tooltip(
             message: 'Logout',
             child: InkWell(

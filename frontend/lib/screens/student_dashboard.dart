@@ -37,7 +37,11 @@ import '../widgets/student/mobile_status_summary_card.dart';
 import '../widgets/student/desktop_semester_deadline_card.dart';
 import '../utils/responsive.dart';
 import 'mobile_companion_screen.dart';
+<<<<<<< HEAD
 import '../widgets/document_preview_panel.dart';
+=======
+import '../widgets/document_preview_panel.dart'; 
+>>>>>>> origin/main
 import '../providers/lang_provider.dart';
 import '../widgets/tr.dart';
 import '../providers/analysis_job_provider.dart';
@@ -109,6 +113,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
   Timer? _refreshTimer;
   AnalysisRequest? _activeAnalysis;
   void _onAnalysisRequest() {
+<<<<<<< HEAD
     if (!mounted) return;
     final req = AnalysisNav.request.value;
     setState(() {
@@ -137,8 +142,36 @@ class _StudentDashboardState extends State<StudentDashboard> {
     AnalysisNav.attach(this);
     AnalysisNav.request.addListener(_onAnalysisRequest);
     _loadInitialData();
+=======
+  if (!mounted) return;
+  final req = AnalysisNav.request.value;
+  setState(() {
+    _activeAnalysis = req;
+    if (req != null) _selectedIndex = 2;
+  });
+  if (req == null) {
+    final uid = context.read<AuthProvider>().userId;
+    if (uid != null) context.read<DocumentProvider>().fetchDocuments(uid);
+  }
+}
+@override
+void initState() {
+  super.initState();
+  _selectedIndex = widget.initialIndex.clamp(0, kNotificationsTabIndex);
+  _activeProjectId = widget.initialProjectId;
+  _projectDetailTab = widget.initialProjectTab;
+
+  final pending = AnalysisNav.request.value;
+  if (pending != null) {
+    _activeAnalysis = pending;
+    _selectedIndex = 2;
+>>>>>>> origin/main
   }
 
+  AnalysisNav.attach(this);
+  AnalysisNav.request.addListener(_onAnalysisRequest);
+  _loadInitialData();
+}
   void _loadInitialData() {
     Future.microtask(() {
       final auth = context.read<AuthProvider>();
@@ -169,8 +202,13 @@ class _StudentDashboardState extends State<StudentDashboard> {
   @override
   void dispose() {
     AnalysisNav.detach(this);
+<<<<<<< HEAD
     AnalysisNav.request.removeListener(_onAnalysisRequest);
     _refreshTimer?.cancel();
+=======
+AnalysisNav.request.removeListener(_onAnalysisRequest);
+   _refreshTimer?.cancel();
+>>>>>>> origin/main
     super.dispose();
   }
 
@@ -284,6 +322,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
     );
   }
 
+<<<<<<< HEAD
   Widget _sidebarLabel(String text) => Padding(
     padding: const EdgeInsets.fromLTRB(20, 18, 20, 4),
     child: Text(
@@ -497,9 +536,22 @@ class _StudentDashboardState extends State<StudentDashboard> {
           ),
         ],
       ),
+=======
+Widget _sidebarLabel(String text) => Padding(
+      padding: const EdgeInsets.fromLTRB(20, 18, 20, 4),
+      child: Text(
+        text.toUpperCase(),
+        style: TextStyle(
+          fontSize: 10,
+          letterSpacing: 0.8,
+          fontWeight: FontWeight.w700,
+          color: _p.textMuted,
+        ),
+      ),
+>>>>>>> origin/main
     );
-  }
 
+<<<<<<< HEAD
   Widget _buildSidebarItem(int index, IconData icon, String label) {
     final isSelected = _selectedIndex == index;
 
@@ -542,14 +594,258 @@ class _StudentDashboardState extends State<StudentDashboard> {
                   ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
+=======
+Widget _buildSidebar() {
+  return Container(
+    width: 200,
+    decoration: BoxDecoration(
+      color: _p.sidebarBg,
+      border: Border(
+        right: BorderSide(
+          color: _p.isDark ? _p.borderStrong : _p.border,
+        ),
+      ),
+    ),
+    child: Column(
+      children: [
+        // ── Logo ──────────────────────────────────────────────
+        Padding(
+          padding: const EdgeInsets.all(20),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: _p.accent,
+                  borderRadius: BorderRadius.circular(6),
+>>>>>>> origin/main
                 ),
+                child: const Icon(Icons.description,
+                    color: Colors.white, size: 20),
+              ),
+              const SizedBox(width: 12),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Tr(
+                    'FORMATIFY',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: _p.textPrimary,
+                    ),
+                  ),
+                  Tr(
+                    'Academic Edition',
+                    style: TextStyle(
+                      fontSize: 10,
+                      color: _p.textPrimary,
+                      fontWeight: FontWeight.w400,
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
         ),
+
+        // ── Menu ──────────────────────────────────────────────
+        Expanded(
+          child: ListView(
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            children: [
+              _buildSidebarItem(0, Icons.dashboard, 'Dashboard'),
+              _buildSidebarItem(1, Icons.add_circle_outline, 'New Report'),
+              _buildSidebarItem(2, Icons.folder, 'My Reports'),
+              const AnalysisJobsSidebarItem(),
+
+              _sidebarLabel('Workspace'),
+              _buildSidebarItem(3, Icons.people_outline, 'Collaboration'),
+              _buildSidebarItem(5, Icons.layers, 'Templates'),
+
+              if (DevUserConfig.hasFypModule) ...[
+                _sidebarLabel('Final Year Project'),
+                Consumer<FypProvider>(
+                  builder: (context, fyp, _) {
+                    if (!fyp.canChooseSupervisor) {
+                      return const SizedBox.shrink();
+                    }
+                    return _buildSidebarItem(
+                      6,
+                      Icons.school_outlined,
+                      'Find Supervisor',
+                    );
+                  },
+                ),
+                _buildSidebarItem(7, Icons.badge_outlined, 'My Supervisor'),
+                _buildSidebarItem(8, Icons.checklist_outlined, 'Milestones'),
+                _buildSidebarItem(
+                    9, Icons.sticky_note_2_outlined, 'Meeting Notes'),
+                _buildSidebarItem(
+                    10, Icons.policy_outlined, 'Plagiarism Report'),
+                _buildSidebarItem(
+                    11, Icons.track_changes_outlined, 'Status Tracker'),
+              ],
+
+              _sidebarLabel('Account'),
+              _buildSidebarItem(12, Icons.settings, 'Settings'),
+            ],
+          ),
+        ),
+
+        // ── User card ─────────────────────────────────────────
+        Padding(
+          padding: const EdgeInsets.all(16),
+          child: Container(
+            decoration: BoxDecoration(
+              color: _p.surfaceAlt,
+              borderRadius: BorderRadius.circular(
+                _p.isDark ? _p.cardRadius : 8,
+              ),
+              border: Border.all(
+                color: _p.isDark ? _p.borderStrong : _p.border,
+              ),
+              boxShadow: _p.isDark ? _p.cardShadow : null,
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Consumer<AuthProvider>(
+                builder: (context, auth, _) {
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        width: 32,
+                        height: 32,
+                        decoration: BoxDecoration(
+                          color: _p.accent,
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Center(
+                          child: Text(
+                            (auth.currentUser?.isNotEmpty ?? false)
+                                ? auth.currentUser![0].toUpperCase()
+                                : 'U',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        auth.currentUser ?? 'User',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: _p.textPrimary,
+                        ),
+                      ),
+                      Text(
+                        DevUserConfig.displayRoleLabel(auth.userRole),
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: _p.textSecondary,
+                          fontWeight: FontWeight.w400,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      SizedBox(
+                        width: double.infinity,
+                        height: 32,
+                        child: ElevatedButton.icon(
+                          onPressed: () => _logout(context),
+                          icon: const Icon(Icons.logout,
+                              size: 14, color: Colors.white),
+                          label: const Tr(
+                            'Logout',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.white,
+                            ),
+                          ),
+                          style: ElevatedButton.styleFrom(
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  );
+                },
+              ),
+            ),
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+
+Widget _buildSidebarItem(int index, IconData icon, String label) {
+  final isSelected = _selectedIndex == index;
+
+  return Container(
+    margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+    decoration: BoxDecoration(
+      color: isSelected ? _p.accentSoft : Colors.transparent,
+      borderRadius: BorderRadius.circular(10),
+      border: isSelected
+          ? Border.all(color: _p.accent, width: 1.5)
+          : null,
+    ),
+    child: InkWell(
+      borderRadius: BorderRadius.circular(10),
+      onTap: () {
+        AnalysisNav.request.value = null;
+
+        setState(() {
+          _selectedIndex = index;
+          _activeProjectId = null;
+          _activeAnalysis = null;
+        });
+      },
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: 16,
+          vertical: 12,
+        ),
+        child: Row(
+          children: [
+            Icon(
+              icon,
+              size: 20,
+              color: isSelected ? _p.accent : _p.textSecondary,
+            ),
+            const SizedBox(width: 12),
+
+            Expanded(
+              child: Tr(
+                label,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight:
+                      isSelected ? FontWeight.w600 : FontWeight.w400,
+                  color: isSelected ? _p.accent : _p.textSecondary,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        ),
       ),
-    );
-  }
+    ),
+  );
+}
+
+  
+  
 
   Widget _buildTopBar({required bool compact}) {
     final titles = [
@@ -621,6 +917,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
         bottom: false,
         minimum: EdgeInsets.only(top: compact ? 8 : 0),
         child: Row(
+<<<<<<< HEAD
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             Expanded(
@@ -629,6 +926,27 @@ class _StudentDashboardState extends State<StudentDashboard> {
                 children: [
                   Tr(
                     title,
+=======
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Tr(
+                  title,
+                  style: TextStyle(
+                    fontSize: compact ? 20 : 28,
+                    fontWeight: FontWeight.w700,
+                    color: _p.textPrimary,
+                  ),
+                ),
+                if (!compact || _selectedIndex == 0)
+                  Tr(
+                    description,
+                    maxLines: compact ? 1 : 3,
+                    overflow: TextOverflow.ellipsis,
+>>>>>>> origin/main
                     style: TextStyle(
                       fontSize: compact ? 20 : 28,
                       fontWeight: FontWeight.w700,
@@ -646,6 +964,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
                         fontWeight: FontWeight.w400,
                       ),
                     ),
+<<<<<<< HEAD
                 ],
               ),
             ),
@@ -681,6 +1000,18 @@ class _StudentDashboardState extends State<StudentDashboard> {
                               fontWeight: FontWeight.w600,
                               color: Colors.white,
                             ),
+=======
+                    child: Row(
+                      children: [
+                        Icon(Icons.add, size: 18, color: Colors.white),
+                        SizedBox(width: 6),
+                        Tr(
+                          'New Report',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.white,
+>>>>>>> origin/main
                           ),
                         ],
                       ),
@@ -702,6 +1033,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
 
   Widget _buildBody() {
     if (_activeAnalysis != null) {
+<<<<<<< HEAD
       final r = _activeAnalysis!;
       return AnalyzeScreen(
         key: ValueKey('analysis-${r.documentId}-${r.freeform}'),
@@ -713,6 +1045,19 @@ class _StudentDashboardState extends State<StudentDashboard> {
         embedded: true,
       );
     }
+=======
+    final r = _activeAnalysis!;
+    return AnalyzeScreen(
+      key: ValueKey('analysis-${r.documentId}-${r.freeform}'),
+      documentId: r.documentId,
+      documentName: r.documentName,
+      templateId: r.templateId,
+      templateName: r.templateName,
+      freeformAnalysis: r.freeform,
+      embedded: true,
+    );
+  }
+>>>>>>> origin/main
     if (_activeProjectId != null) {
       return ProjectDetailScreen(
         key: ValueKey('project-$_activeProjectId-$_projectDetailTab'),
@@ -881,6 +1226,10 @@ class _StudentDashboardState extends State<StudentDashboard> {
     }
   }
 
+<<<<<<< HEAD
+=======
+
+>>>>>>> origin/main
   /// Mobile-only entry to Quick Access (Scan QR / Camera / Gallery).
   /// Navigates to [MobileCompanionScreen] — not rebuilt here.
   Widget _buildSendFromPhoneCard() {
@@ -940,6 +1289,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
     );
   }
 
+<<<<<<< HEAD
   void _goTo(int index) {
     AnalysisNav.request.value = null;
     setState(() {
@@ -1206,7 +1556,301 @@ class _StudentDashboardState extends State<StudentDashboard> {
         ],
       ),
     );
+=======
+
+void _goTo(int index) {
+  AnalysisNav.request.value = null;
+  setState(() {
+    _selectedIndex = index;
+    _activeProjectId = null;
+    _activeAnalysis = null;
+  });
+}
+
+Widget _fypChip(String label, IconData icon, int index) {
+  return InkWell(
+    onTap: () => _goTo(index),
+    borderRadius: BorderRadius.circular(999),
+    child: Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: _p.surface,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: _p.isDark ? _p.borderStrong : _p.border),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 16, color: _p.accent),
+          const SizedBox(width: 8),
+          Tr(label,
+              style: TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w600,
+                  color: _p.textPrimary)),
+        ],
+      ),
+    ),
+  );
+}
+
+Widget _buildDashboardContent() {
+  final compact = isCompact(context);
+  return Consumer<DocumentProvider>(
+    builder: (context, docProvider, _) {
+      final docs = docProvider.documents;
+      final formatted = docs.where((d) => d['has_formatted'] == true).length;
+      final pending = docs.length - formatted;
+      final jobs = context.watch<AnalysisJobProvider>();
+      final readyAnalyses = jobs.jobs
+          .where((j) => j.status == AnalysisStatus.completed)
+          .length;
+
+      return SingleChildScrollView(
+        padding: EdgeInsets.all(compact ? 16 : 32),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (compact && DevUserConfig.hasFypModule) ...[
+              const MobileStatusSummaryCard(),
+              const SizedBox(height: 16),
+            ],
+            if (compact) ...[
+              _buildSendFromPhoneCard(),
+              const SizedBox(height: 20),
+            ],
+            if (!compact && DevUserConfig.hasFypModule) ...[
+              const DesktopSemesterDeadlineCard(),
+              const SizedBox(height: 20),
+            ],
+            _buildStatsRow(
+              compact: compact,
+              total: docs.length,
+              pending: pending,
+              formatted: formatted,
+              analysesRunning: jobs.runningCount,
+              analysesReady: readyAnalyses,
+            ),
+            const SizedBox(height: 32),
+            _sectionTitle('Workspace', 'Jump straight into the tools you use most'),
+            const SizedBox(height: 14),
+            _buildFeatureGrid(compact, docs.length, jobs),
+
+            // ── FYP strip (sirf FYP module par) ──────────────────
+            if (DevUserConfig.hasFypModule) ...[
+              const SizedBox(height: 28),
+              _sectionTitle(
+                  'Final Year Project', 'Supervisor, milestones and submission'),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                children: [
+                  _fypChip('My Supervisor', Icons.badge_outlined, 7),
+                  _fypChip('Milestones', Icons.checklist_outlined, 8),
+                  _fypChip('Meeting Notes', Icons.sticky_note_2_outlined, 9),
+                  _fypChip('Plagiarism', Icons.policy_outlined, 10),
+                  _fypChip('Status Tracker', Icons.track_changes_outlined, 11),
+                ],
+              ),
+            ],
+
+            const SizedBox(height: 32),
+            _buildRecentReportsSection(docs),
+            const SizedBox(height: 32),
+            _buildSharedProjectsSection(),
+            const SizedBox(height: 16),
+          ],
+        ),
+      );
+    },
+  );
+}
+
+Widget _sectionTitle(String title, String subtitle) {
+  return Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Tr(title,
+          style: TextStyle(
+              fontSize: 17, fontWeight: FontWeight.w700, color: _p.textPrimary)),
+      const SizedBox(height: 2),
+      Tr(subtitle, style: TextStyle(fontSize: 12, color: _p.textSecondary)),
+    ],
+  );
+}
+
+Widget _buildStatsRow({
+  required bool compact,
+  required int total,
+  required int pending,
+  required int formatted,
+  required int analysesRunning,
+  required int analysesReady,
+}) {
+  final cards = [
+    _buildStatCard('Total Reports', '$total', Icons.description_outlined,
+        const Color(0xFF6366F1), compact, 'All uploaded documents'),
+    _buildStatCard('Awaiting Formatting', '$pending', Icons.pending_actions,
+        const Color(0xFFD97706), compact, 'Not saved as formatted yet'),
+    _buildStatCard('Formatted', '$formatted', Icons.check_circle_outline,
+        const Color(0xFF10B981), compact, 'Ready to download'),
+    _buildStatCard(
+        'Analyses',
+        '${analysesRunning + analysesReady}',
+        Icons.analytics_outlined,
+        const Color(0xFF8B5CF6),
+        compact,
+        analysesRunning > 0
+            ? '$analysesRunning running · $analysesReady ready'
+            : '$analysesReady ready to review'),
+  ];
+
+  if (compact) {
+    return LayoutBuilder(builder: (context, c) {
+      const gap = 12.0;
+      final w = (c.maxWidth - gap) / 2;
+      return Wrap(
+        spacing: gap,
+        runSpacing: gap,
+        children: cards.map((e) => SizedBox(width: w, child: e)).toList(),
+      );
+    });
+>>>>>>> origin/main
   }
+  return Row(
+    children: [
+      for (var i = 0; i < cards.length; i++) ...[
+        if (i > 0) const SizedBox(width: 20),
+        Expanded(child: cards[i]),
+      ],
+    ],
+  );
+}
+
+Widget _buildStatCard(String title, String value, IconData icon, Color color,
+    bool compact, String caption) {
+  return Container(
+    decoration: _cardDeco(),
+    padding: EdgeInsets.all(compact ? 14 : 20),
+    child: Row(
+      children: [
+        Container(
+          padding: EdgeInsets.all(compact ? 9 : 12),
+          decoration: BoxDecoration(
+            color: color.withOpacity(0.14),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Icon(icon, color: color, size: compact ? 18 : 22),
+        ),
+        const SizedBox(width: 14),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(value,
+                  style: TextStyle(
+                      fontSize: compact ? 22 : 28,
+                      fontWeight: FontWeight.w700,
+                      color: _p.textPrimary,
+                      height: 1.1)),
+              const SizedBox(height: 2),
+              Tr(title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: _p.textPrimary)),
+              if (!compact)
+                Text(caption,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 10.5, color: _p.textSecondary)),
+            ],
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+Widget _buildFeatureGrid(bool compact, int reportCount, AnalysisJobProvider jobs) {
+  final fyp = DevUserConfig.hasFypModule ? context.watch<FypProvider>() : null;
+
+  final items = <_Feature>[
+  _Feature('New Report', 'Upload a document and pick a template',
+      Icons.add_circle_outline, _p.accent, () => _goTo(1)),
+  _Feature('My Reports', '$reportCount report${reportCount == 1 ? '' : 's'} · download versions',
+      Icons.folder_outlined, const Color(0xFF6366F1), () => _goTo(2)),
+  _Feature('Templates', 'Browse formatting templates',
+      Icons.layers_outlined, const Color(0xFF06B6D4), () => _goTo(5)),
+  _Feature('Collaboration', 'Shared projects and teammates',
+      Icons.people_outline, const Color(0xFFEC4899), () => _goTo(3)),
+];
+
+  return LayoutBuilder(builder: (context, c) {
+    const gap = 14.0;
+    final cols = compact ? 2 : (c.maxWidth > 1200 ? 4 : 3);
+    final w = (c.maxWidth - gap * (cols - 1)) / cols;
+    return Wrap(
+      spacing: gap,
+      runSpacing: gap,
+      children: items
+          .map((f) => SizedBox(width: w, child: _buildFeatureCard(f, compact)))
+          .toList(),
+    );
+  });
+}
+
+Widget _buildFeatureCard(_Feature f, bool compact) {
+  return MouseRegion(
+    cursor: SystemMouseCursors.click,
+    child: InkWell(
+      onTap: f.onTap,
+      borderRadius: BorderRadius.circular(_p.isDark ? _p.cardRadius : 12),
+      child: Container(
+        decoration: _cardDeco(),
+        padding: EdgeInsets.all(compact ? 14 : 18),
+        child: Row(
+          children: [
+            Container(
+              width: 42,
+              height: 42,
+              decoration: BoxDecoration(
+                color: f.color.withOpacity(0.14),
+                borderRadius: BorderRadius.circular(11),
+              ),
+              child: Icon(f.icon, color: f.color, size: 21),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Tr(f.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                          fontSize: 13.5,
+                          fontWeight: FontWeight.w600,
+                          color: _p.textPrimary)),
+                  const SizedBox(height: 2),
+                  Text(f.subtitle,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                          fontSize: 11, color: _p.textSecondary, height: 1.3)),
+                ],
+              ),
+            ),
+            Icon(Icons.chevron_right_rounded, color: _p.textMuted, size: 18),
+          ],
+        ),
+      ),
+    ),
+  );
+}
 
   Widget _buildFeatureGrid(
     bool compact,
@@ -1374,6 +2018,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
             )
           else
             ...recentDocs.asMap().entries.map((entry) {
+<<<<<<< HEAD
               final doc = entry.value;
               final isLast = entry.key == recentDocs.length - 1;
               final formatted = doc['has_formatted'] == true;
@@ -1454,10 +2099,76 @@ class _StudentDashboardState extends State<StudentDashboard> {
                 ],
               );
             }),
+=======
+  final doc = entry.value;
+  final isLast = entry.key == recentDocs.length - 1;
+  final formatted = doc['has_formatted'] == true;
+  final color = formatted ? const Color(0xFF10B981) : _p.accent;
+  return Column(
+    children: [
+      Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.14),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(Icons.description_outlined, color: color, size: 18),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(doc['filename'] ?? 'Untitled',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: _p.textPrimary)),
+                Text(
+                    '${doc['template_name'] ?? 'No template'} · ${_getTimeAgo(doc['created_at'])}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 11, color: _p.textSecondary)),
+              ],
+            ),
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.14),
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: Tr(formatted ? 'Formatted' : 'Not formatted',
+                style: TextStyle(
+                    fontSize: 10.5, fontWeight: FontWeight.w600, color: color)),
+          ),
+          const SizedBox(width: 8),
+          TextButton.icon(
+            onPressed: () => _openAnalyzeScreen(doc),
+            icon: const Icon(Icons.analytics_outlined, size: 15),
+            label: const Tr('Analyze', style: TextStyle(fontSize: 11.5)),
+          ),
+        ],
+      ),
+      if (!isLast) Divider(height: 24, color: _p.border),
+    ],
+  );
+}),
+>>>>>>> origin/main
         ],
       ),
     );
   }
+
+
+
+ 
+  
+
 
   void _openCollaborationHub() {
     setState(() {
@@ -1582,10 +2293,16 @@ class _StudentDashboardState extends State<StudentDashboard> {
     );
   }
 
+<<<<<<< HEAD
+=======
+ 
+
+>>>>>>> origin/main
   Widget _buildNewReportPage() {
     return NewReportScreen(selectedTemplate: _selectedTemplate, embedded: true);
   }
 
+<<<<<<< HEAD
   void _openAnalyzeScreen(Map<String, dynamic> doc) {
     final docId = doc['id'] as int?;
     final templateId = doc['template_id'] as int?;
@@ -1710,10 +2427,230 @@ class _StudentDashboardState extends State<StudentDashboard> {
             ),
           ),
         );
+=======
+void _openAnalyzeScreen(Map<String, dynamic> doc) {
+  final docId = doc['id'] as int?;
+  final templateId = doc['template_id'] as int?;
+  if (docId == null || templateId == null) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Tr('Cannot analyze — document info is missing'),
+        backgroundColor: Color(0xFFEF4444),
+      ),
+    );
+    return;
+  }
+
+  AnalysisNav.open(AnalysisRequest(
+    documentId: docId,
+    documentName: doc['filename'] as String? ?? 'Document',
+    templateId: templateId,
+    templateName: doc['template_name'] as String? ?? 'Template',
+  ));
+}
+
+Widget _buildMyReportsPage() {
+  final auth = context.read<AuthProvider>();
+  return Consumer<DocumentProvider>(
+    builder: (context, docProvider, _) {
+      // Search
+      List<Map<String, dynamic>> filteredDocs = docProvider.documents
+          .where((d) => (d['filename'] ?? '')
+              .toString()
+              .toLowerCase()
+              .contains(_searchQuery.toLowerCase()))
+          .toList();
+
+      // Sort
+      if (_sortBy == 'name') {
+        filteredDocs.sort((a, b) =>
+            (a['filename'] ?? '').compareTo(b['filename'] ?? ''));
+      } else {
+        filteredDocs.sort((a, b) {
+          final dateA =
+              DateTime.tryParse(a['created_at'] ?? '') ?? DateTime.now();
+          final dateB =
+              DateTime.tryParse(b['created_at'] ?? '') ?? DateTime.now();
+          return dateB.compareTo(dateA);
+        });
+      }
+
+      // Pagination
+      int totalPages = (filteredDocs.length / _itemsPerPage).ceil();
+      if (totalPages < 1) totalPages = 1;
+      final page = _currentPage.clamp(1, totalPages);
+      final startIndex = (page - 1) * _itemsPerPage;
+      final endIndex = (startIndex + _itemsPerPage > filteredDocs.length)
+          ? filteredDocs.length
+          : startIndex + _itemsPerPage;
+      final paginatedDocs = filteredDocs.sublist(startIndex, endIndex);
+
+      final compact = isCompact(context);
+
+      return RefreshIndicator(
+        onRefresh: () => docProvider.fetchDocuments(auth.userId!),
+        color: _p.accent,
+        backgroundColor: _p.surface,
+        child: SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: EdgeInsets.fromLTRB(
+            compact ? 16 : 32,
+            compact ? 12 : 28,
+            compact ? 16 : 32,
+            compact ? 100 : 32,
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _reportsToolbar(compact, filteredDocs.length),
+              SizedBox(height: compact ? 18 : 24),
+
+              if (docProvider.isLoading)
+                const Center(
+                  child: Padding(
+                    padding: EdgeInsets.symmetric(vertical: 60),
+                    child: CircularProgressIndicator(),
+                  ),
+                )
+              else if (paginatedDocs.isEmpty)
+                _reportsEmptyState()
+              else if (compact)
+                Column(
+                  children: [
+                    for (final doc in paginatedDocs)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 10),
+                        child: _buildMobileReportCard(doc),
+                      ),
+                  ],
+                )
+              else
+                GridView.builder(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                    maxCrossAxisExtent: 400,
+                    crossAxisSpacing: 20,
+                    mainAxisSpacing: 20,
+                    mainAxisExtent: 226,
+                  ),
+                  itemCount: paginatedDocs.length,
+                  itemBuilder: (context, index) =>
+                      _reportCard(paginatedDocs[index], auth),
+                ),
+
+              if (filteredDocs.isNotEmpty) ...[
+                const SizedBox(height: 32),
+                _reportsPagination(page, totalPages),
+              ],
+            ],
+          ),
+        ),
+      );
+    },
+  );
+}
+
+// ── Toolbar: search + sort + count ─────────────────────────────────────
+
+Widget _reportsToolbar(bool compact, int total) {
+  final search = Container(
+    height: 44,
+    decoration: BoxDecoration(
+      color: _p.surface,
+      borderRadius: BorderRadius.circular(10),
+      border: Border.all(color: _p.isDark ? _p.borderStrong : _p.border),
+    ),
+    child: TextField(
+      onChanged: (value) {
+        setState(() {
+          _searchQuery = value;
+          _currentPage = 1;
+        });
+>>>>>>> origin/main
       },
+      style: TextStyle(color: _p.textPrimary, fontSize: 13.5),
+      decoration: InputDecoration(
+        hintText: 'Search reports...',
+        hintStyle: TextStyle(color: _p.textMuted, fontSize: 13),
+        border: InputBorder.none,
+        isCollapsed: true,
+        contentPadding: const EdgeInsets.symmetric(vertical: 14),
+        prefixIcon: Icon(Icons.search, color: _p.textSecondary, size: 20),
+      ),
+    ),
+  );
+
+  final sort = Container(
+    height: 44,
+    padding: const EdgeInsets.symmetric(horizontal: 14),
+    decoration: BoxDecoration(
+      color: _p.surface,
+      borderRadius: BorderRadius.circular(10),
+      border: Border.all(color: _p.isDark ? _p.borderStrong : _p.border),
+    ),
+    child: PopupMenuButton<String>(
+      tooltip: 'Sort',
+      onSelected: (value) {
+        setState(() {
+          _sortBy = value;
+          _currentPage = 1;
+        });
+      },
+      itemBuilder: (context) => const [
+        PopupMenuItem(value: 'recent', child: Tr('Most Recent')),
+        PopupMenuItem(value: 'name', child: Tr('Name A-Z')),
+      ],
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.swap_vert, color: _p.textSecondary, size: 18),
+          const SizedBox(width: 8),
+          Tr(
+            _sortBy == 'name' ? 'Name A-Z' : 'Most Recent',
+            style: TextStyle(color: _p.textPrimary, fontSize: 13),
+          ),
+          const SizedBox(width: 4),
+          Icon(Icons.keyboard_arrow_down, color: _p.textSecondary, size: 18),
+        ],
+      ),
+    ),
+  );
+
+  final count = Container(
+    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+    decoration: BoxDecoration(
+      color: _p.accentSoft,
+      borderRadius: BorderRadius.circular(999),
+    ),
+    child: Text(
+      '$total report${total == 1 ? '' : 's'}',
+      style: TextStyle(
+        color: _p.accent,
+        fontSize: 12,
+        fontWeight: FontWeight.w700,
+      ),
+    ),
+  );
+
+  if (compact) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        search,
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            Expanded(child: sort),
+            const SizedBox(width: 10),
+            count,
+          ],
+        ),
+      ],
     );
   }
 
+<<<<<<< HEAD
   // ── Toolbar: search + sort + count ─────────────────────────────────────
 
   Widget _reportsToolbar(bool compact, int total) {
@@ -2221,12 +3158,395 @@ class _StudentDashboardState extends State<StudentDashboard> {
             onPressed: page < totalPages
                 ? () => setState(() => _currentPage = page + 1)
                 : null,
+=======
+  return Row(
+    children: [
+      Expanded(child: search),
+      const SizedBox(width: 12),
+      sort,
+      const SizedBox(width: 12),
+      count,
+    ],
+  );
+}
+
+// ── Empty state ────────────────────────────────────────────────────────
+
+Widget _reportsEmptyState() {
+  final searching = _searchQuery.trim().isNotEmpty;
+  return Center(
+    child: Padding(
+      padding: const EdgeInsets.symmetric(vertical: 64),
+      child: Column(
+        children: [
+          Container(
+            width: 72,
+            height: 72,
+            decoration: BoxDecoration(
+              color: _p.accentSoft,
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              searching ? Icons.search_off : Icons.folder_open,
+              size: 32,
+              color: _p.accent,
+            ),
+          ),
+          const SizedBox(height: 18),
+          Tr(
+            searching ? 'No matching reports' : 'No reports found',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w700,
+              color: _p.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Tr(
+            searching
+                ? 'Try a different search term.'
+                : 'Upload a document from New Report to get started.',
+            style: TextStyle(fontSize: 13, color: _p.textSecondary),
+          ),
+          if (!searching) ...[
+            const SizedBox(height: 18),
+            ElevatedButton.icon(
+              onPressed: () => _goTo(1),
+              icon: const Icon(Icons.add, size: 18),
+              label: const Tr('New Report'),
+              style: ElevatedButton.styleFrom(
+                foregroundColor: Colors.white,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    ),
+  );
+}
+
+// ── Report card ────────────────────────────────────────────────────────
+
+Widget _reportCard(Map<String, dynamic> doc, AuthProvider auth) {
+  final status = doc['status'] ?? 'draft';
+  final statusColor = _getStatusColor(status);
+  final statusLabel = _getStatusLabel(status);
+  final iconColor = _getIconColor(status);
+  final hasFormatted = doc['has_formatted'] == true;
+  const green = Color(0xFF10B981);
+
+  return Container(
+    decoration: _cardDeco(),
+    padding: const EdgeInsets.all(16),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Icon + name + menu
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 42,
+              height: 42,
+              decoration: BoxDecoration(
+                color: iconColor.withOpacity(0.14),
+                borderRadius: BorderRadius.circular(11),
+              ),
+              child: Icon(Icons.description_outlined,
+                  size: 21, color: iconColor),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    doc['filename'] ?? 'Untitled',
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.w700,
+                      color: _p.textPrimary,
+                      height: 1.25,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    doc['template_name'] ?? 'No template',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 11.5, color: _p.textSecondary),
+                  ),
+                ],
+              ),
+            ),
+            _reportMenu(doc, auth),
+          ],
+        ),
+
+        const SizedBox(height: 12),
+
+        // Status chips
+        Wrap(
+          spacing: 6,
+          runSpacing: 6,
+          children: [
+            _reportChip(statusLabel, statusColor),
+            if (hasFormatted)
+              _reportChip('Formatted saved', green, icon: Icons.check_circle),
+          ],
+        ),
+
+        const Spacer(),
+
+        // Modified time
+        Row(
+          children: [
+            Icon(Icons.schedule, size: 13, color: _p.textMuted),
+            const SizedBox(width: 5),
+            Text(
+              'Modified ${_getTimeAgo(doc['created_at'] ?? DateTime.now())}',
+              style: TextStyle(fontSize: 11, color: _p.textMuted),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        Divider(height: 1, color: _p.border),
+        const SizedBox(height: 10),
+
+        // Download buttons
+        Row(
+          children: [
+            Expanded(
+              child: Tooltip(
+                message: 'Download original file (unformatted)',
+                child: OutlinedButton.icon(
+                  onPressed: () =>
+                      _handleDownloadVersion(doc, version: 'unformatted'),
+                  icon: const Icon(Icons.file_download_outlined, size: 15),
+                  label: const Tr('Original',
+                      style: TextStyle(
+                          fontSize: 11.5, fontWeight: FontWeight.w700)),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: _p.textPrimary,
+                    side: BorderSide(color: _p.border),
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8)),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Tooltip(
+                message: hasFormatted
+                    ? 'Download formatted file'
+                    : 'Not available yet - open Analyze and save the formatted document',
+                child: OutlinedButton.icon(
+                  onPressed: hasFormatted
+                      ? () => _handleDownloadVersion(doc, version: 'formatted')
+                      : () => _showFormattedMissingHint(),
+                  icon: const Icon(Icons.file_download_outlined, size: 15),
+                  label: const Tr('Formatted',
+                      style: TextStyle(
+                          fontSize: 11.5, fontWeight: FontWeight.w700)),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: hasFormatted ? _p.accent : _p.textMuted,
+                    side: BorderSide(
+                        color: hasFormatted ? _p.accent : _p.border),
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8)),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ],
+    ),
+  );
+}
+
+Widget _reportChip(String text, Color color, {IconData? icon}) {
+  return Container(
+    padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+    decoration: BoxDecoration(
+      color: color.withOpacity(0.13),
+      borderRadius: BorderRadius.circular(999),
+    ),
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (icon != null) ...[
+          Icon(icon, size: 11, color: color),
+          const SizedBox(width: 4),
+        ],
+        Tr(
+          text,
+          style: TextStyle(
+            fontSize: 10.5,
+            fontWeight: FontWeight.w700,
+            color: color,
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+// ── Actions menu (same actions as before) ──────────────────────────────
+
+Widget _reportMenu(Map<String, dynamic> doc, AuthProvider auth) {
+  PopupMenuItem<String> item(
+    String value,
+    IconData icon,
+    String label, {
+    Color? color,
+  }) {
+    final c = color ?? _p.textPrimary;
+    return PopupMenuItem<String>(
+      value: value,
+      height: 40,
+      padding: const EdgeInsets.symmetric(horizontal: 14),
+      child: Row(
+        children: [
+          Icon(icon, size: 17, color: color ?? _p.textSecondary),
+          const SizedBox(width: 12),
+          Tr(
+            label,
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w500,
+              color: c,
+            ),
+>>>>>>> origin/main
           ),
         ],
       ),
     );
   }
 
+<<<<<<< HEAD
+=======
+  return PopupMenuButton<String>(
+    tooltip: 'More',
+    padding: EdgeInsets.zero,
+    offset: const Offset(0, 34),
+    elevation: 8,
+    color: _p.isDark ? _p.surfaceElevated : _p.surface,
+    surfaceTintColor: Colors.transparent,
+    constraints: const BoxConstraints(minWidth: 200),
+    shape: RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(12),
+      side: BorderSide(color: _p.isDark ? _p.borderStrong : _p.border),
+    ),
+    icon: Icon(Icons.more_vert, size: 18, color: _p.textSecondary),
+    onSelected: (value) {
+      if (value == 'analyze') {
+        _openAnalyzeScreen(doc);
+      } else if (value == 'preview') {
+        _showPreview(doc);
+      } else if (value == 'rename') {
+        _showRenameDialog(doc);
+      } else if (value == 'edit') {
+        _showEditDialog(doc, auth.userId!);
+      } else if (value == 'send' && DevUserConfig.hasFypModule) {
+        _sendReportToSupervisor(doc);
+      } else if (value == 'delete') {
+        _handleDelete(doc);
+      }
+    },
+    itemBuilder: (context) => [
+      item('analyze', Icons.analytics_outlined, 'Analyze',
+          color: const Color(0xFF10B981)),
+      if (DevUserConfig.hasFypModule)
+        item('send', Icons.send_rounded, 'Send to Supervisor',
+            color: const Color(0xFF10B981)),
+      const PopupMenuDivider(height: 8),
+      item('preview', Icons.visibility_outlined, 'Preview'),
+      item('rename', Icons.drive_file_rename_outline, 'Rename'),
+      item('edit', Icons.edit_outlined, 'Edit'),
+      const PopupMenuDivider(height: 8),
+      item('delete', Icons.delete_outline, 'Delete',
+          color: const Color(0xFFEF4444)),
+    ],
+  );
+}
+
+// ── Pagination ─────────────────────────────────────────────────────────
+
+Widget _reportsPagination(int page, int totalPages) {
+  Widget pageBtn(int n) {
+    final active = n == page;
+    return GestureDetector(
+      onTap: () => setState(() => _currentPage = n),
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        child: Container(
+          width: 34,
+          height: 34,
+          margin: const EdgeInsets.symmetric(horizontal: 3),
+          decoration: BoxDecoration(
+            color: active ? _p.accent : _p.surface,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: active ? _p.accent : _p.border,
+            ),
+          ),
+          child: Center(
+            child: Text(
+              '$n',
+              style: TextStyle(
+                color: active ? Colors.white : _p.textSecondary,
+                fontWeight: FontWeight.w600,
+                fontSize: 13,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  return Center(
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        IconButton(
+          icon: const Icon(Icons.chevron_left),
+          color: _p.textSecondary,
+          onPressed: page > 1 ? () => setState(() => _currentPage = page - 1) : null,
+        ),
+        for (int i = 1; i <= totalPages && i <= 3; i++) pageBtn(i),
+        if (totalPages > 3) ...[
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            child: Text('…',
+                style: TextStyle(color: _p.textSecondary, fontSize: 13)),
+          ),
+          pageBtn(totalPages),
+        ],
+        IconButton(
+          icon: const Icon(Icons.chevron_right),
+          color: _p.textSecondary,
+          onPressed: page < totalPages
+              ? () => setState(() => _currentPage = page + 1)
+              : null,
+        ),
+      ],
+    ),
+  );
+}
+
+>>>>>>> origin/main
   Future<void> _sendReportToSupervisor(Map<String, dynamic> doc) async {
     final auth = context.read<AuthProvider>();
     final fyp = context.read<FypProvider>();
@@ -2362,7 +3682,17 @@ class _StudentDashboardState extends State<StudentDashboard> {
           children: [
             Icon(icon, color: _p.textSecondary, size: 18),
             SizedBox(width: 8),
+<<<<<<< HEAD
             Tr(label, style: TextStyle(color: _p.textSecondary, fontSize: 13)),
+=======
+            Tr(
+              label,
+              style: TextStyle(
+                color: _p.textSecondary,
+                fontSize: 13,
+              ),
+            ),
+>>>>>>> origin/main
           ],
         ),
       ),
@@ -2655,7 +3985,14 @@ class _StudentDashboardState extends State<StudentDashboard> {
           ],
         ),
         actions: [
+<<<<<<< HEAD
           TextButton(onPressed: () => Navigator.pop(ctx), child: Tr('Cancel')),
+=======
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Tr('Cancel'),
+          ),
+>>>>>>> origin/main
           ElevatedButton(
             onPressed: () => Navigator.pop(ctx, controller.text.trim()),
             child: Tr('Save'),
@@ -3131,9 +4468,13 @@ class _StudentDashboardState extends State<StudentDashboard> {
                   ElevatedButton.icon(
                     onPressed: () {
                       ScaffoldMessenger.of(context).showSnackBar(
+<<<<<<< HEAD
                         SnackBar(
                           content: Tr('Request Template feature coming soon'),
                         ),
+=======
+                        SnackBar(content: Tr('Request Template feature coming soon')),
+>>>>>>> origin/main
                       );
                     },
                     icon: Icon(Icons.add, size: 18),
@@ -3199,6 +4540,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
                         }
                       },
                       items: [
+<<<<<<< HEAD
                         const DropdownMenuItem(
                           value: 'all',
                           child: Tr('All Categories'),
@@ -3219,6 +4561,13 @@ class _StudentDashboardState extends State<StudentDashboard> {
                           value: 'humanities',
                           child: Tr('Humanities'),
                         ),
+=======
+                        const DropdownMenuItem(value: 'all', child: Tr('All Categories')),
+                        const DropdownMenuItem(value: 'engineering', child: Tr('Engineering')),
+                        const DropdownMenuItem(value: 'sciences', child: Tr('Sciences')),
+                        const DropdownMenuItem(value: 'business', child: Tr('Business')),
+                        const DropdownMenuItem(value: 'humanities', child: Tr('Humanities')),
+>>>>>>> origin/main
                       ],
                     ),
                   ),
@@ -3241,6 +4590,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
                         }
                       },
                       items: [
+<<<<<<< HEAD
                         const DropdownMenuItem(
                           value: 'popular',
                           child: Tr('Most Popular'),
@@ -3253,6 +4603,11 @@ class _StudentDashboardState extends State<StudentDashboard> {
                           value: 'name',
                           child: Tr('Name (A-Z)'),
                         ),
+=======
+                        const DropdownMenuItem(value: 'popular', child: Tr('Most Popular')),
+                        const DropdownMenuItem(value: 'recent', child: Tr('Most Recent')),
+                        const DropdownMenuItem(value: 'name', child: Tr('Name (A-Z)')),
+>>>>>>> origin/main
                       ],
                     ),
                   ),
@@ -3495,9 +4850,13 @@ class _StudentDashboardState extends State<StudentDashboard> {
                       ElevatedButton(
                         onPressed: () {
                           ScaffoldMessenger.of(context).showSnackBar(
+<<<<<<< HEAD
                             SnackBar(
                               content: Tr('Custom template request submitted'),
                             ),
+=======
+                            SnackBar(content: Tr('Custom template request submitted')),
+>>>>>>> origin/main
                           );
                         },
                         style: ElevatedButton.styleFrom(
@@ -3524,6 +4883,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
     );
   }
 
+<<<<<<< HEAD
   Widget _buildSettingsPage() {
     return Consumer2<AuthProvider, ThemeProvider>(
       builder: (context, auth, theme, _) {
@@ -3657,8 +5017,57 @@ class _StudentDashboardState extends State<StudentDashboard> {
                               value: lang.code,
                               dropdownColor: _p.surface,
                               borderRadius: BorderRadius.circular(10),
+=======
+Widget _buildSettingsPage() {
+  return Consumer2<AuthProvider, ThemeProvider>(
+    builder: (context, auth, theme, _) {
+      final lang = context.watch<LangProvider>();
+      final name = auth.currentUser ?? 'User';
+
+      return Align(
+        alignment: Alignment.topCenter,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 760),
+          child: SingleChildScrollView(
+            padding: EdgeInsets.all(isCompact(context) ? 16 : 32),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // ── Profile header ─────────────────────────────
+                Container(
+                  decoration: _cardDeco(),
+                  padding: const EdgeInsets.all(22),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 60,
+                        height: 60,
+                        decoration: BoxDecoration(
+                          color: _p.accent,
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: Center(
+                          child: Text(
+                            name.isNotEmpty ? name[0].toUpperCase() : 'U',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 24,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 18),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              name,
+>>>>>>> origin/main
                               style: TextStyle(
-                                fontSize: 13,
+                                fontSize: 18,
+                                fontWeight: FontWeight.w700,
                                 color: _p.textPrimary,
                               ),
                               items: kLanguages
@@ -3675,6 +5084,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
                                 }
                               },
                             ),
+<<<<<<< HEAD
                           ),
                         ),
                         _settingsDivider(),
@@ -3840,6 +5250,252 @@ class _StudentDashboardState extends State<StudentDashboard> {
     );
   }
 
+=======
+                            const SizedBox(height: 3),
+                            Text(
+                              auth.email ?? 'No email',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: _p.textSecondary,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: _p.accentSoft,
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: Text(
+                          DevUserConfig.displayRoleLabel(auth.userRole),
+                          style: TextStyle(
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w700,
+                            color: _p.accent,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 28),
+
+                // ── Account ────────────────────────────────────
+                _settingsSectionTitle('Account', Icons.person_outline),
+                const SizedBox(height: 10),
+                Container(
+                  decoration: _cardDeco(),
+                  child: Column(
+                    children: [
+                      _settingsInfoRow(
+                          Icons.badge_outlined, 'Username', name),
+                      _settingsDivider(),
+                      _settingsInfoRow(Icons.mail_outline, 'Email',
+                          auth.email ?? 'N/A'),
+                      _settingsDivider(),
+                      _settingsInfoRow(
+                          Icons.shield_outlined,
+                          'Account type',
+                          DevUserConfig.displayRoleLabel(auth.userRole)),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 28),
+
+                // ── Preferences ────────────────────────────────
+                _settingsSectionTitle('Preferences', Icons.tune),
+                const SizedBox(height: 10),
+                Container(
+                  decoration: _cardDeco(),
+                  child: Column(
+                    children: [
+                      _settingsRow(
+                        icon: Icons.language,
+                        title: 'Language',
+                        subtitle: 'Choose the app language',
+                        trailing: DropdownButtonHideUnderline(
+                          child: DropdownButton<String>(
+                            value: lang.code,
+                            dropdownColor: _p.surface,
+                            borderRadius: BorderRadius.circular(10),
+                            style: TextStyle(
+                                fontSize: 13, color: _p.textPrimary),
+                            items: kLanguages
+                                .map((l) => DropdownMenuItem(
+                                      value: l.code,
+                                      child: Text(l.name),
+                                    ))
+                                .toList(),
+                            onChanged: (v) {
+                              if (v != null) {
+                                context.read<LangProvider>().setLang(v);
+                              }
+                            },
+                          ),
+                        ),
+                      ),
+                      _settingsDivider(),
+                      _settingsRow(
+                        icon: theme.isDarkMode
+                            ? Icons.dark_mode_outlined
+                            : Icons.light_mode_outlined,
+                        title: 'Dark mode',
+                        subtitle: theme.isDarkMode ? 'On' : 'Off · Light mode',
+                        trailing: Switch(
+                          value: theme.isDarkMode,
+                          onChanged: (v) => theme.setDarkMode(v),
+                          activeColor: _p.accent,
+                        ),
+                      ),
+                      _settingsDivider(),
+                      _settingsRow(
+                        icon: Icons.notifications_none,
+                        title: 'Email notifications',
+                        subtitle: 'Updates about your reports and reviews',
+                        trailing: Switch(
+                          value: _emailNotifications,
+                          onChanged: (v) =>
+                              setState(() => _emailNotifications = v),
+                          activeColor: _p.accent,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 28),
+
+                // ── Session ────────────────────────────────────
+                _settingsSectionTitle('Session', Icons.lock_outline),
+                const SizedBox(height: 10),
+                Container(
+                  decoration: _cardDeco(),
+                  child: _settingsRow(
+                    icon: Icons.logout_rounded,
+                    iconColor: const Color(0xFFEF4444),
+                    title: 'Sign out',
+                    subtitle: 'You will need to sign in again',
+                    trailing: OutlinedButton(
+                      onPressed: () => _logout(context),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: const Color(0xFFEF4444),
+                        side: BorderSide(
+                            color: const Color(0xFFEF4444).withOpacity(0.5)),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                      child: const Tr('Sign out'),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+              ],
+            ),
+          ),
+        ),
+      );
+    },
+  );
+}
+
+Widget _settingsSectionTitle(String text, IconData icon) {
+  return Row(
+    children: [
+      Icon(icon, size: 16, color: _p.textSecondary),
+      const SizedBox(width: 8),
+      Tr(
+        text.toUpperCase(),
+        style: TextStyle(
+          fontSize: 11.5,
+          letterSpacing: 0.8,
+          fontWeight: FontWeight.w700,
+          color: _p.textSecondary,
+        ),
+      ),
+    ],
+  );
+}
+
+Widget _settingsDivider() =>
+    Divider(height: 1, thickness: 1, color: _p.border);
+
+Widget _settingsInfoRow(IconData icon, String label, String value) {
+  return Padding(
+    padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 15),
+    child: Row(
+      children: [
+        Icon(icon, size: 19, color: _p.textSecondary),
+        const SizedBox(width: 14),
+        Tr(label,
+            style: TextStyle(fontSize: 13, color: _p.textSecondary)),
+        const Spacer(),
+        Flexible(
+          child: Text(
+            value,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.right,
+            style: TextStyle(
+              fontSize: 13.5,
+              fontWeight: FontWeight.w600,
+              color: _p.textPrimary,
+            ),
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+Widget _settingsRow({
+  required IconData icon,
+  required String title,
+  required String subtitle,
+  required Widget trailing,
+  Color? iconColor,
+}) {
+  final c = iconColor ?? _p.accent;
+  return Padding(
+    padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+    child: Row(
+      children: [
+        Container(
+          width: 38,
+          height: 38,
+          decoration: BoxDecoration(
+            color: c.withOpacity(0.12),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Icon(icon, size: 19, color: c),
+        ),
+        const SizedBox(width: 14),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Tr(title,
+                  style: TextStyle(
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w600,
+                    color: _p.textPrimary,
+                  )),
+              const SizedBox(height: 2),
+              Tr(subtitle,
+                  style: TextStyle(fontSize: 11.5, color: _p.textSecondary)),
+            ],
+          ),
+        ),
+        trailing,
+      ],
+    ),
+  );
+}
+>>>>>>> origin/main
   Widget _buildTemplateCardNew(Map<String, dynamic> template, Color cardColor) {
     final displayName = (template['name'] ?? 'Template').toString();
     final description = (template['description'] ?? '').toString().trim();
@@ -3945,6 +5601,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
+<<<<<<< HEAD
                     SizedBox(height: 12),
                     ...details
                         .take(3)
@@ -3972,6 +5629,22 @@ class _StudentDashboardState extends State<StudentDashboard> {
                                   ),
                                 ),
                               ],
+=======
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  SizedBox(height: 12),
+                  ...details.take(3).map(
+                    (detail) => Padding(
+                      padding: EdgeInsets.only(bottom: 6),
+                      child: Row(
+                        children: [
+                          Tr(
+                            '• ',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: _p.textSecondary,
+>>>>>>> origin/main
                             ),
                           ),
                         ),
@@ -4027,8 +5700,65 @@ class _StudentDashboardState extends State<StudentDashboard> {
                         ),
                       ],
                     ),
+<<<<<<< HEAD
                   ],
                 ),
+=======
+                  ),
+                  Spacer(),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: () => _showPreview(template),
+                          style: OutlinedButton.styleFrom(
+                            side: BorderSide(color: _p.borderStrong),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                          ),
+                          child: Tr(
+                            'Preview',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: _p.textPrimary,
+                            ),
+                          ),
+                        ),
+                      ),
+                      SizedBox(width: 8),
+                      Expanded(
+                        child: ElevatedButton(
+                          onPressed: () {
+                            setState(() {
+                              _selectedTemplate = template;
+                              _selectedIndex = 1;
+                              _activeProjectId = null;
+                            });
+                          },
+                          // No opaque backgroundColor — theme gradient CTA.
+                          // Sits in card body (surface), below header — not on gradient.
+                          style: ElevatedButton.styleFrom(
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                          ),
+                          child: Tr(
+                            'Select',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+>>>>>>> origin/main
               ),
             ),
           ],
@@ -5199,7 +6929,13 @@ class _StudentDashboardState extends State<StudentDashboard> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Tr('• ', style: TextStyle(fontSize: 12)),
+<<<<<<< HEAD
               Expanded(child: Text(text, style: style)),
+=======
+              Expanded(
+                child: Text(text, style: style),
+              ),
+>>>>>>> origin/main
             ],
           ),
         );
@@ -5704,10 +7440,19 @@ class SettingsPanel extends StatelessWidget {
   }
 }
 
+<<<<<<< HEAD
+=======
+}
+
+>>>>>>> origin/main
 class _Feature {
   final String title, subtitle;
   final IconData icon;
   final Color color;
   final VoidCallback onTap;
   const _Feature(this.title, this.subtitle, this.icon, this.color, this.onTap);
+<<<<<<< HEAD
 }
+=======
+}
+>>>>>>> origin/main

@@ -264,6 +264,7 @@ class _NewReportScreenState extends State<NewReportScreen> {
   ));
 }
       } else {
+<<<<<<< HEAD
         if (mounted) {
           showDialog(
             context: context,
@@ -286,6 +287,9 @@ class _NewReportScreenState extends State<NewReportScreen> {
             ),
           );
         }
+=======
+        _showError(docProvider.errorMessage ?? 'Failed to upload file');
+>>>>>>> origin/main
       }
     } catch (e) {
       _showError('Error: $e');

@@ -59,7 +59,10 @@ from pipeline.aggregator import aggregate
 from routes.admin_routes import router as admin_router
 from routes.supervisor_routes import router as supervisor_router
 from routes.student_routes import router as student_router
+<<<<<<< HEAD
 from routes.notification_routes import router as notification_router
+=======
+>>>>>>> origin/main
 from pipeline.batcher import create_batches
 from database import get_db, hash_password, init_db, verify_password
 from middleware.org_middleware import (
@@ -78,8 +81,11 @@ from crypto_utils import encrypt_file, read_file_bytes
 import logging
 from utils.file_validation import CorruptedFileError, validate_upload
 
+<<<<<<< HEAD
 logger = logging.getLogger("formatify")
 
+=======
+>>>>>>> origin/main
 from docx_tools.preview_elements import build_preview_elements
 def _resolve_org_for_auth(org_code: str | None, request: Request) -> dict:
     """Login/signup: prefer explicit org_code body field over headers."""
@@ -200,6 +206,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+<<<<<<< HEAD
 
 @app.exception_handler(Exception)
 async def _global_exception_handler(request: Request, exc: Exception):
@@ -228,10 +235,16 @@ def _start_reminders():
     asyncio.create_task(_deadline_reminder_loop())
 
 _deadline_reminder_task = None
+=======
+@app.on_event("startup")
+def _start_reminders():
+    start_scheduler()
+>>>>>>> origin/main
 
 @app.on_event("shutdown")
 def _stop_reminders():
     stop_scheduler()
+<<<<<<< HEAD
     global _deadline_reminder_task
     if _deadline_reminder_task:
         _deadline_reminder_task.cancel()
@@ -315,6 +328,8 @@ async def _deadline_reminder_loop():
         except Exception as exc:
             logger.exception("Deadline reminder loop failed: %s", exc)
             continue
+=======
+>>>>>>> origin/main
 # Multi-tenancy: resolve org (default id=1) + gate FYP routes only
 from middleware.org_middleware import OrganizationMiddleware, get_organization
 from template_logic.template_sample_preview import router as template_sample_router
@@ -2381,6 +2396,7 @@ async def analyze_document_endpoint(document_id: int, user_id: int = Query(...))
         except (KeyError, IndexError, TypeError):
             pass
 
+<<<<<<< HEAD
         tmpl = get_template_by_id(doc["template_id"])
         if tmpl and _is_fixable_source(doc["file_path"]):
             # Always rebuild from the upload on Analyze so Tables / style issues
@@ -2407,6 +2423,17 @@ async def analyze_document_endpoint(document_id: int, user_id: int = Query(...))
         conn.close()
 
         if file_path.endswith(".docx") and os.path.exists(file_path):
+=======
+    # Heading analysis — Claude-first detection, then template/rule cross-check
+    # (body pages only — same front-matter skip as the AI analysis pipeline)
+    template_heading_matches: List[Dict[str, Any]] = []
+    if doc_model and tmpl:
+        try:
+            from docx_tools.review_blocks import strip_frontmatter_from_document
+            heading_doc = strip_frontmatter_from_document(doc_model)
+            decisions = _load_heading_decisions(document_id)
+            client = None
+>>>>>>> origin/main
             try:
                 sync_analysis_to_project_members(document_id, file_path)
             except Exception as exc:
@@ -2684,6 +2711,96 @@ async def _analysis_worker(document_id: int, user_id: int, freeform: bool) -> No
     except Exception as exc:
         logger.exception("Analysis background worker failed for doc %s: %s", document_id, exc)
         job.update(status="failed", error="We couldn't analyse this document. It may be damaged.")
+
+
+@app.post("/api/documents/analyze-start/{document_id}", tags=["Documents"])
+async def analyze_start(
+    document_id: int,
+    user_id: int = Query(...),
+    freeform: bool = Query(False),
+):
+    """Kick off analysis in the background and return immediately."""
+    _assert_doc_owner(document_id, user_id)
+    job = _analysis_jobs.get(document_id)
+    if job and job["status"] == "processing":
+        return {"status": "processing", "already_running": True}
+
+    _analysis_jobs[document_id] = {
+        "status": "processing",
+        "error": None,
+        "started_at": datetime.datetime.utcnow().isoformat(),
+        "finished_at": None,
+    }
+    asyncio.create_task(_analysis_worker(document_id, user_id, freeform))
+    return {"status": "processing", "already_running": False}
+
+
+@app.get("/api/documents/analyze-status/{document_id}", tags=["Documents"])
+async def analyze_status(document_id: int, user_id: int = Query(...)):
+    _assert_doc_owner(document_id, user_id)
+    job = _analysis_jobs.get(document_id)
+    if job:
+        return {"status": job["status"], "error": job["error"],
+                "started_at": job["started_at"], "finished_at": job["finished_at"]}
+    if os.path.exists(_analysis_result_path(document_id)):
+        return {"status": "completed", "error": None}  # survives server restart
+    return {"status": "none", "error": None}
+
+
+@app.get("/api/documents/analyze-result/{document_id}", tags=["Documents"])
+async def analyze_result(document_id: int, user_id: int = Query(...)):
+    _assert_doc_owner(document_id, user_id)
+    path = _analysis_result_path(document_id)
+    if not os.path.exists(path):
+        raise HTTPException(status_code=404, detail="No saved analysis result yet.")
+    return FileResponse(path, media_type="application/json")
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# BACKGROUND ANALYSIS JOBS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+ANALYSIS_CACHE_DIR = os.path.join(UPLOAD_DIR, "analysis")
+os.makedirs(ANALYSIS_CACHE_DIR, exist_ok=True)
+
+# document_id -> {status, error, started_at, finished_at}
+_analysis_jobs: Dict[int, Dict[str, Any]] = {}
+
+
+def _analysis_result_path(document_id: int) -> str:
+    return os.path.join(ANALYSIS_CACHE_DIR, f"doc_{document_id}.json")
+
+
+def _assert_doc_owner(document_id: int, user_id: int) -> None:
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT id FROM documents WHERE id = ? AND user_id = ?", (document_id, user_id))
+    row = cur.fetchone()
+    conn.close()
+    if not row:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+
+def _analysis_in_thread(document_id: int, user_id: int, freeform: bool) -> Dict[str, Any]:
+    """Own event loop in a worker thread so blocking parse/reformat calls
+    never freeze the main server loop (status polling keeps working)."""
+    fn = analyze_document_freeform_endpoint if freeform else analyze_document_endpoint
+    return asyncio.run(fn(document_id, user_id))
+
+
+async def _analysis_worker(document_id: int, user_id: int, freeform: bool) -> None:
+    job = _analysis_jobs[document_id]
+    try:
+        result = await asyncio.to_thread(_analysis_in_thread, document_id, user_id, freeform)
+        path = _analysis_result_path(document_id)
+        tmp = path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(result, f, default=str)
+        os.replace(tmp, path)  # atomic auto-save
+        job.update(status="completed", error=None, finished_at=datetime.datetime.utcnow().isoformat())
+    except HTTPException as exc:
+        job.update(status="failed", error=str(exc.detail))
+    except Exception as exc:
+        job.update(status="failed", error=str(exc))
 
 
 @app.post("/api/documents/analyze-start/{document_id}", tags=["Documents"])
