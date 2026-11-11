@@ -37,11 +37,13 @@ import '../widgets/tr.dart';
 class TemplateConfigurationScreen extends StatefulWidget {
   final int? departmentId;
   final bool standalone;
+  final int? templateId; // non-null => edit mode
 
   const TemplateConfigurationScreen({
     super.key,
     this.departmentId,
     this.standalone = false,
+    this.templateId,
   });
 
   @override
@@ -174,8 +176,16 @@ class _TemplateConfigurationScreenState
     baseUrl = ApiConfig.getBaseUrl();
     _initializeControllers();
 
+    // Edit mode: select the template up-front so Save/Reference buttons show
+    // correctly from the first frame, then pre-fill the form from the API.
+    _selectedTemplateId = widget.templateId;
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _loadTemplates();
+      if (widget.templateId != null) {
+        _loadTemplateDetails();
+      } else {
+        _loadTemplates();
+      }
     });
   }
 
@@ -398,7 +408,8 @@ class _TemplateConfigurationScreenState
       setState(() => _isLoading = true);
 
       final response = await http.get(
-        Uri.parse('$baseUrl/templates/$_selectedTemplateId'),
+         Uri.parse('$baseUrl/templates/$_selectedTemplateId'),
+        headers: ApiConfig.getHeaders(),
       );
 
       if (response.statusCode == 200) {
@@ -987,6 +998,12 @@ class _TemplateConfigurationScreenState
       // DEBUG: Log the table style data being saved
       print('[DEBUG] Table style being saved: ${templateData['formatting_rules']['table_style']}');
 
+      // The form has no description field; keep the existing one.
+      if (_selectedTemplate != null) {
+        templateData['description'] =
+            (_selectedTemplate!['description'] ?? '').toString();
+      }
+
       final response = await http.put(
         Uri.parse(
             '$baseUrl/admin/templates/$_selectedTemplateId?user_id=${authProvider.userId}'),
@@ -999,6 +1016,11 @@ class _TemplateConfigurationScreenState
           ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
               content: Tr('Template saved successfully!'),
               backgroundColor: Colors.green));
+        }
+        // Edit mode (opened from the templates list): go back and refresh the list.
+        if (widget.templateId != null) {
+          if (mounted) Navigator.of(context).pop(true);
+          return;
         }
         // CRITICAL FIX: Reload the template immediately after saving to verify changes
         await _loadTemplateDetails();
@@ -1574,19 +1596,21 @@ class _TemplateConfigurationScreenState
           children: [
             TemplateHeader(selectedTemplate: _selectedTemplate),
             const SizedBox(height: 32),
-            TemplateSelector(
-              selectedTemplateId: _selectedTemplateId,
-              onTemplateChanged: (value) {
-                setState(() => _selectedTemplateId = value);
-                if (value != null) {
-                  _loadTemplateDetails();
-                } else {
-                  _clearFormFields();
-                  setState(() => _selectedTemplate = null);
-                }
-              },
-            ),
-            const SizedBox(height: 32),
+            if (widget.templateId == null) ...[
+              TemplateSelector(
+                selectedTemplateId: _selectedTemplateId,
+                onTemplateChanged: (value) {
+                  setState(() => _selectedTemplateId = value);
+                  if (value != null) {
+                    _loadTemplateDetails();
+                  } else {
+                    _clearFormFields();
+                    setState(() => _selectedTemplate = null);
+                  }
+                },
+              ),
+              const SizedBox(height: 32),
+            ],
             TemplateNameField(controller: _templateNameController),
             const SizedBox(height: 24),
             Row(
@@ -1855,6 +1879,7 @@ class _TemplateConfigurationScreenState
               canSubmit: _templateNameController.text.trim().isNotEmpty,
               onCreateTemplate: _createTemplate,
               onSaveTemplate: _saveTemplate,
+              showClearSelection: widget.templateId == null,
               onClearSelection: () {
                 setState(() {
                   _selectedTemplateId = null;
@@ -1910,7 +1935,7 @@ class _TemplateConfigurationScreenState
     if (!widget.standalone) return content;
 
     return AdminSubPage(
-      title: 'Create Template',
+      title: widget.templateId != null ? 'Edit Template' : 'Create Template',
       subtitle: widget.departmentId != null
           ? 'Using the full template configuration for this department'
           : 'Using the full template configuration screen',

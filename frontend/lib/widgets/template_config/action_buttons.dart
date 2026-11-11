@@ -8,6 +8,7 @@ class ActionButtons extends StatelessWidget {
   final VoidCallback onCreateTemplate;
   final VoidCallback onSaveTemplate;
   final VoidCallback onClearSelection;
+  final bool showClearSelection;
 
   const ActionButtons({
     super.key,
@@ -17,6 +18,7 @@ class ActionButtons extends StatelessWidget {
     required this.onCreateTemplate,
     required this.onSaveTemplate,
     required this.onClearSelection,
+    this.showClearSelection = true,
   });
 
   @override
@@ -26,7 +28,7 @@ class ActionButtons extends StatelessWidget {
     return Row(
       mainAxisAlignment: MainAxisAlignment.end,
       children: [
-        if (!isCreatingNew) ...[
+        if (!isCreatingNew && showClearSelection) ...[
           OutlinedButton(
             onPressed: onClearSelection,
             style: OutlinedButton.styleFrom(

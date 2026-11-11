@@ -64,6 +64,22 @@ class _TemplateListScreenState extends State<TemplateListScreen> {
     }
   }
 
+  Future<void> _openEditTemplate(AdminTemplateModel item) async {
+    final saved = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => TemplateConfigurationScreen(
+          departmentId: widget.department.id,
+          templateId: item.id,
+          standalone: true,
+        ),
+      ),
+    );
+    if (saved == true) {
+      _changed = true;
+      await _loadTemplates();
+    }
+  }
+
   Future<void> _confirmDelete(AdminTemplateModel item) async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -216,7 +232,7 @@ class _TemplateListScreenState extends State<TemplateListScreen> {
                                       Expanded(
                                         child: Text(item.name, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: Colors.white)),
                                       ),
-                                      IconButton(onPressed: () => _openTemplateSheet(item), icon: const Icon(Icons.edit_outlined)),
+                                      IconButton(onPressed: () => _openEditTemplate(item), icon: const Icon(Icons.edit_outlined)),
                                       IconButton(onPressed: () => _confirmDelete(item), icon: const Icon(Icons.delete_outline)),
                                     ],
                                   ),
