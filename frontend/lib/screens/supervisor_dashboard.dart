@@ -6,6 +6,8 @@ import '../utils/logout_confirm.dart';
 import '../utils/responsive.dart';
 import '../theme/app_theme.dart';
 import '../widgets/admin/admin_ui.dart';
+import '../widgets/notification_bell.dart';
+import '../providers/notification_provider.dart';
 import 'supervisor/assignment_requests_screen.dart';
 import 'supervisor/my_groups_screen.dart';
 import 'supervisor/plagiarism_monitor_screen.dart';
@@ -41,7 +43,6 @@ class SupervisorDashboard extends StatefulWidget {
 
 class _SupervisorDashboardState extends State<SupervisorDashboard> {
   int _selectedTab = 0;
-  int _unreadCount = 0;
 
   /// Per-tab nested navigators so detail screens (Group Detail, Document Review,
   /// etc.) push beside the sidebar instead of covering the whole dashboard.
@@ -468,17 +469,24 @@ class _SupervisorDashboardState extends State<SupervisorDashboard> {
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
-              if (index == _notificationsTabIndex && _unreadCount > 0)
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                  decoration: BoxDecoration(
-                    gradient: AdminColors.primaryGradient,
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                  child: Text(
-                    '$_unreadCount',
-                    style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w700),
-                  ),
+              if (index == _notificationsTabIndex)
+                Consumer<NotificationProvider>(
+                  builder: (context, provider, _) {
+                    if (provider.unreadCount > 0) {
+                      return Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                        decoration: BoxDecoration(
+                          gradient: AdminColors.primaryGradient,
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: Text(
+                          '${provider.unreadCount}',
+                          style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w700),
+                        ),
+                      );
+                    }
+                    return const SizedBox.shrink();
+                  },
                 ),
             ],
           ),
@@ -541,21 +549,7 @@ class _SupervisorDashboardState extends State<SupervisorDashboard> {
               ],
             ),
           ),
-          IconButton(
-            tooltip: 'Notifications',
-            visualDensity: VisualDensity.compact,
-            onPressed: () => _selectTab(_notificationsTabIndex),
-            icon: Badge(
-              isLabelVisible: _unreadCount > 0,
-              label: Text('$_unreadCount'),
-              backgroundColor: AdminColors.accent,
-              child: Icon(
-                Icons.notifications_outlined,
-                color: Colors.white.withOpacity(0.85),
-                size: 22,
-              ),
-            ),
-          ),
+          const NotificationBell(),
           IconButton(
             icon: const Icon(Icons.logout_rounded, size: 21),
             color: AdminColors.accentBright,
@@ -577,11 +571,6 @@ class _SupervisorDashboardState extends State<SupervisorDashboard> {
           onOpenSubmissions: () => _selectTab(_submissionsTabIndex),
           onOpenPlagiarism: () => _selectTab(_plagiarismTabIndex),
           onOpenNotifications: () => _selectTab(_notificationsTabIndex),
-          onUnreadCount: (count) {
-            if (_unreadCount != count && mounted) {
-              setState(() => _unreadCount = count);
-            }
-          },
         );
       case 1:
         return const AssignmentRequestsScreen();
@@ -595,7 +584,6 @@ class _SupervisorDashboardState extends State<SupervisorDashboard> {
         return const _SupervisorProfileView();
       case 6:
         return SupervisorMoreScreen(
-          unreadCount: _unreadCount,
           onOpenNotifications: () => _selectTab(_notificationsTabIndex),
           onOpenPlagiarism: () => _selectTab(_plagiarismTabIndex),
           onOpenProfile: () => _selectTab(_profileTabIndex),

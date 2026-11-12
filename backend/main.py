@@ -54,7 +54,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
-
+from routes.notification_routes import router as notification_router
 from pipeline.aggregator import aggregate
 from routes.admin_routes import router as admin_router
 from routes.supervisor_routes import router as supervisor_router
@@ -846,6 +846,7 @@ app.include_router(vc_router)
 app.include_router(admin_router)
 app.include_router(supervisor_router)
 app.include_router(student_router)
+app.include_router(notification_router)
 
 # Additive: draft-template extraction from prose guideline DOCX (does not alter create/update)
 from routes.template_extract_routes import router as template_extract_router

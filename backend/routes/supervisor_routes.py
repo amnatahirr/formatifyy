@@ -1,10 +1,10 @@
 from __future__ import annotations
-
+from services.notification_service import NotificationType
 import json
 import logging
 from datetime import date, datetime, timedelta
 from typing import Annotated, Any
-
+from services.notification_service import NotificationType
 from fastapi import APIRouter, Body, HTTPException, Query
 from fastapi.responses import FileResponse
 
@@ -294,6 +294,7 @@ def _require_supervisor(user_id: int | None) -> dict[str, Any]:
         )
     data = _row_to_dict(supervisor)
     data["org_id"] = int(data.get("org_id") or user_org)
+    data["user_id"] = int(user["id"])
     return data
 
 
@@ -308,26 +309,66 @@ def _create_notification(
     related_id: int,
     org_id: int,
 ) -> None:
+    """Legacy wrapper - now uses the unified notification service."""
+    from services.notification_service import notify, NotificationType
+    
     email = (recipient_email or "").strip().lower()
     if not email:
         return
 
     cursor.execute(
-        "SELECT id FROM users WHERE LOWER(email) = LOWER(?) AND COALESCE(org_id, 1) = ?",
+        "SELECT id, org_id FROM users WHERE LOWER(email) = LOWER(?) AND COALESCE(org_id, 1) = ?",
         (email, org_id),
     )
     user_row = cursor.fetchone()
     user_id = user_row["id"] if user_row else None
+    recipient_org_id = int(user_row["org_id"] if user_row and user_row["org_id"] else org_id)
 
-    cursor.execute(
-        """
-        INSERT INTO notifications
-            (user_id, recipient_email, title, message, type, is_read, related_type, related_id)
-        VALUES (?, ?, ?, ?, ?, 0, ?, ?)
-        """,
-        (user_id, email, title, message, notification_type, related_type, related_id),
+    # Map legacy types to new constants
+    type_map = {
+        "assignment_request": NotificationType.NEW_ASSIGNMENT_REQUEST,
+        "assignment_accepted": NotificationType.ASSIGNMENT_ACCEPTED,
+        "assignment_rejected": NotificationType.ASSIGNMENT_REJECTED,
+        "final_submission": NotificationType.STUDENT_SUBMITTED,
+        "student_reply": NotificationType.STUDENT_REPLY,
+        "meeting_note": NotificationType.MEETING_NOTE,
+        "submission_approved": NotificationType.SUBMISSION_APPROVED,
+        "submission_revision": NotificationType.SUBMISSION_REVISION_REQUESTED,
+        "submission_rejected": NotificationType.SUBMISSION_REJECTED,
+        "document_comment": NotificationType.SUPERVISOR_COMMENT,
+        "plagiarism_flag": NotificationType.PLAGIARISM_HIGH,
+    }
+    new_type = type_map.get(notification_type, notification_type)
+
+    notify(
+        org_id=recipient_org_id,
+        user_id=user_id,
+        type=new_type,
+        title=title,
+        body=message,
+        entity_type=related_type,
+        entity_id=related_id,
+        payload={"screen": _get_screen_for_type(new_type), "entity_id": related_id},
     )
-    logger.info("Notification queued for %s: %s", email, title)
+    logger.info("Notification queued for %s (org_id=%s): %s", email, recipient_org_id, title)
+
+
+def _get_screen_for_type(notification_type: str) -> str:
+    """Map notification type to frontend screen route."""
+    screen_map = {
+        NotificationType.NEW_ASSIGNMENT_REQUEST: "assignment_requests",
+        NotificationType.ASSIGNMENT_ACCEPTED: "assignment_requests",
+        NotificationType.ASSIGNMENT_REJECTED: "assignment_requests",
+        NotificationType.STUDENT_SUBMITTED: "submissions",
+        NotificationType.STUDENT_REPLY: "comments",
+        NotificationType.MEETING_NOTE: "meeting_notes",
+        NotificationType.SUBMISSION_APPROVED: "submissions",
+        NotificationType.SUBMISSION_REVISION_REQUESTED: "submissions",
+        NotificationType.SUBMISSION_REJECTED: "submissions",
+        NotificationType.SUPERVISOR_COMMENT: "analyze",
+        NotificationType.PLAGIARISM_HIGH: "analyze",
+    }
+    return screen_map.get(notification_type, "notifications")
 
 
 def _serialize_assignment_request(row) -> dict[str, Any]:
@@ -493,12 +534,15 @@ def get_supervisor_home(user_id: Annotated[int | None, Query()] = None):
     documents_to_review = cursor.fetchone()[0]
 
     supervisor_email = (supervisor.get("email") or "").strip().lower()
+    sup_user_id = supervisor.get("user_id")
+    sup_org_id = _supervisor_org_id(supervisor)
     cursor.execute(
         """
         SELECT COUNT(*) FROM notifications
-        WHERE LOWER(TRIM(recipient_email)) = LOWER(?) AND is_read = 0
+        WHERE ((user_id = ?) OR (user_id IS NULL AND LOWER(TRIM(recipient_email)) = LOWER(?)))
+          AND COALESCE(org_id, 1) = ? AND is_read = 0
         """,
-        (supervisor_email,),
+        (sup_user_id, supervisor_email, sup_org_id),
     )
     unread_replies = cursor.fetchone()[0]
 
@@ -2559,22 +2603,29 @@ def list_supervisor_notifications(
     user_id: Annotated[int | None, Query()] = None,
     unread_only: Annotated[bool, Query()] = False,
 ):
-    """Inbox for supervisor mobile/desktop: submissions, student replies, etc."""
+    """
+    Inbox for supervisor mobile/desktop: submissions, student replies, etc.
+    Wrapper over unified notification table for backward compatibility.
+    """
     supervisor = _require_supervisor(user_id)
     email = (supervisor.get("email") or "").strip().lower()
     if not email:
         raise HTTPException(status_code=400, detail="Supervisor account has no email.")
 
+    sup_user_id = supervisor.get("user_id") or (int(user_id) if user_id is not None else None)
+    sup_org_id = _supervisor_org_id(supervisor)
+
     conn = get_db()
     cursor = conn.cursor()
     try:
         sql = """
-            SELECT id, recipient_email, title, message, type, is_read,
-                   related_type, related_id, created_at
+            SELECT id, user_id, recipient_email, title, message, type, is_read,
+                   related_type, related_id, created_at, org_id
             FROM notifications
-            WHERE LOWER(TRIM(recipient_email)) = LOWER(?)
+            WHERE ((user_id = ?) OR (user_id IS NULL AND LOWER(TRIM(recipient_email)) = LOWER(?)))
+              AND COALESCE(org_id, 1) = ?
         """
-        params: list[Any] = [email]
+        params: list[Any] = [sup_user_id, email, sup_org_id]
         if unread_only:
             sql += " AND is_read = 0"
         sql += " ORDER BY datetime(created_at) DESC, id DESC LIMIT 100"
@@ -2598,15 +2649,20 @@ def mark_supervisor_notification_read(
 ):
     supervisor = _require_supervisor(user_id)
     email = (supervisor.get("email") or "").strip().lower()
+    sup_user_id = supervisor.get("user_id") or (int(user_id) if user_id is not None else None)
+    sup_org_id = _supervisor_org_id(supervisor)
+
     conn = get_db()
     cursor = conn.cursor()
     try:
         cursor.execute(
             """
             SELECT id FROM notifications
-            WHERE id = ? AND LOWER(TRIM(recipient_email)) = LOWER(?)
+            WHERE id = ?
+              AND ((user_id = ?) OR (user_id IS NULL AND LOWER(TRIM(recipient_email)) = LOWER(?)))
+              AND COALESCE(org_id, 1) = ?
             """,
-            (notification_id, email),
+            (notification_id, sup_user_id, email, sup_org_id),
         )
         row = cursor.fetchone()
         if not row:
@@ -2624,6 +2680,7 @@ def mark_supervisor_notification_read(
 def _serialize_supervisor_notification(row, cursor=None) -> dict[str, Any]:
     result: dict[str, Any] = {
         "id": row["id"],
+        "user_id": row["user_id"] if "user_id" in row.keys() else None,
         "recipient_email": row["recipient_email"] or "",
         "title": row["title"] or "",
         "message": row["message"] or "",
@@ -2632,6 +2689,7 @@ def _serialize_supervisor_notification(row, cursor=None) -> dict[str, Any]:
         "related_type": row["related_type"] or "",
         "related_id": row["related_id"],
         "created_at": row["created_at"] or "",
+        "org_id": row["org_id"] if "org_id" in row.keys() else 1,
     }
     related_type = (result["related_type"] or "").strip().lower()
     related_id = result["related_id"]

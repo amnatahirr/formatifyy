@@ -76,6 +76,28 @@ _STOPWORDS = frozenset({
     "with", "we", "they", "these", "those",
 })
 
+# Front-matter section patterns to exclude from missing-heading detection
+_FRONTMATTER_PATTERNS = [
+    re.compile(r"^(title\s*page|cover\s*page|title|cover)$", re.I),
+    re.compile(r"^(declaration|certification|certificate|undertaking)$", re.I),
+    re.compile(r"^(table\s+of\s+contents|contents|toc)$", re.I),
+    re.compile(r"^(list\s+of\s+figures|list\s+of\s+images|lof|table\s+of\s+figures)$", re.I),
+    re.compile(r"^(list\s+of\s+tables|lot)$", re.I),
+    re.compile(r"^(list\s+of\s+(abbreviations|symbols|appendices))$", re.I),
+    re.compile(r"^\{\{.*\}\}$", re.I),  # Placeholder-style entries
+]
+
+
+def _is_frontmatter_section(name: str) -> bool:
+    """Return True if the section name is a front-matter entry."""
+    text = (name or "").strip()
+    if not text:
+        return True
+    for pattern in _FRONTMATTER_PATTERNS:
+        if pattern.match(text):
+            return True
+    return False
+
 
 @dataclass
 class TemplateEntry:
@@ -110,6 +132,11 @@ def _normalize(text: str) -> str:
     cleaned = re.sub(r"^[\d]+(?:\.[\d]+)*\.?\s+", "", cleaned).strip()
     cleaned = re.sub(r"^[IVXLC]+\.\s+", "", cleaned, flags=re.IGNORECASE).strip()
     return cleaned.lower()
+
+
+def missing_heading_issue_id(name: str) -> str:
+    """Stable issue_id for a template heading that is missing from the document."""
+    return f"missing_heading_{_normalize(str(name or 'section'))}"
 
 
 def _word_count(text: str) -> int:
@@ -238,9 +265,14 @@ def _text_match_score(text: str, template_name: str) -> float:
 
 
 def build_template_outline(required_sections: List[Any]) -> List[TemplateEntry]:
-    """Build a flat template outline with parent links from required_sections."""
+    """
+    Build a flat template outline with parent links from required_sections.
+    Filters out front-matter entries (cover, info, TOC, lists) - only real
+    body content headings are considered for missing-heading detection.
+    """
     entries: List[TemplateEntry] = []
     parent_stack: Dict[int, Optional[str]] = {0: None, 1: None, 2: None, 3: None}
+    order_counter = 0
 
     for idx, sec in enumerate(required_sections or []):
         if isinstance(sec, str):
@@ -253,10 +285,15 @@ def build_template_outline(required_sections: List[Any]) -> List[TemplateEntry]:
             continue
         if not name:
             continue
+        
+        # Skip front-matter entries
+        if _is_frontmatter_section(name):
+            continue
 
         level = max(1, min(4, level))
         parent = parent_stack.get(level - 1)
-        entries.append(TemplateEntry(name=name, level=level, parent=parent, order=idx + 1))
+        order_counter += 1
+        entries.append(TemplateEntry(name=name, level=level, parent=parent, order=order_counter))
         parent_stack[level] = name
         for deeper in range(level + 1, 5):
             parent_stack[deeper] = None
@@ -1375,7 +1412,7 @@ def heading_matches_to_issues(matches: List[Dict[str, Any]]) -> List[Dict[str, A
                 "current": "",
                 "heading_level": match.get("expected_level") or _level_to_int(match.get("level")) or 1,
                 "matched_template_heading": match.get("matched_template_heading") or match.get("text"),
-                "issue_id": f"missing_heading_{_normalize(str(match.get('text') or 'section'))}",
+                "issue_id": missing_heading_issue_id(str(match.get("text") or "section")),
                 "source": "missing",
             })
             continue

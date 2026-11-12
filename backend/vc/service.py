@@ -770,7 +770,8 @@ def join_project_by_invite(user_id: int, invite_code: str) -> Dict[str, Any]:
         "SELECT id FROM project_members WHERE project_id = ? AND user_id = ?",
         (project_id, user_id),
     )
-    if not cursor.fetchone():
+    is_new_member = not cursor.fetchone()
+    if is_new_member:
         cursor.execute(
             "INSERT INTO project_members (project_id, user_id, role) VALUES (?, ?, 'editor')",
             (project_id, user_id),
@@ -779,6 +780,30 @@ def join_project_by_invite(user_id: int, invite_code: str) -> Dict[str, Any]:
 
     conn.close()
     sync_project_to_member_reports(project_id)
+
+    # Notify existing members about new member joining
+    if is_new_member:
+        try:
+            from services.notification_service import notify, NotificationType
+            members = list_project_members(project_id)
+            project_name = (project.get("name") or "Untitled project").strip()
+            user_name = (user.get("username") or user.get("email") or f"user_{user_id}").strip()
+            for member in members:
+                if member["user_id"] != user_id:
+                    notify(
+                        org_id=user_org_id,
+                        user_id=member["user_id"],
+                        type=NotificationType.COLLABORATION_INVITE,
+                        title=f"{user_name} joined '{project_name}'",
+                        body=f"{user_name} has joined the collaboration project.",
+                        entity_type="collaboration_project",
+                        entity_id=project_id,
+                        payload={"screen": "collaboration", "project_id": project_id},
+                    )
+        except Exception as exc:
+            import logging
+            logging.getLogger(__name__).exception("Failed to send join notification: %s", exc)
+
     return get_project_detail(project_id, user_id)
 
 
@@ -892,6 +917,30 @@ def create_commit(
     conn.close()
 
     sync_project_to_member_reports(project_id)
+
+    # Notify other team members about commit
+    try:
+        from services.notification_service import notify, NotificationType
+        members = list_project_members(project_id)
+        project = _get_project(project_id)
+        project_name = (project.get("name") or "Untitled project").strip()
+        author_name = (user.get("username") or user.get("email") or f"user_{user_id}").strip()
+        for member in members:
+            if member["user_id"] != user_id:
+                notify(
+                    org_id=int(project.get("org_id") or 1),
+                    user_id=member["user_id"],
+                    type=NotificationType.MEMBER_COMMIT,
+                    title=f"{author_name} committed to '{project_name}'",
+                    body=f"{author_name} committed changes to section '{section_id}'.",
+                    entity_type="section_commit",
+                    entity_id=commit_id,
+                    payload={"screen": "collaboration", "project_id": project_id, "section_id": section_id},
+                )
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).exception("Failed to send commit notification: %s", exc)
+
     return row
 
 
@@ -1040,6 +1089,27 @@ def start_merge(project_id: int, user_id: int) -> Dict[str, Any]:
     cursor.execute("UPDATE project_merges SET status = ? WHERE id = ?", (status, merge_id))
     conn.commit()
     conn.close()
+
+    # Notify team members about merge conflicts
+    if status == "conflicts":
+        try:
+            from services.notification_service import notify, NotificationType
+            members = list_project_members(project_id)
+            project_name = (project.get("name") or "Untitled project").strip()
+            for member in members:
+                notify(
+                    org_id=int(project.get("org_id") or 1),
+                    user_id=member["user_id"],
+                    type=NotificationType.MERGE_CONFLICT,
+                    title=f"Merge conflicts in '{project_name}'",
+                    body=f"Your project has {len(stored)} merge conflict(s) that need resolution.",
+                    entity_type="project_merge",
+                    entity_id=merge_id,
+                    payload={"screen": "collaboration", "project_id": project_id, "merge_id": merge_id},
+                )
+        except Exception as exc:
+            import logging
+            logging.getLogger(__name__).exception("Failed to send merge conflict notification: %s", exc)
 
     return {
         "merge_id": merge_id,

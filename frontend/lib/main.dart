@@ -22,8 +22,8 @@ import 'providers/fyp_provider.dart';
 import 'theme/app_theme.dart';
 import 'providers/analysis_job_provider.dart';
 import 'providers/lang_provider.dart';
-import 'package:provider/provider.dart'; 
 
+import 'providers/notification_provider.dart';
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
 void main() async {
@@ -142,6 +142,9 @@ final messengerKey = GlobalKey<ScaffoldMessengerState>();
         ChangeNotifierProvider(create: (_) => LangProvider()..load()),
         ChangeNotifierProvider(
   create: (_) => AnalysisJobProvider()..messengerKey = messengerKey,
+),ChangeNotifierProvider(
+  create: (_) => NotificationProvider()
+    ..messengerKey = messengerKey,
 ),
       ],
       child: Consumer<ThemeProvider>(

@@ -477,9 +477,34 @@ def init_db():
             related_type TEXT,
             related_id INTEGER,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            org_id INTEGER DEFAULT 1,
             FOREIGN KEY (user_id) REFERENCES users(id)
         )
     """)
+
+    # Migrate notifications columns on existing databases
+    cursor.execute("PRAGMA table_info(notifications)")
+    notification_columns = {row[1] for row in cursor.fetchall()}
+    if "org_id" not in notification_columns:
+        cursor.execute("ALTER TABLE notifications ADD COLUMN org_id INTEGER DEFAULT 1")
+        cursor.execute("UPDATE notifications SET org_id = 1 WHERE org_id IS NULL")
+    
+    # Extended schema for unified notification system
+    if "body" not in notification_columns:
+        cursor.execute("ALTER TABLE notifications ADD COLUMN body TEXT")
+        cursor.execute("UPDATE notifications SET body = message WHERE body IS NULL")
+    if "entity_type" not in notification_columns:
+        cursor.execute("ALTER TABLE notifications ADD COLUMN entity_type TEXT")
+        cursor.execute("UPDATE notifications SET entity_type = related_type WHERE entity_type IS NULL")
+    if "payload_json" not in notification_columns:
+        cursor.execute("ALTER TABLE notifications ADD COLUMN payload_json TEXT")
+    if "read_at" not in notification_columns:
+        cursor.execute("ALTER TABLE notifications ADD COLUMN read_at DATETIME")
+    
+    # Add index for efficient queries
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='index' AND name='idx_notifications_user_read_created'")
+    if not cursor.fetchone():
+        cursor.execute("CREATE INDEX idx_notifications_user_read_created ON notifications(user_id, is_read, created_at DESC)")
 
     # 13. Group documents waiting for supervisor review
     cursor.execute("""

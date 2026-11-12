@@ -107,7 +107,9 @@ class _SupervisorNotificationsScreenState
     if (type.contains('reply') || type.contains('comment')) {
       return Icons.chat_bubble_outline_rounded;
     }
-    if (type.contains('assignment')) return Icons.assignment_ind_rounded;
+    if (type == 'assignment_request' || type.contains('assignment')) {
+      return Icons.assignment_ind_rounded;
+    }
     return Icons.notifications_outlined;
   }
 

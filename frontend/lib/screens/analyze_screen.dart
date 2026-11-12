@@ -17,7 +17,7 @@ import '../widgets/image_replacement_dialog.dart';
 import '../widgets/apply_all_fixes_dialogs.dart';
 import '../models/json_parse.dart';
 import '../services/image_replacement_service.dart';
-import ' image_formatter_screen.dart';
+import 'image_formatter_screen.dart';
 import '../widgets/reference_formatter_widget.dart';
 import '../providers/analysis_job_provider.dart';
 import '../main.dart' show navigatorKey; 

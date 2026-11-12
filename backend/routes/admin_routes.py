@@ -847,6 +847,26 @@ def create_supervisor(
     )
     conn.commit()
     supervisor_id = cursor.lastrowid
+    
+    # Notify org admin about new supervisor
+    try:
+        from services.notification_service import notify, NotificationType
+        cursor.execute("SELECT id FROM users WHERE role = 'admin' AND org_id = ? LIMIT 1", (org_id,))
+        admin = cursor.fetchone()
+        if admin:
+            notify(
+                org_id=org_id,
+                user_id=admin["id"],
+                type=NotificationType.SUPERVISOR_CREATED,
+                title="New supervisor account created",
+                body=f"Supervisor {name} ({email}) has been added.",
+                entity_type="supervisor",
+                entity_id=supervisor_id,
+                payload={"screen": "supervisors", "supervisor_id": supervisor_id},
+            )
+    except Exception as exc:
+        logger.exception("Failed to send supervisor creation notification: %s", exc)
+    
     cursor.execute(
         """
         SELECT s.*, d.name AS department_name, d.code AS department_code

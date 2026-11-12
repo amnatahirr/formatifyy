@@ -30,6 +30,10 @@ class DocumentProvider extends ChangeNotifier {
   /// Cached AI Tools analyze payloads (grammar/plagiarism/stats) keyed by document id.
   final Map<int, Map<String, dynamic>> _analysisByDocumentId = {};
 
+  /// Cached GET /documents/missing-section-previews payloads keyed by document id.
+  final Map<int, List<Map<String, dynamic>>> _missingSectionPreviews = {};
+  int? _lastFetchedUserId;
+
   /// Last document created/uploaded on New Report — used for supervisor submit.
   int? _pendingSubmitDocumentId;
   String? _pendingSubmitFilename;
@@ -57,6 +61,11 @@ class DocumentProvider extends ChangeNotifier {
 
   Map<String, dynamic>? analysisReportFor(int documentId) =>
       _analysisByDocumentId[documentId];
+
+  List<Map<String, dynamic>> missingSectionPreviewsFor(int documentId) =>
+      List<Map<String, dynamic>>.from(
+        _missingSectionPreviews[documentId] ?? const [],
+      );
 
   /// Slim snapshot matching final_submissions / supervisor analysis_report shape.
   static Map<String, dynamic> slimAnalysisReport(Map<String, dynamic> raw) {
@@ -135,6 +144,7 @@ class DocumentProvider extends ChangeNotifier {
       );
 
       if (response.statusCode == 200) {
+        _lastFetchedUserId = userId;
         _documents = List<Map<String, dynamic>>.from(
           json.decode(response.body),
         );
@@ -263,13 +273,22 @@ class DocumentProvider extends ChangeNotifier {
       if (data is Map && data['detail'] != null) {
         final detail = data['detail'];
         if (detail is Map) {
-          return (detail['message'] ?? detail).toString();
+          return (detail['message'] ?? detail['detail'] ?? detail).toString();
         }
         return detail.toString();
+      } else if (data is Map && data['message'] != null) {
+        return data['message'].toString();
       }
     } catch (_) {}
     return null;
   }
+
+  void setErrorMessage(String? msg) {
+    _errorMessage = msg;
+    notifyListeners();
+  }
+
+  String? parseErrorMessage(String body) => _detail(body);
 
   Future<bool> uploadDocument(File file, int templateId, int userId) async {
     try {
@@ -283,19 +302,21 @@ class DocumentProvider extends ChangeNotifier {
       var response = await request.send();
       final responseBody = await response.stream.bytesToString();
 
-      if (response.statusCode == 200) {
+      if (response.statusCode >= 200 && response.statusCode < 300) {
         await fetchDocuments(userId); // refresh list
         return true;
       } else {
-        _errorMessage = "Upload failed: $responseBody";
+        _errorMessage = _detail(responseBody) ?? "Upload failed. Please try again.";
         debugPrint(
           "[v0] Upload failed with status ${response.statusCode}: $responseBody",
         );
+        notifyListeners();
         return false;
       }
     } catch (e) {
       _errorMessage = "Upload error: $e";
       debugPrint("[v0] Upload error: $e");
+      notifyListeners();
       return false;
     }
   }
@@ -311,7 +332,7 @@ class DocumentProvider extends ChangeNotifier {
       request.files.add(await http.MultipartFile.fromPath("file", file.path));
       var response = await request.send();
       final responseBody = await response.stream.bytesToString();
-      if (response.statusCode == 200) {
+      if (response.statusCode >= 200 && response.statusCode < 300) {
         final data = jsonDecode(responseBody) as Map<String, dynamic>;
         await fetchDocuments(userId);
         return {
@@ -320,10 +341,12 @@ class DocumentProvider extends ChangeNotifier {
           'is_freeform': true,
         };
       }
-      _errorMessage = "Freeform upload failed: $responseBody";
+      _errorMessage = _detail(responseBody) ?? "Upload failed. Please try again.";
+      notifyListeners();
       return null;
     } catch (e) {
       _errorMessage = "Freeform upload error: $e";
+      notifyListeners();
       return null;
     }
   }
@@ -912,6 +935,42 @@ class DocumentProvider extends ChangeNotifier {
       _errorMessage = "Rename error: $e";
       notifyListeners();
       return null;
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> fetchMissingSectionPreviews(
+    int documentId, {
+    bool suggest = false,
+    int? userId,
+  }) async {
+    try {
+      final uid = userId ?? _lastFetchedUserId;
+      if (uid == null) {
+        return missingSectionPreviewsFor(documentId);
+      }
+      final url =
+          '${ApiConfig.getBaseUrl()}/documents/missing-section-previews/$documentId'
+          '?user_id=$uid&suggest=$suggest';
+      final response = await http.get(
+        Uri.parse(url),
+        headers: ApiConfig.getHeaders(),
+      );
+      if (response.statusCode != 200) {
+        debugPrint(
+          '[v0] missing section previews failed: ${response.statusCode} ${response.body}',
+        );
+        return missingSectionPreviewsFor(documentId);
+      }
+      final data = json.decode(response.body) as Map<String, dynamic>;
+      final previews = (data['previews'] as List? ?? [])
+          .map((e) => Map<String, dynamic>.from(e as Map))
+          .toList();
+      _missingSectionPreviews[documentId] = previews;
+      notifyListeners();
+      return previews;
+    } catch (e) {
+      debugPrint('[v0] missing section previews error: $e');
+      return missingSectionPreviewsFor(documentId);
     }
   }
 

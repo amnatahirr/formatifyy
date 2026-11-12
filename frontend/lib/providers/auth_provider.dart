@@ -3,12 +3,12 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'dart:async';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:app_links/app_links.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../config/api_config.dart';
 import '../config/dev_user_config.dart';
 import '../services/auth_token_store.dart';
 import '../services/super_admin_api_service.dart';
+import 'notification_provider.dart';
 
 /// SharedPreferences keys for the restored login session.
 /// Prefixed with `formatify.auth.` to avoid collisions with other packages/features.
@@ -33,6 +33,7 @@ class AuthProvider extends ChangeNotifier {
   String? _googleDriveEmail;
   bool _devBootstrap = false;
   bool _sessionRestoreAttempted = false;
+  NotificationProvider? _notificationProvider;
 
   String? get currentUser => _currentUser;
   String? get userEmail => _userEmail;
@@ -49,6 +50,10 @@ class AuthProvider extends ChangeNotifier {
   String? get googleDriveEmail => _googleDriveEmail;
   bool get isDevBootstrap => _devBootstrap;
   bool get sessionRestoreAttempted => _sessionRestoreAttempted;
+
+  void setNotificationProvider(NotificationProvider provider) {
+    _notificationProvider = provider;
+  }
 
   AuthProvider({String? devUserKey}) {
     baseUrl = ApiConfig.getBaseUrl();
@@ -140,6 +145,8 @@ class AuthProvider extends ChangeNotifier {
       await prefs.remove(AuthSessionKeys.role);
     }
     await _syncOrgAfterAuth();
+    _notificationProvider?.startPolling();
+    _notificationProvider?.refreshUnreadCount();
   }
 
   /// Wipe any leftover auto-login / remembered profile so launch always
@@ -365,6 +372,7 @@ class AuthProvider extends ChangeNotifier {
     _googleDriveEmail = null;
     _devBootstrap = false;
     DevUserConfig.clearTenant();
+    _notificationProvider?.clear();
     await _clearPersistedSession();
     notifyListeners();
   }

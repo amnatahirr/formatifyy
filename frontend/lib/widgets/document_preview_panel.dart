@@ -40,6 +40,8 @@ class DocumentPreviewPanel extends StatefulWidget {
   final void Function(Map<String, dynamic> result, Map<String, dynamic> issue)? onImageReplaced;
   final void Function(Map<String, dynamic> result, Map<String, dynamic> issue)? onImageRemoved;
   final void Function(List<Map<String, dynamic>> blocks)? onBlocksChanged;
+  final Map<String, GlobalKey>? ghostKeys;
+  final String? flashGhostIssueId;
 
   final String defaultFont;
   final double bodyPt;
@@ -60,6 +62,8 @@ class DocumentPreviewPanel extends StatefulWidget {
     this.onImageReplaced,
     this.onImageRemoved,
     this.onBlocksChanged,
+    this.ghostKeys,
+    this.flashGhostIssueId,
     this.defaultFont = 'Times New Roman',
     this.bodyPt = 12,
     this.headingPt = const {1: 16, 2: 14, 3: 12},
@@ -159,7 +163,7 @@ class _DocumentPreviewPanelState extends State<DocumentPreviewPanel> {
       m['_uid'] = _newUid();
 
       final rawType = (m['type'] ?? '').toString().toLowerCase();
-      const textTypes = {'paragraph', 'heading', 'list_item', 'toc_item'};
+      const textTypes = {'paragraph', 'heading', 'list_item', 'toc_item', 'ghost_heading'};
 
       if (rawType.contains('toc') ||
           rawType.contains('table_of_contents') ||
@@ -368,6 +372,10 @@ class _DocumentPreviewPanelState extends State<DocumentPreviewPanel> {
       }
       if (pid.isNotEmpty && issue['paragraph_id'] == pid) return true;
       if (iid.isNotEmpty && issue['image_id'] == iid) return true;
+      if ((block['issue_id'] as String? ?? '').isNotEmpty &&
+          issue['issue_id'] == block['issue_id']) {
+        return true;
+      }
       return false;
     }).map((e) => Map<String, dynamic>.from(e)).toList();
   }
@@ -404,8 +412,12 @@ class _DocumentPreviewPanelState extends State<DocumentPreviewPanel> {
 
   String _type(Map<String, dynamic> b) =>
       (b['type'] as String? ?? 'paragraph').toLowerCase();
+
+  bool _isGhost(Map<String, dynamic> b) =>
+      _type(b) == 'ghost_heading' || b['is_placeholder'] == true;
       
   bool _isTextual(Map<String, dynamic> b) {
+    if (_isGhost(b)) return false;
     final t = _type(b);
     return t != 'image' && t != 'table';
   }
@@ -535,6 +547,7 @@ class _DocumentPreviewPanelState extends State<DocumentPreviewPanel> {
   }
 
   void _pushUndo() {
+    if (_sel != null && _isGhost(_sel!)) return;
     _undo.add(jsonEncode(_blocks));
     if (_undo.length > 100) _undo.removeAt(0);
     _redo.clear();
@@ -543,7 +556,7 @@ class _DocumentPreviewPanelState extends State<DocumentPreviewPanel> {
   void _notify() {
     final cb = widget.onBlocksChanged;
     if (cb == null) return;
-    cb(_blocks.map((b) {
+    cb(_blocks.where((b) => !_isGhost(b)).map((b) {
       final m = Map<String, dynamic>.from(b);
       m.remove('_uid');
       return m;
@@ -668,6 +681,7 @@ class _DocumentPreviewPanelState extends State<DocumentPreviewPanel> {
   void _deleteSelected() {
     final b = _sel;
     if (b == null || _type(b) == 'image') return;
+    if (_isGhost(b)) return;
     _pushUndo();
     setState(() {
       _blocks.remove(b);
@@ -872,6 +886,11 @@ class _DocumentPreviewPanelState extends State<DocumentPreviewPanel> {
                           _syncEditor();
                           _notify();
                         });
+                      } else if (_isGhost(block) ||
+                          (issue['type'] as String? ?? '') == 'missing_section' ||
+                          (issue['fix_type'] as String? ?? '') ==
+                              'insert_missing_section') {
+                        widget.onApplyFix(issueId, _ghostBody(block));
                       }
                       Navigator.pop(ctx);
                     },
@@ -977,9 +996,11 @@ class _DocumentPreviewPanelState extends State<DocumentPreviewPanel> {
           Expanded(
             child: ListView.builder(
               padding: const EdgeInsets.all(12),
-              itemCount: _blocks.length,
+              itemCount: _blocks.where((b) => !_isGhost(b)).length,
               itemBuilder: (ctx, i) {
-                final block = Map<String, dynamic>.from(_blocks[i]);
+                final originalBlocks =
+                    _blocks.where((b) => !_isGhost(b)).toList();
+                final block = Map<String, dynamic>.from(originalBlocks[i]);
                 final type = _type(block);
                 if (type == 'image') {
                   return _buildSimpleImage(block);
@@ -1343,6 +1364,7 @@ class _DocumentPreviewPanelState extends State<DocumentPreviewPanel> {
     var words = 0;
     var chars = 0;
     for (final b in _blocks) {
+      if (_isGhost(b)) continue;
       if (!_isTextual(b)) continue;
       final txt = _displayText(b, _issuesForBlock(b));
       chars += txt.length;
@@ -1450,6 +1472,9 @@ class _DocumentPreviewPanelState extends State<DocumentPreviewPanel> {
   Widget _buildWordBlock(Map<String, dynamic> block, double s, {int number = 0}) {
     final type = _type(block);
     final blockIssues = _issuesForBlock(block);
+    if (_isGhost(block)) {
+      return _buildGhostBlock(block, s);
+    }
 
     if (type == 'image') {
       return _buildWordImage(block, blockIssues, s);
@@ -1613,6 +1638,57 @@ class _DocumentPreviewPanelState extends State<DocumentPreviewPanel> {
         ),
       ),
     );
+  }
+
+  String _ghostBody(Map<String, dynamic> block) {
+    final suggested = (block['suggested_content'] as String? ?? '').trim();
+    if (suggested.isNotEmpty) return suggested;
+    final guidance = (block['guidance_text'] as String? ?? '').trim();
+    if (guidance.isNotEmpty) return guidance;
+    return (block['placeholder_text'] as String? ?? '').trim();
+  }
+
+  Widget _buildGhostBlock(Map<String, dynamic> block, double s) {
+    final issueId = block['issue_id'] as String? ?? '';
+    final title = (block['text'] as String? ?? '').trim();
+    final level = _level(block);
+    final flash = issueId.isNotEmpty && widget.flashGhostIssueId == issueId;
+    GlobalKey? key;
+    if (issueId.isNotEmpty) {
+      final keys = widget.ghostKeys;
+      if (keys != null) key = keys[issueId];
+    }
+
+    // Get heading style for this level
+    final headingSize = widget.headingPt[level] ?? 16;
+    final headingFont = _fontOf(block);
+
+    final inner = GestureDetector(
+      onTap: issueId.isEmpty
+          ? null
+          : () {
+              // Navigate to Missing Sections tab and highlight this card
+              // This will be handled by the parent widget via a callback
+              // For now, just flash to indicate interaction
+            },
+      child: Opacity(
+        opacity: 0.45,
+        child: Container(
+          margin: EdgeInsets.symmetric(vertical: 6 * s),
+          child: Text(
+            title.isEmpty ? 'Untitled section' : title,
+            style: TextStyle(
+              fontFamily: headingFont,
+              fontSize: headingSize * s,
+              fontWeight: FontWeight.bold,
+              color: flash ? const Color(0xFF6B7280) : const Color(0xFF9CA3AF),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    return KeyedSubtree(key: key, child: inner);
   }
 
   Widget _styleTag(String label, bool fixed) {
@@ -1818,6 +1894,38 @@ class _DocumentPreviewPanelState extends State<DocumentPreviewPanel> {
       ),
     );
   }
+}
+
+class _DashedRectPainter extends CustomPainter {
+  final Color color;
+  _DashedRectPainter({required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = 1.2
+      ..style = PaintingStyle.stroke;
+    const dash = 6.0;
+    const gap = 4.0;
+    final path = Path()..addRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromLTWH(0, 0, size.width, size.height),
+        const Radius.circular(4),
+      ),
+    );
+    for (final metric in path.computeMetrics()) {
+      var d = 0.0;
+      while (d < metric.length) {
+        final next = (d + dash).clamp(0.0, metric.length);
+        canvas.drawPath(metric.extractPath(d, next), paint);
+        d += dash + gap;
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _DashedRectPainter old) => old.color != color;
 }
 
 /// Tries each candidate URL in order until one loads; logs which one worked.
