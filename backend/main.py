@@ -54,15 +54,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
-
+from routes.notification_routes import router as notification_router
 from pipeline.aggregator import aggregate
 from routes.admin_routes import router as admin_router
 from routes.supervisor_routes import router as supervisor_router
 from routes.student_routes import router as student_router
-<<<<<<< HEAD
-from routes.notification_routes import router as notification_router
-=======
->>>>>>> origin/main
 from pipeline.batcher import create_batches
 from database import get_db, hash_password, init_db, verify_password
 from middleware.org_middleware import (
@@ -78,14 +74,7 @@ _f()  # crashes at startup if the key is missing or invalid
 import tempfile
 from starlette.background import BackgroundTasks
 from crypto_utils import encrypt_file, read_file_bytes
-import logging
-from utils.file_validation import CorruptedFileError, validate_upload
 
-<<<<<<< HEAD
-logger = logging.getLogger("formatify")
-
-=======
->>>>>>> origin/main
 from docx_tools.preview_elements import build_preview_elements
 def _resolve_org_for_auth(org_code: str | None, request: Request) -> dict:
     """Login/signup: prefer explicit org_code body field over headers."""
@@ -206,130 +195,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-<<<<<<< HEAD
-
-@app.exception_handler(Exception)
-async def _global_exception_handler(request: Request, exc: Exception):
-    """Safety net: return JSON instead of a crash page for unhandled errors."""
-    if isinstance(exc, HTTPException):
-        return JSONResponse(
-            status_code=exc.status_code,
-            content={"detail": exc.detail},
-            headers=getattr(exc, "headers", None),
-        )
-    logger.exception("Unhandled error on %s %s: %s", request.method, request.url.path, exc)
-    return JSONResponse(
-        status_code=500,
-        content={
-            "detail": {
-                "code": "internal_error",
-                "message": "An unexpected error occurred. Please try again.",
-            },
-            "message": "An unexpected error occurred. Please try again.",
-        },
-    )
-
 @app.on_event("startup")
 def _start_reminders():
     start_scheduler()
-    asyncio.create_task(_deadline_reminder_loop())
-
-_deadline_reminder_task = None
-=======
-@app.on_event("startup")
-def _start_reminders():
-    start_scheduler()
->>>>>>> origin/main
 
 @app.on_event("shutdown")
 def _stop_reminders():
     stop_scheduler()
-<<<<<<< HEAD
-    global _deadline_reminder_task
-    if _deadline_reminder_task:
-        _deadline_reminder_task.cancel()
-
-
-async def _deadline_reminder_loop():
-    """Background task: check deadlines every hour and send reminders."""
-    import asyncio
-    from datetime import datetime, timedelta
-    from database import get_db
-    from services.notification_service import notify, NotificationType
-    
-    global _deadline_reminder_task
-    _deadline_reminder_task = asyncio.current_task()
-    
-    while True:
-        try:
-            await asyncio.sleep(3600)  # Run every hour
-            
-            now = datetime.utcnow()
-            three_days_later = now + timedelta(days=3)
-            one_day_later = now + timedelta(days=1)
-            
-            conn = get_db()
-            cursor = conn.cursor()
-            
-            # Check semester deadlines
-            cursor.execute(
-                """
-                SELECT id, semester, deadline_date
-                FROM semester_deadlines
-                WHERE deadline_date >= ? AND deadline_date <= ?
-                """,
-                (now.date(), three_days_later.date()),
-            )
-            semester_deadlines = cursor.fetchall()
-            
-            for sd in semester_deadlines:
-                days_left = (sd["deadline_date"] - now.date()).days
-                deadline_id = sd["id"]
-                semester = sd["semester"]
-                
-                if days_left == 3:
-                    reminder_type = NotificationType.DEADLINE_REMINDER_3_DAYS
-                    title = f"Semester {semester} deadline in 3 days"
-                elif days_left == 1:
-                    reminder_type = NotificationType.DEADLINE_REMINDER_1_DAY
-                    title = f"Semester {semester} deadline tomorrow"
-                else:
-                    continue
-                
-                # Get students in this semester
-                cursor.execute(
-                    """
-                    SELECT id, org_id FROM users
-                    WHERE role = 'student' AND current_semester = ?
-                    """,
-                    (semester,),
-                )
-                students = cursor.fetchall()
-                
-                for student in students:
-                    notify(
-                        org_id=int(student["org_id"] or 1),
-                        user_id=student["id"],
-                        type=reminder_type,
-                        title=title,
-                        body=f"Your semester {semester} FYP deadline is approaching.",
-                        entity_type="semester_deadline",
-                        entity_id=deadline_id,
-                        dedupe_key=f"deadline_{deadline_id}_{student['id']}_{reminder_type}",
-                        payload={"screen": "deadlines"},
-                    )
-            
-            conn.close()
-            logger.info("Deadline reminder check completed")
-            
-        except asyncio.CancelledError:
-            logger.info("Deadline reminder loop cancelled")
-            break
-        except Exception as exc:
-            logger.exception("Deadline reminder loop failed: %s", exc)
-            continue
-=======
->>>>>>> origin/main
 # Multi-tenancy: resolve org (default id=1) + gate FYP routes only
 from middleware.org_middleware import OrganizationMiddleware, get_organization
 from template_logic.template_sample_preview import router as template_sample_router
@@ -529,29 +401,6 @@ async def signup(payload: UserSignupRequest, request: Request):
     cursor.execute("SELECT * FROM users WHERE id = ?", (new_id,))
     user = cursor.fetchone()
     conn.close()
-
-    # Notify org admin about new signup
-    try:
-        from services.notification_service import notify, NotificationType
-        from database import get_db
-        conn = get_db()
-        cursor = conn.cursor()
-        cursor.execute("SELECT id FROM users WHERE role = 'admin' AND org_id = ? LIMIT 1", (org_id,))
-        admin = cursor.fetchone()
-        conn.close()
-        if admin:
-            notify(
-                org_id=org_id,
-                user_id=admin["id"],
-                type=NotificationType.NEW_USER_SIGNUP,
-                title="New user registered",
-                body=f"New student {user['username']} ({user['email']}) signed up.",
-                entity_type="user",
-                entity_id=new_id,
-                payload={"screen": "users", "user_id": new_id},
-            )
-    except Exception as exc:
-        logger.exception("Failed to send signup notification: %s", exc)
 
     token = create_access_token(
         user_id=int(user["id"]),
@@ -1070,14 +919,6 @@ async def analyze_api(
     filename = "pasted_text.txt"
 
     if file is not None:
-        contents = await file.read()
-        try:
-            validate_upload(file.filename or "", contents)
-        except CorruptedFileError as exc:
-            raise HTTPException(
-                status_code=422,
-                detail={"code": "corrupted_file", "message": str(exc)},
-            )
         ext = os.path.splitext(file.filename or "")[1].lower()
         if ext not in ALLOWED_EXTENSIONS:
             raise HTTPException(
@@ -1087,23 +928,9 @@ async def analyze_api(
         filename = file.filename or f"upload{ext}"
         saved_path = os.path.join(UPLOAD_DIR, f"{job_id}_{filename}")
         with open(saved_path, "wb") as f:
-            f.write(contents)
+            shutil.copyfileobj(file.file, f)
 
-    try:
-        return await _run_analysis(template, saved_path, text, filename, job_id)
-    except CorruptedFileError as exc:
-        raise HTTPException(
-            status_code=422,
-            detail={"code": "corrupted_file", "message": str(exc)},
-        )
-    except HTTPException:
-        raise
-    except Exception as exc:
-        logger.exception("Analysis failed: %s", exc)
-        raise HTTPException(
-            status_code=500,
-            detail={"code": "analysis_failed", "message": "We couldn't analyse this document. It may be damaged."},
-        )
+    return await _run_analysis(template, saved_path, text, filename, job_id)
 
 
 # Keep the un-prefixed route as a fallback alias
@@ -1392,7 +1219,7 @@ def _ensure_formatted_working_copy(
         )
         print(
             f"[working_copy] built doc={doc['id']} "
-            f"from {_source_ext(original)} -> docx"
+            f"from {_source_ext(original)} → docx"
         )
         try:
             from frontmatter.frontmatter_apply import clear_frontmatter_marker, ensure_frontmatter_pages
@@ -1801,39 +1628,13 @@ async def upload_document(
     if not tmpl:
         raise HTTPException(status_code=400, detail="Template not found for this organization.")
 
-    # Read bytes and validate BEFORE saving to disk or database
-    contents = await file.read()
-    try:
-        validate_upload(file.filename or "", contents)
-    except CorruptedFileError as e:
-        # Notify user about corrupted file rejection
-        try:
-            from services.notification_service import notify, NotificationType
-            notify(
-                org_id=org_id,
-                user_id=user_id,
-                type=NotificationType.UPLOAD_REJECTED,
-                title="Upload rejected",
-                body=f"Your file '{file.filename}' could not be processed: {str(e)}",
-                entity_type="document",
-                entity_id=None,
-                payload={"screen": "upload"},
-            )
-        except Exception as exc:
-            logger.exception("Failed to send upload rejection notification: %s", exc)
-        
-        raise HTTPException(
-            status_code=422,
-            detail={"code": "corrupted_file", "message": str(e)},
-        )
-
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     stored_filename = f"{timestamp}_{file.filename}"
     file_path = os.path.join(UPLOAD_DIR, stored_filename)
-
+    
     with open(file_path, "wb") as buffer:
-        buffer.write(contents)
-
+        shutil.copyfileobj(file.file, buffer)
+        
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute(
@@ -1979,38 +1780,12 @@ async def upload_document_freeform(
     resolve_org_id_for_user_action(request, user_id)
     placeholder_id = get_freeform_placeholder_template_id()
 
-    # Read bytes and validate BEFORE saving to disk or database
-    contents = await file.read()
-    try:
-        validate_upload(file.filename or "", contents)
-    except CorruptedFileError as e:
-        # Notify user about corrupted file rejection
-        try:
-            from services.notification_service import notify, NotificationType
-            notify(
-                org_id=resolve_org_id_for_user_action(request, user_id),
-                user_id=user_id,
-                type=NotificationType.UPLOAD_REJECTED,
-                title="Upload rejected",
-                body=f"Your file '{file.filename}' could not be processed: {str(e)}",
-                entity_type="document",
-                entity_id=None,
-                payload={"screen": "upload"},
-            )
-        except Exception as exc:
-            logger.exception("Failed to send upload rejection notification: %s", exc)
-        
-        raise HTTPException(
-            status_code=422,
-            detail={"code": "corrupted_file", "message": str(e)},
-        )
-
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     stored_filename = f"{timestamp}_{file.filename}"
     file_path = os.path.join(UPLOAD_DIR, stored_filename)
 
     with open(file_path, "wb") as buffer:
-        buffer.write(contents)
+        shutil.copyfileobj(file.file, buffer)
 
     conn = get_db()
     cursor = conn.cursor()
@@ -2155,123 +1930,105 @@ async def analyze_document_freeform_endpoint(document_id: int, user_id: int = Qu
     Analyze a freeform (no-template) document.
     Owner check + non-student role gate (403 for students).
     """
+    _require_non_student_for_freeform(user_id)
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT * FROM documents WHERE id = ? AND user_id = ?",
+        (document_id, user_id),
+    )
+    doc = cursor.fetchone()
+    conn.close()
+
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    is_freeform = False
     try:
-        _require_non_student_for_freeform(user_id)
-        conn = get_db()
-        cursor = conn.cursor()
-        cursor.execute(
-            "SELECT * FROM documents WHERE id = ? AND user_id = ?",
-            (document_id, user_id),
-        )
-        doc = cursor.fetchone()
-        conn.close()
-
-        if not doc:
-            raise HTTPException(status_code=404, detail="Document not found")
-
-        if doc["file_path"] and os.path.exists(doc["file_path"]):
-            with open(doc["file_path"], "rb") as f:
-                validate_upload(doc["filename"] or "", f.read())
-
+        is_freeform = bool(doc["is_freeform"])
+    except (KeyError, IndexError, TypeError):
         is_freeform = False
-        try:
-            is_freeform = bool(doc["is_freeform"])
-        except (KeyError, IndexError, TypeError):
-            is_freeform = False
-        if not is_freeform:
-            raise HTTPException(
-                status_code=400,
-                detail="Document was not uploaded for freeform analysis. Use /documents/analyze/{id}.",
-            )
-
-        working_copy = _working_copy_path(document_id)
-        file_path = working_copy if os.path.exists(working_copy) else doc["file_path"]
-
-        job_id = str(document_id)
-        report_dict = await _run_analysis_freeform(
-            saved_path=file_path,
-            text=None,
-            filename=doc["filename"],
-            job_id=job_id,
-        )
-
-        conn = get_db()
-        cursor = conn.cursor()
-        cursor.execute(
-            "UPDATE documents SET status = 'completed', updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-            (document_id,),
-        )
-        conn.commit()
-        conn.close()
-
-        doc_model = None
-        document_blocks: List[Dict[str, Any]] = []
-        image_paths: Dict[str, str] = {}
-        try:
-            norm_filename = _filename_for_parse(file_path, doc["filename"])
-            doc_model = parse_file(file_path, norm_filename)
-            image_paths = save_document_images(doc_model, document_id, UPLOAD_DIR)
-            document_blocks = build_document_blocks(doc_model, image_paths)
-        except Exception as exc:
-            print(f"[analyze-freeform] block build error (non-fatal): {exc}")
-
-        raw_issues = report_dict.get("issues", [])
-        normalized_issues = normalize_issues(raw_issues, image_paths)
-        stats = report_dict.get("stats", {})
-
-        content_issues = []
-        style_issues = []
-        for issue in normalized_issues:
-            func = (issue.get("function") or "").lower()
-            if func in ("grammar", "para_relevance", "plagiarism"):
-                content_issues.append(issue)
-            elif func == "formatting":
-                style_issues.append(issue)
-
-        major_count = len([i for i in normalized_issues if (i.get("severity") or "").lower() == "major"])
-        minor_count = len([i for i in normalized_issues if (i.get("severity") or "").lower() == "minor"])
-
-        score = stats.get("avg_formatting_compliance", 100.0)
-        if score is None:
-            score = 100.0
-
-        paragraphs = [b["text"] for b in document_blocks if b.get("type") != "image" and b.get("text")]
-
-        return {
-            "document_id": document_id,
-            "filename": doc["filename"],
-            "status": "completed",
-            "is_freeform": True,
-            "analysis_mode": "ai_general",
-            "label": "AI general analysis — no template applied",
-            "score": score,
-            "stats": stats,
-            "issues": normalized_issues,
-            "content_issues": content_issues,
-            "style_issues": style_issues,
-            "major_count": major_count,
-            "minor_count": minor_count,
-            "document_blocks": document_blocks,
-            "paragraphs": paragraphs,
-            "suggested_fixes": report_dict.get("suggested_fixes", []),
-            "suggested_manual_notes": report_dict.get("suggested_manual_notes", []),
-            "freeform_summary": report_dict.get("freeform_summary", ""),
-            "template_heading_matches": [],  # skipped for freeform
-            "structure": {"score": score},
-        }
-    except CorruptedFileError as exc:
+    if not is_freeform:
         raise HTTPException(
-            status_code=422,
-            detail={"code": "corrupted_file", "message": str(exc)},
+            status_code=400,
+            detail="Document was not uploaded for freeform analysis. Use /documents/analyze/{id}.",
         )
-    except HTTPException:
-        raise
+
+    working_copy = _working_copy_path(document_id)
+    file_path = working_copy if os.path.exists(working_copy) else doc["file_path"]
+
+    job_id = str(document_id)
+    report_dict = await _run_analysis_freeform(
+        saved_path=file_path,
+        text=None,
+        filename=doc["filename"],
+        job_id=job_id,
+    )
+
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute(
+        "UPDATE documents SET status = 'completed', updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+        (document_id,),
+    )
+    conn.commit()
+    conn.close()
+
+    doc_model = None
+    document_blocks: List[Dict[str, Any]] = []
+    image_paths: Dict[str, str] = {}
+    try:
+        norm_filename = _filename_for_parse(file_path, doc["filename"])
+        doc_model = parse_file(file_path, norm_filename)
+        image_paths = save_document_images(doc_model, document_id, UPLOAD_DIR)
+        document_blocks = build_document_blocks(doc_model, image_paths)
     except Exception as exc:
-        logger.exception("Freeform analysis failed for document %s: %s", document_id, exc)
-        raise HTTPException(
-            status_code=500,
-            detail={"code": "analysis_failed", "message": "We couldn't analyse this document. It may be damaged."},
-        )
+        print(f"[analyze-freeform] block build error (non-fatal): {exc}")
+
+    raw_issues = report_dict.get("issues", [])
+    normalized_issues = normalize_issues(raw_issues, image_paths)
+    stats = report_dict.get("stats", {})
+
+    content_issues = []
+    style_issues = []
+    for issue in normalized_issues:
+        func = (issue.get("function") or "").lower()
+        if func in ("grammar", "para_relevance", "plagiarism"):
+            content_issues.append(issue)
+        elif func == "formatting":
+            style_issues.append(issue)
+
+    major_count = len([i for i in normalized_issues if (i.get("severity") or "").lower() == "major"])
+    minor_count = len([i for i in normalized_issues if (i.get("severity") or "").lower() == "minor"])
+
+    score = stats.get("avg_formatting_compliance", 100.0)
+    if score is None:
+        score = 100.0
+
+    paragraphs = [b["text"] for b in document_blocks if b.get("type") != "image" and b.get("text")]
+
+    return {
+        "document_id": document_id,
+        "filename": doc["filename"],
+        "status": "completed",
+        "is_freeform": True,
+        "analysis_mode": "ai_general",
+        "label": "AI general analysis — no template applied",
+        "score": score,
+        "stats": stats,
+        "issues": normalized_issues,
+        "content_issues": content_issues,
+        "style_issues": style_issues,
+        "major_count": major_count,
+        "minor_count": minor_count,
+        "document_blocks": document_blocks,
+        "paragraphs": paragraphs,
+        "suggested_fixes": report_dict.get("suggested_fixes", []),
+        "suggested_manual_notes": report_dict.get("suggested_manual_notes", []),
+        "freeform_summary": report_dict.get("freeform_summary", ""),
+        "template_heading_matches": [],  # skipped for freeform
+        "structure": {"score": score},
+    }
 
 
 @app.patch("/api/documents/{document_id}/rename", tags=["Documents"])
@@ -2373,57 +2130,111 @@ def delete_document(document_id: int, user_id: int = Query(...)):
 @app.get("/api/documents/analyze/{document_id}", tags=["Documents"])
 async def analyze_document_endpoint(document_id: int, user_id: int = Query(...)):
     """Analyze a document using parallel AI agents and return detailed reports."""
-    try:
-        conn = get_db()
-        cursor = conn.cursor()
-        cursor.execute("SELECT * FROM documents WHERE id = ? AND user_id = ?", (document_id, user_id))
-        doc = cursor.fetchone()
-        conn.close()
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM documents WHERE id = ? AND user_id = ?", (document_id, user_id))
+    doc = cursor.fetchone()
+    conn.close()
     
-        if not doc:
-            raise HTTPException(status_code=404, detail="Document not found")
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
 
-        if doc["file_path"] and os.path.exists(doc["file_path"]):
-            with open(doc["file_path"], "rb") as f:
-                validate_upload(doc["filename"] or "", f.read())
+    try:
+        if bool(doc["is_freeform"]):
+            raise HTTPException(
+                status_code=400,
+                detail="This document uses freeform analysis. Call /documents/analyze-freeform/{id}.",
+            )
+    except (KeyError, IndexError, TypeError):
+        pass
 
+    tmpl = get_template_by_id(doc["template_id"])
+    if tmpl and _is_fixable_source(doc["file_path"]):
+        # Always rebuild from the upload on Analyze so Tables / style issues
+        # reflect the source document, not a previously fixed working copy.
+        # PDF/TXT are converted to a DOCX working copy (same as DOCX path).
+        file_path = _ensure_formatted_working_copy(doc, tmpl, force_rebuild=True)
+    else:
+        working_copy = _working_copy_path(document_id)
+        file_path = working_copy if os.path.exists(working_copy) else doc["file_path"]
+    
+    job_id = str(document_id)
+    report_dict = await _run_analysis(
+        template_id=str(doc["template_id"]),
+        saved_path=file_path,
+        text=None,
+        filename=_filename_for_parse(file_path, doc["filename"]),
+        job_id=job_id
+    )
+    
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("UPDATE documents SET status = 'completed', updated_at = CURRENT_TIMESTAMP WHERE id = ?", (document_id,))
+    conn.commit()
+    conn.close()
+
+    if file_path.endswith(".docx") and os.path.exists(file_path):
         try:
-            if bool(doc["is_freeform"]):
-                raise HTTPException(
-                    status_code=400,
-                    detail="This document uses freeform analysis. Call /documents/analyze-freeform/{id}.",
-                )
-        except (KeyError, IndexError, TypeError):
+            sync_analysis_to_project_members(document_id, file_path)
+        except Exception as exc:
+            print(f"[analyze] project sync error (non-fatal): {exc}")
+
+    # Build structured blocks + normalized issues for the Flutter preview UI
+    doc_model = None
+    document_blocks: List[Dict[str, Any]] = []
+    image_paths: Dict[str, str] = {}
+    try:
+        norm_filename = _filename_for_parse(file_path, doc["filename"])
+        doc_model = parse_file(file_path, norm_filename)
+        image_paths = save_document_images(doc_model, document_id, UPLOAD_DIR)
+        document_blocks = build_document_blocks(doc_model, image_paths)
+    except Exception as exc:
+        print(f"[analyze] block build error (non-fatal): {exc}")
+
+    raw_issues = report_dict.get("issues", [])
+    normalized_issues = normalize_issues(raw_issues, image_paths)
+    stats = report_dict.get("stats", {})
+        
+    content_issues = []
+    style_issues = []
+    
+    for issue in normalized_issues:
+        func = (issue.get("function") or "").lower()
+        if func in ("grammar", "para_relevance", "plagiarism"):
+            content_issues.append(issue)
+        elif func == "formatting":
+            style_issues.append(issue)
+            
+    if file_path.endswith(".docx"):
+        bullets = _detect_missing_bullet_issues(file_path)
+        for b in bullets:
+            b["category"] = "Formatting"
+            b["function"] = "formatting"
+        style_issues.extend(bullets)
+        normalized_issues.extend(bullets)
+
+    major_count = len([i for i in normalized_issues if (i.get("severity") or "").lower() == "major"])
+    minor_count = len([i for i in normalized_issues if (i.get("severity") or "").lower() == "minor"])
+    critical_count = len([i for i in normalized_issues if (i.get("severity") or "").upper() == "CRITICAL"])
+    warning_count = len([i for i in normalized_issues if (i.get("severity") or "").upper() in ("WARNING", "MINOR")])
+        
+    score = stats.get("avg_formatting_compliance", 100.0)
+    if score is None:
+        score = 100.0
+
+    # Legacy flat paragraph list for backward compatibility
+    paragraphs = [b["text"] for b in document_blocks if b.get("type") != "image" and b.get("text")]
+    if not paragraphs:
+        try:
+            if file_path.endswith(".docx"):
+                from docx import Document as DocxDoc
+                paragraphs = [p.text for p in DocxDoc(file_path).paragraphs]
+            else:
+                with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+                    paragraphs = f.read().splitlines()
+        except Exception:
             pass
 
-<<<<<<< HEAD
-        tmpl = get_template_by_id(doc["template_id"])
-        if tmpl and _is_fixable_source(doc["file_path"]):
-            # Always rebuild from the upload on Analyze so Tables / style issues
-            # reflect the source document, not a previously fixed working copy.
-            # PDF/TXT are converted to a DOCX working copy (same as DOCX path).
-            file_path = _ensure_formatted_working_copy(doc, tmpl, force_rebuild=True)
-        else:
-            working_copy = _working_copy_path(document_id)
-            file_path = working_copy if os.path.exists(working_copy) else doc["file_path"]
-    
-        job_id = str(document_id)
-        report_dict = await _run_analysis(
-            template_id=str(doc["template_id"]),
-            saved_path=file_path,
-            text=None,
-            filename=_filename_for_parse(file_path, doc["filename"]),
-            job_id=job_id
-        )
-    
-        conn = get_db()
-        cursor = conn.cursor()
-        cursor.execute("UPDATE documents SET status = 'completed', updated_at = CURRENT_TIMESTAMP WHERE id = ?", (document_id,))
-        conn.commit()
-        conn.close()
-
-        if file_path.endswith(".docx") and os.path.exists(file_path):
-=======
     # Heading analysis — Claude-first detection, then template/rule cross-check
     # (body pages only — same front-matter skip as the AI analysis pipeline)
     template_heading_matches: List[Dict[str, Any]] = []
@@ -2433,327 +2244,71 @@ async def analyze_document_endpoint(document_id: int, user_id: int = Query(...))
             heading_doc = strip_frontmatter_from_document(doc_model)
             decisions = _load_heading_decisions(document_id)
             client = None
->>>>>>> origin/main
             try:
-                sync_analysis_to_project_members(document_id, file_path)
+                client = await _get_ai_client()
             except Exception as exc:
-                print(f"[analyze] project sync error (non-fatal): {exc}")
+                print(f"[analyze] AI client unavailable for heading detect: {exc}")
 
-        # Build structured blocks + normalized issues for the Flutter preview UI
-        doc_model = None
-        document_blocks: List[Dict[str, Any]] = []
-        image_paths: Dict[str, str] = {}
-        try:
-            norm_filename = _filename_for_parse(file_path, doc["filename"])
-            doc_model = parse_file(file_path, norm_filename)
-            image_paths = save_document_images(doc_model, document_id, UPLOAD_DIR)
-            document_blocks = build_document_blocks(doc_model, image_paths)
-        except Exception as exc:
-            print(f"[analyze] block build error (non-fatal): {exc}")
-
-        raw_issues = report_dict.get("issues", [])
-        normalized_issues = normalize_issues(raw_issues, image_paths)
-        stats = report_dict.get("stats", {})
-        
-        content_issues = []
-        style_issues = []
-    
-        for issue in normalized_issues:
-            func = (issue.get("function") or "").lower()
-            if func in ("grammar", "para_relevance", "plagiarism"):
-                content_issues.append(issue)
-            elif func == "formatting":
-                style_issues.append(issue)
-            
-        if file_path.endswith(".docx"):
-            bullets = _detect_missing_bullet_issues(file_path)
-            for b in bullets:
-                b["category"] = "Formatting"
-                b["function"] = "formatting"
-            style_issues.extend(bullets)
-            normalized_issues.extend(bullets)
-
-        # Missing sections come from heading_analysis (whole document), added further
-        # down. Drop the formatting agent's per-batch guesses: it only sees 4 pages.
-        normalized_issues = [
-            i for i in normalized_issues if (i.get("type") or "").lower() != "missing_section"
-        ]
-        style_issues = [
-            i for i in style_issues if (i.get("type") or "").lower() != "missing_section"
-        ]
-
-        major_count = len([i for i in normalized_issues if (i.get("severity") or "").lower() == "major"])
-        minor_count = len([i for i in normalized_issues if (i.get("severity") or "").lower() == "minor"])
-        critical_count = len([i for i in normalized_issues if (i.get("severity") or "").upper() == "CRITICAL"])
-        warning_count = len([i for i in normalized_issues if (i.get("severity") or "").upper() in ("WARNING", "MINOR")])
-        
-        score = stats.get("avg_formatting_compliance", 100.0)
-        if score is None:
-            score = 100.0
-
-        # Legacy flat paragraph list for backward compatibility
-        paragraphs = [b["text"] for b in document_blocks if b.get("type") != "image" and b.get("text")]
-        if not paragraphs:
-            try:
-                if file_path.endswith(".docx"):
-                    from docx import Document as DocxDoc
-                    paragraphs = [p.text for p in DocxDoc(file_path).paragraphs]
-                else:
-                    with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
-                        paragraphs = f.read().splitlines()
-            except Exception:
-                pass
-
-        # Heading analysis — Claude-first detection, then template/rule cross-check
-        # (body pages only — same front-matter skip as the AI analysis pipeline)
-        template_heading_matches: List[Dict[str, Any]] = []
-        if doc_model and tmpl:
-            try:
-                from docx_tools.review_blocks import strip_frontmatter_from_document
-                heading_doc = strip_frontmatter_from_document(doc_model)
-                decisions = _load_heading_decisions(document_id)
-                client = None
-                try:
-                    client = await _get_ai_client()
-                except Exception as exc:
-                    print(f"[analyze] AI client unavailable for heading detect: {exc}")
-
-                if client is not None:
-                    template_heading_matches = await analyze_document_headings_with_claude(
-                        heading_doc,
-                        tmpl,
-                        client,
-                        user_decisions=decisions,
-                    )
-                else:
-                    template_heading_matches = analyze_document_headings(
-                        heading_doc,
-                        tmpl,
-                        user_decisions=decisions,
-                    )
-
-                template_heading_matches = enrich_matches_with_fix_status(
-                    template_heading_matches,
-                    document_blocks,
+            if client is not None:
+                template_heading_matches = await analyze_document_headings_with_claude(
+                    heading_doc,
+                    tmpl,
+                    client,
+                    user_decisions=decisions,
                 )
-                heading_issues = heading_matches_to_issues(template_heading_matches)
-                if heading_issues:
-                    normalized_heading_issues = normalize_issues(heading_issues, image_paths)
-                    for _it in normalized_heading_issues:
-                        if (_it.get("type") or "").lower() != "missing_section":
-                            continue
-                        _name = str(_it.get("matched_template_heading") or "").strip()
-                        if not _name:
-                            _m = re.search(
-                                r'"([^"]+)"',
-                                str(_it.get("suggestion") or _it.get("reason") or ""),
-                            )
-                            _name = _m.group(1).strip() if _m else ""
-                        if _name:
-                            _it["fix_type"] = "insert_missing_section"
-                            _it["fix_details"] = {
-                                "section_name": _name,
-                                "level": _it.get("heading_level") or 1,
-                            }
-                        if not str(_it.get("issue_id") or "").strip():
-                            from docx_tools.heading_analysis import missing_heading_issue_id
-                            _it["issue_id"] = missing_heading_issue_id(_name or "section")
-                    style_issues.extend(normalized_heading_issues)
-                    normalized_issues.extend(normalized_heading_issues)
-            except Exception as exc:
-                print(f"[analyze] heading analysis error (non-fatal): {exc}")
+            else:
+                template_heading_matches = analyze_document_headings(
+                    heading_doc,
+                    tmpl,
+                    user_decisions=decisions,
+                )
+
+            template_heading_matches = enrich_matches_with_fix_status(
+                template_heading_matches,
+                document_blocks,
+            )
+            heading_issues = heading_matches_to_issues(template_heading_matches)
+            if heading_issues:
+                normalized_heading_issues = normalize_issues(heading_issues, image_paths)
+                style_issues.extend(normalized_heading_issues)
+                normalized_issues.extend(normalized_heading_issues)
+        except Exception as exc:
+            print(f"[analyze] heading analysis error (non-fatal): {exc}")
         
-        return {
-            "document_id": document_id,
-            "filename": doc["filename"],
-            "document_content": paragraphs,
-            "document_blocks": document_blocks,
-            "issues": normalized_issues,
-            "content_issues": content_issues,
-            "style_issues": style_issues,
-            "stats": stats,
-            "structure": {
-                "score": score,
-                "status": "good" if score >= 80 else "needs_work" if score >= 50 else "poor",
-                "sections": [],
-                "issues": [],
-                "summary": {
-                    "missing": stats.get("formatting_issues", 0),
-                    "content_issues": len(content_issues),
-                    "style_issues": len(style_issues),
-                    "grammar": stats.get("grammar_issues", 0),
-                    "plagiarism": stats.get("plagiarism_issues", 0),
-                    "image_ethics": stats.get("image_ethics_issues", 0),
-                    "image_relevance": stats.get("image_relevance_issues", 0),
-                },
+    return {
+        "document_id": document_id,
+        "filename": doc["filename"],
+        "document_content": paragraphs,
+        "document_blocks": document_blocks,
+        "issues": normalized_issues,
+        "content_issues": content_issues,
+        "style_issues": style_issues,
+        "stats": stats,
+        "structure": {
+            "score": score,
+            "status": "good" if score >= 80 else "needs_work" if score >= 50 else "poor",
+            "sections": [],
+            "issues": [],
+            "summary": {
+                "missing": stats.get("formatting_issues", 0),
+                "content_issues": len(content_issues),
+                "style_issues": len(style_issues),
+                "grammar": stats.get("grammar_issues", 0),
+                "plagiarism": stats.get("plagiarism_issues", 0),
+                "image_ethics": stats.get("image_ethics_issues", 0),
+                "image_relevance": stats.get("image_relevance_issues", 0),
             },
-            "content_checker_mode": "ensemble_with_learning",
-            "content_checker_version": "perfect",
-            "template_heading_matches": template_heading_matches,
-            "compliance_score": score,
-            "total_issues": len(normalized_issues),
-            "major_issues": major_count,
-            "minor_issues": minor_count,
-            "critical_issues": critical_count,
-            "warning_issues": warning_count,
-        }
-    except CorruptedFileError as exc:
-        raise HTTPException(
-            status_code=422,
-            detail={"code": "corrupted_file", "message": str(exc)},
-        )
-    except HTTPException:
-        raise
-    except Exception as exc:
-        logger.exception("Analysis failed for document %s: %s", document_id, exc)
-        raise HTTPException(
-            status_code=500,
-            detail={"code": "analysis_failed", "message": "We couldn't analyse this document. It may be damaged."},
-        )
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# BACKGROUND ANALYSIS JOBS
-# ═══════════════════════════════════════════════════════════════════════════════
-
-ANALYSIS_CACHE_DIR = os.path.join(UPLOAD_DIR, "analysis")
-os.makedirs(ANALYSIS_CACHE_DIR, exist_ok=True)
-
-# document_id -> {status, error, started_at, finished_at}
-_analysis_jobs: Dict[int, Dict[str, Any]] = {}
-
-
-def _analysis_result_path(document_id: int) -> str:
-    return os.path.join(ANALYSIS_CACHE_DIR, f"doc_{document_id}.json")
-
-
-def _assert_doc_owner(document_id: int, user_id: int) -> None:
-    conn = get_db()
-    cur = conn.cursor()
-    cur.execute("SELECT id FROM documents WHERE id = ? AND user_id = ?", (document_id, user_id))
-    row = cur.fetchone()
-    conn.close()
-    if not row:
-        raise HTTPException(status_code=404, detail="Document not found")
-
-
-def _analysis_in_thread(document_id: int, user_id: int, freeform: bool) -> Dict[str, Any]:
-    """Own event loop in a worker thread so blocking parse/reformat calls
-    never freeze the main server loop (status polling keeps working)."""
-    fn = analyze_document_freeform_endpoint if freeform else analyze_document_endpoint
-    return asyncio.run(fn(document_id, user_id))
-
-
-async def _analysis_worker(document_id: int, user_id: int, freeform: bool) -> None:
-    job = _analysis_jobs[document_id]
-    try:
-        result = await asyncio.to_thread(_analysis_in_thread, document_id, user_id, freeform)
-        path = _analysis_result_path(document_id)
-        tmp = path + ".tmp"
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(result, f, default=str)
-        os.replace(tmp, path)  # atomic auto-save
-        job.update(status="completed", error=None, finished_at=datetime.datetime.utcnow().isoformat())
-        
-        # Notify student that analysis finished
-        try:
-            from services.notification_service import notify, NotificationType
-            from middleware.org_middleware import resolve_org_id_for_user_action
-            from database import get_db
-            
-            conn = get_db()
-            cursor = conn.cursor()
-            cursor.execute("SELECT filename FROM documents WHERE id = ?", (document_id,))
-            doc = cursor.fetchone()
-            filename = doc["filename"] if doc else "Document"
-            conn.close()
-            
-            org_id = resolve_org_id_for_user_action(None, user_id)
-            notify(
-                org_id=org_id,
-                user_id=user_id,
-                type=NotificationType.ANALYSIS_FINISHED,
-                title="Analysis complete",
-                body=f"Your document '{filename}' has been analyzed successfully.",
-                entity_type="document",
-                entity_id=document_id,
-                payload={"document_id": document_id, "screen": "analyze"},
-            )
-        except Exception as exc:
-            logger.exception("Failed to send analysis finished notification: %s", exc)
-            
-    except HTTPException as exc:
-        err_msg = exc.detail
-        if isinstance(err_msg, dict):
-            err_msg = err_msg.get("message") or str(err_msg)
-        job.update(status="failed", error=str(err_msg))
-        
-        # Notify student that analysis failed
-        try:
-            from services.notification_service import notify, NotificationType
-            from middleware.org_middleware import resolve_org_id_for_user_action
-            
-            org_id = resolve_org_id_for_user_action(None, user_id)
-            notify(
-                org_id=org_id,
-                user_id=user_id,
-                type=NotificationType.ANALYSIS_FAILED,
-                title="Analysis failed",
-                body=f"Analysis failed: {err_msg}",
-                entity_type="document",
-                entity_id=document_id,
-                payload={"document_id": document_id, "screen": "analyze"},
-            )
-        except Exception as exc:
-            logger.exception("Failed to send analysis failed notification: %s", exc)
-            
-    except CorruptedFileError as exc:
-        job.update(status="failed", error=str(exc))
-    except Exception as exc:
-        logger.exception("Analysis background worker failed for doc %s: %s", document_id, exc)
-        job.update(status="failed", error="We couldn't analyse this document. It may be damaged.")
-
-
-@app.post("/api/documents/analyze-start/{document_id}", tags=["Documents"])
-async def analyze_start(
-    document_id: int,
-    user_id: int = Query(...),
-    freeform: bool = Query(False),
-):
-    """Kick off analysis in the background and return immediately."""
-    _assert_doc_owner(document_id, user_id)
-    job = _analysis_jobs.get(document_id)
-    if job and job["status"] == "processing":
-        return {"status": "processing", "already_running": True}
-
-    _analysis_jobs[document_id] = {
-        "status": "processing",
-        "error": None,
-        "started_at": datetime.datetime.utcnow().isoformat(),
-        "finished_at": None,
+        },
+        "content_checker_mode": "ensemble_with_learning",
+        "content_checker_version": "perfect",
+        "template_heading_matches": template_heading_matches,
+        "compliance_score": score,
+        "total_issues": len(normalized_issues),
+        "major_issues": major_count,
+        "minor_issues": minor_count,
+        "critical_issues": critical_count,
+        "warning_issues": warning_count,
     }
-    asyncio.create_task(_analysis_worker(document_id, user_id, freeform))
-    return {"status": "processing", "already_running": False}
-
-
-@app.get("/api/documents/analyze-status/{document_id}", tags=["Documents"])
-async def analyze_status(document_id: int, user_id: int = Query(...)):
-    _assert_doc_owner(document_id, user_id)
-    job = _analysis_jobs.get(document_id)
-    if job:
-        return {"status": job["status"], "error": job["error"],
-                "started_at": job["started_at"], "finished_at": job["finished_at"]}
-    if os.path.exists(_analysis_result_path(document_id)):
-        return {"status": "completed", "error": None}  # survives server restart
-    return {"status": "none", "error": None}
-
-
-@app.get("/api/documents/analyze-result/{document_id}", tags=["Documents"])
-async def analyze_result(document_id: int, user_id: int = Query(...)):
-    _assert_doc_owner(document_id, user_id)
-    path = _analysis_result_path(document_id)
-    if not os.path.exists(path):
-        raise HTTPException(status_code=404, detail="No saved analysis result yet.")
-    return FileResponse(path, media_type="application/json")
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # BACKGROUND ANALYSIS JOBS
@@ -3600,39 +3155,6 @@ async def apply_content_fix(
             tmpl["formatting_rules"],
             tmpl.get("required_sections", []),
         )
-    elif fix_type == "insert_missing_section":
-        from missing_sections import insert_missing_section_by_name
-
-        details = payload.get("fix_details") if isinstance(payload.get("fix_details"), dict) else {}
-        section_name = str(
-            payload.get("section_name") or details.get("section_name") or ""
-        ).strip()
-        if not section_name:
-            raise HTTPException(status_code=400, detail="section_name is required")
-        res = insert_missing_section_by_name(
-            working_copy,
-            tmpl.get("required_sections", []),
-            section_name,
-            content=payload.get("content"),
-            formatting_rules=tmpl.get("formatting_rules"),
-        )
-        ok = bool(res.get("inserted"))
-        msg = (
-            f'Added a "{section_name}" section.'
-            if ok
-            else res.get("reason", "Section was not added.")
-        )
-        if ok:
-            try:
-                apply_template_reformat(
-                    working_copy,
-                    tmpl["formatting_rules"],
-                    tmpl.get("required_sections", []),
-                )
-            except Exception as exc:
-                print(f"[apply-content-fix] reformat exception: {exc}")
-                import traceback
-                traceback.print_exc()
     else:
         suggestion = payload.get("suggestion", "")
         if _is_instruction_suggestion(suggestion):
@@ -3910,18 +3432,15 @@ async def apply_all_fixes(
     template_reformat_applied = False
     table_result: Dict[str, Any] = {"status": "skipped"}
 
-    # Split payload fixes into heading / bullets / text / missing sections
+    # Split payload fixes into heading / bullets / text
     heading_fixes = []
     bullet_fix_indices: list = []
     text_fixes = []
-    missing_section_fixes = []
     for fix in fixes:
         ftype = (fix.get("fix_type") or "text").lower()
         itype = (fix.get("type") or "").lower()
         if ftype in ("heading", "heading_style") or itype == "heading_style":
             heading_fixes.append(fix)
-        elif ftype == "insert_missing_section" or itype == "missing_section":
-            missing_section_fixes.append(fix)
         elif ftype in ("bullets", "apply_section_bullets", "list_formatting") or itype in (
             "missing_bullets", "list_formatting",
         ):
@@ -4034,34 +3553,6 @@ async def apply_all_fixes(
             _strip_bullets_from_headings(working_copy)
         except Exception as exc:
             print(f"[apply-all] strip heading bullets error (non-fatal): {exc}")
-
-        # 5) Insert missing sections (before template reformat so they get styled)
-        if missing_section_fixes:
-            from missing_sections import insert_missing_section_by_name
-            for fix in missing_section_fixes:
-                details = fix.get("fix_details") if isinstance(fix.get("fix_details"), dict) else {}
-                section_name = str(
-                    fix.get("section_name") or details.get("section_name") or ""
-                ).strip()
-                if not section_name:
-                    print(f"[apply-all] skipping missing section fix: no section_name")
-                    continue
-                res = insert_missing_section_by_name(
-                    working_copy,
-                    tmpl.get("required_sections", []),
-                    section_name,
-                    content=fix.get("content"),
-                    formatting_rules=tmpl.get("formatting_rules"),
-                )
-                if res.get("inserted"):
-                    text_result["applied"] += 1
-                    if fix.get("issue_id"):
-                        resolved_issue_ids.append(str(fix["issue_id"]))
-                    print(f"[apply-all] inserted missing section: {section_name}")
-                else:
-                    text_result["skipped"] += 1
-                    text_result["errors"].append(res.get("reason", "Section not inserted"))
-                    print(f"[apply-all] failed to insert {section_name}: {res.get('reason')}")
 
     template_reformat_applied, _reformat_msg = apply_template_reformat(
         working_copy,
@@ -4508,75 +3999,6 @@ def _get_user_document(document_id: int, user_id: int):
     if not tmpl:
         raise HTTPException(status_code=400, detail="Template not found")
     return doc, tmpl
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# Missing section previews — ghost headings for the Word preview
-# ═══════════════════════════════════════════════════════════════════════════════
-
-@app.get("/api/documents/missing-section-previews/{document_id}", tags=["Documents"])
-async def missing_section_previews_endpoint(
-    document_id: int,
-    user_id: int = Query(...),
-    suggest: bool = Query(False),
-):
-    """
-    Data for the faded "Missing" headings in the Word preview.
-    suggest=true also asks the AI for a short starting draft per missing section
-    (sends heading titles + a ~1500 character excerpt; max 6 sections).
-    """
-    import asyncio
-    from missing_sections import (
-        build_previews,
-        detect_missing_sections,
-        document_context,
-        generate_suggestion_with_cache,
-    )
-
-    doc_row, tmpl = _get_user_document(document_id, user_id)
-    working_copy = _ensure_formatted_working_copy(doc_row, tmpl)
-    info = detect_missing_sections(working_copy, tmpl.get("required_sections", []))
-    previews = build_previews(info) if info.get("reliable") else []
-
-    if suggest and previews:
-        context = document_context(working_copy)
-        try:
-            client = await _get_ai_client()
-        except Exception as exc:
-            client = None
-            print(f"[missing-previews] AI client unavailable: {exc}")
-
-        if client is None:
-            # Use guidance text for all sections
-            for p in previews:
-                p["suggestion_error"] = "AI is not configured."
-                p["placeholder_text"] = p.get("guidance_text", p["placeholder_text"])
-        else:
-            # Generate suggestions in parallel with caching and timeout
-            async def _draft(p):
-                suggested, error = await generate_suggestion_with_cache(
-                    document_id=document_id,
-                    section_name=p["name"],
-                    docx_path=working_copy,
-                    client=client,
-                    context=context,
-                    timeout_seconds=20.0,
-                )
-                if suggested:
-                    p["suggested_content"] = suggested
-                if error:
-                    p["suggestion_error"] = error
-                    p["placeholder_text"] = p.get("guidance_text", p["placeholder_text"])
-
-            await asyncio.gather(*[_draft(p) for p in previews[:6]])
-
-    return {
-        "status": "success",
-        "document_id": document_id,
-        "reliable": bool(info.get("reliable")),
-        "reason": info.get("reason", ""),
-        "previews": previews,
-    }
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

@@ -24,10 +24,6 @@ import '../main.dart' show navigatorKey;
 import '../utils/analysis_nav.dart';
 import 'dart:async';
 import '../widgets/tr.dart';
-<<<<<<< HEAD
-import '../widgets/notification_bell.dart';
-=======
->>>>>>> origin/main
 // ─────────────────────────────────────────────────────────────────────────────
 // Color palette — follows ThemeProvider (light / dark)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -258,11 +254,6 @@ late final AuthProvider _auth;
   // Document review preview state
   Map<String, dynamic> _analysisData = {};
   List<Map<String, dynamic>> _previewBlocks = [];
-  List<Map<String, dynamic>> _documentBlocks = [];
-  List<Map<String, dynamic>> _missingSectionPreviews = [];
-  final Map<String, GlobalKey> _ghostKeys = {};
-  final Map<String, TextEditingController> _missingControllers = {};
-  String? _flashGhostIssueId;
   int _imageVersion = 0; // replace ke baad image URLs ka cache todne ke liye
   List<Map<String, dynamic>> _pipelineIssues = [];
   final Map<String, String> _appliedFixes = {};
@@ -340,11 +331,7 @@ late final AuthProvider _auth;
     _docs = context.read<DocumentProvider>();
 _auth = context.read<AuthProvider>();
   _jobs.activeDocId = widget.documentId;
-<<<<<<< HEAD
-    _tabController = TabController(length: 10, vsync: this);
-=======
     _tabController = TabController(length: 9, vsync: this);
->>>>>>> origin/main
     _tabController.addListener(_onAnalysisTabChanged);
     _baseUrl = ApiConfig.getBaseUrl();
     _analysisFuture = _runAnalysisWithProgress();
@@ -389,14 +376,14 @@ _auth = context.read<AuthProvider>();
   void _onAnalysisTabChanged() {
     if (_tabController.indexIsChanging) return;
     // Tables tab (after Image Relevance)
-    if (_tabController.index == 6) {
+    if (_tabController.index == 5) {
       if (!_tablesLoading) {
         _loadTables();
       }
       return;
     }
     // Document Lists tab
-    if (_tabController.index == 9) {
+    if (_tabController.index == 8) {
       _loadTocCheck();
     }
   }
@@ -416,10 +403,6 @@ void dispose() {
 
   if (_jobs.activeDocId == widget.documentId) _jobs.activeDocId = null;
   _tabController.removeListener(_onAnalysisTabChanged);
-<<<<<<< HEAD
-  for (final c in _missingControllers.values) { c.dispose(); }
-=======
->>>>>>> origin/main
   _tabController.dispose();
   super.dispose();
 }
@@ -511,12 +494,11 @@ void dispose() {
   /// build(): doing so reset every applied fix on the next rebuild.
   void _seedFromAnalysis(Map<String, dynamic> data) {
     _analysisData = data;
-    _documentBlocks = _asBlockList(
+    _previewBlocks = _asBlockList(
       data['document_blocks'] as List<dynamic>? ??
           data['document_content'] as List<dynamic>? ??
           [],
     );
-    _previewBlocks = List<Map<String, dynamic>>.from(_documentBlocks);
     _pipelineIssues = (data['issues'] as List<dynamic>? ?? [])
         .map((i) => Map<String, dynamic>.from(i as Map))
         .toList();
@@ -527,163 +509,6 @@ void dispose() {
     _appliedTemplateHeadingFixes.clear();
     _ignoredIssueIds.clear();
     _resolvedIssueIds.clear();
-    _missingSectionPreviews = [];
-    _rebuildGhostDisplay();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _loadMissingSectionPreviews();
-    });
-  }
-
-  void _rebuildGhostDisplay() {
-    _previewBlocks = _mergeGhostBlocks(_documentBlocks, _missingSectionPreviews);
-  }
-
-  List<Map<String, dynamic>> _mergeGhostBlocks(
-    List<Map<String, dynamic>> real,
-    List<Map<String, dynamic>> previews,
-  ) {
-    final ghosts = <Map<String, dynamic>>[];
-    for (final p in previews) {
-      final id = p['issue_id'] as String? ?? '';
-      if (id.isNotEmpty &&
-          (_ignoredIssueIds.contains(id) || _resolvedIssueIds.contains(id))) {
-        continue;
-      }
-      if (id.isNotEmpty) {
-        _ghostKeys.putIfAbsent(id, () => GlobalKey());
-      }
-      ghosts.add({
-        'type': 'ghost_heading',
-        'issue_id': id,
-        'text': p['name'] ?? '',
-        'level': p['level'] ?? 1,
-        'guidance_text': p['guidance_text'],
-        'suggested_content': p['suggested_content'],
-        'placeholder_text': p['placeholder_text'],
-        'is_placeholder': true,
-        'insert_before_paragraph_id': p['insert_before_paragraph_id'],
-        'insert_after_paragraph_id': p['insert_after_paragraph_id'],
-        'page': p['page'] ?? 1,
-      });
-    }
-    
-    // Build a map of paragraph_id -> real block index for O(1) lookups
-    final pidToIndex = <String, int>{};
-    for (var i = 0; i < real.length; i++) {
-      final pid = real[i]['paragraph_id'] as String? ?? '';
-      if (pid.isNotEmpty) {
-        pidToIndex[pid] = i;
-      }
-    }
-    
-    final out = <Map<String, dynamic>>[];
-    final used = <int>{};
-    
-    // First pass: insert ghosts that have insert_before_paragraph_id
-    for (var i = 0; i < real.length; i++) {
-      final b = real[i];
-      final pid = b['paragraph_id'] as String? ?? '';
-      
-      // Check if any ghost should be inserted before this paragraph
-      for (var j = 0; j < ghosts.length; j++) {
-        if (used.contains(j)) continue;
-        final before = ghosts[j]['insert_before_paragraph_id'] as String?;
-        if (before != null && before == pid) {
-          out.add(ghosts[j]);
-          used.add(j);
-        }
-      }
-      
-      out.add(b);
-    }
-    
-    // Second pass: insert ghosts that have insert_after_paragraph_id
-    // (these are positioned after specific paragraphs)
-    for (var i = 0; i < real.length; i++) {
-      final b = real[i];
-      final pid = b['paragraph_id'] as String? ?? '';
-      
-      for (var j = 0; j < ghosts.length; j++) {
-        if (used.contains(j)) continue;
-        final after = ghosts[j]['insert_after_paragraph_id'] as String?;
-        if (after != null && after == pid) {
-          // Find the index where this paragraph was added in out
-          final outIndex = out.indexWhere((block) {
-            final blockPid = block['paragraph_id'] as String?;
-            return blockPid == pid;
-          });
-          if (outIndex >= 0) {
-            out.insert(outIndex + 1, ghosts[j]);
-            used.add(j);
-          }
-        }
-      }
-    }
-    
-    // Third pass: append any remaining ghosts (end of document)
-    for (var i = 0; i < ghosts.length; i++) {
-      if (!used.contains(i)) out.add(ghosts[i]);
-    }
-    
-    return out;
-  }
-
-  Future<void> _loadMissingSectionPreviews() async {
-    final userId = _auth.userId;
-    if (userId == null || !mounted) return;
-    try {
-      final guidance = await _docs.fetchMissingSectionPreviews(
-        widget.documentId,
-        suggest: false,
-        userId: userId,
-      );
-      if (!mounted) return;
-      setState(() {
-        _missingSectionPreviews = guidance;
-        _rebuildGhostDisplay();
-      });
-      final withAi = await _docs.fetchMissingSectionPreviews(
-        widget.documentId,
-        suggest: true,
-        userId: userId,
-      );
-      if (!mounted) return;
-      setState(() {
-        _missingSectionPreviews = withAi;
-        _rebuildGhostDisplay();
-      });
-    } catch (_) {}
-  }
-
-  void _showGhostInPreview(String issueId) {
-    _goToTab(0);
-    setState(() => _flashGhostIssueId = issueId);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      final ctx = _ghostKeys[issueId]?.currentContext;
-      if (ctx != null) {
-        Scrollable.ensureVisible(
-          ctx,
-          duration: const Duration(milliseconds: 280),
-          alignment: 0.2,
-        );
-      } else {
-        Future<void>.delayed(const Duration(milliseconds: 350), () {
-          final later = _ghostKeys[issueId]?.currentContext;
-          if (later != null) {
-            Scrollable.ensureVisible(
-              later,
-              duration: const Duration(milliseconds: 280),
-              alignment: 0.2,
-            );
-          }
-        });
-      }
-      Future<void>.delayed(const Duration(milliseconds: 900), () {
-        if (mounted && _flashGhostIssueId == issueId) {
-          setState(() => _flashGhostIssueId = null);
-        }
-      });
-    });
   }
 
 
@@ -714,10 +539,9 @@ void dispose() {
       }
       final blocks = data['document_blocks'] as List<dynamic>?;
       if (blocks != null && blocks.isNotEmpty) {
-        _documentBlocks = _bustImageUrls(
+        _previewBlocks = _bustImageUrls(
           blocks.map((b) => Map<String, dynamic>.from(b as Map)).toList(),
         );
-        _rebuildGhostDisplay();
       }
       _isFixApplied = true;
     });
@@ -987,9 +811,6 @@ void dispose() {
     final isHeadingFix = fn.contains('format') && issueType == 'heading_style';
     final isBulletFix = issueType == 'missing_bullets';
     final isParaRel = fn.contains('para') && fn.contains('relevance');
-    final isMissingSection =
-        issueType == 'missing_section' ||
-            (issue['fix_type'] as String? ?? '') == 'insert_missing_section';
 
     if (isParaRel) {
       _showSnack(
@@ -999,7 +820,7 @@ void dispose() {
       return false;
     }
 
-    if (!isBulletFix && !isMissingSection && pid.isEmpty) return false;
+    if (!isBulletFix && pid.isEmpty) return false;
 
     final body = <String, dynamic>{
       'paragraph_id': pid,
@@ -1014,27 +835,6 @@ void dispose() {
       body['para_indices'] = issue['para_indices'] ??
           (issue['fix_details'] as Map<String, dynamic>?)?['para_indices'] ??
           [];
-    } else if (isMissingSection) {
-      final details = (issue['fix_details'] as Map?)?.cast<String, dynamic>() ??
-          <String, dynamic>{};
-      final sectionName = (issue['section_name'] as String? ??
-              details['section_name'] as String? ??
-              issue['matched_template_heading'] as String? ??
-              '')
-          .toString()
-          .trim();
-      final level = issue['level'] ??
-          issue['heading_level'] ??
-          details['level'] ??
-          1;
-      body['fix_type'] = 'insert_missing_section';
-      body['section_name'] = sectionName;
-      body['level'] = level;
-      body['content'] = correctedText;
-      body['fix_details'] = {
-        'section_name': sectionName,
-        'level': level,
-      };
     }
     try {
       final resp = await http.post(
@@ -1102,13 +902,12 @@ void dispose() {
       } else if (passed && issueId != null && issueId.isNotEmpty) {
         _resolvedIssueIds.add(issueId);
       }
-      _documentBlocks = _documentBlocks.map((b) {
+      _previewBlocks = _previewBlocks.map((b) {
         if (newPath.isNotEmpty && jsonIntOr(b['image_index'], -1) == imageIndex) {
           return {...b, 'image_path': '$newPath?v=$cacheBust'};
         }
         return b;
       }).toList();
-      _rebuildGhostDisplay();
       _isFixApplied = true;
     });
     _showSnack(
@@ -1183,71 +982,26 @@ void dispose() {
   }
 
   void _handlePreviewApplyFix(String issueId, String correctedText) {
-    var issue = _pipelineIssues.firstWhere(
+    final issue = _pipelineIssues.firstWhere(
       (i) => i['issue_id'] == issueId,
       orElse: () => {},
     );
-    Map<String, dynamic> preview = {};
-    for (final p in _missingSectionPreviews) {
-      if ((p['issue_id'] as String? ?? '') == issueId) {
-        preview = p;
-        break;
-      }
-    }
-    if (issue.isEmpty && preview.isNotEmpty) {
-      issue = {
-        'issue_id': issueId,
-        'type': 'missing_section',
-        'fix_type': 'insert_missing_section',
-        'section_name': preview['name'],
-        'level': preview['level'] ?? 1,
-        'fix_details': {
-          'section_name': preview['name'],
-          'level': preview['level'] ?? 1,
-        },
-      };
-    }
     if (issue.isEmpty) return;
-    if (preview.isNotEmpty) {
-      issue['section_name'] ??= preview['name'];
-      issue['level'] ??= preview['level'] ?? 1;
-      issue['fix_type'] ??= 'insert_missing_section';
-      final details = (issue['fix_details'] as Map?)?.cast<String, dynamic>() ??
-          <String, dynamic>{};
-      details['section_name'] ??= preview['name'];
-      details['level'] ??= preview['level'] ?? 1;
-      issue['fix_details'] = details;
-    }
     final pid = issue['paragraph_id'] as String? ?? '';
-    final isMissingSection =
-        (issue['type'] as String? ?? '') == 'missing_section' ||
-            (issue['fix_type'] as String? ?? '') == 'insert_missing_section';
     setState(() {
       if (pid.isNotEmpty) _appliedFixes[pid] = correctedText;
       _ignoredIssueIds.remove(issueId);
       _isFixApplied = true;
     });
     _applyContentFixToBackend(issue, correctedText).then((ok) {
-      if (!mounted) return;
-      if (!ok) {
+      if (!ok && mounted) {
         setState(() => _resolvedIssueIds.remove(issueId));
-        return;
-      }
-      setState(() {
-        _resolvedIssueIds.add(issueId);
-        _rebuildGhostDisplay();
-      });
-      if (isMissingSection) {
-        _loadMissingSectionPreviews();
       }
     });
   }
 
   void _handlePreviewIgnore(String issueId) {
-    setState(() {
-      _ignoredIssueIds.add(issueId);
-      _rebuildGhostDisplay();
-    });
+    setState(() => _ignoredIssueIds.add(issueId));
   }
 
   /// Collects every fix "Apply All Fixes" can push to the backend.
@@ -1727,10 +1481,9 @@ void dispose() {
     );
   }
 
-  static const int _missingSectionsTabIndex = 3;
-  static const int _imageEthicsTabIndex = 4;
-  static const int _imageRelevanceTabIndex = 5;
-  static const int _documentListsTabIndex = 9;
+  static const int _imageEthicsTabIndex = 3;
+  static const int _imageRelevanceTabIndex = 4;
+  static const int _documentListsTabIndex = 8;
 
   void _goToTab(int index) {
     if (!mounted) return;
@@ -1741,10 +1494,6 @@ void dispose() {
   void _goToImageIssuesTab() {
     final hasEthics = _pendingImageIssues.any(_isImageEthicsIssue);
     _goToTab(hasEthics ? _imageEthicsTabIndex : _imageRelevanceTabIndex);
-  }
-
-  void _goToMissingSectionsTab() {
-    _goToTab(_missingSectionsTabIndex);
   }
 
   /// Opens the image replacement dialog for a flagged image and resolves once
@@ -3094,8 +2843,6 @@ Widget build(BuildContext context) {
             ),
           ),
           const SizedBox(width: 12),
-          const NotificationBell(),
-          const SizedBox(width: 12),
           Tooltip(
             message: _exportBlockedReason ?? _exportReadyHint,
             child: ElevatedButton.icon(
@@ -3138,8 +2885,6 @@ Widget build(BuildContext context) {
       border: _border,
       track: _surface2,
       isComplete: _analysisComplete,
-<<<<<<< HEAD
-=======
     ),
     Positioned(
       left: 0, right: 0, bottom: 24,
@@ -3178,53 +2923,8 @@ Widget build(BuildContext context) {
           child: const Tr('Retry'),
         ),
       ],
->>>>>>> origin/main
     ),
-    Positioned(
-      left: 0, right: 0, bottom: 24,
-      child: Center(
-        child: OutlinedButton.icon(
-          icon: const Icon(Icons.open_in_new, size: 16),
-          label: const Tr('Continue in background'),
-         onPressed: () => widget.embedded
-    ? AnalysisNav.close()
-    : _handleSidebarSelection(0),
-        ),
-      ),
-    ),
-  ],
-);
-
-  Widget _buildError(String msg) {
-    String cleanMsg = msg.trim();
-    while (cleanMsg.startsWith('Exception: ')) {
-      cleanMsg = cleanMsg.substring('Exception: '.length).trim();
-    }
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Icon(Icons.error_outline, color: _red, size: 48),
-          const SizedBox(height: 12),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 32),
-            child: Text(
-              cleanMsg,
-              style: const TextStyle(color: _red),
-              textAlign: TextAlign.center,
-            ),
-          ),
-          const SizedBox(height: 16),
-          ElevatedButton(
-            onPressed: () => setState(() {
-              _analysisFuture = _runAnalysisWithProgress(force: true);
-            }),
-            child: const Tr('Retry'),
-          ),
-        ],
-      ),
-    );
-  }
+  );
 
   // ── Main body ─────────────────────────────────────────────────────────────
 
@@ -3269,18 +2969,11 @@ Widget build(BuildContext context) {
 
 final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
   final formattingIssues = _visibleIssues(_issuesForFunction(oldIssues, 'formatting'));
-  // Filter out missing_section issues from formatting tab - they now have their own tab
-  final formattingTabCount = formattingIssues.where((i) => 
-    (i['type'] as String? ?? '') != 'missing_section'
-  ).length;
+  final formattingTabCount = formattingIssues.length;
   final imageEthicsIssues = _visibleIssues(_issuesForFunction(oldIssues, 'image_ethics'));
   final imageIssues = _visibleIssues(_issuesForFunction(oldIssues, 'image_relevance'));
   final paraRelevanceIssues = _visibleIssues(_issuesForFunction(oldIssues, 'para_relevance'));
   final plagiarismIssues = _visibleIssues(_issuesForFunction(oldIssues, 'plagiarism'));
-  final missingSectionIssues = _visibleIssues(_issuesForFunction(oldIssues, 'formatting'))
-      .where((i) => (i['type'] as String? ?? '') == 'missing_section')
-      .toList();
-  final missingSectionCount = missingSectionIssues.length;
     final openIssueCount = _visibleIssues(oldIssues).length;
 
     return Column(
@@ -3305,7 +2998,6 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
               Tab(text: 'Review  ($openIssueCount)'),
               Tab(text: 'Grammar  (${grammarIssues.length})'),
               Tab(text: 'Formatting  ($formattingTabCount)'),
-              Tab(text: 'Missing Sections  ($missingSectionCount)'),
               Tab(text: 'Image Ethics  (${imageEthicsIssues.length})'),
               Tab(text: 'Image Relevance  (${imageIssues.length})'),
               Tab(
@@ -3331,7 +3023,6 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
                 'Checks spelling, punctuation, and grammar errors.',
               ),
               _buildFormattingTab(formattingIssues),
-              _buildMissingSectionsTab(missingSectionIssues),
               _buildImageEthicsTab(imageEthicsIssues),
               _buildImageRelevancyTab(imageIssues, const []),
               _buildTablesTab(),
@@ -3359,9 +3050,6 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
   Widget _buildFormattingTab(List<dynamic> issues) {
     final visible = issues.where((i) {
       final id = (i as Map)['issue_id'] as String? ?? '';
-      final type = (i as Map)['type'] as String? ?? '';
-      // Filter out missing_section issues - they have their own tab
-      if (type == 'missing_section') return false;
       return !_ignoredIssueIds.contains(id) && !_resolvedIssueIds.contains(id);
     }).toList();
 
@@ -3437,181 +3125,6 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
             ),
           ],
         ],
-      ),
-    );
-  }
-
-  Widget _buildMissingSectionsTab(List<dynamic> issues) {
-    final visible = issues.where((i) {
-      final id = (i as Map)['issue_id'] as String? ?? '';
-      return !_ignoredIssueIds.contains(id) && !_resolvedIssueIds.contains(id);
-    }).toList();
-
-    if (visible.isEmpty) {
-      return _buildEmptyState(
-        Icons.library_add,
-        'No missing sections',
-        'All required sections from your template are present in the document.',
-        color: _green,
-      );
-    }
-
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(24),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _buildInfoBanner(
-            'Missing Sections',
-            'These required sections from your template are not in the document. '
-                'You can add them with suggested content or ignore them.',
-            _orange,
-          ),
-          const SizedBox(height: 16),
-          ...visible.map((i) => _buildMissingSectionCard(i as Map<String, dynamic>)),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildMissingSectionCard(Map<String, dynamic> issue) {
-    final issueId = issue['issue_id'] as String? ?? '';
-    final heading = issue['heading'] as String? ?? issue['text'] as String? ?? 'Untitled';
-    final level = issue['level'] as int? ?? 1;
-    final fixDetails = issue['fix_details'] as Map<String, dynamic>? ?? {};
-    final sectionName = fixDetails['section_name'] as String? ?? heading;
-    final insertBefore = fixDetails['insert_before'] as String? ?? '';
-    
-    // Get the preview data for this section
-    final preview = _missingSectionPreviews.firstWhere(
-      (p) => p['issue_id'] == issueId,
-      orElse: () => <String, dynamic>{},
-    );
-    
-    final suggestedContent =
-    (preview['suggested_content'] ?? issue['suggested_content'] ?? '').toString();
-final guidanceText =
-    (preview['guidance_text'] ?? issue['guidance_text'] ?? '').toString();
-final contentController = _missingControllers.putIfAbsent(
-  issueId,
-  () => TextEditingController(
-    text: suggestedContent.isNotEmpty ? suggestedContent : guidanceText,
-  ),
-);
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 16),
-      decoration: BoxDecoration(
-        color: _surface,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: _orange.withOpacity(0.35)),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Container(
-                  width: 40,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    color: _orange.withOpacity(0.12),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  alignment: Alignment.center,
-                  child: Text(
-                    'H$level',
-                    style: TextStyle(
-                      color: _orange,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 14,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        sectionName,
-                        style: TextStyle(
-                          color: _textPri,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 16,
-                        ),
-                      ),
-                      if (insertBefore.isNotEmpty)
-                        Text(
-                          'Will be added before: $insertBefore',
-                          style: TextStyle(
-                            color: _textSec,
-                            fontSize: 12,
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: contentController,
-              maxLines: 4,
-              style: TextStyle(color: _textPri),
-              decoration: InputDecoration(
-                labelText: 'Section content',
-                hintText: 'Enter content for this section...',
-                labelStyle: TextStyle(color: _textSec),
-                hintStyle: TextStyle(color: _textSec.withOpacity(0.6)),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  borderSide: BorderSide(color: _border),
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  borderSide: BorderSide(color: _border),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  borderSide: BorderSide(color: _blue),
-                ),
-              ),
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: ElevatedButton.icon(
-                    icon: const Icon(Icons.add, size: 18),
-                    label: const Tr('Add Section'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: _green,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                    ),
-                    onPressed: () {
-                      final content = contentController.text.trim();
-                      _handlePreviewApplyFix(issueId, content);
-},
-                  ),
-                ),
-                const SizedBox(width: 12),
-                OutlinedButton.icon(
-                  icon: const Icon(Icons.close, size: 18),
-                  label: const Tr('Ignore'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: _textSec,
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                  ),
-                  onPressed: () => _handlePreviewIgnore(issueId),
-                ),
-              ],
-            ),
-          ],
-        ),
       ),
     );
   }
@@ -3998,8 +3511,6 @@ final contentController = _missingControllers.putIfAbsent(
       appliedFixes: _appliedFixes,
       ignoredIssueIds: _ignoredIssueIds,
       resolvedIssueIds: _resolvedIssueIds,
-      ghostKeys: _ghostKeys,
-      flashGhostIssueId: _flashGhostIssueId,
       onApplyFix: _handlePreviewApplyFix,
       onIgnoreIssue: _handlePreviewIgnore,
       onImageReplaced: (result, issue) => _handleImageReplaceSuccess(
@@ -5316,24 +4827,12 @@ final contentController = _missingControllers.putIfAbsent(
               child: _DiffRow(label: 'Suggestion', text: suggestion, color: _green),
             ),
           const SizedBox(height: 12),
-          if (issueType == 'missing_section' && issueId.isNotEmpty) ...[
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton.icon(
-                onPressed: () => _showGhostInPreview(issueId),
-                icon: const Icon(Icons.visibility_outlined, size: 16),
-                label: const Tr('Show in preview'),
-              ),
-            ),
-            const SizedBox(height: 8),
-          ],
           Row(
             children: [
               Expanded(
                 child: OutlinedButton(
                   onPressed: () {
                     setState(() => _ignoredIssueIds.add(issueId));
-                    _rebuildGhostDisplay();
                     _showSnack('Issue ignored', _textSec);
                   },
                   child: const Tr('Ignore'),
@@ -5951,19 +5450,6 @@ final contentController = _missingControllers.putIfAbsent(
                 color: _green,
               ),
             ],
-          ],
-          if (((issue['type'] as String? ?? '') == 'missing_section') &&
-              ((issue['issue_id'] as String? ?? '').isNotEmpty)) ...[
-            const SizedBox(height: 10),
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton.icon(
-                onPressed: () =>
-                    _showGhostInPreview(issue['issue_id'] as String),
-                icon: const Icon(Icons.visibility_outlined, size: 16),
-                label: const Tr('Show in preview'),
-              ),
-            ),
           ],
         ],
       ),
