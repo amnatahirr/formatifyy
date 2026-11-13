@@ -42,6 +42,7 @@ class DocumentPreviewPanel extends StatefulWidget {
   final void Function(List<Map<String, dynamic>> blocks)? onBlocksChanged;
   final Map<String, GlobalKey>? ghostKeys;
   final String? flashGhostIssueId;
+  final void Function(String issueId)? onGhostTap;
 
   final String defaultFont;
   final double bodyPt;
@@ -64,6 +65,7 @@ class DocumentPreviewPanel extends StatefulWidget {
     this.onBlocksChanged,
     this.ghostKeys,
     this.flashGhostIssueId,
+    this.onGhostTap,
     this.defaultFont = 'Times New Roman',
     this.bodyPt = 12,
     this.headingPt = const {1: 16, 2: 14, 3: 12},
@@ -1666,11 +1668,7 @@ class _DocumentPreviewPanelState extends State<DocumentPreviewPanel> {
     final inner = GestureDetector(
       onTap: issueId.isEmpty
           ? null
-          : () {
-              // Navigate to Missing Sections tab and highlight this card
-              // This will be handled by the parent widget via a callback
-              // For now, just flash to indicate interaction
-            },
+          : () => widget.onGhostTap?.call(issueId),
       child: Opacity(
         opacity: 0.45,
         child: Container(

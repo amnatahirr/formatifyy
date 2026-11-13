@@ -389,10 +389,10 @@ def insert_missing_section_by_name(
     level = max(1, min(int(target.get("level") or 1), 4))
     placeholder = f"[Add your {name} content here]"
 
-    # Optional AI/user supplied draft text (split on blank lines, capped).
+    # Optional AI/user supplied draft text (split on blank lines/newlines, capped).
     body_texts = [
         t.strip()
-        for t in re.split(r"\n\s*\n", (content or "").strip()[:4000])
+        for t in re.split(r"\n\s*\n|\n", (content or "").strip()[:20000])
         if t.strip()
     ] or [placeholder]
 
@@ -698,6 +698,60 @@ def _section_guidance(section_name: str) -> str:
             return guidance
     
     return f"Write the content for the {section_name} section following your template guidelines."
+
+
+def splice_ghost_blocks(
+    blocks: List[Dict[str, Any]],
+    previews: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """
+    Return a new block list with ghost_heading entries spliced in at the
+    position each missing section belongs: before the block whose
+    paragraph_id == insert_before_paragraph_id, or (when there is no anchor /
+    the anchor is absent) after the last paragraph block and before image
+    blocks. Ghosts sharing an anchor keep template order.
+    """
+    blocks = list(blocks or [])
+    if not previews:
+        return blocks
+
+    pids = {b.get("paragraph_id") for b in blocks}
+    by_anchor: Dict[str, List[Dict[str, Any]]] = {}
+    tail: List[Dict[str, Any]] = []
+
+    for p in previews:
+        level = int(p.get("level") or 1)
+        ghost = {
+            "type": "ghost_heading",
+            "is_placeholder": True,
+            "paragraph_id": "",
+            "text": p.get("name") or "",
+            "level": level,
+            "issue_id": p.get("issue_id") or "",
+            "page": None,
+            "style": f"Heading {level}",
+        }
+        anchor = p.get("insert_before_paragraph_id")
+        if anchor and anchor in pids:
+            by_anchor.setdefault(str(anchor), []).append(ghost)
+        else:
+            tail.append(ghost)
+
+    out: List[Dict[str, Any]] = []
+    tail_done = False
+    for b in blocks:
+        pid = b.get("paragraph_id") or ""
+        if pid in by_anchor:
+            out.extend(by_anchor.pop(pid))
+        if not tail_done and tail and b.get("type") == "image":
+            out.extend(tail)
+            tail_done = True
+        out.append(b)
+    for remaining in by_anchor.values():
+        out.extend(remaining)
+    if not tail_done:
+        out.extend(tail)
+    return out
 
 
 def _get_document_hash(docx_path: str) -> str:

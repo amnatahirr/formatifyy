@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:frontend/providers/qr_service.dart';
 import 'package:frontend/widgets/qr_dialog.dart';
@@ -36,7 +35,7 @@ import '../widgets/student/mobile_status_summary_card.dart';
 import '../widgets/student/desktop_semester_deadline_card.dart';
 import '../utils/responsive.dart';
 import 'mobile_companion_screen.dart';
-import '../widgets/document_preview_panel.dart'; 
+import '../widgets/document_preview_panel.dart';
 import '../providers/lang_provider.dart';
 import '../widgets/tr.dart';
 import '../providers/analysis_job_provider.dart';
@@ -55,14 +54,22 @@ class _MobileNavItem {
 
 const List<_MobileNavItem> _kMobileNavItemsCore = [
   _MobileNavItem(0, Icons.dashboard_outlined, 'Dashboard'),
-  _MobileNavItem(kNotificationsTabIndex, Icons.notifications_outlined, 'Notifications'),
+  _MobileNavItem(
+    kNotificationsTabIndex,
+    Icons.notifications_outlined,
+    'Notifications',
+  ),
   _MobileNavItem(2, Icons.folder_outlined, 'Reports'),
 ];
 
 const List<_MobileNavItem> _kMobileNavItemsFyp = [
   _MobileNavItem(0, Icons.dashboard_outlined, 'Dashboard'),
   _MobileNavItem(8, Icons.checklist_outlined, 'Milestones'),
-  _MobileNavItem(kNotificationsTabIndex, Icons.notifications_outlined, 'Notifications'),
+  _MobileNavItem(
+    kNotificationsTabIndex,
+    Icons.notifications_outlined,
+    'Notifications',
+  ),
   _MobileNavItem(2, Icons.folder_outlined, 'Reports'),
 ];
 
@@ -100,34 +107,36 @@ class _StudentDashboardState extends State<StudentDashboard> {
   Timer? _refreshTimer;
   AnalysisRequest? _activeAnalysis;
   void _onAnalysisRequest() {
-  if (!mounted) return;
-  final req = AnalysisNav.request.value;
-  setState(() {
-    _activeAnalysis = req;
-    if (req != null) _selectedIndex = 2;
-  });
-  if (req == null) {
-    final uid = context.read<AuthProvider>().userId;
-    if (uid != null) context.read<DocumentProvider>().fetchDocuments(uid);
-  }
-}
-@override
-void initState() {
-  super.initState();
-  _selectedIndex = widget.initialIndex.clamp(0, kNotificationsTabIndex);
-  _activeProjectId = widget.initialProjectId;
-  _projectDetailTab = widget.initialProjectTab;
-
-  final pending = AnalysisNav.request.value;
-  if (pending != null) {
-    _activeAnalysis = pending;
-    _selectedIndex = 2;
+    if (!mounted) return;
+    final req = AnalysisNav.request.value;
+    setState(() {
+      _activeAnalysis = req;
+      if (req != null) _selectedIndex = 2;
+    });
+    if (req == null) {
+      final uid = context.read<AuthProvider>().userId;
+      if (uid != null) context.read<DocumentProvider>().fetchDocuments(uid);
+    }
   }
 
-  AnalysisNav.attach(this);
-  AnalysisNav.request.addListener(_onAnalysisRequest);
-  _loadInitialData();
-}
+  @override
+  void initState() {
+    super.initState();
+    _selectedIndex = widget.initialIndex.clamp(0, kNotificationsTabIndex);
+    _activeProjectId = widget.initialProjectId;
+    _projectDetailTab = widget.initialProjectTab;
+
+    final pending = AnalysisNav.request.value;
+    if (pending != null) {
+      _activeAnalysis = pending;
+      _selectedIndex = 2;
+    }
+
+    AnalysisNav.attach(this);
+    AnalysisNav.request.addListener(_onAnalysisRequest);
+    _loadInitialData();
+  }
+
   void _loadInitialData() {
     Future.microtask(() {
       final auth = context.read<AuthProvider>();
@@ -139,9 +148,9 @@ void initState() {
         final email = (auth.userEmail ?? auth.email ?? '').trim();
         if (DevUserConfig.hasFypModule && email.isNotEmpty) {
           context.read<FypProvider>().fetchAssignmentStatus(
-                userId: auth.userId!,
-                email: email,
-              );
+            userId: auth.userId!,
+            email: email,
+          );
         }
         //Start auto-refresh polling every 30 seconds
         _refreshTimer = Timer.periodic(Duration(seconds: 10), (_) {
@@ -158,8 +167,8 @@ void initState() {
   @override
   void dispose() {
     AnalysisNav.detach(this);
-AnalysisNav.request.removeListener(_onAnalysisRequest);
-   _refreshTimer?.cancel();
+    AnalysisNav.request.removeListener(_onAnalysisRequest);
+    _refreshTimer?.cancel();
     super.dispose();
   }
 
@@ -244,9 +253,7 @@ AnalysisNav.request.removeListener(_onAnalysisRequest);
     required _MobileNavItem item,
     required bool selected,
   }) {
-    final color = selected
-        ? _p.accent
-        : _p.iconMuted;
+    final color = selected ? _p.accent : _p.iconMuted;
 
     return InkWell(
       onTap: () {
@@ -275,269 +282,272 @@ AnalysisNav.request.removeListener(_onAnalysisRequest);
     );
   }
 
-Widget _sidebarLabel(String text) => Padding(
-      padding: const EdgeInsets.fromLTRB(20, 18, 20, 4),
-      child: Text(
-        text.toUpperCase(),
-        style: TextStyle(
-          fontSize: 10,
-          letterSpacing: 0.8,
-          fontWeight: FontWeight.w700,
-          color: _p.textMuted,
-        ),
-      ),
-    );
-
-Widget _buildSidebar() {
-  return Container(
-    width: 200,
-    decoration: BoxDecoration(
-      color: _p.sidebarBg,
-      border: Border(
-        right: BorderSide(
-          color: _p.isDark ? _p.borderStrong : _p.border,
-        ),
+  Widget _sidebarLabel(String text) => Padding(
+    padding: const EdgeInsets.fromLTRB(20, 18, 20, 4),
+    child: Text(
+      text.toUpperCase(),
+      style: TextStyle(
+        fontSize: 10,
+        letterSpacing: 0.8,
+        fontWeight: FontWeight.w700,
+        color: _p.textMuted,
       ),
     ),
-    child: Column(
-      children: [
-        // ── Logo ──────────────────────────────────────────────
-        Padding(
-          padding: const EdgeInsets.all(20),
-          child: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: _p.accent,
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: const Icon(Icons.description,
-                    color: Colors.white, size: 20),
-              ),
-              const SizedBox(width: 12),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Tr(
-                    'FORMATIFY',
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w700,
-                      color: _p.textPrimary,
-                    ),
+  );
+
+  Widget _buildSidebar() {
+    return Container(
+      width: 200,
+      decoration: BoxDecoration(
+        color: _p.sidebarBg,
+        border: Border(
+          right: BorderSide(color: _p.isDark ? _p.borderStrong : _p.border),
+        ),
+      ),
+      child: Column(
+        children: [
+          // ── Logo ──────────────────────────────────────────────
+          Padding(
+            padding: const EdgeInsets.all(20),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: _p.accent,
+                    borderRadius: BorderRadius.circular(6),
                   ),
-                  Tr(
-                    'Academic Edition',
-                    style: TextStyle(
-                      fontSize: 10,
-                      color: _p.textPrimary,
-                      fontWeight: FontWeight.w400,
+                  child: const Icon(
+                    Icons.description,
+                    color: Colors.white,
+                    size: 20,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Tr(
+                      'FORMATIFY',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                        color: _p.textPrimary,
+                      ),
                     ),
+                    Tr(
+                      'Academic Edition',
+                      style: TextStyle(
+                        fontSize: 10,
+                        color: _p.textPrimary,
+                        fontWeight: FontWeight.w400,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+
+          // ── Menu ──────────────────────────────────────────────
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              children: [
+                _buildSidebarItem(0, Icons.dashboard, 'Dashboard'),
+                _buildSidebarItem(1, Icons.add_circle_outline, 'New Report'),
+                _buildSidebarItem(2, Icons.folder, 'My Reports'),
+                const AnalysisJobsSidebarItem(),
+
+                _sidebarLabel('Workspace'),
+                _buildSidebarItem(3, Icons.people_outline, 'Collaboration'),
+                _buildSidebarItem(5, Icons.layers, 'Templates'),
+
+                if (DevUserConfig.hasFypModule) ...[
+                  _sidebarLabel('Final Year Project'),
+                  Consumer<FypProvider>(
+                    builder: (context, fyp, _) {
+                      if (!fyp.canChooseSupervisor) {
+                        return const SizedBox.shrink();
+                      }
+                      return _buildSidebarItem(
+                        6,
+                        Icons.school_outlined,
+                        'Find Supervisor',
+                      );
+                    },
+                  ),
+                  _buildSidebarItem(7, Icons.badge_outlined, 'My Supervisor'),
+                  _buildSidebarItem(8, Icons.checklist_outlined, 'Milestones'),
+                  _buildSidebarItem(
+                    9,
+                    Icons.sticky_note_2_outlined,
+                    'Meeting Notes',
+                  ),
+                  _buildSidebarItem(
+                    10,
+                    Icons.policy_outlined,
+                    'Plagiarism Report',
+                  ),
+                  _buildSidebarItem(
+                    11,
+                    Icons.track_changes_outlined,
+                    'Status Tracker',
                   ),
                 ],
-              ),
-            ],
+
+                _sidebarLabel('Account'),
+                _buildSidebarItem(12, Icons.settings, 'Settings'),
+              ],
+            ),
           ),
-        ),
 
-        // ── Menu ──────────────────────────────────────────────
-        Expanded(
-          child: ListView(
-            padding: const EdgeInsets.symmetric(vertical: 4),
-            children: [
-              _buildSidebarItem(0, Icons.dashboard, 'Dashboard'),
-              _buildSidebarItem(1, Icons.add_circle_outline, 'New Report'),
-              _buildSidebarItem(2, Icons.folder, 'My Reports'),
-              const AnalysisJobsSidebarItem(),
-
-              _sidebarLabel('Workspace'),
-              _buildSidebarItem(3, Icons.people_outline, 'Collaboration'),
-              _buildSidebarItem(5, Icons.layers, 'Templates'),
-
-              if (DevUserConfig.hasFypModule) ...[
-                _sidebarLabel('Final Year Project'),
-                Consumer<FypProvider>(
-                  builder: (context, fyp, _) {
-                    if (!fyp.canChooseSupervisor) {
-                      return const SizedBox.shrink();
-                    }
-                    return _buildSidebarItem(
-                      6,
-                      Icons.school_outlined,
-                      'Find Supervisor',
+          // ── User card ─────────────────────────────────────────
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Container(
+              decoration: BoxDecoration(
+                color: _p.surfaceAlt,
+                borderRadius: BorderRadius.circular(
+                  _p.isDark ? _p.cardRadius : 8,
+                ),
+                border: Border.all(
+                  color: _p.isDark ? _p.borderStrong : _p.border,
+                ),
+                boxShadow: _p.isDark ? _p.cardShadow : null,
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Consumer<AuthProvider>(
+                  builder: (context, auth, _) {
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Container(
+                          width: 32,
+                          height: 32,
+                          decoration: BoxDecoration(
+                            color: _p.accent,
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Center(
+                            child: Text(
+                              (auth.currentUser?.isNotEmpty ?? false)
+                                  ? auth.currentUser![0].toUpperCase()
+                                  : 'U',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                          auth.currentUser ?? 'User',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: _p.textPrimary,
+                          ),
+                        ),
+                        Text(
+                          DevUserConfig.displayRoleLabel(auth.userRole),
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: _p.textSecondary,
+                            fontWeight: FontWeight.w400,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        SizedBox(
+                          width: double.infinity,
+                          height: 32,
+                          child: ElevatedButton.icon(
+                            onPressed: () => _logout(context),
+                            icon: const Icon(
+                              Icons.logout,
+                              size: 14,
+                              color: Colors.white,
+                            ),
+                            label: const Tr(
+                              'Logout',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.white,
+                              ),
+                            ),
+                            style: ElevatedButton.styleFrom(
+                              foregroundColor: Colors.white,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
                     );
                   },
                 ),
-                _buildSidebarItem(7, Icons.badge_outlined, 'My Supervisor'),
-                _buildSidebarItem(8, Icons.checklist_outlined, 'Milestones'),
-                _buildSidebarItem(
-                    9, Icons.sticky_note_2_outlined, 'Meeting Notes'),
-                _buildSidebarItem(
-                    10, Icons.policy_outlined, 'Plagiarism Report'),
-                _buildSidebarItem(
-                    11, Icons.track_changes_outlined, 'Status Tracker'),
-              ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
-              _sidebarLabel('Account'),
-              _buildSidebarItem(12, Icons.settings, 'Settings'),
+  Widget _buildSidebarItem(int index, IconData icon, String label) {
+    final isSelected = _selectedIndex == index;
+
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: isSelected ? _p.accentSoft : Colors.transparent,
+        borderRadius: BorderRadius.circular(10),
+        border: isSelected ? Border.all(color: _p.accent, width: 1.5) : null,
+      ),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(10),
+        onTap: () {
+          AnalysisNav.request.value = null;
+
+          setState(() {
+            _selectedIndex = index;
+            _activeProjectId = null;
+            _activeAnalysis = null;
+          });
+        },
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          child: Row(
+            children: [
+              Icon(
+                icon,
+                size: 20,
+                color: isSelected ? _p.accent : _p.textSecondary,
+              ),
+              const SizedBox(width: 12),
+
+              Expanded(
+                child: Tr(
+                  label,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
+                    color: isSelected ? _p.accent : _p.textSecondary,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
             ],
           ),
         ),
-
-        // ── User card ─────────────────────────────────────────
-        Padding(
-          padding: const EdgeInsets.all(16),
-          child: Container(
-            decoration: BoxDecoration(
-              color: _p.surfaceAlt,
-              borderRadius: BorderRadius.circular(
-                _p.isDark ? _p.cardRadius : 8,
-              ),
-              border: Border.all(
-                color: _p.isDark ? _p.borderStrong : _p.border,
-              ),
-              boxShadow: _p.isDark ? _p.cardShadow : null,
-            ),
-            child: Padding(
-              padding: const EdgeInsets.all(12),
-              child: Consumer<AuthProvider>(
-                builder: (context, auth, _) {
-                  return Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Container(
-                        width: 32,
-                        height: 32,
-                        decoration: BoxDecoration(
-                          color: _p.accent,
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: Center(
-                          child: Text(
-                            (auth.currentUser?.isNotEmpty ?? false)
-                                ? auth.currentUser![0].toUpperCase()
-                                : 'U',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      Text(
-                        auth.currentUser ?? 'User',
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: _p.textPrimary,
-                        ),
-                      ),
-                      Text(
-                        DevUserConfig.displayRoleLabel(auth.userRole),
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: _p.textSecondary,
-                          fontWeight: FontWeight.w400,
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      SizedBox(
-                        width: double.infinity,
-                        height: 32,
-                        child: ElevatedButton.icon(
-                          onPressed: () => _logout(context),
-                          icon: const Icon(Icons.logout,
-                              size: 14, color: Colors.white),
-                          label: const Tr(
-                            'Logout',
-                            style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w600,
-                              color: Colors.white,
-                            ),
-                          ),
-                          style: ElevatedButton.styleFrom(
-                            foregroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(6),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  );
-                },
-              ),
-            ),
-          ),
-        ),
-      ],
-    ),
-  );
-}
-
-
-Widget _buildSidebarItem(int index, IconData icon, String label) {
-  final isSelected = _selectedIndex == index;
-
-  return Container(
-    margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-    decoration: BoxDecoration(
-      color: isSelected ? _p.accentSoft : Colors.transparent,
-      borderRadius: BorderRadius.circular(10),
-      border: isSelected
-          ? Border.all(color: _p.accent, width: 1.5)
-          : null,
-    ),
-    child: InkWell(
-      borderRadius: BorderRadius.circular(10),
-      onTap: () {
-        AnalysisNav.request.value = null;
-
-        setState(() {
-          _selectedIndex = index;
-          _activeProjectId = null;
-          _activeAnalysis = null;
-        });
-      },
-      child: Padding(
-        padding: const EdgeInsets.symmetric(
-          horizontal: 16,
-          vertical: 12,
-        ),
-        child: Row(
-          children: [
-            Icon(
-              icon,
-              size: 20,
-              color: isSelected ? _p.accent : _p.textSecondary,
-            ),
-            const SizedBox(width: 12),
-
-            Expanded(
-              child: Tr(
-                label,
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight:
-                      isSelected ? FontWeight.w600 : FontWeight.w400,
-                  color: isSelected ? _p.accent : _p.textSecondary,
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-          ],
-        ),
       ),
-    ),
-  );
-}
-
-  
-  
+    );
+  }
 
   Widget _buildTopBar({required bool compact}) {
     final titles = [
@@ -579,23 +589,23 @@ Widget _buildSidebarItem(int index, IconData icon, String label) {
       descriptions[13] = 'Updates and account notifications';
     }
     final showingProject = _activeProjectId != null;
-    final projectName = context.watch<CollaborationProvider>().currentProject?['name'] as String?;
+    final projectName =
+        context.watch<CollaborationProvider>().currentProject?['name']
+            as String?;
     final title = showingProject
         ? (projectName ?? 'Project')
         : titles[_selectedIndex];
     final description = showingProject
         ? 'Shared project workspace'
         : (_selectedIndex == 0
-            ? 'Welcome back, ${context.watch<AuthProvider>().currentUser ?? "User"}. ${descriptions[_selectedIndex]}'
-            : descriptions[_selectedIndex]);
+              ? 'Welcome back, ${context.watch<AuthProvider>().currentUser ?? "User"}. ${descriptions[_selectedIndex]}'
+              : descriptions[_selectedIndex]);
 
     return Container(
       decoration: BoxDecoration(
         color: _p.topBarBg,
         border: Border(
-          bottom: BorderSide(
-            color: _p.isDark ? _p.borderStrong : _p.border,
-          ),
+          bottom: BorderSide(color: _p.isDark ? _p.borderStrong : _p.border),
         ),
         boxShadow: _p.cardShadow,
       ),
@@ -609,95 +619,98 @@ Widget _buildSidebarItem(int index, IconData icon, String label) {
         bottom: false,
         minimum: EdgeInsets.only(top: compact ? 8 : 0),
         child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Tr(
-                  title,
-                  style: TextStyle(
-                    fontSize: compact ? 20 : 28,
-                    fontWeight: FontWeight.w700,
-                    color: _p.textPrimary,
-                  ),
-                ),
-                if (!compact || _selectedIndex == 0)
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
                   Tr(
-                    description,
-                    maxLines: compact ? 1 : 3,
-                    overflow: TextOverflow.ellipsis,
+                    title,
                     style: TextStyle(
-                      fontSize: 13,
-                      color: _p.textSecondary,
-                      fontWeight: FontWeight.w400,
+                      fontSize: compact ? 20 : 28,
+                      fontWeight: FontWeight.w700,
+                      color: _p.textPrimary,
                     ),
                   ),
-              ],
-            ),
-          ),
-          if (!compact)
-            Row(
-              children: [
-                NotificationsPanelButton(),
-                SizedBox(width: 12),
-                GestureDetector(
-                  onTap: () {
-                    setState(() {
-                      _selectedIndex = 1;
-                      _activeProjectId = null;
-                    });
-                  },
-                  child: Container(
-                    padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: _p.accent,
-                      borderRadius: BorderRadius.circular(6),
+                  if (!compact || _selectedIndex == 0)
+                    Tr(
+                      description,
+                      maxLines: compact ? 1 : 3,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: _p.textSecondary,
+                        fontWeight: FontWeight.w400,
+                      ),
                     ),
-                    child: Row(
-                      children: [
-                        Icon(Icons.add, size: 18, color: Colors.white),
-                        SizedBox(width: 6),
-                        Tr(
-                          'New Report',
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.white,
+                ],
+              ),
+            ),
+            if (!compact)
+              Row(
+                children: [
+                  NotificationsPanelButton(),
+                  SizedBox(width: 12),
+                  GestureDetector(
+                    onTap: () {
+                      setState(() {
+                        _selectedIndex = 1;
+                        _activeProjectId = null;
+                      });
+                    },
+                    child: Container(
+                      padding: EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
+                      decoration: BoxDecoration(
+                        color: _p.accent,
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(Icons.add, size: 18, color: Colors.white),
+                          SizedBox(width: 6),
+                          Tr(
+                            'New Report',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.white,
+                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
-                ),
-              ],
-            )
-          else
-            IconButton(
-              tooltip: 'Sign out',
-              onPressed: () => _logout(context),
-              icon: Icon(Icons.logout_rounded, color: _p.textSecondary),
-            ),
-        ],
-      ),
+                ],
+              )
+            else
+              IconButton(
+                tooltip: 'Sign out',
+                onPressed: () => _logout(context),
+                icon: Icon(Icons.logout_rounded, color: _p.textSecondary),
+              ),
+          ],
+        ),
       ),
     );
   }
 
   Widget _buildBody() {
     if (_activeAnalysis != null) {
-    final r = _activeAnalysis!;
-    return AnalyzeScreen(
-      key: ValueKey('analysis-${r.documentId}-${r.freeform}'),
-      documentId: r.documentId,
-      documentName: r.documentName,
-      templateId: r.templateId,
-      templateName: r.templateName,
-      freeformAnalysis: r.freeform,
-      embedded: true,
-    );
-  }
+      final r = _activeAnalysis!;
+      return AnalyzeScreen(
+        key: ValueKey('analysis-${r.documentId}-${r.freeform}'),
+        documentId: r.documentId,
+        documentName: r.documentName,
+        templateId: r.templateId,
+        templateName: r.templateName,
+        freeformAnalysis: r.freeform,
+        embedded: true,
+      );
+    }
     if (_activeProjectId != null) {
       return ProjectDetailScreen(
         key: ValueKey('project-$_activeProjectId-$_projectDetailTab'),
@@ -794,20 +807,22 @@ Widget _buildSidebarItem(int index, IconData icon, String label) {
             );
           case 7:
             return MySupervisorScreen(
-              onChooseSupervisor: context.watch<FypProvider>().canChooseSupervisor
+              onChooseSupervisor:
+                  context.watch<FypProvider>().canChooseSupervisor
                   ? () => setState(() {
-                        _selectedIndex = 6;
-                        _activeProjectId = null;
-                      })
+                      _selectedIndex = 6;
+                      _activeProjectId = null;
+                    })
                   : null,
             );
           case 8:
             return FypMilestonesScreen(
-              onChooseSupervisor: context.watch<FypProvider>().canChooseSupervisor
+              onChooseSupervisor:
+                  context.watch<FypProvider>().canChooseSupervisor
                   ? () => setState(() {
-                        _selectedIndex = 6;
-                        _activeProjectId = null;
-                      })
+                      _selectedIndex = 6;
+                      _activeProjectId = null;
+                    })
                   : null,
               onOpenMySupervisor: () => setState(() {
                 _selectedIndex = 7;
@@ -818,11 +833,12 @@ Widget _buildSidebarItem(int index, IconData icon, String label) {
             return const StudentMeetingNotesScreen();
           case 10:
             return PlagiarismReportScreen(
-              onChooseSupervisor: context.watch<FypProvider>().canChooseSupervisor
+              onChooseSupervisor:
+                  context.watch<FypProvider>().canChooseSupervisor
                   ? () => setState(() {
-                        _selectedIndex = 6;
-                        _activeProjectId = null;
-                      })
+                      _selectedIndex = 6;
+                      _activeProjectId = null;
+                    })
                   : null,
               onOpenMySupervisor: () => setState(() {
                 _selectedIndex = 7;
@@ -835,11 +851,12 @@ Widget _buildSidebarItem(int index, IconData icon, String label) {
             );
           case 11:
             return StatusTrackerScreen(
-              onChooseSupervisor: context.watch<FypProvider>().canChooseSupervisor
+              onChooseSupervisor:
+                  context.watch<FypProvider>().canChooseSupervisor
                   ? () => setState(() {
-                        _selectedIndex = 6;
-                        _activeProjectId = null;
-                      })
+                      _selectedIndex = 6;
+                      _activeProjectId = null;
+                    })
                   : null,
               onOpenMySupervisor: () => setState(() {
                 _selectedIndex = 7;
@@ -862,7 +879,6 @@ Widget _buildSidebarItem(int index, IconData icon, String label) {
     }
   }
 
-
   /// Mobile-only entry to Quick Access (Scan QR / Camera / Gallery).
   /// Navigates to [MobileCompanionScreen] — not rebuilt here.
   Widget _buildSendFromPhoneCard() {
@@ -871,14 +887,10 @@ Widget _buildSidebarItem(int index, IconData icon, String label) {
       child: InkWell(
         onTap: () {
           Navigator.of(context).push(
-            MaterialPageRoute(
-              builder: (_) => const MobileCompanionScreen(),
-            ),
+            MaterialPageRoute(builder: (_) => const MobileCompanionScreen()),
           );
         },
-        borderRadius: BorderRadius.circular(
-          _p.isDark ? _p.cardRadius : 12,
-        ),
+        borderRadius: BorderRadius.circular(_p.isDark ? _p.cardRadius : 12),
         child: Container(
           width: double.infinity,
           padding: EdgeInsets.all(16),
@@ -913,18 +925,12 @@ Widget _buildSidebarItem(int index, IconData icon, String label) {
                     SizedBox(height: 4),
                     Tr(
                       'Scan QR, camera, or gallery upload',
-                      style: TextStyle(
-                        color: _p.textSecondary,
-                        fontSize: 12,
-                      ),
+                      style: TextStyle(color: _p.textSecondary, fontSize: 12),
                     ),
                   ],
                 ),
               ),
-              Icon(
-                Icons.chevron_right,
-                color: _p.textMuted,
-              ),
+              Icon(Icons.chevron_right, color: _p.textMuted),
             ],
           ),
         ),
@@ -932,145 +938,179 @@ Widget _buildSidebarItem(int index, IconData icon, String label) {
     );
   }
 
+  void _goTo(int index) {
+    AnalysisNav.request.value = null;
+    setState(() {
+      _selectedIndex = index;
+      _activeProjectId = null;
+      _activeAnalysis = null;
+    });
+  }
 
-void _goTo(int index) {
-  AnalysisNav.request.value = null;
-  setState(() {
-    _selectedIndex = index;
-    _activeProjectId = null;
-    _activeAnalysis = null;
-  });
-}
-
-Widget _fypChip(String label, IconData icon, int index) {
-  return InkWell(
-    onTap: () => _goTo(index),
-    borderRadius: BorderRadius.circular(999),
-    child: Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-      decoration: BoxDecoration(
-        color: _p.surface,
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: _p.isDark ? _p.borderStrong : _p.border),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 16, color: _p.accent),
-          const SizedBox(width: 8),
-          Tr(label,
-              style: TextStyle(
-                  fontSize: 12.5,
-                  fontWeight: FontWeight.w600,
-                  color: _p.textPrimary)),
-        ],
-      ),
-    ),
-  );
-}
-
-Widget _buildDashboardContent() {
-  final compact = isCompact(context);
-  return Consumer<DocumentProvider>(
-    builder: (context, docProvider, _) {
-      final docs = docProvider.documents;
-      final formatted = docs.where((d) => d['has_formatted'] == true).length;
-      final pending = docs.length - formatted;
-      final jobs = context.watch<AnalysisJobProvider>();
-      final readyAnalyses = jobs.jobs
-          .where((j) => j.status == AnalysisStatus.completed)
-          .length;
-
-      return SingleChildScrollView(
-        padding: EdgeInsets.all(compact ? 16 : 32),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+  Widget _fypChip(String label, IconData icon, int index) {
+    return InkWell(
+      onTap: () => _goTo(index),
+      borderRadius: BorderRadius.circular(999),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: _p.surface,
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: _p.isDark ? _p.borderStrong : _p.border),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            if (compact && DevUserConfig.hasFypModule) ...[
-              const MobileStatusSummaryCard(),
-              const SizedBox(height: 16),
-            ],
-            if (compact) ...[
-              _buildSendFromPhoneCard(),
-              const SizedBox(height: 20),
-            ],
-            if (!compact && DevUserConfig.hasFypModule) ...[
-              const DesktopSemesterDeadlineCard(),
-              const SizedBox(height: 20),
-            ],
-            _buildStatsRow(
-              compact: compact,
-              total: docs.length,
-              pending: pending,
-              formatted: formatted,
-              analysesRunning: jobs.runningCount,
-              analysesReady: readyAnalyses,
-            ),
-            const SizedBox(height: 32),
-            _sectionTitle('Workspace', 'Jump straight into the tools you use most'),
-            const SizedBox(height: 14),
-            _buildFeatureGrid(compact, docs.length, jobs),
-
-            // ── FYP strip (sirf FYP module par) ──────────────────
-            if (DevUserConfig.hasFypModule) ...[
-              const SizedBox(height: 28),
-              _sectionTitle(
-                  'Final Year Project', 'Supervisor, milestones and submission'),
-              const SizedBox(height: 12),
-              Wrap(
-                spacing: 10,
-                runSpacing: 10,
-                children: [
-                  _fypChip('My Supervisor', Icons.badge_outlined, 7),
-                  _fypChip('Milestones', Icons.checklist_outlined, 8),
-                  _fypChip('Meeting Notes', Icons.sticky_note_2_outlined, 9),
-                  _fypChip('Plagiarism', Icons.policy_outlined, 10),
-                  _fypChip('Status Tracker', Icons.track_changes_outlined, 11),
-                ],
+            Icon(icon, size: 16, color: _p.accent),
+            const SizedBox(width: 8),
+            Tr(
+              label,
+              style: TextStyle(
+                fontSize: 12.5,
+                fontWeight: FontWeight.w600,
+                color: _p.textPrimary,
               ),
-            ],
-
-            const SizedBox(height: 32),
-            _buildRecentReportsSection(docs),
-            const SizedBox(height: 32),
-            _buildSharedProjectsSection(),
-            const SizedBox(height: 16),
+            ),
           ],
         ),
-      );
-    },
-  );
-}
+      ),
+    );
+  }
 
-Widget _sectionTitle(String title, String subtitle) {
-  return Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      Tr(title,
+  Widget _buildDashboardContent() {
+    final compact = isCompact(context);
+    return Consumer<DocumentProvider>(
+      builder: (context, docProvider, _) {
+        final docs = docProvider.documents;
+        final formatted = docs.where((d) => d['has_formatted'] == true).length;
+        final pending = docs.length - formatted;
+        final jobs = context.watch<AnalysisJobProvider>();
+        final readyAnalyses = jobs.jobs
+            .where((j) => j.status == AnalysisStatus.completed)
+            .length;
+
+        return SingleChildScrollView(
+          padding: EdgeInsets.all(compact ? 16 : 32),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (compact && DevUserConfig.hasFypModule) ...[
+                const MobileStatusSummaryCard(),
+                const SizedBox(height: 16),
+              ],
+              if (compact) ...[
+                _buildSendFromPhoneCard(),
+                const SizedBox(height: 20),
+              ],
+              if (!compact && DevUserConfig.hasFypModule) ...[
+                const DesktopSemesterDeadlineCard(),
+                const SizedBox(height: 20),
+              ],
+              _buildStatsRow(
+                compact: compact,
+                total: docs.length,
+                pending: pending,
+                formatted: formatted,
+                analysesRunning: jobs.runningCount,
+                analysesReady: readyAnalyses,
+              ),
+              const SizedBox(height: 32),
+              _sectionTitle(
+                'Workspace',
+                'Jump straight into the tools you use most',
+              ),
+              const SizedBox(height: 14),
+              _buildFeatureGrid(compact, docs.length, jobs),
+
+              // ── FYP strip (sirf FYP module par) ──────────────────
+              if (DevUserConfig.hasFypModule) ...[
+                const SizedBox(height: 28),
+                _sectionTitle(
+                  'Final Year Project',
+                  'Supervisor, milestones and submission',
+                ),
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 10,
+                  runSpacing: 10,
+                  children: [
+                    _fypChip('My Supervisor', Icons.badge_outlined, 7),
+                    _fypChip('Milestones', Icons.checklist_outlined, 8),
+                    _fypChip('Meeting Notes', Icons.sticky_note_2_outlined, 9),
+                    _fypChip('Plagiarism', Icons.policy_outlined, 10),
+                    _fypChip(
+                      'Status Tracker',
+                      Icons.track_changes_outlined,
+                      11,
+                    ),
+                  ],
+                ),
+              ],
+
+              const SizedBox(height: 32),
+              _buildRecentReportsSection(docs),
+              const SizedBox(height: 32),
+              _buildSharedProjectsSection(),
+              const SizedBox(height: 16),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _sectionTitle(String title, String subtitle) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Tr(
+          title,
           style: TextStyle(
-              fontSize: 17, fontWeight: FontWeight.w700, color: _p.textPrimary)),
-      const SizedBox(height: 2),
-      Tr(subtitle, style: TextStyle(fontSize: 12, color: _p.textSecondary)),
-    ],
-  );
-}
+            fontSize: 17,
+            fontWeight: FontWeight.w700,
+            color: _p.textPrimary,
+          ),
+        ),
+        const SizedBox(height: 2),
+        Tr(subtitle, style: TextStyle(fontSize: 12, color: _p.textSecondary)),
+      ],
+    );
+  }
 
-Widget _buildStatsRow({
-  required bool compact,
-  required int total,
-  required int pending,
-  required int formatted,
-  required int analysesRunning,
-  required int analysesReady,
-}) {
-  final cards = [
-    _buildStatCard('Total Reports', '$total', Icons.description_outlined,
-        const Color(0xFF6366F1), compact, 'All uploaded documents'),
-    _buildStatCard('Awaiting Formatting', '$pending', Icons.pending_actions,
-        const Color(0xFFD97706), compact, 'Not saved as formatted yet'),
-    _buildStatCard('Formatted', '$formatted', Icons.check_circle_outline,
-        const Color(0xFF10B981), compact, 'Ready to download'),
-    _buildStatCard(
+  Widget _buildStatsRow({
+    required bool compact,
+    required int total,
+    required int pending,
+    required int formatted,
+    required int analysesRunning,
+    required int analysesReady,
+  }) {
+    final cards = [
+      _buildStatCard(
+        'Total Reports',
+        '$total',
+        Icons.description_outlined,
+        const Color(0xFF6366F1),
+        compact,
+        'All uploaded documents',
+      ),
+      _buildStatCard(
+        'Awaiting Formatting',
+        '$pending',
+        Icons.pending_actions,
+        const Color(0xFFD97706),
+        compact,
+        'Not saved as formatted yet',
+      ),
+      _buildStatCard(
+        'Formatted',
+        '$formatted',
+        Icons.check_circle_outline,
+        const Color(0xFF10B981),
+        compact,
+        'Ready to download',
+      ),
+      _buildStatCard(
         'Analyses',
         '${analysesRunning + analysesReady}',
         Icons.analytics_outlined,
@@ -1078,153 +1118,208 @@ Widget _buildStatsRow({
         compact,
         analysesRunning > 0
             ? '$analysesRunning running · $analysesReady ready'
-            : '$analysesReady ready to review'),
-  ];
+            : '$analysesReady ready to review',
+      ),
+    ];
 
-  if (compact) {
-    return LayoutBuilder(builder: (context, c) {
-      const gap = 12.0;
-      final w = (c.maxWidth - gap) / 2;
-      return Wrap(
-        spacing: gap,
-        runSpacing: gap,
-        children: cards.map((e) => SizedBox(width: w, child: e)).toList(),
+    if (compact) {
+      return LayoutBuilder(
+        builder: (context, c) {
+          const gap = 12.0;
+          final w = (c.maxWidth - gap) / 2;
+          return Wrap(
+            spacing: gap,
+            runSpacing: gap,
+            children: cards.map((e) => SizedBox(width: w, child: e)).toList(),
+          );
+        },
       );
-    });
-  }
-  return Row(
-    children: [
-      for (var i = 0; i < cards.length; i++) ...[
-        if (i > 0) const SizedBox(width: 20),
-        Expanded(child: cards[i]),
-      ],
-    ],
-  );
-}
-
-Widget _buildStatCard(String title, String value, IconData icon, Color color,
-    bool compact, String caption) {
-  return Container(
-    decoration: _cardDeco(),
-    padding: EdgeInsets.all(compact ? 14 : 20),
-    child: Row(
+    }
+    return Row(
       children: [
-        Container(
-          padding: EdgeInsets.all(compact ? 9 : 12),
-          decoration: BoxDecoration(
-            color: color.withOpacity(0.14),
-            borderRadius: BorderRadius.circular(12),
+        for (var i = 0; i < cards.length; i++) ...[
+          if (i > 0) const SizedBox(width: 20),
+          Expanded(child: cards[i]),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildStatCard(
+    String title,
+    String value,
+    IconData icon,
+    Color color,
+    bool compact,
+    String caption,
+  ) {
+    return Container(
+      decoration: _cardDeco(),
+      padding: EdgeInsets.all(compact ? 14 : 20),
+      child: Row(
+        children: [
+          Container(
+            padding: EdgeInsets.all(compact ? 9 : 12),
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.14),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(icon, color: color, size: compact ? 18 : 22),
           ),
-          child: Icon(icon, color: color, size: compact ? 18 : 22),
-        ),
-        const SizedBox(width: 14),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(value,
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  value,
                   style: TextStyle(
-                      fontSize: compact ? 22 : 28,
-                      fontWeight: FontWeight.w700,
-                      color: _p.textPrimary,
-                      height: 1.1)),
-              const SizedBox(height: 2),
-              Tr(title,
+                    fontSize: compact ? 22 : 28,
+                    fontWeight: FontWeight.w700,
+                    color: _p.textPrimary,
+                    height: 1.1,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Tr(
+                  title,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: _p.textPrimary)),
-              if (!compact)
-                Text(caption,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: _p.textPrimary,
+                  ),
+                ),
+                if (!compact)
+                  Text(
+                    caption,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: TextStyle(fontSize: 10.5, color: _p.textSecondary)),
-            ],
-          ),
-        ),
-      ],
-    ),
-  );
-}
-
-Widget _buildFeatureGrid(bool compact, int reportCount, AnalysisJobProvider jobs) {
-  final fyp = DevUserConfig.hasFypModule ? context.watch<FypProvider>() : null;
-
-  final items = <_Feature>[
-  _Feature('New Report', 'Upload a document and pick a template',
-      Icons.add_circle_outline, _p.accent, () => _goTo(1)),
-  _Feature('My Reports', '$reportCount report${reportCount == 1 ? '' : 's'} · download versions',
-      Icons.folder_outlined, const Color(0xFF6366F1), () => _goTo(2)),
-  _Feature('Templates', 'Browse formatting templates',
-      Icons.layers_outlined, const Color(0xFF06B6D4), () => _goTo(5)),
-  _Feature('Collaboration', 'Shared projects and teammates',
-      Icons.people_outline, const Color(0xFFEC4899), () => _goTo(3)),
-];
-
-  return LayoutBuilder(builder: (context, c) {
-    const gap = 14.0;
-    final cols = compact ? 2 : (c.maxWidth > 1200 ? 4 : 3);
-    final w = (c.maxWidth - gap * (cols - 1)) / cols;
-    return Wrap(
-      spacing: gap,
-      runSpacing: gap,
-      children: items
-          .map((f) => SizedBox(width: w, child: _buildFeatureCard(f, compact)))
-          .toList(),
-    );
-  });
-}
-
-Widget _buildFeatureCard(_Feature f, bool compact) {
-  return MouseRegion(
-    cursor: SystemMouseCursors.click,
-    child: InkWell(
-      onTap: f.onTap,
-      borderRadius: BorderRadius.circular(_p.isDark ? _p.cardRadius : 12),
-      child: Container(
-        decoration: _cardDeco(),
-        padding: EdgeInsets.all(compact ? 14 : 18),
-        child: Row(
-          children: [
-            Container(
-              width: 42,
-              height: 42,
-              decoration: BoxDecoration(
-                color: f.color.withOpacity(0.14),
-                borderRadius: BorderRadius.circular(11),
-              ),
-              child: Icon(f.icon, color: f.color, size: 21),
+                    style: TextStyle(fontSize: 10.5, color: _p.textSecondary),
+                  ),
+              ],
             ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Tr(f.title,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFeatureGrid(
+    bool compact,
+    int reportCount,
+    AnalysisJobProvider jobs,
+  ) {
+    final fyp = DevUserConfig.hasFypModule
+        ? context.watch<FypProvider>()
+        : null;
+
+    final items = <_Feature>[
+      _Feature(
+        'New Report',
+        'Upload a document and pick a template',
+        Icons.add_circle_outline,
+        _p.accent,
+        () => _goTo(1),
+      ),
+      _Feature(
+        'My Reports',
+        '$reportCount report${reportCount == 1 ? '' : 's'} · download versions',
+        Icons.folder_outlined,
+        const Color(0xFF6366F1),
+        () => _goTo(2),
+      ),
+      _Feature(
+        'Templates',
+        'Browse formatting templates',
+        Icons.layers_outlined,
+        const Color(0xFF06B6D4),
+        () => _goTo(5),
+      ),
+      _Feature(
+        'Collaboration',
+        'Shared projects and teammates',
+        Icons.people_outline,
+        const Color(0xFFEC4899),
+        () => _goTo(3),
+      ),
+    ];
+
+    return LayoutBuilder(
+      builder: (context, c) {
+        const gap = 14.0;
+        final cols = compact ? 2 : (c.maxWidth > 1200 ? 4 : 3);
+        final w = (c.maxWidth - gap * (cols - 1)) / cols;
+        return Wrap(
+          spacing: gap,
+          runSpacing: gap,
+          children: items
+              .map(
+                (f) => SizedBox(width: w, child: _buildFeatureCard(f, compact)),
+              )
+              .toList(),
+        );
+      },
+    );
+  }
+
+  Widget _buildFeatureCard(_Feature f, bool compact) {
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: InkWell(
+        onTap: f.onTap,
+        borderRadius: BorderRadius.circular(_p.isDark ? _p.cardRadius : 12),
+        child: Container(
+          decoration: _cardDeco(),
+          padding: EdgeInsets.all(compact ? 14 : 18),
+          child: Row(
+            children: [
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: f.color.withOpacity(0.14),
+                  borderRadius: BorderRadius.circular(11),
+                ),
+                child: Icon(f.icon, color: f.color, size: 21),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Tr(
+                      f.title,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                          fontSize: 13.5,
-                          fontWeight: FontWeight.w600,
-                          color: _p.textPrimary)),
-                  const SizedBox(height: 2),
-                  Text(f.subtitle,
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w600,
+                        color: _p.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      f.subtitle,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                          fontSize: 11, color: _p.textSecondary, height: 1.3)),
-                ],
+                        fontSize: 11,
+                        color: _p.textSecondary,
+                        height: 1.3,
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            ),
-            Icon(Icons.chevron_right_rounded, color: _p.textMuted, size: 18),
-          ],
+              Icon(Icons.chevron_right_rounded, color: _p.textMuted, size: 18),
+            ],
+          ),
         ),
       ),
-    ),
-  );
-}
+    );
+  }
 
   Widget _buildRecentReportsSection(List<Map<String, dynamic>> documents) {
     final recentDocs = documents.take(4).toList();
@@ -1271,83 +1366,96 @@ Widget _buildFeatureCard(_Feature f, bool compact) {
                 padding: EdgeInsets.symmetric(vertical: 24),
                 child: Tr(
                   'No reports yet',
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: _p.textSecondary,
-                  ),
+                  style: TextStyle(fontSize: 13, color: _p.textSecondary),
                 ),
               ),
             )
           else
             ...recentDocs.asMap().entries.map((entry) {
-  final doc = entry.value;
-  final isLast = entry.key == recentDocs.length - 1;
-  final formatted = doc['has_formatted'] == true;
-  final color = formatted ? const Color(0xFF10B981) : _p.accent;
-  return Column(
-    children: [
-      Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: color.withOpacity(0.14),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Icon(Icons.description_outlined, color: color, size: 18),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(doc['filename'] ?? 'Untitled',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: _p.textPrimary)),
-                Text(
-                    '${doc['template_name'] ?? 'No template'} · ${_getTimeAgo(doc['created_at'])}',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(fontSize: 11, color: _p.textSecondary)),
-              ],
-            ),
-          ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: BoxDecoration(
-              color: color.withOpacity(0.14),
-              borderRadius: BorderRadius.circular(6),
-            ),
-            child: Tr(formatted ? 'Formatted' : 'Not formatted',
-                style: TextStyle(
-                    fontSize: 10.5, fontWeight: FontWeight.w600, color: color)),
-          ),
-          const SizedBox(width: 8),
-          TextButton.icon(
-            onPressed: () => _openAnalyzeScreen(doc),
-            icon: const Icon(Icons.analytics_outlined, size: 15),
-            label: const Tr('Analyze', style: TextStyle(fontSize: 11.5)),
-          ),
-        ],
-      ),
-      if (!isLast) Divider(height: 24, color: _p.border),
-    ],
-  );
-}),
+              final doc = entry.value;
+              final isLast = entry.key == recentDocs.length - 1;
+              final formatted = doc['has_formatted'] == true;
+              final color = formatted ? const Color(0xFF10B981) : _p.accent;
+              return Column(
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: color.withOpacity(0.14),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Icon(
+                          Icons.description_outlined,
+                          color: color,
+                          size: 18,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              doc['filename'] ?? 'Untitled',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                color: _p.textPrimary,
+                              ),
+                            ),
+                            Text(
+                              '${doc['template_name'] ?? 'No template'} · ${_getTimeAgo(doc['created_at'])}',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: _p.textSecondary,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: color.withOpacity(0.14),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Tr(
+                          formatted ? 'Formatted' : 'Not formatted',
+                          style: TextStyle(
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w600,
+                            color: color,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      TextButton.icon(
+                        onPressed: () => _openAnalyzeScreen(doc),
+                        icon: const Icon(Icons.analytics_outlined, size: 15),
+                        label: const Tr(
+                          'Analyze',
+                          style: TextStyle(fontSize: 11.5),
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (!isLast) Divider(height: 24, color: _p.border),
+                ],
+              );
+            }),
         ],
       ),
     );
   }
-
-
-
- 
-  
-
 
   void _openCollaborationHub() {
     setState(() {
@@ -1461,10 +1569,8 @@ Widget _buildFeatureCard(_Feature f, bool compact) {
                 runSpacing: 12,
                 children: recent
                     .map(
-                      (p) => ProjectCard(
-                        project: p,
-                        onTap: () => _openProject(p),
-                      ),
+                      (p) =>
+                          ProjectCard(project: p, onTap: () => _openProject(p)),
                     )
                     .toList(),
               ),
@@ -1474,619 +1580,650 @@ Widget _buildFeatureCard(_Feature f, bool compact) {
     );
   }
 
- 
-
   Widget _buildNewReportPage() {
-    return NewReportScreen(
-      selectedTemplate: _selectedTemplate,
-      embedded: true,
-    );
+    return NewReportScreen(selectedTemplate: _selectedTemplate, embedded: true);
   }
 
-void _openAnalyzeScreen(Map<String, dynamic> doc) {
-  final docId = doc['id'] as int?;
-  final templateId = doc['template_id'] as int?;
-  if (docId == null || templateId == null) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Tr('Cannot analyze — document info is missing'),
-        backgroundColor: Color(0xFFEF4444),
-      ),
-    );
-    return;
-  }
-
-  AnalysisNav.open(AnalysisRequest(
-    documentId: docId,
-    documentName: doc['filename'] as String? ?? 'Document',
-    templateId: templateId,
-    templateName: doc['template_name'] as String? ?? 'Template',
-  ));
-}
-
-Widget _buildMyReportsPage() {
-  final auth = context.read<AuthProvider>();
-  return Consumer<DocumentProvider>(
-    builder: (context, docProvider, _) {
-      // Search
-      List<Map<String, dynamic>> filteredDocs = docProvider.documents
-          .where((d) => (d['filename'] ?? '')
-              .toString()
-              .toLowerCase()
-              .contains(_searchQuery.toLowerCase()))
-          .toList();
-
-      // Sort
-      if (_sortBy == 'name') {
-        filteredDocs.sort((a, b) =>
-            (a['filename'] ?? '').compareTo(b['filename'] ?? ''));
-      } else {
-        filteredDocs.sort((a, b) {
-          final dateA =
-              DateTime.tryParse(a['created_at'] ?? '') ?? DateTime.now();
-          final dateB =
-              DateTime.tryParse(b['created_at'] ?? '') ?? DateTime.now();
-          return dateB.compareTo(dateA);
-        });
-      }
-
-      // Pagination
-      int totalPages = (filteredDocs.length / _itemsPerPage).ceil();
-      if (totalPages < 1) totalPages = 1;
-      final page = _currentPage.clamp(1, totalPages);
-      final startIndex = (page - 1) * _itemsPerPage;
-      final endIndex = (startIndex + _itemsPerPage > filteredDocs.length)
-          ? filteredDocs.length
-          : startIndex + _itemsPerPage;
-      final paginatedDocs = filteredDocs.sublist(startIndex, endIndex);
-
-      final compact = isCompact(context);
-
-      return RefreshIndicator(
-        onRefresh: () => docProvider.fetchDocuments(auth.userId!),
-        color: _p.accent,
-        backgroundColor: _p.surface,
-        child: SingleChildScrollView(
-          physics: const AlwaysScrollableScrollPhysics(),
-          padding: EdgeInsets.fromLTRB(
-            compact ? 16 : 32,
-            compact ? 12 : 28,
-            compact ? 16 : 32,
-            compact ? 100 : 32,
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _reportsToolbar(compact, filteredDocs.length),
-              SizedBox(height: compact ? 18 : 24),
-
-              if (docProvider.isLoading)
-                const Center(
-                  child: Padding(
-                    padding: EdgeInsets.symmetric(vertical: 60),
-                    child: CircularProgressIndicator(),
-                  ),
-                )
-              else if (paginatedDocs.isEmpty)
-                _reportsEmptyState()
-              else if (compact)
-                Column(
-                  children: [
-                    for (final doc in paginatedDocs)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 10),
-                        child: _buildMobileReportCard(doc),
-                      ),
-                  ],
-                )
-              else
-                GridView.builder(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                    maxCrossAxisExtent: 400,
-                    crossAxisSpacing: 20,
-                    mainAxisSpacing: 20,
-                    mainAxisExtent: 226,
-                  ),
-                  itemCount: paginatedDocs.length,
-                  itemBuilder: (context, index) =>
-                      _reportCard(paginatedDocs[index], auth),
-                ),
-
-              if (filteredDocs.isNotEmpty) ...[
-                const SizedBox(height: 32),
-                _reportsPagination(page, totalPages),
-              ],
-            ],
-          ),
+  void _openAnalyzeScreen(Map<String, dynamic> doc) {
+    final docId = doc['id'] as int?;
+    final templateId = doc['template_id'] as int?;
+    if (docId == null || templateId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Tr('Cannot analyze — document info is missing'),
+          backgroundColor: Color(0xFFEF4444),
         ),
       );
-    },
-  );
-}
+      return;
+    }
 
-// ── Toolbar: search + sort + count ─────────────────────────────────────
-
-Widget _reportsToolbar(bool compact, int total) {
-  final search = Container(
-    height: 44,
-    decoration: BoxDecoration(
-      color: _p.surface,
-      borderRadius: BorderRadius.circular(10),
-      border: Border.all(color: _p.isDark ? _p.borderStrong : _p.border),
-    ),
-    child: TextField(
-      onChanged: (value) {
-        setState(() {
-          _searchQuery = value;
-          _currentPage = 1;
-        });
-      },
-      style: TextStyle(color: _p.textPrimary, fontSize: 13.5),
-      decoration: InputDecoration(
-        hintText: 'Search reports...',
-        hintStyle: TextStyle(color: _p.textMuted, fontSize: 13),
-        border: InputBorder.none,
-        isCollapsed: true,
-        contentPadding: const EdgeInsets.symmetric(vertical: 14),
-        prefixIcon: Icon(Icons.search, color: _p.textSecondary, size: 20),
+    AnalysisNav.open(
+      AnalysisRequest(
+        documentId: docId,
+        documentName: doc['filename'] as String? ?? 'Document',
+        templateId: templateId,
+        templateName: doc['template_name'] as String? ?? 'Template',
       ),
-    ),
-  );
+    );
+  }
 
-  final sort = Container(
-    height: 44,
-    padding: const EdgeInsets.symmetric(horizontal: 14),
-    decoration: BoxDecoration(
-      color: _p.surface,
-      borderRadius: BorderRadius.circular(10),
-      border: Border.all(color: _p.isDark ? _p.borderStrong : _p.border),
-    ),
-    child: PopupMenuButton<String>(
-      tooltip: 'Sort',
-      onSelected: (value) {
-        setState(() {
-          _sortBy = value;
-          _currentPage = 1;
-        });
+  Widget _buildMyReportsPage() {
+    final auth = context.read<AuthProvider>();
+    return Consumer<DocumentProvider>(
+      builder: (context, docProvider, _) {
+        // Search
+        List<Map<String, dynamic>> filteredDocs = docProvider.documents
+            .where(
+              (d) => (d['filename'] ?? '').toString().toLowerCase().contains(
+                _searchQuery.toLowerCase(),
+              ),
+            )
+            .toList();
+
+        // Sort
+        if (_sortBy == 'name') {
+          filteredDocs.sort(
+            (a, b) => (a['filename'] ?? '').compareTo(b['filename'] ?? ''),
+          );
+        } else {
+          filteredDocs.sort((a, b) {
+            final dateA =
+                DateTime.tryParse(a['created_at'] ?? '') ?? DateTime.now();
+            final dateB =
+                DateTime.tryParse(b['created_at'] ?? '') ?? DateTime.now();
+            return dateB.compareTo(dateA);
+          });
+        }
+
+        // Pagination
+        int totalPages = (filteredDocs.length / _itemsPerPage).ceil();
+        if (totalPages < 1) totalPages = 1;
+        final page = _currentPage.clamp(1, totalPages);
+        final startIndex = (page - 1) * _itemsPerPage;
+        final endIndex = (startIndex + _itemsPerPage > filteredDocs.length)
+            ? filteredDocs.length
+            : startIndex + _itemsPerPage;
+        final paginatedDocs = filteredDocs.sublist(startIndex, endIndex);
+
+        final compact = isCompact(context);
+
+        return RefreshIndicator(
+          onRefresh: () => docProvider.fetchDocuments(auth.userId!),
+          color: _p.accent,
+          backgroundColor: _p.surface,
+          child: SingleChildScrollView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: EdgeInsets.fromLTRB(
+              compact ? 16 : 32,
+              compact ? 12 : 28,
+              compact ? 16 : 32,
+              compact ? 100 : 32,
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _reportsToolbar(compact, filteredDocs.length),
+                SizedBox(height: compact ? 18 : 24),
+
+                if (docProvider.isLoading)
+                  const Center(
+                    child: Padding(
+                      padding: EdgeInsets.symmetric(vertical: 60),
+                      child: CircularProgressIndicator(),
+                    ),
+                  )
+                else if (paginatedDocs.isEmpty)
+                  _reportsEmptyState()
+                else if (compact)
+                  Column(
+                    children: [
+                      for (final doc in paginatedDocs)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 10),
+                          child: _buildMobileReportCard(doc),
+                        ),
+                    ],
+                  )
+                else
+                  GridView.builder(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    gridDelegate:
+                        const SliverGridDelegateWithMaxCrossAxisExtent(
+                          maxCrossAxisExtent: 400,
+                          crossAxisSpacing: 20,
+                          mainAxisSpacing: 20,
+                          mainAxisExtent: 226,
+                        ),
+                    itemCount: paginatedDocs.length,
+                    itemBuilder: (context, index) =>
+                        _reportCard(paginatedDocs[index], auth),
+                  ),
+
+                if (filteredDocs.isNotEmpty) ...[
+                  const SizedBox(height: 32),
+                  _reportsPagination(page, totalPages),
+                ],
+              ],
+            ),
+          ),
+        );
       },
-      itemBuilder: (context) => const [
-        PopupMenuItem(value: 'recent', child: Tr('Most Recent')),
-        PopupMenuItem(value: 'name', child: Tr('Name A-Z')),
+    );
+  }
+
+  // ── Toolbar: search + sort + count ─────────────────────────────────────
+
+  Widget _reportsToolbar(bool compact, int total) {
+    final search = Container(
+      height: 44,
+      decoration: BoxDecoration(
+        color: _p.surface,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: _p.isDark ? _p.borderStrong : _p.border),
+      ),
+      child: TextField(
+        onChanged: (value) {
+          setState(() {
+            _searchQuery = value;
+            _currentPage = 1;
+          });
+        },
+        style: TextStyle(color: _p.textPrimary, fontSize: 13.5),
+        decoration: InputDecoration(
+          hintText: 'Search reports...',
+          hintStyle: TextStyle(color: _p.textMuted, fontSize: 13),
+          border: InputBorder.none,
+          isCollapsed: true,
+          contentPadding: const EdgeInsets.symmetric(vertical: 14),
+          prefixIcon: Icon(Icons.search, color: _p.textSecondary, size: 20),
+        ),
+      ),
+    );
+
+    final sort = Container(
+      height: 44,
+      padding: const EdgeInsets.symmetric(horizontal: 14),
+      decoration: BoxDecoration(
+        color: _p.surface,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: _p.isDark ? _p.borderStrong : _p.border),
+      ),
+      child: PopupMenuButton<String>(
+        tooltip: 'Sort',
+        onSelected: (value) {
+          setState(() {
+            _sortBy = value;
+            _currentPage = 1;
+          });
+        },
+        itemBuilder: (context) => const [
+          PopupMenuItem(value: 'recent', child: Tr('Most Recent')),
+          PopupMenuItem(value: 'name', child: Tr('Name A-Z')),
+        ],
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.swap_vert, color: _p.textSecondary, size: 18),
+            const SizedBox(width: 8),
+            Tr(
+              _sortBy == 'name' ? 'Name A-Z' : 'Most Recent',
+              style: TextStyle(color: _p.textPrimary, fontSize: 13),
+            ),
+            const SizedBox(width: 4),
+            Icon(Icons.keyboard_arrow_down, color: _p.textSecondary, size: 18),
+          ],
+        ),
+      ),
+    );
+
+    final count = Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: _p.accentSoft,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        '$total report${total == 1 ? '' : 's'}',
+        style: TextStyle(
+          color: _p.accent,
+          fontSize: 12,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
+
+    if (compact) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          search,
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(child: sort),
+              const SizedBox(width: 10),
+              count,
+            ],
+          ),
+        ],
+      );
+    }
+
+    return Row(
+      children: [
+        Expanded(child: search),
+        const SizedBox(width: 12),
+        sort,
+        const SizedBox(width: 12),
+        count,
       ],
+    );
+  }
+
+  // ── Empty state ────────────────────────────────────────────────────────
+
+  Widget _reportsEmptyState() {
+    final searching = _searchQuery.trim().isNotEmpty;
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 64),
+        child: Column(
+          children: [
+            Container(
+              width: 72,
+              height: 72,
+              decoration: BoxDecoration(
+                color: _p.accentSoft,
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                searching ? Icons.search_off : Icons.folder_open,
+                size: 32,
+                color: _p.accent,
+              ),
+            ),
+            const SizedBox(height: 18),
+            Tr(
+              searching ? 'No matching reports' : 'No reports found',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+                color: _p.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Tr(
+              searching
+                  ? 'Try a different search term.'
+                  : 'Upload a document from New Report to get started.',
+              style: TextStyle(fontSize: 13, color: _p.textSecondary),
+            ),
+            if (!searching) ...[
+              const SizedBox(height: 18),
+              ElevatedButton.icon(
+                onPressed: () => _goTo(1),
+                icon: const Icon(Icons.add, size: 18),
+                label: const Tr('New Report'),
+                style: ElevatedButton.styleFrom(
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 20,
+                    vertical: 12,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ── Report card ────────────────────────────────────────────────────────
+
+  Widget _reportCard(Map<String, dynamic> doc, AuthProvider auth) {
+    final status = doc['status'] ?? 'draft';
+    final statusColor = _getStatusColor(status);
+    final statusLabel = _getStatusLabel(status);
+    final iconColor = _getIconColor(status);
+    final hasFormatted = doc['has_formatted'] == true;
+    const green = Color(0xFF10B981);
+
+    return Container(
+      decoration: _cardDeco(),
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Icon + name + menu
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: iconColor.withOpacity(0.14),
+                  borderRadius: BorderRadius.circular(11),
+                ),
+                child: Icon(
+                  Icons.description_outlined,
+                  size: 21,
+                  color: iconColor,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      doc['filename'] ?? 'Untitled',
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w700,
+                        color: _p.textPrimary,
+                        height: 1.25,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      doc['template_name'] ?? 'No template',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(fontSize: 11.5, color: _p.textSecondary),
+                    ),
+                  ],
+                ),
+              ),
+              _reportMenu(doc, auth),
+            ],
+          ),
+
+          const SizedBox(height: 12),
+
+          // Status chips
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              _reportChip(statusLabel, statusColor),
+              if (hasFormatted)
+                _reportChip('Formatted saved', green, icon: Icons.check_circle),
+            ],
+          ),
+
+          const Spacer(),
+
+          // Modified time
+          Row(
+            children: [
+              Icon(Icons.schedule, size: 13, color: _p.textMuted),
+              const SizedBox(width: 5),
+              Text(
+                'Modified ${_getTimeAgo(doc['created_at'] ?? DateTime.now())}',
+                style: TextStyle(fontSize: 11, color: _p.textMuted),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Divider(height: 1, color: _p.border),
+          const SizedBox(height: 10),
+
+          // Download buttons
+          Row(
+            children: [
+              Expanded(
+                child: Tooltip(
+                  message: 'Download original file (unformatted)',
+                  child: OutlinedButton.icon(
+                    onPressed: () =>
+                        _handleDownloadVersion(doc, version: 'unformatted'),
+                    icon: const Icon(Icons.file_download_outlined, size: 15),
+                    label: const Tr(
+                      'Original',
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: _p.textPrimary,
+                      side: BorderSide(color: _p.border),
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Tooltip(
+                  message: hasFormatted
+                      ? 'Download formatted file'
+                      : 'Not available yet - open Analyze and save the formatted document',
+                  child: OutlinedButton.icon(
+                    onPressed: hasFormatted
+                        ? () =>
+                              _handleDownloadVersion(doc, version: 'formatted')
+                        : () => _showFormattedMissingHint(),
+                    icon: const Icon(Icons.file_download_outlined, size: 15),
+                    label: const Tr(
+                      'Formatted',
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: hasFormatted ? _p.accent : _p.textMuted,
+                      side: BorderSide(
+                        color: hasFormatted ? _p.accent : _p.border,
+                      ),
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _reportChip(String text, Color color, {IconData? icon}) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.13),
+        borderRadius: BorderRadius.circular(999),
+      ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.swap_vert, color: _p.textSecondary, size: 18),
-          const SizedBox(width: 8),
-          Tr(
-            _sortBy == 'name' ? 'Name A-Z' : 'Most Recent',
-            style: TextStyle(color: _p.textPrimary, fontSize: 13),
-          ),
-          const SizedBox(width: 4),
-          Icon(Icons.keyboard_arrow_down, color: _p.textSecondary, size: 18),
-        ],
-      ),
-    ),
-  );
-
-  final count = Container(
-    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-    decoration: BoxDecoration(
-      color: _p.accentSoft,
-      borderRadius: BorderRadius.circular(999),
-    ),
-    child: Text(
-      '$total report${total == 1 ? '' : 's'}',
-      style: TextStyle(
-        color: _p.accent,
-        fontSize: 12,
-        fontWeight: FontWeight.w700,
-      ),
-    ),
-  );
-
-  if (compact) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        search,
-        const SizedBox(height: 10),
-        Row(
-          children: [
-            Expanded(child: sort),
-            const SizedBox(width: 10),
-            count,
+          if (icon != null) ...[
+            Icon(icon, size: 11, color: color),
+            const SizedBox(width: 4),
           ],
-        ),
-      ],
-    );
-  }
-
-  return Row(
-    children: [
-      Expanded(child: search),
-      const SizedBox(width: 12),
-      sort,
-      const SizedBox(width: 12),
-      count,
-    ],
-  );
-}
-
-// ── Empty state ────────────────────────────────────────────────────────
-
-Widget _reportsEmptyState() {
-  final searching = _searchQuery.trim().isNotEmpty;
-  return Center(
-    child: Padding(
-      padding: const EdgeInsets.symmetric(vertical: 64),
-      child: Column(
-        children: [
-          Container(
-            width: 72,
-            height: 72,
-            decoration: BoxDecoration(
-              color: _p.accentSoft,
-              shape: BoxShape.circle,
-            ),
-            child: Icon(
-              searching ? Icons.search_off : Icons.folder_open,
-              size: 32,
-              color: _p.accent,
-            ),
-          ),
-          const SizedBox(height: 18),
           Tr(
-            searching ? 'No matching reports' : 'No reports found',
+            text,
             style: TextStyle(
-              fontSize: 16,
+              fontSize: 10.5,
               fontWeight: FontWeight.w700,
-              color: _p.textPrimary,
+              color: color,
             ),
           ),
-          const SizedBox(height: 6),
-          Tr(
-            searching
-                ? 'Try a different search term.'
-                : 'Upload a document from New Report to get started.',
-            style: TextStyle(fontSize: 13, color: _p.textSecondary),
-          ),
-          if (!searching) ...[
-            const SizedBox(height: 18),
-            ElevatedButton.icon(
-              onPressed: () => _goTo(1),
-              icon: const Icon(Icons.add, size: 18),
-              label: const Tr('New Report'),
-              style: ElevatedButton.styleFrom(
-                foregroundColor: Colors.white,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10),
-                ),
-              ),
-            ),
-          ],
         ],
       ),
-    ),
-  );
-}
+    );
+  }
 
-// ── Report card ────────────────────────────────────────────────────────
+  // ── Actions menu (same actions as before) ──────────────────────────────
 
-Widget _reportCard(Map<String, dynamic> doc, AuthProvider auth) {
-  final status = doc['status'] ?? 'draft';
-  final statusColor = _getStatusColor(status);
-  final statusLabel = _getStatusLabel(status);
-  final iconColor = _getIconColor(status);
-  final hasFormatted = doc['has_formatted'] == true;
-  const green = Color(0xFF10B981);
-
-  return Container(
-    decoration: _cardDeco(),
-    padding: const EdgeInsets.all(16),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // Icon + name + menu
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
+  Widget _reportMenu(Map<String, dynamic> doc, AuthProvider auth) {
+    PopupMenuItem<String> item(
+      String value,
+      IconData icon,
+      String label, {
+      Color? color,
+    }) {
+      final c = color ?? _p.textPrimary;
+      return PopupMenuItem<String>(
+        value: value,
+        height: 40,
+        padding: const EdgeInsets.symmetric(horizontal: 14),
+        child: Row(
           children: [
-            Container(
-              width: 42,
-              height: 42,
-              decoration: BoxDecoration(
-                color: iconColor.withOpacity(0.14),
-                borderRadius: BorderRadius.circular(11),
-              ),
-              child: Icon(Icons.description_outlined,
-                  size: 21, color: iconColor),
-            ),
+            Icon(icon, size: 17, color: color ?? _p.textSecondary),
             const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    doc['filename'] ?? 'Untitled',
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 13.5,
-                      fontWeight: FontWeight.w700,
-                      color: _p.textPrimary,
-                      height: 1.25,
-                    ),
-                  ),
-                  const SizedBox(height: 3),
-                  Text(
-                    doc['template_name'] ?? 'No template',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(fontSize: 11.5, color: _p.textSecondary),
-                  ),
-                ],
-              ),
-            ),
-            _reportMenu(doc, auth),
-          ],
-        ),
-
-        const SizedBox(height: 12),
-
-        // Status chips
-        Wrap(
-          spacing: 6,
-          runSpacing: 6,
-          children: [
-            _reportChip(statusLabel, statusColor),
-            if (hasFormatted)
-              _reportChip('Formatted saved', green, icon: Icons.check_circle),
-          ],
-        ),
-
-        const Spacer(),
-
-        // Modified time
-        Row(
-          children: [
-            Icon(Icons.schedule, size: 13, color: _p.textMuted),
-            const SizedBox(width: 5),
-            Text(
-              'Modified ${_getTimeAgo(doc['created_at'] ?? DateTime.now())}',
-              style: TextStyle(fontSize: 11, color: _p.textMuted),
-            ),
-          ],
-        ),
-        const SizedBox(height: 10),
-        Divider(height: 1, color: _p.border),
-        const SizedBox(height: 10),
-
-        // Download buttons
-        Row(
-          children: [
-            Expanded(
-              child: Tooltip(
-                message: 'Download original file (unformatted)',
-                child: OutlinedButton.icon(
-                  onPressed: () =>
-                      _handleDownloadVersion(doc, version: 'unformatted'),
-                  icon: const Icon(Icons.file_download_outlined, size: 15),
-                  label: const Tr('Original',
-                      style: TextStyle(
-                          fontSize: 11.5, fontWeight: FontWeight.w700)),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: _p.textPrimary,
-                    side: BorderSide(color: _p.border),
-                    padding: const EdgeInsets.symmetric(vertical: 10),
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8)),
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Tooltip(
-                message: hasFormatted
-                    ? 'Download formatted file'
-                    : 'Not available yet - open Analyze and save the formatted document',
-                child: OutlinedButton.icon(
-                  onPressed: hasFormatted
-                      ? () => _handleDownloadVersion(doc, version: 'formatted')
-                      : () => _showFormattedMissingHint(),
-                  icon: const Icon(Icons.file_download_outlined, size: 15),
-                  label: const Tr('Formatted',
-                      style: TextStyle(
-                          fontSize: 11.5, fontWeight: FontWeight.w700)),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: hasFormatted ? _p.accent : _p.textMuted,
-                    side: BorderSide(
-                        color: hasFormatted ? _p.accent : _p.border),
-                    padding: const EdgeInsets.symmetric(vertical: 10),
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8)),
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ],
-    ),
-  );
-}
-
-Widget _reportChip(String text, Color color, {IconData? icon}) {
-  return Container(
-    padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
-    decoration: BoxDecoration(
-      color: color.withOpacity(0.13),
-      borderRadius: BorderRadius.circular(999),
-    ),
-    child: Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        if (icon != null) ...[
-          Icon(icon, size: 11, color: color),
-          const SizedBox(width: 4),
-        ],
-        Tr(
-          text,
-          style: TextStyle(
-            fontSize: 10.5,
-            fontWeight: FontWeight.w700,
-            color: color,
-          ),
-        ),
-      ],
-    ),
-  );
-}
-
-// ── Actions menu (same actions as before) ──────────────────────────────
-
-Widget _reportMenu(Map<String, dynamic> doc, AuthProvider auth) {
-  PopupMenuItem<String> item(
-    String value,
-    IconData icon,
-    String label, {
-    Color? color,
-  }) {
-    final c = color ?? _p.textPrimary;
-    return PopupMenuItem<String>(
-      value: value,
-      height: 40,
-      padding: const EdgeInsets.symmetric(horizontal: 14),
-      child: Row(
-        children: [
-          Icon(icon, size: 17, color: color ?? _p.textSecondary),
-          const SizedBox(width: 12),
-          Tr(
-            label,
-            style: TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w500,
-              color: c,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  return PopupMenuButton<String>(
-    tooltip: 'More',
-    padding: EdgeInsets.zero,
-    offset: const Offset(0, 34),
-    elevation: 8,
-    color: _p.isDark ? _p.surfaceElevated : _p.surface,
-    surfaceTintColor: Colors.transparent,
-    constraints: const BoxConstraints(minWidth: 200),
-    shape: RoundedRectangleBorder(
-      borderRadius: BorderRadius.circular(12),
-      side: BorderSide(color: _p.isDark ? _p.borderStrong : _p.border),
-    ),
-    icon: Icon(Icons.more_vert, size: 18, color: _p.textSecondary),
-    onSelected: (value) {
-      if (value == 'analyze') {
-        _openAnalyzeScreen(doc);
-      } else if (value == 'preview') {
-        _showPreview(doc);
-      } else if (value == 'rename') {
-        _showRenameDialog(doc);
-      } else if (value == 'edit') {
-        _showEditDialog(doc, auth.userId!);
-      } else if (value == 'send' && DevUserConfig.hasFypModule) {
-        _sendReportToSupervisor(doc);
-      } else if (value == 'delete') {
-        _handleDelete(doc);
-      }
-    },
-    itemBuilder: (context) => [
-      item('analyze', Icons.analytics_outlined, 'Analyze',
-          color: const Color(0xFF10B981)),
-      if (DevUserConfig.hasFypModule)
-        item('send', Icons.send_rounded, 'Send to Supervisor',
-            color: const Color(0xFF10B981)),
-      const PopupMenuDivider(height: 8),
-      item('preview', Icons.visibility_outlined, 'Preview'),
-      item('rename', Icons.drive_file_rename_outline, 'Rename'),
-      item('edit', Icons.edit_outlined, 'Edit'),
-      const PopupMenuDivider(height: 8),
-      item('delete', Icons.delete_outline, 'Delete',
-          color: const Color(0xFFEF4444)),
-    ],
-  );
-}
-
-// ── Pagination ─────────────────────────────────────────────────────────
-
-Widget _reportsPagination(int page, int totalPages) {
-  Widget pageBtn(int n) {
-    final active = n == page;
-    return GestureDetector(
-      onTap: () => setState(() => _currentPage = n),
-      child: MouseRegion(
-        cursor: SystemMouseCursors.click,
-        child: Container(
-          width: 34,
-          height: 34,
-          margin: const EdgeInsets.symmetric(horizontal: 3),
-          decoration: BoxDecoration(
-            color: active ? _p.accent : _p.surface,
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(
-              color: active ? _p.accent : _p.border,
-            ),
-          ),
-          child: Center(
-            child: Text(
-              '$n',
+            Tr(
+              label,
               style: TextStyle(
-                color: active ? Colors.white : _p.textSecondary,
-                fontWeight: FontWeight.w600,
                 fontSize: 13,
+                fontWeight: FontWeight.w500,
+                color: c,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return PopupMenuButton<String>(
+      tooltip: 'More',
+      padding: EdgeInsets.zero,
+      offset: const Offset(0, 34),
+      elevation: 8,
+      color: _p.isDark ? _p.surfaceElevated : _p.surface,
+      surfaceTintColor: Colors.transparent,
+      constraints: const BoxConstraints(minWidth: 200),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: _p.isDark ? _p.borderStrong : _p.border),
+      ),
+      icon: Icon(Icons.more_vert, size: 18, color: _p.textSecondary),
+      onSelected: (value) {
+        if (value == 'analyze') {
+          _openAnalyzeScreen(doc);
+        } else if (value == 'preview') {
+          _showPreview(doc);
+        } else if (value == 'rename') {
+          _showRenameDialog(doc);
+        } else if (value == 'edit') {
+          _showEditDialog(doc, auth.userId!);
+        } else if (value == 'send' && DevUserConfig.hasFypModule) {
+          _sendReportToSupervisor(doc);
+        } else if (value == 'delete') {
+          _handleDelete(doc);
+        }
+      },
+      itemBuilder: (context) => [
+        item(
+          'analyze',
+          Icons.analytics_outlined,
+          'Analyze',
+          color: const Color(0xFF10B981),
+        ),
+        if (DevUserConfig.hasFypModule)
+          item(
+            'send',
+            Icons.send_rounded,
+            'Send to Supervisor',
+            color: const Color(0xFF10B981),
+          ),
+        const PopupMenuDivider(height: 8),
+        item('preview', Icons.visibility_outlined, 'Preview'),
+        item('rename', Icons.drive_file_rename_outline, 'Rename'),
+        item('edit', Icons.edit_outlined, 'Edit'),
+        const PopupMenuDivider(height: 8),
+        item(
+          'delete',
+          Icons.delete_outline,
+          'Delete',
+          color: const Color(0xFFEF4444),
+        ),
+      ],
+    );
+  }
+
+  // ── Pagination ─────────────────────────────────────────────────────────
+
+  Widget _reportsPagination(int page, int totalPages) {
+    Widget pageBtn(int n) {
+      final active = n == page;
+      return GestureDetector(
+        onTap: () => setState(() => _currentPage = n),
+        child: MouseRegion(
+          cursor: SystemMouseCursors.click,
+          child: Container(
+            width: 34,
+            height: 34,
+            margin: const EdgeInsets.symmetric(horizontal: 3),
+            decoration: BoxDecoration(
+              color: active ? _p.accent : _p.surface,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: active ? _p.accent : _p.border),
+            ),
+            child: Center(
+              child: Text(
+                '$n',
+                style: TextStyle(
+                  color: active ? Colors.white : _p.textSecondary,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 13,
+                ),
               ),
             ),
           ),
         ),
+      );
+    }
+
+    return Center(
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          IconButton(
+            icon: const Icon(Icons.chevron_left),
+            color: _p.textSecondary,
+            onPressed: page > 1
+                ? () => setState(() => _currentPage = page - 1)
+                : null,
+          ),
+          for (int i = 1; i <= totalPages && i <= 3; i++) pageBtn(i),
+          if (totalPages > 3) ...[
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              child: Text(
+                '…',
+                style: TextStyle(color: _p.textSecondary, fontSize: 13),
+              ),
+            ),
+            pageBtn(totalPages),
+          ],
+          IconButton(
+            icon: const Icon(Icons.chevron_right),
+            color: _p.textSecondary,
+            onPressed: page < totalPages
+                ? () => setState(() => _currentPage = page + 1)
+                : null,
+          ),
+        ],
       ),
     );
   }
-
-  return Center(
-    child: Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        IconButton(
-          icon: const Icon(Icons.chevron_left),
-          color: _p.textSecondary,
-          onPressed: page > 1 ? () => setState(() => _currentPage = page - 1) : null,
-        ),
-        for (int i = 1; i <= totalPages && i <= 3; i++) pageBtn(i),
-        if (totalPages > 3) ...[
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 4),
-            child: Text('…',
-                style: TextStyle(color: _p.textSecondary, fontSize: 13)),
-          ),
-          pageBtn(totalPages),
-        ],
-        IconButton(
-          icon: const Icon(Icons.chevron_right),
-          color: _p.textSecondary,
-          onPressed: page < totalPages
-              ? () => setState(() => _currentPage = page + 1)
-              : null,
-        ),
-      ],
-    ),
-  );
-}
 
   Future<void> _sendReportToSupervisor(Map<String, dynamic> doc) async {
     final auth = context.read<AuthProvider>();
@@ -2166,9 +2303,8 @@ Widget _reportsPagination(int page, int totalPages) {
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (_) => Center(
-        child: CircularProgressIndicator(color: Color(0xFF10B981)),
-      ),
+      builder: (_) =>
+          Center(child: CircularProgressIndicator(color: Color(0xFF10B981))),
     );
 
     final result = await docs.submitFinalSubmission(
@@ -2224,13 +2360,7 @@ Widget _reportsPagination(int page, int totalPages) {
           children: [
             Icon(icon, color: _p.textSecondary, size: 18),
             SizedBox(width: 8),
-            Tr(
-              label,
-              style: TextStyle(
-                color: _p.textSecondary,
-                fontSize: 13,
-              ),
-            ),
+            Tr(label, style: TextStyle(color: _p.textSecondary, fontSize: 13)),
           ],
         ),
       ),
@@ -2259,7 +2389,11 @@ Widget _reportsPagination(int page, int totalPages) {
                   color: iconColor.withOpacity(0.15),
                   borderRadius: BorderRadius.circular(10),
                 ),
-                child: Icon(Icons.description_outlined, color: iconColor, size: 22),
+                child: Icon(
+                  Icons.description_outlined,
+                  color: iconColor,
+                  size: 22,
+                ),
               ),
               SizedBox(width: 12),
               Expanded(
@@ -2281,10 +2415,7 @@ Widget _reportsPagination(int page, int totalPages) {
                       doc['template_name'] ?? 'No template',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: _p.textSecondary,
-                      ),
+                      style: TextStyle(fontSize: 12, color: _p.textSecondary),
                     ),
                   ],
                 ),
@@ -2310,10 +2441,7 @@ Widget _reportsPagination(int page, int totalPages) {
           SizedBox(height: 10),
           Text(
             'Modified ${_getTimeAgo(doc['created_at'] ?? DateTime.now())}',
-            style: TextStyle(
-              fontSize: 11,
-              color: _p.textMuted,
-            ),
+            style: TextStyle(fontSize: 11, color: _p.textMuted),
           ),
           SizedBox(height: 12),
           if (doc['has_formatted'] == true)
@@ -2377,10 +2505,8 @@ Widget _reportsPagination(int page, int totalPages) {
                 child: SizedBox(
                   height: 40,
                   child: OutlinedButton(
-                    onPressed: () => _handleDownloadVersion(
-                      doc,
-                      version: 'unformatted',
-                    ),
+                    onPressed: () =>
+                        _handleDownloadVersion(doc, version: 'unformatted'),
                     style: OutlinedButton.styleFrom(
                       foregroundColor: _p.textPrimary,
                       side: BorderSide(color: _p.border),
@@ -2390,7 +2516,10 @@ Widget _reportsPagination(int page, int totalPages) {
                     ),
                     child: Tr(
                       'Unformatted',
-                      style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12),
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 12,
+                      ),
                     ),
                   ),
                 ),
@@ -2401,10 +2530,8 @@ Widget _reportsPagination(int page, int totalPages) {
                   height: 40,
                   child: OutlinedButton(
                     onPressed: doc['has_formatted'] == true
-                        ? () => _handleDownloadVersion(
-                              doc,
-                              version: 'formatted',
-                            )
+                        ? () =>
+                              _handleDownloadVersion(doc, version: 'formatted')
                         : () => _showFormattedMissingHint(),
                     style: OutlinedButton.styleFrom(
                       foregroundColor: doc['has_formatted'] == true
@@ -2421,7 +2548,10 @@ Widget _reportsPagination(int page, int totalPages) {
                     ),
                     child: Tr(
                       'Formatted',
-                      style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12),
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 12,
+                      ),
                     ),
                   ),
                 ),
@@ -2523,10 +2653,7 @@ Widget _reportsPagination(int page, int totalPages) {
           ],
         ),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: Tr('Cancel'),
-          ),
+          TextButton(onPressed: () => Navigator.pop(ctx), child: Tr('Cancel')),
           ElevatedButton(
             onPressed: () => Navigator.pop(ctx, controller.text.trim()),
             child: Tr('Save'),
@@ -2536,13 +2663,19 @@ Widget _reportsPagination(int page, int totalPages) {
     );
 
     if (entered == null || entered.isEmpty || !mounted) return;
-    final saved = await docProvider.renameDocument(docId, userId, '$entered$ext');
+    final saved = await docProvider.renameDocument(
+      docId,
+      userId,
+      '$entered$ext',
+    );
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(saved != null
-            ? 'Report renamed'
-            : (docProvider.errorMessage ?? 'Rename failed')),
+        content: Text(
+          saved != null
+              ? 'Report renamed'
+              : (docProvider.errorMessage ?? 'Rename failed'),
+        ),
         backgroundColor: saved != null ? Color(0xFF10B981) : Color(0xFFEF4444),
       ),
     );
@@ -2560,17 +2693,21 @@ Widget _reportsPagination(int page, int totalPages) {
         builder: (context, setState) {
           // Load document content
           if (isLoading) {
-            docProvider.getPreview(doc['id'], userId).then((previewData) {
-              if (previewData != null) {
-                editController.text = previewData['formatted_content'] ?? '';
-              }
-              setState(() => isLoading = false);
-            }).catchError((error) {
-              setState(() {
-                isLoading = false;
-                editError = 'Failed to load document';
-              });
-            });
+            docProvider
+                .getPreview(doc['id'], userId)
+                .then((previewData) {
+                  if (previewData != null) {
+                    editController.text =
+                        previewData['formatted_content'] ?? '';
+                  }
+                  setState(() => isLoading = false);
+                })
+                .catchError((error) {
+                  setState(() {
+                    isLoading = false;
+                    editError = 'Failed to load document';
+                  });
+                });
           }
 
           return Dialog(
@@ -2593,11 +2730,7 @@ Widget _reportsPagination(int page, int totalPages) {
                   Container(
                     padding: EdgeInsets.all(20),
                     decoration: BoxDecoration(
-                      border: Border(
-                        bottom: BorderSide(
-                          color: _p.border,
-                        ),
-                      ),
+                      border: Border(bottom: BorderSide(color: _p.border)),
                     ),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -2612,29 +2745,20 @@ Widget _reportsPagination(int page, int totalPages) {
                         ),
                         GestureDetector(
                           onTap: () => Navigator.pop(context),
-                          child: Icon(
-                            Icons.close,
-                            color: _p.textSecondary,
-                          ),
+                          child: Icon(Icons.close, color: _p.textSecondary),
                         ),
                       ],
                     ),
                   ),
                   // Content
                   if (isLoading)
-                    Expanded(
-                      child: Center(
-                        child: CircularProgressIndicator(),
-                      ),
-                    )
+                    Expanded(child: Center(child: CircularProgressIndicator()))
                   else if (editError != null)
                     Expanded(
                       child: Center(
                         child: Text(
                           editError!,
-                          style: TextStyle(
-                            color: _p.textSecondary,
-                          ),
+                          style: TextStyle(color: _p.textSecondary),
                         ),
                       ),
                     )
@@ -2658,21 +2782,15 @@ Widget _reportsPagination(int page, int totalPages) {
                             ),
                             border: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(8),
-                              borderSide: BorderSide(
-                                color: _p.border,
-                              ),
+                              borderSide: BorderSide(color: _p.border),
                             ),
                             enabledBorder: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(8),
-                              borderSide: BorderSide(
-                                color: _p.border,
-                              ),
+                              borderSide: BorderSide(color: _p.border),
                             ),
                             focusedBorder: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(8),
-                              borderSide: BorderSide(
-                                color: _p.accent,
-                              ),
+                              borderSide: BorderSide(color: _p.accent),
                             ),
                             filled: true,
                             fillColor: _p.surface,
@@ -2685,11 +2803,7 @@ Widget _reportsPagination(int page, int totalPages) {
                   Container(
                     padding: EdgeInsets.all(20),
                     decoration: BoxDecoration(
-                      border: Border(
-                        top: BorderSide(
-                          color: _p.border,
-                        ),
-                      ),
+                      border: Border(top: BorderSide(color: _p.border)),
                     ),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.end,
@@ -2698,9 +2812,7 @@ Widget _reportsPagination(int page, int totalPages) {
                           onPressed: () => Navigator.pop(context),
                           child: Tr(
                             'Cancel',
-                            style: TextStyle(
-                              color: _p.textPrimary,
-                            ),
+                            style: TextStyle(color: _p.textPrimary),
                           ),
                         ),
                         SizedBox(width: 12),
@@ -2708,11 +2820,12 @@ Widget _reportsPagination(int page, int totalPages) {
                           onPressed: isLoading || editError != null
                               ? null
                               : () async {
-                                  final success = await docProvider.saveDocumentContent(
-                                    doc['id'],
-                                    editController.text,
-                                    userId,
-                                  );
+                                  final success = await docProvider
+                                      .saveDocumentContent(
+                                        doc['id'],
+                                        editController.text,
+                                        userId,
+                                      );
                                   if (!mounted) return;
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     SnackBar(
@@ -2749,7 +2862,7 @@ Widget _reportsPagination(int page, int totalPages) {
     );
   }
 
-void _showPreview(Map<String, dynamic> doc) {
+  void _showPreview(Map<String, dynamic> doc) {
     final auth = context.read<AuthProvider>();
     final docProvider = context.read<DocumentProvider>();
     final isTemplate = doc['formatting_rules'] != null;
@@ -2764,12 +2877,8 @@ void _showPreview(Map<String, dynamic> doc) {
           height: MediaQuery.of(context).size.height * 0.85,
           decoration: BoxDecoration(
             color: _p.surfaceAlt,
-            borderRadius: BorderRadius.circular(
-              _p.isDark ? _p.cardRadius : 12,
-            ),
-            border: Border.all(
-              color: _p.isDark ? _p.borderStrong : _p.border,
-            ),
+            borderRadius: BorderRadius.circular(_p.isDark ? _p.cardRadius : 12),
+            border: Border.all(color: _p.isDark ? _p.borderStrong : _p.border),
             boxShadow: _p.isDark ? _p.cardShadow : null,
           ),
           child: Column(
@@ -2778,11 +2887,7 @@ void _showPreview(Map<String, dynamic> doc) {
               Container(
                 padding: EdgeInsets.symmetric(horizontal: 20, vertical: 16),
                 decoration: BoxDecoration(
-                  border: Border(
-                    bottom: BorderSide(
-                      color: _p.border,
-                    ),
-                  ),
+                  border: Border(bottom: BorderSide(color: _p.border)),
                 ),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -2791,7 +2896,9 @@ void _showPreview(Map<String, dynamic> doc) {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          isTemplate ? 'Template Preview' : (doc['filename'] ?? 'Document Preview'),
+                          isTemplate
+                              ? 'Template Preview'
+                              : (doc['filename'] ?? 'Document Preview'),
                           style: TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.w600,
@@ -2823,17 +2930,36 @@ void _showPreview(Map<String, dynamic> doc) {
                 child: isTemplate
                     ? DocumentPreviewPanel(
                         blocks: [
-                          {'type': 'heading', 'level': 1, 'text': 'Sample Heading 1'},
                           {
-                            'type': 'paragraph',
-                            'text': 'This is a sample paragraph showing how your documents will be formatted using this template with all applied styles, font selections, and correct margins.'
+                            'type': 'heading',
+                            'level': 1,
+                            'text': 'Sample Heading 1',
                           },
-                          {'type': 'heading', 'level': 2, 'text': 'Sample Heading 2'},
-                          {'type': 'list_item', 'list_style': 'bullet', 'text': 'First point to demonstrate bullet formatting'},
-                          {'type': 'list_item', 'list_style': 'bullet', 'text': 'Second point with consistent spacing'},
                           {
                             'type': 'paragraph',
-                            'text': 'Conclusion paragraph showing body text formatting with proper line spacing and font selection.'
+                            'text':
+                                'This is a sample paragraph showing how your documents will be formatted using this template with all applied styles, font selections, and correct margins.',
+                          },
+                          {
+                            'type': 'heading',
+                            'level': 2,
+                            'text': 'Sample Heading 2',
+                          },
+                          {
+                            'type': 'list_item',
+                            'list_style': 'bullet',
+                            'text':
+                                'First point to demonstrate bullet formatting',
+                          },
+                          {
+                            'type': 'list_item',
+                            'list_style': 'bullet',
+                            'text': 'Second point with consistent spacing',
+                          },
+                          {
+                            'type': 'paragraph',
+                            'text':
+                                'Conclusion paragraph showing body text formatting with proper line spacing and font selection.',
                           },
                         ],
                         issues: const [],
@@ -2843,15 +2969,21 @@ void _showPreview(Map<String, dynamic> doc) {
                         ignoredIssueIds: const {},
                         onApplyFix: (_, __) {},
                         onIgnoreIssue: (_) {},
-                        defaultFont: doc['formatting_rules']?['body_font'] ?? 'Times New Roman',
-                        bodyPt: (doc['formatting_rules']?['body_size'] ?? 12).toDouble(),
+                        defaultFont:
+                            doc['formatting_rules']?['body_font'] ??
+                            'Times New Roman',
+                        bodyPt: (doc['formatting_rules']?['body_size'] ?? 12)
+                            .toDouble(),
                       )
                     : FutureBuilder<Map<String, dynamic>?>(
                         future: docProvider.getPreview(doc['id'], auth.userId!),
                         builder: (context, snapshot) {
-                          if (snapshot.connectionState == ConnectionState.waiting) {
+                          if (snapshot.connectionState ==
+                              ConnectionState.waiting) {
                             return Center(
-                              child: CircularProgressIndicator(color: _p.accent),
+                              child: CircularProgressIndicator(
+                                color: _p.accent,
+                              ),
                             );
                           }
 
@@ -2865,8 +2997,10 @@ void _showPreview(Map<String, dynamic> doc) {
                           }
 
                           final previewData = snapshot.data!;
-                          final rawLines = previewData['formatted_lines'] ?? previewData['blocks'];
-                          
+                          final rawLines =
+                              previewData['formatted_lines'] ??
+                              previewData['blocks'];
+
                           // Normalize content into standard block maps expected by DocumentPreviewPanel
                           List<Map<String, dynamic>> blocks = [];
                           if (rawLines is List) {
@@ -2885,8 +3019,10 @@ void _showPreview(Map<String, dynamic> doc) {
                             blocks = [
                               {
                                 'type': 'paragraph',
-                                'text': previewData['formatted_content'] ?? 'No content available.',
-                              }
+                                'text':
+                                    previewData['formatted_content'] ??
+                                    'No content available.',
+                              },
                             ];
                           }
 
@@ -2920,13 +3056,24 @@ void _showPreview(Map<String, dynamic> doc) {
     // Sample content to show template formatting
     final sampleContent = [
       {'text': 'Sample Heading 1', 'type': 'heading1'},
-      {'text': 'This is a sample paragraph showing how your documents will be formatted using this template.', 'type': 'paragraph'},
+      {
+        'text':
+            'This is a sample paragraph showing how your documents will be formatted using this template.',
+        'type': 'paragraph',
+      },
       {'text': 'Sample Heading 2', 'type': 'heading2'},
       {'text': 'Key Points:', 'type': 'heading3'},
-      {'text': 'First point to demonstrate bullet formatting', 'type': 'bullet'},
+      {
+        'text': 'First point to demonstrate bullet formatting',
+        'type': 'bullet',
+      },
       {'text': 'Second point with consistent spacing', 'type': 'bullet'},
       {'text': 'Third point showing style application', 'type': 'bullet'},
-      {'text': 'Conclusion paragraph showing body text formatting with proper line spacing and font selection.', 'type': 'paragraph'},
+      {
+        'text':
+            'Conclusion paragraph showing body text formatting with proper line spacing and font selection.',
+        'type': 'paragraph',
+      },
     ];
 
     return SingleChildScrollView(
@@ -2938,10 +3085,7 @@ void _showPreview(Map<String, dynamic> doc) {
           borderRadius: BorderRadius.circular(8),
           border: Border.all(color: _p.border),
           boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.12),
-              blurRadius: 8,
-            ),
+            BoxShadow(color: Colors.black.withOpacity(0.12), blurRadius: 8),
           ],
         ),
         padding: EdgeInsets.all(40),
@@ -2985,14 +3129,19 @@ void _showPreview(Map<String, dynamic> doc) {
                   ElevatedButton.icon(
                     onPressed: () {
                       ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Tr('Request Template feature coming soon')),
+                        SnackBar(
+                          content: Tr('Request Template feature coming soon'),
+                        ),
                       );
                     },
                     icon: Icon(Icons.add, size: 18),
                     label: Tr('Request Template'),
                     style: ElevatedButton.styleFrom(
                       foregroundColor: Colors.white,
-                      padding: EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                      padding: EdgeInsets.symmetric(
+                        horizontal: 24,
+                        vertical: 12,
+                      ),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(8),
                       ),
@@ -3048,11 +3197,26 @@ void _showPreview(Map<String, dynamic> doc) {
                         }
                       },
                       items: [
-                        const DropdownMenuItem(value: 'all', child: Tr('All Categories')),
-                        const DropdownMenuItem(value: 'engineering', child: Tr('Engineering')),
-                        const DropdownMenuItem(value: 'sciences', child: Tr('Sciences')),
-                        const DropdownMenuItem(value: 'business', child: Tr('Business')),
-                        const DropdownMenuItem(value: 'humanities', child: Tr('Humanities')),
+                        const DropdownMenuItem(
+                          value: 'all',
+                          child: Tr('All Categories'),
+                        ),
+                        const DropdownMenuItem(
+                          value: 'engineering',
+                          child: Tr('Engineering'),
+                        ),
+                        const DropdownMenuItem(
+                          value: 'sciences',
+                          child: Tr('Sciences'),
+                        ),
+                        const DropdownMenuItem(
+                          value: 'business',
+                          child: Tr('Business'),
+                        ),
+                        const DropdownMenuItem(
+                          value: 'humanities',
+                          child: Tr('Humanities'),
+                        ),
                       ],
                     ),
                   ),
@@ -3075,9 +3239,18 @@ void _showPreview(Map<String, dynamic> doc) {
                         }
                       },
                       items: [
-                        const DropdownMenuItem(value: 'popular', child: Tr('Most Popular')),
-                        const DropdownMenuItem(value: 'recent', child: Tr('Most Recent')),
-                        const DropdownMenuItem(value: 'name', child: Tr('Name (A-Z)')),
+                        const DropdownMenuItem(
+                          value: 'popular',
+                          child: Tr('Most Popular'),
+                        ),
+                        const DropdownMenuItem(
+                          value: 'recent',
+                          child: Tr('Most Recent'),
+                        ),
+                        const DropdownMenuItem(
+                          value: 'name',
+                          child: Tr('Name (A-Z)'),
+                        ),
                       ],
                     ),
                   ),
@@ -3138,7 +3311,10 @@ void _showPreview(Map<String, dynamic> doc) {
                         onPressed: () => _showPreview(_selectedTemplate!),
                         style: ElevatedButton.styleFrom(
                           foregroundColor: Colors.white,
-                          padding: EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                          padding: EdgeInsets.symmetric(
+                            horizontal: 20,
+                            vertical: 10,
+                          ),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(6),
                           ),
@@ -3213,10 +3389,7 @@ void _showPreview(Map<String, dynamic> doc) {
                 DevUserConfig.hasFypModule
                     ? 'Loaded from your university database'
                     : 'Templates configured for your organization',
-                style: TextStyle(
-                  fontSize: 13,
-                  color: _p.textSecondary,
-                ),
+                style: TextStyle(fontSize: 13, color: _p.textSecondary),
               ),
               SizedBox(height: 20),
               if (templateProvider.isLoading)
@@ -3255,10 +3428,7 @@ void _showPreview(Map<String, dynamic> doc) {
                     padding: EdgeInsets.symmetric(vertical: 48),
                     child: Tr(
                       'No templates yet. Ask your admin to add templates in Template Manager.',
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: _p.textSecondary,
-                      ),
+                      style: TextStyle(fontSize: 14, color: _p.textSecondary),
                       textAlign: TextAlign.center,
                     ),
                   ),
@@ -3296,7 +3466,11 @@ void _showPreview(Map<String, dynamic> doc) {
                           color: _p.accent.withValues(alpha: 0.12),
                           shape: BoxShape.circle,
                         ),
-                        child: Icon(Icons.help_outline, color: _p.accent, size: 28),
+                        child: Icon(
+                          Icons.help_outline,
+                          color: _p.accent,
+                          size: 28,
+                        ),
                       ),
                       SizedBox(height: 16),
                       Tr(
@@ -3313,21 +3487,23 @@ void _showPreview(Map<String, dynamic> doc) {
                       Tr(
                         'Request a custom template and we\'ll add it within 48 hours',
                         textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: _p.textSecondary,
-                        ),
+                        style: TextStyle(fontSize: 14, color: _p.textSecondary),
                       ),
                       SizedBox(height: 24),
                       ElevatedButton(
                         onPressed: () {
                           ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Tr('Custom template request submitted')),
+                            SnackBar(
+                              content: Tr('Custom template request submitted'),
+                            ),
                           );
                         },
                         style: ElevatedButton.styleFrom(
                           foregroundColor: Colors.white,
-                          padding: EdgeInsets.symmetric(horizontal: 32, vertical: 14),
+                          padding: EdgeInsets.symmetric(
+                            horizontal: 32,
+                            vertical: 14,
+                          ),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(8),
                           ),
@@ -3346,306 +3522,328 @@ void _showPreview(Map<String, dynamic> doc) {
     );
   }
 
-Widget _buildSettingsPage() {
-  return Consumer2<AuthProvider, ThemeProvider>(
-    builder: (context, auth, theme, _) {
-      final lang = context.watch<LangProvider>();
-      final name = auth.currentUser ?? 'User';
+  Widget _buildSettingsPage() {
+    return Consumer2<AuthProvider, ThemeProvider>(
+      builder: (context, auth, theme, _) {
+        final lang = context.watch<LangProvider>();
+        final name = auth.currentUser ?? 'User';
 
-      return Align(
-        alignment: Alignment.topCenter,
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 760),
-          child: SingleChildScrollView(
-            padding: EdgeInsets.all(isCompact(context) ? 16 : 32),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // ── Profile header ─────────────────────────────
-                Container(
-                  decoration: _cardDeco(),
-                  padding: const EdgeInsets.all(22),
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 60,
-                        height: 60,
-                        decoration: BoxDecoration(
-                          color: _p.accent,
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                        child: Center(
-                          child: Text(
-                            name.isNotEmpty ? name[0].toUpperCase() : 'U',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 24,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 18),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              name,
-                              style: TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.w700,
-                                color: _p.textPrimary,
-                              ),
-                            ),
-                            const SizedBox(height: 3),
-                            Text(
-                              auth.email ?? 'No email',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                fontSize: 13,
-                                color: _p.textSecondary,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 12, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: _p.accentSoft,
-                          borderRadius: BorderRadius.circular(999),
-                        ),
-                        child: Text(
-                          DevUserConfig.displayRoleLabel(auth.userRole),
-                          style: TextStyle(
-                            fontSize: 11.5,
-                            fontWeight: FontWeight.w700,
+        return Align(
+          alignment: Alignment.topCenter,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 760),
+            child: SingleChildScrollView(
+              padding: EdgeInsets.all(isCompact(context) ? 16 : 32),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // ── Profile header ─────────────────────────────
+                  Container(
+                    decoration: _cardDeco(),
+                    padding: const EdgeInsets.all(22),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 60,
+                          height: 60,
+                          decoration: BoxDecoration(
                             color: _p.accent,
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                          child: Center(
+                            child: Text(
+                              name.isNotEmpty ? name[0].toUpperCase() : 'U',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 24,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
                           ),
                         ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 28),
-
-                // ── Account ────────────────────────────────────
-                _settingsSectionTitle('Account', Icons.person_outline),
-                const SizedBox(height: 10),
-                Container(
-                  decoration: _cardDeco(),
-                  child: Column(
-                    children: [
-                      _settingsInfoRow(
-                          Icons.badge_outlined, 'Username', name),
-                      _settingsDivider(),
-                      _settingsInfoRow(Icons.mail_outline, 'Email',
-                          auth.email ?? 'N/A'),
-                      _settingsDivider(),
-                      _settingsInfoRow(
-                          Icons.shield_outlined,
-                          'Account type',
-                          DevUserConfig.displayRoleLabel(auth.userRole)),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 28),
-
-                // ── Preferences ────────────────────────────────
-                _settingsSectionTitle('Preferences', Icons.tune),
-                const SizedBox(height: 10),
-                Container(
-                  decoration: _cardDeco(),
-                  child: Column(
-                    children: [
-                      _settingsRow(
-                        icon: Icons.language,
-                        title: 'Language',
-                        subtitle: 'Choose the app language',
-                        trailing: DropdownButtonHideUnderline(
-                          child: DropdownButton<String>(
-                            value: lang.code,
-                            dropdownColor: _p.surface,
-                            borderRadius: BorderRadius.circular(10),
+                        const SizedBox(width: 18),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                name,
+                                style: TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w700,
+                                  color: _p.textPrimary,
+                                ),
+                              ),
+                              const SizedBox(height: 3),
+                              Text(
+                                auth.email ?? 'No email',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: _p.textSecondary,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 6,
+                          ),
+                          decoration: BoxDecoration(
+                            color: _p.accentSoft,
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                          child: Text(
+                            DevUserConfig.displayRoleLabel(auth.userRole),
                             style: TextStyle(
-                                fontSize: 13, color: _p.textPrimary),
-                            items: kLanguages
-                                .map((l) => DropdownMenuItem(
-                                      value: l.code,
-                                      child: Text(l.name),
-                                    ))
-                                .toList(),
-                            onChanged: (v) {
-                              if (v != null) {
-                                context.read<LangProvider>().setLang(v);
-                              }
-                            },
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w700,
+                              color: _p.accent,
+                            ),
                           ),
                         ),
-                      ),
-                      _settingsDivider(),
-                      _settingsRow(
-                        icon: theme.isDarkMode
-                            ? Icons.dark_mode_outlined
-                            : Icons.light_mode_outlined,
-                        title: 'Dark mode',
-                        subtitle: theme.isDarkMode ? 'On' : 'Off · Light mode',
-                        trailing: Switch(
-                          value: theme.isDarkMode,
-                          onChanged: (v) => theme.setDarkMode(v),
-                          activeColor: _p.accent,
-                        ),
-                      ),
-                      _settingsDivider(),
-                      _settingsRow(
-                        icon: Icons.notifications_none,
-                        title: 'Email notifications',
-                        subtitle: 'Updates about your reports and reviews',
-                        trailing: Switch(
-                          value: _emailNotifications,
-                          onChanged: (v) =>
-                              setState(() => _emailNotifications = v),
-                          activeColor: _p.accent,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 28),
-
-                // ── Session ────────────────────────────────────
-                _settingsSectionTitle('Session', Icons.lock_outline),
-                const SizedBox(height: 10),
-                Container(
-                  decoration: _cardDeco(),
-                  child: _settingsRow(
-                    icon: Icons.logout_rounded,
-                    iconColor: const Color(0xFFEF4444),
-                    title: 'Sign out',
-                    subtitle: 'You will need to sign in again',
-                    trailing: OutlinedButton(
-                      onPressed: () => _logout(context),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: const Color(0xFFEF4444),
-                        side: BorderSide(
-                            color: const Color(0xFFEF4444).withOpacity(0.5)),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                      ),
-                      child: const Tr('Sign out'),
+                      ],
                     ),
                   ),
-                ),
-                const SizedBox(height: 16),
-              ],
+                  const SizedBox(height: 28),
+
+                  // ── Account ────────────────────────────────────
+                  _settingsSectionTitle('Account', Icons.person_outline),
+                  const SizedBox(height: 10),
+                  Container(
+                    decoration: _cardDeco(),
+                    child: Column(
+                      children: [
+                        _settingsInfoRow(
+                          Icons.badge_outlined,
+                          'Username',
+                          name,
+                        ),
+                        _settingsDivider(),
+                        _settingsInfoRow(
+                          Icons.mail_outline,
+                          'Email',
+                          auth.email ?? 'N/A',
+                        ),
+                        _settingsDivider(),
+                        _settingsInfoRow(
+                          Icons.shield_outlined,
+                          'Account type',
+                          DevUserConfig.displayRoleLabel(auth.userRole),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 28),
+
+                  // ── Preferences ────────────────────────────────
+                  _settingsSectionTitle('Preferences', Icons.tune),
+                  const SizedBox(height: 10),
+                  Container(
+                    decoration: _cardDeco(),
+                    child: Column(
+                      children: [
+                        _settingsRow(
+                          icon: Icons.language,
+                          title: 'Language',
+                          subtitle: 'Choose the app language',
+                          trailing: DropdownButtonHideUnderline(
+                            child: DropdownButton<String>(
+                              value: lang.code,
+                              dropdownColor: _p.surface,
+                              borderRadius: BorderRadius.circular(10),
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: _p.textPrimary,
+                              ),
+                              items: kLanguages
+                                  .map(
+                                    (l) => DropdownMenuItem(
+                                      value: l.code,
+                                      child: Text(l.name),
+                                    ),
+                                  )
+                                  .toList(),
+                              onChanged: (v) {
+                                if (v != null) {
+                                  context.read<LangProvider>().setLang(v);
+                                }
+                              },
+                            ),
+                          ),
+                        ),
+                        _settingsDivider(),
+                        _settingsRow(
+                          icon: theme.isDarkMode
+                              ? Icons.dark_mode_outlined
+                              : Icons.light_mode_outlined,
+                          title: 'Dark mode',
+                          subtitle: theme.isDarkMode
+                              ? 'On'
+                              : 'Off · Light mode',
+                          trailing: Switch(
+                            value: theme.isDarkMode,
+                            onChanged: (v) => theme.setDarkMode(v),
+                            activeColor: _p.accent,
+                          ),
+                        ),
+                        _settingsDivider(),
+                        _settingsRow(
+                          icon: Icons.notifications_none,
+                          title: 'Email notifications',
+                          subtitle: 'Updates about your reports and reviews',
+                          trailing: Switch(
+                            value: _emailNotifications,
+                            onChanged: (v) =>
+                                setState(() => _emailNotifications = v),
+                            activeColor: _p.accent,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 28),
+
+                  // ── Session ────────────────────────────────────
+                  _settingsSectionTitle('Session', Icons.lock_outline),
+                  const SizedBox(height: 10),
+                  Container(
+                    decoration: _cardDeco(),
+                    child: _settingsRow(
+                      icon: Icons.logout_rounded,
+                      iconColor: const Color(0xFFEF4444),
+                      title: 'Sign out',
+                      subtitle: 'You will need to sign in again',
+                      trailing: OutlinedButton(
+                        onPressed: () => _logout(context),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: const Color(0xFFEF4444),
+                          side: BorderSide(
+                            color: const Color(0xFFEF4444).withOpacity(0.5),
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
+                        child: const Tr('Sign out'),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                ],
+              ),
             ),
           ),
-        ),
-      );
-    },
-  );
-}
+        );
+      },
+    );
+  }
 
-Widget _settingsSectionTitle(String text, IconData icon) {
-  return Row(
-    children: [
-      Icon(icon, size: 16, color: _p.textSecondary),
-      const SizedBox(width: 8),
-      Tr(
-        text.toUpperCase(),
-        style: TextStyle(
-          fontSize: 11.5,
-          letterSpacing: 0.8,
-          fontWeight: FontWeight.w700,
-          color: _p.textSecondary,
-        ),
-      ),
-    ],
-  );
-}
-
-Widget _settingsDivider() =>
-    Divider(height: 1, thickness: 1, color: _p.border);
-
-Widget _settingsInfoRow(IconData icon, String label, String value) {
-  return Padding(
-    padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 15),
-    child: Row(
+  Widget _settingsSectionTitle(String text, IconData icon) {
+    return Row(
       children: [
-        Icon(icon, size: 19, color: _p.textSecondary),
-        const SizedBox(width: 14),
-        Tr(label,
-            style: TextStyle(fontSize: 13, color: _p.textSecondary)),
-        const Spacer(),
-        Flexible(
-          child: Text(
-            value,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            textAlign: TextAlign.right,
-            style: TextStyle(
-              fontSize: 13.5,
-              fontWeight: FontWeight.w600,
-              color: _p.textPrimary,
-            ),
+        Icon(icon, size: 16, color: _p.textSecondary),
+        const SizedBox(width: 8),
+        Tr(
+          text.toUpperCase(),
+          style: TextStyle(
+            fontSize: 11.5,
+            letterSpacing: 0.8,
+            fontWeight: FontWeight.w700,
+            color: _p.textSecondary,
           ),
         ),
       ],
-    ),
-  );
-}
+    );
+  }
 
-Widget _settingsRow({
-  required IconData icon,
-  required String title,
-  required String subtitle,
-  required Widget trailing,
-  Color? iconColor,
-}) {
-  final c = iconColor ?? _p.accent;
-  return Padding(
-    padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
-    child: Row(
-      children: [
-        Container(
-          width: 38,
-          height: 38,
-          decoration: BoxDecoration(
-            color: c.withOpacity(0.12),
-            borderRadius: BorderRadius.circular(10),
+  Widget _settingsDivider() =>
+      Divider(height: 1, thickness: 1, color: _p.border);
+
+  Widget _settingsInfoRow(IconData icon, String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 15),
+      child: Row(
+        children: [
+          Icon(icon, size: 19, color: _p.textSecondary),
+          const SizedBox(width: 14),
+          Tr(label, style: TextStyle(fontSize: 13, color: _p.textSecondary)),
+          const Spacer(),
+          Flexible(
+            child: Text(
+              value,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.right,
+              style: TextStyle(
+                fontSize: 13.5,
+                fontWeight: FontWeight.w600,
+                color: _p.textPrimary,
+              ),
+            ),
           ),
-          child: Icon(icon, size: 19, color: c),
-        ),
-        const SizedBox(width: 14),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Tr(title,
+        ],
+      ),
+    );
+  }
+
+  Widget _settingsRow({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required Widget trailing,
+    Color? iconColor,
+  }) {
+    final c = iconColor ?? _p.accent;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+      child: Row(
+        children: [
+          Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              color: c.withOpacity(0.12),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(icon, size: 19, color: c),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Tr(
+                  title,
                   style: TextStyle(
                     fontSize: 13.5,
                     fontWeight: FontWeight.w600,
                     color: _p.textPrimary,
-                  )),
-              const SizedBox(height: 2),
-              Tr(subtitle,
-                  style: TextStyle(fontSize: 11.5, color: _p.textSecondary)),
-            ],
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Tr(
+                  subtitle,
+                  style: TextStyle(fontSize: 11.5, color: _p.textSecondary),
+                ),
+              ],
+            ),
           ),
-        ),
-        trailing,
-      ],
-    ),
-  );
-}
+          trailing,
+        ],
+      ),
+    );
+  }
+
   Widget _buildTemplateCardNew(Map<String, dynamic> template, Color cardColor) {
     final displayName = (template['name'] ?? 'Template').toString();
     final description = (template['description'] ?? '').toString().trim();
-    final sections = List<dynamic>.from(template['required_sections'] ?? const []);
+    final sections = List<dynamic>.from(
+      template['required_sections'] ?? const [],
+    );
     final rules = Map<String, dynamic>.from(
       (template['formatting_rules'] is Map)
           ? Map<String, dynamic>.from(template['formatting_rules'] as Map)
@@ -3654,7 +3852,9 @@ Widget _settingsRow({
 
     final details = <String>[];
     if (sections.isNotEmpty) {
-      details.add('${sections.length} required section${sections.length == 1 ? '' : 's'}');
+      details.add(
+        '${sections.length} required section${sections.length == 1 ? '' : 's'}',
+      );
     }
     final bodyFont = (rules['body_font'] ?? '').toString().trim();
     final bodySize = rules['body_size'];
@@ -3677,163 +3877,160 @@ Widget _settingsRow({
     return Container(
       decoration: _cardDeco(),
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(
-          _p.isDark ? _p.cardRadius : 12,
-        ),
+        borderRadius: BorderRadius.circular(_p.isDark ? _p.cardRadius : 12),
         child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            width: double.infinity,
-            height: 120,
-            decoration: BoxDecoration(
-              // Dark: purple-system header. Light: keep multi-color cardColor variety.
-              gradient: _p.isDark
-                  ? LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [
-                        _p.accentAlt.withOpacity(0.55),
-                        _p.accent.withOpacity(0.35),
-                        _p.surfaceElevated,
-                      ],
-                    )
-                  : LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [cardColor, cardColor.withOpacity(0.8)],
-                    ),
-              color: _p.isDark ? null : cardColor,
-            ),
-            padding: EdgeInsets.all(20),
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: Text(
-                displayName,
-                maxLines: 3,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w600,
-                  color: _p.textPrimary,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: double.infinity,
+              height: 120,
+              decoration: BoxDecoration(
+                // Dark: purple-system header. Light: keep multi-color cardColor variety.
+                gradient: _p.isDark
+                    ? LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [
+                          _p.accentAlt.withOpacity(0.55),
+                          _p.accent.withOpacity(0.35),
+                          _p.surfaceElevated,
+                        ],
+                      )
+                    : LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [cardColor, cardColor.withOpacity(0.8)],
+                      ),
+                color: _p.isDark ? null : cardColor,
+              ),
+              padding: EdgeInsets.all(20),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  displayName,
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w600,
+                    color: _p.textPrimary,
+                  ),
                 ),
               ),
             ),
-          ),
-          Expanded(
-            child: Padding(
-              padding: EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    displayName,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: _p.textPrimary,
+            Expanded(
+              child: Padding(
+                padding: EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      displayName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: _p.textPrimary,
+                      ),
                     ),
-                  ),
-                  SizedBox(height: 6),
-                  Text(
-                    description.isEmpty
-                        ? 'No description provided'
-                        : description,
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: _p.textSecondary,
+                    SizedBox(height: 6),
+                    Text(
+                      description.isEmpty
+                          ? 'No description provided'
+                          : description,
+                      style: TextStyle(fontSize: 12, color: _p.textSecondary),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
                     ),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  SizedBox(height: 12),
-                  ...details.take(3).map(
-                    (detail) => Padding(
-                      padding: EdgeInsets.only(bottom: 6),
-                      child: Row(
-                        children: [
-                          Tr(
-                            '• ',
-                            style: TextStyle(
-                              fontSize: 11,
-                              color: _p.textSecondary,
+                    SizedBox(height: 12),
+                    ...details
+                        .take(3)
+                        .map(
+                          (detail) => Padding(
+                            padding: EdgeInsets.only(bottom: 6),
+                            child: Row(
+                              children: [
+                                Tr(
+                                  '• ',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: _p.textSecondary,
+                                  ),
+                                ),
+                                Expanded(
+                                  child: Text(
+                                    detail,
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: _p.textSecondary,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
-                          Expanded(
-                            child: Text(
-                              detail,
+                        ),
+                    Spacer(),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: () => _showPreview(template),
+                            style: OutlinedButton.styleFrom(
+                              side: BorderSide(color: _p.borderStrong),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                            ),
+                            child: Tr(
+                              'Preview',
                               style: TextStyle(
                                 fontSize: 11,
-                                color: _p.textSecondary,
+                                fontWeight: FontWeight.w600,
+                                color: _p.textPrimary,
                               ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
                             ),
                           ),
-                        ],
-                      ),
+                        ),
+                        SizedBox(width: 8),
+                        Expanded(
+                          child: ElevatedButton(
+                            onPressed: () {
+                              setState(() {
+                                _selectedTemplate = template;
+                                _selectedIndex = 1;
+                                _activeProjectId = null;
+                              });
+                            },
+                            // No opaque backgroundColor — theme gradient CTA.
+                            // Sits in card body (surface), below header — not on gradient.
+                            style: ElevatedButton.styleFrom(
+                              foregroundColor: Colors.white,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                            ),
+                            child: Tr(
+                              'Select',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
-                  ),
-                  Spacer(),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: OutlinedButton(
-                          onPressed: () => _showPreview(template),
-                          style: OutlinedButton.styleFrom(
-                            side: BorderSide(color: _p.borderStrong),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(6),
-                            ),
-                          ),
-                          child: Tr(
-                            'Preview',
-                            style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w600,
-                              color: _p.textPrimary,
-                            ),
-                          ),
-                        ),
-                      ),
-                      SizedBox(width: 8),
-                      Expanded(
-                        child: ElevatedButton(
-                          onPressed: () {
-                            setState(() {
-                              _selectedTemplate = template;
-                              _selectedIndex = 1;
-                              _activeProjectId = null;
-                            });
-                          },
-                          // No opaque backgroundColor — theme gradient CTA.
-                          // Sits in card body (surface), below header — not on gradient.
-                          style: ElevatedButton.styleFrom(
-                            foregroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(6),
-                            ),
-                          ),
-                          child: Tr(
-                            'Select',
-                            style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w600,
-                              color: Colors.white,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
-          ),
-        ],
-      ),
+          ],
+        ),
       ),
     );
   }
@@ -3849,9 +4046,7 @@ Widget _settingsRow({
     return Dialog(
       backgroundColor: _p.surface,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(
-          _p.isDark ? _p.cardRadius : 12,
-        ),
+        borderRadius: BorderRadius.circular(_p.isDark ? _p.cardRadius : 12),
       ),
       child: Container(
         width: 400,
@@ -3871,10 +4066,7 @@ Widget _settingsRow({
             SizedBox(height: 8),
             Text(
               'Using template: ${template['name']}',
-              style: TextStyle(
-                fontSize: 12,
-                color: _p.textSecondary,
-              ),
+              style: TextStyle(fontSize: 12, color: _p.textSecondary),
             ),
             SizedBox(height: 24),
             // Tab-like buttons for choosing upload method
@@ -3918,9 +4110,7 @@ Widget _settingsRow({
                         padding: EdgeInsets.symmetric(vertical: 12),
                         decoration: BoxDecoration(
                           color: Colors.transparent,
-                          border: Border.all(
-                            color: _p.borderStrong,
-                          ),
+                          border: Border.all(color: _p.borderStrong),
                           borderRadius: BorderRadius.circular(6),
                         ),
                         child: Center(
@@ -3942,10 +4132,7 @@ Widget _settingsRow({
             SizedBox(height: 20),
             Tr(
               'Supported formats: PDF, DOCX, DOC, TXT',
-              style: TextStyle(
-                fontSize: 11,
-                color: _p.textSecondary,
-              ),
+              style: TextStyle(fontSize: 11, color: _p.textSecondary),
             ),
             SizedBox(height: 20),
             Row(
@@ -4056,9 +4243,7 @@ Widget _settingsRow({
       builder: (context) => Dialog(
         backgroundColor: _p.surface,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(
-            _p.isDark ? _p.cardRadius : 12,
-          ),
+          borderRadius: BorderRadius.circular(_p.isDark ? _p.cardRadius : 12),
         ),
         child: Container(
           width: 500,
@@ -4078,10 +4263,7 @@ Widget _settingsRow({
               SizedBox(height: 8),
               Tr(
                 'Paste your document text below',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: _p.textSecondary,
-                ),
+                style: TextStyle(fontSize: 12, color: _p.textSecondary),
               ),
               SizedBox(height: 16),
               TextField(
@@ -4090,29 +4272,21 @@ Widget _settingsRow({
                 style: TextStyle(color: _p.textPrimary),
                 decoration: InputDecoration(
                   hintText: 'Paste your document content here...',
-                  hintStyle: TextStyle(
-                    color: _p.textMuted,
-                  ),
+                  hintStyle: TextStyle(color: _p.textMuted),
                   filled: true,
                   fillColor: _p.surface,
                   contentPadding: EdgeInsets.all(12),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(6),
-                    borderSide: BorderSide(
-                      color: _p.borderStrong,
-                    ),
+                    borderSide: BorderSide(color: _p.borderStrong),
                   ),
                   enabledBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(6),
-                    borderSide: BorderSide(
-                      color: _p.borderStrong,
-                    ),
+                    borderSide: BorderSide(color: _p.borderStrong),
                   ),
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(6),
-                    borderSide: BorderSide(
-                      color: _p.accent,
-                    ),
+                    borderSide: BorderSide(color: _p.accent),
                   ),
                 ),
               ),
@@ -4133,7 +4307,8 @@ Widget _settingsRow({
                   ),
                   SizedBox(width: 12),
                   ElevatedButton(
-                    onPressed: () => _uploadPastedContent(template, textController.text),
+                    onPressed: () =>
+                        _uploadPastedContent(template, textController.text),
                     style: ElevatedButton.styleFrom(
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(6),
@@ -4157,7 +4332,10 @@ Widget _settingsRow({
     );
   }
 
-  void _uploadPastedContent(Map<String, dynamic> template, String content) async {
+  void _uploadPastedContent(
+    Map<String, dynamic> template,
+    String content,
+  ) async {
     if (content.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -4253,48 +4431,46 @@ Widget _settingsRow({
     );
   }
 
- String _getTimeAgo(dynamic dateTime) {
-  if (dateTime == null) return 'just now';
+  String _getTimeAgo(dynamic dateTime) {
+    if (dateTime == null) return 'just now';
 
-  DateTime parsedDateTime;
+    DateTime parsedDateTime;
 
-  if (dateTime is Timestamp) {
-    // 1. Firebase Timestamp handling
-    parsedDateTime = dateTime.toDate().toLocal();
-  } else if (dateTime is String) {
-    // 2. String handling (Ensures string is parsed as UTC if not specified)
-    String dateStr = dateTime.trim();
-    if (!dateStr.endsWith('Z') && !dateStr.contains('+')) {
-      dateStr += 'Z'; // Force UTC parsing if missing
+    if (dateTime is String) {
+      // 2. String handling (Ensures string is parsed as UTC if not specified)
+      String dateStr = dateTime.trim();
+      if (!dateStr.endsWith('Z') && !dateStr.contains('+')) {
+        dateStr += 'Z'; // Force UTC parsing if missing
+      }
+      final parsed = DateTime.tryParse(dateStr);
+      parsedDateTime = parsed != null ? parsed.toLocal() : DateTime.now();
+    } else if (dateTime is DateTime) {
+      // 3. DateTime object handling
+      parsedDateTime = dateTime.isUtc ? dateTime.toLocal() : dateTime;
+    } else {
+      return 'just now';
     }
-    final parsed = DateTime.tryParse(dateStr);
-    parsedDateTime = parsed != null ? parsed.toLocal() : DateTime.now();
-  } else if (dateTime is DateTime) {
-    // 3. DateTime object handling
-    parsedDateTime = dateTime.isUtc ? dateTime.toLocal() : dateTime;
-  } else {
-    return 'just now';
+
+    final now = DateTime.now();
+    final difference = now.difference(parsedDateTime);
+
+    // Future timestamp prevention (Server latency check)
+    if (difference.isNegative || difference.inSeconds < 30) {
+      return 'just now';
+    } else if (difference.inDays >= 7) {
+      final weeks = (difference.inDays / 7).floor();
+      return '$weeks week${weeks > 1 ? 's' : ''} ago';
+    } else if (difference.inDays > 0) {
+      return '${difference.inDays} day${difference.inDays > 1 ? 's' : ''} ago';
+    } else if (difference.inHours > 0) {
+      return '${difference.inHours} hour${difference.inHours > 1 ? 's' : ''} ago';
+    } else if (difference.inMinutes > 0) {
+      return '${difference.inMinutes} minute${difference.inMinutes > 1 ? 's' : ''} ago';
+    } else {
+      return '${difference.inSeconds} second${difference.inSeconds > 1 ? 's' : ''} ago';
+    }
   }
 
-  final now = DateTime.now();
-  final difference = now.difference(parsedDateTime);
-
-  // Future timestamp prevention (Server latency check)
-  if (difference.isNegative || difference.inSeconds < 30) {
-    return 'just now';
-  } else if (difference.inDays >= 7) {
-    final weeks = (difference.inDays / 7).floor();
-    return '$weeks week${weeks > 1 ? 's' : ''} ago';
-  } else if (difference.inDays > 0) {
-    return '${difference.inDays} day${difference.inDays > 1 ? 's' : ''} ago';
-  } else if (difference.inHours > 0) {
-    return '${difference.inHours} hour${difference.inHours > 1 ? 's' : ''} ago';
-  } else if (difference.inMinutes > 0) {
-    return '${difference.inMinutes} minute${difference.inMinutes > 1 ? 's' : ''} ago';
-  } else {
-    return '${difference.inSeconds} second${difference.inSeconds > 1 ? 's' : ''} ago';
-  }
-}
   void _showFormattedMissingHint() {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -4331,47 +4507,54 @@ Widget _settingsRow({
     showDialog(
       context: context,
       builder: (dialogContext) => ExportDialog(
-        onExport: (format, {bool applyBullets = true, bool autoDetect = true}) async {
-          final docProvider = context.read<DocumentProvider>();
-          final authProvider = Provider.of<AuthProvider>(context, listen: false);
-          final userId = authProvider.userId;
-          try {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text('Downloading formatted document as $format...'),
-                backgroundColor: _p.accent,
-              ),
-            );
-
-            final success = await docProvider.downloadSavedFormattedDocument(
-              doc['id'],
-              userId!,
-              format: format,
-            );
-
-            if (mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text(
-                    success
-                        ? 'Formatted document downloaded as $format!'
-                        : 'Download failed: ${docProvider.errorMessage}',
+        onExport:
+            (format, {bool applyBullets = true, bool autoDetect = true}) async {
+              final docProvider = context.read<DocumentProvider>();
+              final authProvider = Provider.of<AuthProvider>(
+                context,
+                listen: false,
+              );
+              final userId = authProvider.userId;
+              try {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      'Downloading formatted document as $format...',
+                    ),
+                    backgroundColor: _p.accent,
                   ),
-                  backgroundColor: success ? Colors.green : Colors.red,
-                ),
-              );
-            }
-          } catch (e) {
-            if (mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text('Error: $e'),
-                  backgroundColor: Colors.red,
-                ),
-              );
-            }
-          }
-        },
+                );
+
+                final success = await docProvider
+                    .downloadSavedFormattedDocument(
+                      doc['id'],
+                      userId!,
+                      format: format,
+                    );
+
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        success
+                            ? 'Formatted document downloaded as $format!'
+                            : 'Download failed: ${docProvider.errorMessage}',
+                      ),
+                      backgroundColor: success ? Colors.green : Colors.red,
+                    ),
+                  );
+                }
+              } catch (e) {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Error: $e'),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                }
+              }
+            },
         onQRCode: () async {
           try {
             final result = await QRService.generateQr(doc['id']);
@@ -4415,9 +4598,8 @@ Widget _settingsRow({
       showDialog(
         context: context,
         barrierDismissible: false,
-        builder: (_) => Center(
-          child: CircularProgressIndicator(color: _p.accent),
-        ),
+        builder: (_) =>
+            Center(child: CircularProgressIndicator(color: _p.accent)),
       );
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -4428,7 +4610,10 @@ Widget _settingsRow({
       );
     }
 
-    final success = await docProvider.downloadOriginalDocument(doc['id'], userId);
+    final success = await docProvider.downloadOriginalDocument(
+      doc['id'],
+      userId,
+    );
     if (!mounted) return;
 
     if (isCompact(context)) {
@@ -4518,10 +4703,7 @@ Widget _settingsRow({
                 SizedBox(height: 6),
                 Tr(
                   'File will be saved to your phone',
-                  style: TextStyle(
-                    color: _p.textSecondary,
-                    fontSize: 13,
-                  ),
+                  style: TextStyle(color: _p.textSecondary, fontSize: 13),
                 ),
                 SizedBox(height: 16),
                 _mobileDownloadOption(
@@ -4570,23 +4752,15 @@ Widget _settingsRow({
   }) {
     return Material(
       color: _p.surfaceAlt,
-      borderRadius: BorderRadius.circular(
-        _p.isDark ? _p.cardRadius : 12,
-      ),
+      borderRadius: BorderRadius.circular(_p.isDark ? _p.cardRadius : 12),
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(
-          _p.isDark ? _p.cardRadius : 12,
-        ),
+        borderRadius: BorderRadius.circular(_p.isDark ? _p.cardRadius : 12),
         child: Container(
           padding: EdgeInsets.all(14),
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(
-              _p.isDark ? _p.cardRadius : 12,
-            ),
-            border: Border.all(
-              color: _p.isDark ? _p.borderStrong : _p.border,
-            ),
+            borderRadius: BorderRadius.circular(_p.isDark ? _p.cardRadius : 12),
+            border: Border.all(color: _p.isDark ? _p.borderStrong : _p.border),
           ),
           child: Row(
             children: [
@@ -4615,19 +4789,12 @@ Widget _settingsRow({
                     SizedBox(height: 2),
                     Tr(
                       subtitle,
-                      style: TextStyle(
-                        color: _p.textSecondary,
-                        fontSize: 12,
-                      ),
+                      style: TextStyle(color: _p.textSecondary, fontSize: 12),
                     ),
                   ],
                 ),
               ),
-              Icon(
-                Icons.download_rounded,
-                color: _p.textMuted,
-                size: 20,
-              ),
+              Icon(Icons.download_rounded, color: _p.textMuted, size: 20),
             ],
           ),
         ),
@@ -4656,9 +4823,8 @@ Widget _settingsRow({
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (_) => Center(
-        child: CircularProgressIndicator(color: _p.accent),
-      ),
+      builder: (_) =>
+          Center(child: CircularProgressIndicator(color: _p.accent)),
     );
 
     try {
@@ -4729,60 +4895,58 @@ Widget _settingsRow({
     showDialog(
       context: context,
       builder: (dialogContext) => ExportDialog(
-        onExport: (format, {bool applyBullets = true, bool autoDetect = true}) async {
-          final docProvider = context.read<DocumentProvider>();
-          final userId = context.read<AuthProvider>().userId;
-          if (userId == null) return;
+        onExport:
+            (format, {bool applyBullets = true, bool autoDetect = true}) async {
+              final docProvider = context.read<DocumentProvider>();
+              final userId = context.read<AuthProvider>().userId;
+              if (userId == null) return;
 
-          try {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text('Preparing $format for share...'),
-                backgroundColor: _p.accent,
-              ),
-            );
-
-            final success = await docProvider.downloadFormattedDocument(
-              doc['id'],
-              userId,
-              format: format,
-              applyBullets: applyBullets,
-              autoDetectBullets: autoDetect,
-            );
-
-            final path = docProvider.lastDownloadedPath;
-            if (!success || path == null || path.isEmpty) {
-              if (mounted) {
+              try {
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
-                    content: Text(
-                      'Share failed: ${docProvider.errorMessage ?? 'Could not save file'}',
-                    ),
-                    backgroundColor: Colors.red,
+                    content: Text('Preparing $format for share...'),
+                    backgroundColor: _p.accent,
                   ),
                 );
-              }
-              return;
-            }
 
-            final fileName = path.split(Platform.pathSeparator).last;
-            await SharePlus.instance.share(
-              ShareParams(
-                files: [XFile(path)],
-                subject: fileName,
-              ),
-            );
-          } catch (e) {
-            if (mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text('Share error: $e'),
-                  backgroundColor: Colors.red,
-                ),
-              );
-            }
-          }
-        },
+                final success = await docProvider.downloadFormattedDocument(
+                  doc['id'],
+                  userId,
+                  format: format,
+                  applyBullets: applyBullets,
+                  autoDetectBullets: autoDetect,
+                );
+
+                final path = docProvider.lastDownloadedPath;
+                if (!success || path == null || path.isEmpty) {
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(
+                          'Share failed: ${docProvider.errorMessage ?? 'Could not save file'}',
+                        ),
+                        backgroundColor: Colors.red,
+                      ),
+                    );
+                  }
+                  return;
+                }
+
+                final fileName = path.split(Platform.pathSeparator).last;
+                await SharePlus.instance.share(
+                  ShareParams(files: [XFile(path)], subject: fileName),
+                );
+              } catch (e) {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Share error: $e'),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                }
+              }
+            },
       ),
     );
   }
@@ -4793,9 +4957,7 @@ Widget _settingsRow({
       builder: (context) => Dialog(
         backgroundColor: _p.surface,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(
-            _p.isDark ? _p.cardRadius : 12,
-          ),
+          borderRadius: BorderRadius.circular(_p.isDark ? _p.cardRadius : 12),
         ),
         child: Container(
           padding: EdgeInsets.all(24),
@@ -4814,10 +4976,7 @@ Widget _settingsRow({
               SizedBox(height: 12),
               Text(
                 'Are you sure you want to delete "${doc['filename']}"? This action cannot be undone.',
-                style: TextStyle(
-                  fontSize: 13,
-                  color: _p.textSecondary,
-                ),
+                style: TextStyle(fontSize: 13, color: _p.textSecondary),
               ),
               SizedBox(height: 24),
               Row(
@@ -4934,7 +5093,7 @@ Widget _settingsRow({
   ) {
     TextStyle style;
     EdgeInsets padding = EdgeInsets.zero;
-    
+
     switch (lineType) {
       case 'heading1':
         style = TextStyle(
@@ -4957,7 +5116,7 @@ Widget _settingsRow({
         );
         padding = EdgeInsets.only(top: 12, bottom: 8);
         break;
-      
+
       case 'heading2':
         style = TextStyle(
           fontSize: double.parse(
@@ -4979,7 +5138,7 @@ Widget _settingsRow({
         );
         padding = EdgeInsets.only(top: 10, bottom: 6);
         break;
-      
+
       case 'heading3':
         style = TextStyle(
           fontSize: double.parse(
@@ -5001,7 +5160,7 @@ Widget _settingsRow({
         );
         padding = EdgeInsets.only(top: 8, bottom: 4);
         break;
-      
+
       case 'bullet':
         style = TextStyle(
           fontSize: double.parse(
@@ -5021,13 +5180,11 @@ Widget _settingsRow({
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Tr('• ', style: TextStyle(fontSize: 12)),
-              Expanded(
-                child: Text(text, style: style),
-              ),
+              Expanded(child: Text(text, style: style)),
             ],
           ),
         );
-      
+
       case 'numbered':
         style = TextStyle(
           fontSize: double.parse(
@@ -5047,13 +5204,11 @@ Widget _settingsRow({
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               SizedBox(width: 20),
-              Expanded(
-                child: Text(text, style: style),
-              ),
+              Expanded(child: Text(text, style: style)),
             ],
           ),
         );
-      
+
       default: // paragraph
         style = TextStyle(
           fontSize: double.parse(
@@ -5069,7 +5224,7 @@ Widget _settingsRow({
         );
         padding = EdgeInsets.only(bottom: 6);
     }
-    
+
     return Padding(
       padding: padding,
       child: Text(text, style: style),
@@ -5142,9 +5297,7 @@ class TemplatesPanel extends StatelessWidget {
               builder: (context, templateProvider, _) {
                 if (templateProvider.isLoading) {
                   return Center(
-                    child: CircularProgressIndicator(
-                      color: Color(0xFF6366F1),
-                    ),
+                    child: CircularProgressIndicator(color: Color(0xFF6366F1)),
                   );
                 }
 
@@ -5188,26 +5341,28 @@ class TemplatesPanel extends StatelessWidget {
                   itemCount: templateProvider.templates.length,
                   itemBuilder: (context, index) {
                     final template = templateProvider.templates[index];
-                    final isSelected = templateProvider.selectedTemplate?['id'] == template['id'];
-                    
+                    final isSelected =
+                        templateProvider.selectedTemplate?['id'] ==
+                        template['id'];
+
                     return Container(
                       margin: EdgeInsets.only(bottom: 16),
                       decoration: BoxDecoration(
                         color: isSelected
                             ? (p.isDark
-                                ? p.accentSoft
-                                : const Color(0xFF6366F1).withOpacity(0.15))
+                                  ? p.accentSoft
+                                  : const Color(0xFF6366F1).withOpacity(0.15))
                             : (p.isDark
-                                ? p.surfaceElevated
-                                : const Color(0xFF1A1F2E)),
+                                  ? p.surfaceElevated
+                                  : const Color(0xFF1A1F2E)),
                         borderRadius: BorderRadius.circular(
                           p.isDark ? p.cardRadius : 12,
                         ),
                         border: Border.all(
                           color: isSelected
                               ? (p.isDark
-                                  ? p.accent.withOpacity(0.4)
-                                  : const Color(0xFF6366F1).withOpacity(0.4))
+                                    ? p.accent.withOpacity(0.4)
+                                    : const Color(0xFF6366F1).withOpacity(0.4))
                               : (p.isDark ? p.borderStrong : p.border),
                           width: 1.5,
                         ),
@@ -5222,7 +5377,8 @@ class TemplatesPanel extends StatelessWidget {
                               children: [
                                 Expanded(
                                   child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
                                     children: [
                                       Row(
                                         children: [
@@ -5231,8 +5387,9 @@ class TemplatesPanel extends StatelessWidget {
                                             decoration: BoxDecoration(
                                               color: p.isDark
                                                   ? p.accentSoft
-                                                  : const Color(0xFF6366F1)
-                                                      .withOpacity(0.2),
+                                                  : const Color(
+                                                      0xFF6366F1,
+                                                    ).withOpacity(0.2),
                                               borderRadius:
                                                   BorderRadius.circular(6),
                                             ),
@@ -5247,7 +5404,8 @@ class TemplatesPanel extends StatelessWidget {
                                           SizedBox(width: 12),
                                           Expanded(
                                             child: Text(
-                                              template['name'] ?? 'Unnamed Template',
+                                              template['name'] ??
+                                                  'Unnamed Template',
                                               style: TextStyle(
                                                 fontSize: 17,
                                                 fontWeight: FontWeight.w600,
@@ -5259,12 +5417,21 @@ class TemplatesPanel extends StatelessWidget {
                                       ),
                                       if (isSelected)
                                         Padding(
-                                          padding: EdgeInsets.only(top: 8, left: 20),
+                                          padding: EdgeInsets.only(
+                                            top: 8,
+                                            left: 20,
+                                          ),
                                           child: Container(
-                                            padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                            padding: EdgeInsets.symmetric(
+                                              horizontal: 8,
+                                              vertical: 4,
+                                            ),
                                             decoration: BoxDecoration(
-                                              color: Color(0xFF10B981).withOpacity(0.15),
-                                              borderRadius: BorderRadius.circular(6),
+                                              color: Color(
+                                                0xFF10B981,
+                                              ).withOpacity(0.15),
+                                              borderRadius:
+                                                  BorderRadius.circular(6),
                                             ),
                                             child: Row(
                                               mainAxisSize: MainAxisSize.min,
@@ -5279,7 +5446,8 @@ class TemplatesPanel extends StatelessWidget {
                                                   'Selected',
                                                   style: TextStyle(
                                                     fontSize: 12,
-                                                    color: Colors.white.withOpacity(0.8),
+                                                    color: Colors.white
+                                                        .withOpacity(0.8),
                                                     fontWeight: FontWeight.w500,
                                                   ),
                                                 ),
@@ -5296,13 +5464,22 @@ class TemplatesPanel extends StatelessWidget {
                                     onPressed: isSelected
                                         ? null
                                         : () {
-                                            templateProvider.selectTemplate(template);
-                                            ScaffoldMessenger.of(context).showSnackBar(
+                                            templateProvider.selectTemplate(
+                                              template,
+                                            );
+                                            ScaffoldMessenger.of(
+                                              context,
+                                            ).showSnackBar(
                                               SnackBar(
-                                                content: Text('Template "${template['name']}" selected!'),
-                                                backgroundColor: Color(0xFF10B981),
+                                                content: Text(
+                                                  'Template "${template['name']}" selected!',
+                                                ),
+                                                backgroundColor: Color(
+                                                  0xFF10B981,
+                                                ),
                                                 duration: Duration(seconds: 2),
-                                                behavior: SnackBarBehavior.floating,
+                                                behavior:
+                                                    SnackBarBehavior.floating,
                                                 margin: EdgeInsets.all(16),
                                               ),
                                             );
@@ -5311,12 +5488,17 @@ class TemplatesPanel extends StatelessWidget {
                                       backgroundColor: isSelected
                                           ? Color(0xFF10B981).withOpacity(0.2)
                                           : Color(0xFF6366F1),
-                                      foregroundColor: isSelected ? Color(0xFF10B981) : Colors.white,
+                                      foregroundColor: isSelected
+                                          ? Color(0xFF10B981)
+                                          : Colors.white,
                                     ),
                                     child: Row(
                                       mainAxisSize: MainAxisSize.min,
                                       children: [
-                                        Icon(isSelected ? Icons.check : Icons.add, size: 18),
+                                        Icon(
+                                          isSelected ? Icons.check : Icons.add,
+                                          size: 18,
+                                        ),
                                         SizedBox(width: 6),
                                         Tr(isSelected ? 'Selected' : 'Select'),
                                       ],
@@ -5379,9 +5561,7 @@ class SettingsPanel extends StatelessWidget {
             builder: (context, auth, _) {
               return Container(
                 decoration: BoxDecoration(
-                  color: p.isDark
-                      ? p.surfaceElevated
-                      : const Color(0xFF1A1F2E),
+                  color: p.isDark ? p.surfaceElevated : const Color(0xFF1A1F2E),
                   borderRadius: BorderRadius.circular(
                     p.isDark ? p.cardRadius : 12,
                   ),
@@ -5503,7 +5683,6 @@ class SettingsPanel extends StatelessWidget {
       ),
     );
   }
-
 }
 
 class _Feature {

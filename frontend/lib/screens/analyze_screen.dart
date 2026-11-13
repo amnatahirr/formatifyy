@@ -42,36 +42,6 @@ const _blue = Color(0xFF4A9EFF);
 const _purple = Color(0xFF6366F1);
 const _orange = Color(0xFFF97316);
 
-Color _layerColor(String? layer) {
-  switch (layer) {
-    case 'exact':
-      return _green;
-    case 'synonym':
-      return _blue;
-    case 'fuzzy':
-      return _yellow;
-    case 'semantic':
-      return const Color(0xFFA855F7);
-    default:
-      return _red;
-  }
-}
-
-Color _statusColor(String status) {
-  switch (status) {
-    case 'found':
-      return _green;
-    case 'missing':
-      return _red;
-    case 'wrong_order':
-      return _yellow;
-    case 'empty':
-      return _yellow;
-    default:
-      return _textSec;
-  }
-}
-
 double? _safeDouble(dynamic value) {
   if (value == null) return null;
   if (value is double) return value;
@@ -260,27 +230,20 @@ late final AuthProvider _auth;
   final Set<String> _ignoredIssueIds = {};
   final Set<String> _resolvedIssueIds = {};
 
-  // ── Heading style check state ─────────────────────────────────────────────
-  List<dynamic> _headingStyleResults = [];
-  bool _headingStyleLoading = false;
-  String? _headingStyleError;
-  final Set<String> _applyingHeadingStyle = {};
-  bool _headingStyleLoaded = false;
-  bool _stylesNotApplied = true;
-  bool _applyingTemplateStyles = false;
+  // ── Missing Headings tab state ────────────────────────────────────────────
+  List<Map<String, dynamic>> _missingHeadings = [];
+  String _missingHeadingsReason = '';
+  final Map<String, TextEditingController> _missingControllers = {};
+  final Map<String, FocusNode> _missingFocus = {};
+  final Set<String> _addingMissing = {};
+  final Map<String, GlobalKey> _ghostKeys = {};
+  String? _flashGhostId;
 
   // ── Template heading analysis (from analyze response) ─────────────────────
   List<Map<String, dynamic>> _templateHeadingMatches = [];
   final Set<String> _applyingTemplateHeadingFixes = {};
   final Set<String> _appliedTemplateHeadingFixes = {};
   bool _applyingAllTemplateHeadings = false;
-
-  // ── Paragraph style check state ───────────────────────────────────────────
-  List<dynamic> _paragraphStyleIssues = [];
-  bool _paragraphStyleLoading = false;
-  String? _paragraphStyleError;
-  bool _paragraphStyleLoaded = false;
-  bool _applyingAllParaStyle = false;
 
   // ── Document lists (TOC / LOT / LOF) state ────────────────────────────────
   Map<String, dynamic> _tocData = {};
@@ -331,7 +294,7 @@ late final AuthProvider _auth;
     _docs = context.read<DocumentProvider>();
 _auth = context.read<AuthProvider>();
   _jobs.activeDocId = widget.documentId;
-    _tabController = TabController(length: 9, vsync: this);
+    _tabController = TabController(length: 10, vsync: this);
     _tabController.addListener(_onAnalysisTabChanged);
     _baseUrl = ApiConfig.getBaseUrl();
     _analysisFuture = _runAnalysisWithProgress();
@@ -376,14 +339,14 @@ _auth = context.read<AuthProvider>();
   void _onAnalysisTabChanged() {
     if (_tabController.indexIsChanging) return;
     // Tables tab (after Image Relevance)
-    if (_tabController.index == 5) {
+    if (_tabController.index == 6) {
       if (!_tablesLoading) {
         _loadTables();
       }
       return;
     }
     // Document Lists tab
-    if (_tabController.index == 8) {
+    if (_tabController.index == 9) {
       _loadTocCheck();
     }
   }
@@ -402,6 +365,12 @@ void dispose() {
   }
 
   if (_jobs.activeDocId == widget.documentId) _jobs.activeDocId = null;
+  for (final c in _missingControllers.values) {
+    c.dispose();
+  }
+  for (final f in _missingFocus.values) {
+    f.dispose();
+  }
   _tabController.removeListener(_onAnalysisTabChanged);
   _tabController.dispose();
   super.dispose();
@@ -506,6 +475,22 @@ void dispose() {
         (data['template_heading_matches'] as List<dynamic>? ?? [])
             .map((m) => Map<String, dynamic>.from(m as Map))
             .toList();
+    _missingHeadings =
+        (data['missing_headings'] as List<dynamic>? ?? [])
+            .map((m) => Map<String, dynamic>.from(m as Map))
+            .toList();
+    _missingHeadingsReason =
+        data['missing_headings_reason'] as String? ?? '';
+    for (final c in _missingControllers.values) {
+      c.dispose();
+    }
+    for (final f in _missingFocus.values) {
+      f.dispose();
+    }
+    _missingControllers.clear();
+    _missingFocus.clear();
+    _addingMissing.clear();
+    _flashGhostId = null;
     _appliedTemplateHeadingFixes.clear();
     _ignoredIssueIds.clear();
     _resolvedIssueIds.clear();
@@ -540,12 +525,64 @@ void dispose() {
       final blocks = data['document_blocks'] as List<dynamic>?;
       if (blocks != null && blocks.isNotEmpty) {
         _previewBlocks = _bustImageUrls(
-          blocks.map((b) => Map<String, dynamic>.from(b as Map)).toList(),
+          _withGhostBlocks(
+            blocks.map((b) => Map<String, dynamic>.from(b as Map)).toList(),
+          ),
         );
       }
       _isFixApplied = true;
     });
      _markDirty();
+  }
+
+  /// Re-splices ghost headings into a fresh block list (backend fix
+  /// endpoints return unspliced document_blocks).
+  List<Map<String, dynamic>> _withGhostBlocks(
+    List<Map<String, dynamic>> blocks,
+  ) {
+    if (_missingHeadings.isEmpty) return blocks;
+    final pids = blocks
+        .map((b) => b['paragraph_id'] as String? ?? '')
+        .toSet();
+    final byAnchor = <String, List<Map<String, dynamic>>>{};
+    final tail = <Map<String, dynamic>>[];
+    for (final m in _missingHeadings) {
+      final issueId = m['issue_id'] as String? ?? '';
+      final level = (m['level'] as num?)?.toInt() ?? 1;
+      final ghost = <String, dynamic>{
+        'type': 'ghost_heading',
+        'is_placeholder': true,
+        'paragraph_id': '',
+        'text': m['name'] ?? '',
+        'level': level,
+        'issue_id': issueId,
+        'page': null,
+        'style': 'Heading $level',
+      };
+      final anchor = m['insert_before_paragraph_id'] as String? ?? '';
+      if (anchor.isNotEmpty && pids.contains(anchor)) {
+        byAnchor.putIfAbsent(anchor, () => []).add(ghost);
+      } else {
+        tail.add(ghost);
+      }
+    }
+    final out = <Map<String, dynamic>>[];
+    var tailDone = false;
+    for (final b in blocks) {
+      final pid = b['paragraph_id'] as String? ?? '';
+      final anchored = byAnchor.remove(pid);
+      if (anchored != null) out.addAll(anchored);
+      if (!tailDone && tail.isNotEmpty && b['type'] == 'image') {
+        out.addAll(tail);
+        tailDone = true;
+      }
+      out.add(b);
+    }
+    for (final rest in byAnchor.values) {
+      out.addAll(rest);
+    }
+    if (!tailDone) out.addAll(tail);
+    return out;
   }
 
   int _headingLevelFromMatch(Map<String, dynamic> match) {
@@ -982,6 +1019,13 @@ void dispose() {
   }
 
   void _handlePreviewApplyFix(String issueId, String correctedText) {
+    // Ghost / missing-heading blocks have no pipeline issue — route the
+    // preview's Apply Fix to the Missing Headings tab instead.
+    if (issueId.startsWith('missing_heading_') ||
+        _missingHeadings.any((m) => m['issue_id'] == issueId)) {
+      _focusMissingHeading(issueId);
+      return;
+    }
     final issue = _pipelineIssues.firstWhere(
       (i) => i['issue_id'] == issueId,
       orElse: () => {},
@@ -1481,9 +1525,11 @@ void dispose() {
     );
   }
 
-  static const int _imageEthicsTabIndex = 3;
-  static const int _imageRelevanceTabIndex = 4;
-  static const int _documentListsTabIndex = 8;
+  static const int _reviewTabIndex = 0;
+  static const int _missingHeadingsTabIndex = 3;
+  static const int _imageEthicsTabIndex = 4;
+  static const int _imageRelevanceTabIndex = 5;
+  static const int _documentListsTabIndex = 9;
 
   void _goToTab(int index) {
     if (!mounted) return;
@@ -1609,227 +1655,6 @@ void dispose() {
   }
   return data;
 }
-
-  // ── API — heading style check ─────────────────────────────────────────────
-
-  Future<void> _loadHeadingStyleCheck() async {
-    setState(() {
-      _headingStyleLoading = true;
-      _headingStyleError = null;
-    });
-    try {
-      final auth = context.read<AuthProvider>();
-      final resp = await http.post(
-        Uri.parse(
-          '$_baseUrl/heading-style-check/${widget.documentId}?user_id=${auth.userId}',
-        ),
-      );
-      if (resp.statusCode == 200) {
-        final data = jsonDecode(resp.body) as Map<String, dynamic>;
-        setState(() {
-          _headingStyleResults = data['results'] as List<dynamic>? ?? [];
-          _stylesNotApplied = data['styles_not_applied'] as bool? ?? false;
-          _headingStyleLoaded = true;
-        });
-      } else {
-        setState(
-          () =>
-              _headingStyleError = 'Failed (${resp.statusCode}): ${resp.body}',
-        );
-      }
-    } catch (e) {
-      setState(() { _headingStyleError = 'Network error: $e'; });
-    } finally {
-      setState(() { _headingStyleLoading = false; });
-    }
-  }
-
-  /// Calls the detect-template-headings endpoint which internally calls
-  /// apply_template_headings to write Word Heading styles to the working copy.
-  Future<void> _applyTemplateHeadingStyles() async {
-    setState(() { _applyingTemplateStyles = true; });
-    try {
-      final auth = context.read<AuthProvider>();
-      final mismatches =
-          _headingStyleResults
-              .where((r) => r['status'] == 'style_mismatch')
-              .toList();
-
-      if (mismatches.isEmpty) {
-        _showSnack('No style mismatches to fix.', _textSec);
-        return;
-      }
-
-      int fixedCount = 0;
-      for (var result in mismatches) {
-        final resp = await http.post(
-          Uri.parse(
-            '$_baseUrl/apply-heading-style/${widget.documentId}?user_id=${auth.userId}',
-          ),
-          headers: {'Content-Type': 'application/json'},
-          body: jsonEncode({
-            'para_index': result['paraIndex'],
-            'heading_level': result['heading_level'] ?? 1,
-          }),
-        );
-
-        if (resp.statusCode == 200) {
-          setState(() {
-            final idx = _headingStyleResults.indexWhere(
-              (r) =>
-                  (r as Map)['heading'] == result['heading'] &&
-                  r['paraIndex'] == result['paraIndex'],
-            );
-            if (idx != -1) {
-              (_headingStyleResults[idx] as Map<String, dynamic>)['status'] =
-                  'ok';
-            }
-          });
-          fixedCount++;
-        }
-      }
-
-      _showSnack('Fixed $fixedCount heading style(s)!', _green);
-      setState(() {
-        _isFixApplied = true;
-        _stylesNotApplied = false;
-      });
-    } catch (e) {
-      _showSnack('Error: $e', _red);
-    } finally {
-      setState(() { _applyingTemplateStyles = false; });
-    }
-  }
-
-  Future<void> _applyHeadingStyle(Map<String, dynamic> result) async {
-    final key = '${result['heading']}_${result['paraIndex']}';
-    setState(() { _applyingHeadingStyle.add(key); });
-    try {
-      final auth = context.read<AuthProvider>();
-      final resp = await http.post(
-        Uri.parse(
-          '$_baseUrl/apply-heading-style/${widget.documentId}?user_id=${auth.userId}',
-        ),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'para_index': result['paraIndex'],
-          'heading_level': result['heading_level'] ?? 1,
-        }),
-      );
-      if (resp.statusCode == 200) {
-        setState(() {
-          final idx = _headingStyleResults.indexWhere(
-            (r) => (r as Map)['heading'] == result['heading'],
-          );
-          if (idx != -1) {
-            (_headingStyleResults[idx] as Map<String, dynamic>)['status'] =
-                'ok';
-          }
-        });
-        _showSnack('Heading style applied!', _green);
-      } else {
-        _showSnack('Style fix failed: ${resp.body}', _red);
-      }
-    } catch (e) {
-      _showSnack('Error: $e', _red);
-    } finally {
-      setState(() { _applyingHeadingStyle.remove(key); });
-    }
-  }
-
-  Future<void> _addMissingHeading(Map<String, dynamic> result) async {
-    final key = 'add_${result['heading']}';
-    setState(() { _applyingHeadingStyle.add(key); });
-    try {
-      final auth = context.read<AuthProvider>();
-      final resp = await http.post(
-        Uri.parse(
-          '$_baseUrl/add-missing-heading/${widget.documentId}?user_id=${auth.userId}',
-        ),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'section_name': result['heading'],
-          'heading_level': result['heading_level'] ?? 1,
-          'insert_at_end': true,
-          // Pass section_order so the backend inserts the heading
-          // at the correct position in the document (not just appended at end)
-          'section_order': result['order'],
-        }),
-      );
-      if (resp.statusCode == 200) {
-        setState(() {
-          final idx = _headingStyleResults.indexWhere(
-            (r) => (r as Map)['heading'] == result['heading'],
-          );
-          if (idx != -1) {
-            (_headingStyleResults[idx] as Map<String, dynamic>)['status'] =
-                'ok';
-          }
-        });
-        _showSnack('Heading "${result['heading']}" added!', _green);
-      } else {
-        _showSnack('Failed to add heading: ${resp.body}', _red);
-      }
-    } catch (e) {
-      _showSnack('Error: $e', _red);
-    } finally {
-      setState(() { _applyingHeadingStyle.remove(key); });
-    }
-  }
-
-  // ── API — paragraph style check ───────────────────────────────────────────
-
-  Future<void> _loadParagraphStyleCheck() async {
-    setState(() {
-      _paragraphStyleLoading = true;
-      _paragraphStyleError = null;
-    });
-    try {
-      final auth = context.read<AuthProvider>();
-      final resp = await http.post(
-        Uri.parse(
-          '$_baseUrl/paragraph-style-check/${widget.documentId}?user_id=${auth.userId}',
-        ),
-      );
-      if (resp.statusCode == 200) {
-        final data = jsonDecode(resp.body) as Map<String, dynamic>;
-        setState(() {
-          _paragraphStyleIssues = data['issues'] as List<dynamic>? ?? [];
-          _paragraphStyleLoaded = true;
-        });
-      } else {
-        setState(() { _paragraphStyleError = 'Failed (${resp.statusCode})'; });
-      }
-    } catch (e) {
-      setState(() { _paragraphStyleError = 'Network error: $e'; });
-    } finally {
-      setState(() { _paragraphStyleLoading = false; });
-    }
-  }
-
-  Future<void> _applyAllParagraphStyle() async {
-    setState(() { _applyingAllParaStyle = true; });
-    try {
-      final auth = context.read<AuthProvider>();
-      final resp = await http.post(
-        Uri.parse(
-          '$_baseUrl/apply-paragraph-style/${widget.documentId}?user_id=${auth.userId}',
-        ),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'para_indices': null}),
-      );
-      if (resp.statusCode == 200) {
-        setState(() { _paragraphStyleIssues = []; });
-        _showSnack('All paragraph styles fixed!', _green);
-      } else {
-        _showSnack('Failed: ${resp.body}', _red);
-      }
-    } catch (e) {
-      _showSnack('Error: $e', _red);
-    } finally {
-      setState(() { _applyingAllParaStyle = false; });
-    }
-  }
 
   // ── API — TOC check ───────────────────────────────────────────────────────
 
@@ -2485,16 +2310,11 @@ void dispose() {
         _showSnack('Template styles applied!', _green);
         // ── LOCAL STATE ONLY — no re-analysis ──────────────────────────
         // Clear the general style issues list so all issue cards disappear.
-        // Mark every heading result as 'ok' so their cards turn green.
-        // Clear paragraph issues. Enable the Download button.
-        // We intentionally do NOT call _fetchAnalysis(), _loadHeadingStyleCheck()
-        // or _loadParagraphStyleCheck() — that would re-run the full pipeline.
+        // Enable the Download button.
+        // We intentionally do NOT call _fetchAnalysis() — that would
+        // re-run the full pipeline.
         setState(() {
           _styleIssues = [];
-          for (final r in _headingStyleResults) {
-            (r as Map<String, dynamic>)['status'] = 'ok';
-          }
-          _paragraphStyleIssues = [];
           _isFixApplied = true;
         });
       } else {
@@ -2998,6 +2818,7 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
               Tab(text: 'Review  ($openIssueCount)'),
               Tab(text: 'Grammar  (${grammarIssues.length})'),
               Tab(text: 'Formatting  ($formattingTabCount)'),
+              Tab(text: 'Missing Headings  (${_missingHeadings.length})'),
               Tab(text: 'Image Ethics  (${imageEthicsIssues.length})'),
               Tab(text: 'Image Relevance  (${imageIssues.length})'),
               Tab(
@@ -3023,6 +2844,7 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
                 'Checks spelling, punctuation, and grammar errors.',
               ),
               _buildFormattingTab(formattingIssues),
+              _buildMissingHeadingsTab(),
               _buildImageEthicsTab(imageEthicsIssues),
               _buildImageRelevancyTab(imageIssues, const []),
               _buildTablesTab(),
@@ -3521,600 +3343,123 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
         result,
         issueId: issue['issue_id'] as String?,
       ),
+      ghostKeys: _ghostKeys,
+      flashGhostIssueId: _flashGhostId,
+      onGhostTap: _focusMissingHeading,
     );
   }
 
   // ─────────────────────────────────────────────────────────────────────────
-  // Tab 1: Structure
+  // Tab: Missing Headings
   // ─────────────────────────────────────────────────────────────────────────
 
-  Widget _buildStructureTab(
-    List<dynamic> sectionResults,
-    List<dynamic> issues,
-    Map<String, dynamic> summary,
-  ) {
-    if (sectionResults.isEmpty) {
+  Widget _buildMissingHeadingsTab() {
+    if (_missingHeadings.isEmpty) {
       return _buildEmptyState(
-        Icons.checklist_rounded,
-        'No structure data',
-        'Make sure your template has required sections defined in the admin panel.',
-        actionLabel: 'View other checks below →',
-        onAction: () => _tabController.animateTo(1),
+        Icons.playlist_add_outlined,
+        'No missing headings',
+        _missingHeadingsReason.isNotEmpty
+            ? 'Missing headings cannot be detected reliably: $_missingHeadingsReason'
+            : 'Every required template heading was found in this document.',
       );
     }
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(24),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (summary['content_before_heading'] == true)
-            _buildAlertBanner(
-              '⚠  Content found before the first heading',
-              'Your document has text before any section heading. Move it under an appropriate heading.',
-              _yellow,
-              fixLabel: 'Fix: Move to Introduction',
-              onFix: () => _applyFix('move_content_before_heading', {}),
-            ),
-          const SizedBox(height: 8),
-
-          // ── Section presence rows (existing) ─────────────────────────────
-          ...sectionResults.asMap().entries.map(
-            (e) => _buildSectionRow(e.key, e.value as Map<String, dynamic>),
-          ),
-          const SizedBox(height: 24),
-          _buildLayerLegend(),
-          const SizedBox(height: 32),
-
-          // ── Heading Style Check ──────────────────────────────────────────
-          _buildHeadingStyleSection(),
-          const SizedBox(height: 32),
-
-          // ── Paragraph Style Check ────────────────────────────────────────
-          _buildParagraphStyleSection(),
-        ],
-      ),
+    return ListView.separated(
+      padding: const EdgeInsets.all(20),
+      itemCount: _missingHeadings.length,
+      separatorBuilder: (_, __) => const SizedBox(height: 16),
+      itemBuilder: (context, index) =>
+          _missingHeadingCard(_missingHeadings[index]),
     );
   }
 
-  Widget _buildHeadingStyleSection() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // Section header
-        Row(
-          children: [
-            const Icon(Icons.format_size, color: _blue, size: 18),
-            const SizedBox(width: 8),
-            Tr('Heading Style Compliance',
-              style: TextStyle(
-                color: _textPri,
-                fontSize: 15,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            const Spacer(),
-            if (_headingStyleLoading)
-              const SizedBox(
-                width: 14,
-                height: 14,
-                child: CircularProgressIndicator(strokeWidth: 2, color: _blue),
-              )
-            else
-              TextButton.icon(
-                onPressed: () {
-                  setState(() { _headingStyleLoaded = false; });
-                  _loadHeadingStyleCheck();
-                },
-                icon: const Icon(Icons.refresh, size: 13),
-                label: const Tr('Refresh', style: TextStyle(fontSize: 11)),
-                style: TextButton.styleFrom(foregroundColor: _textSec),
-              ),
-          ],
-        ),
-        const SizedBox(height: 4),
-        Tr('Checks if each required heading exists and has the correct font, size, and bold settings per the template.',
-          style: TextStyle(color: _textSec, fontSize: 11, height: 1.4),
-        ),
-        const SizedBox(height: 12),
-
-        if (_headingStyleError != null)
-          _buildAlertBanner('Error', _headingStyleError!, _red)
-        else if (_headingStyleLoading)
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: 16),
-            child: Center(child: CircularProgressIndicator(color: _blue)),
-          )
-        // ── Styles not yet applied: show a single prompt button ─────────
-        else if (_stylesNotApplied)
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: _blue.withOpacity(0.06),
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: _blue.withOpacity(0.25)),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Row(
-                  children: [
-                    Icon(Icons.info_outline, color: _blue, size: 16),
-                    SizedBox(width: 8),
-                    Expanded(
-                      child: Tr('Heading styles have not been applied yet.',
-                        style: TextStyle(
-                          color: _blue,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 6),
-                Tr('Apply template heading styles first so the compliance check can accurately report PASS/FAIL for each section.',
-                  style: TextStyle(color: _textSec, fontSize: 11, height: 1.4),
-                ),
-                const SizedBox(height: 14),
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton.icon(
-                    onPressed:
-                        _applyingTemplateStyles
-                            ? null
-                            : _applyTemplateHeadingStyles,
-                    icon:
-                        _applyingTemplateStyles
-                            ? const SizedBox(
-                              width: 14,
-                              height: 14,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: Colors.white,
-                              ),
-                            )
-                            : const Icon(Icons.auto_fix_high, size: 16),
-                    label: Text(
-                      _applyingTemplateStyles
-                          ? 'Applying…'
-                          : 'Apply Template Heading Styles',
-                      style: const TextStyle(fontSize: 13),
-                    ),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: _blue,
-                      foregroundColor: Colors.white,
-                      disabledBackgroundColor: _blue.withOpacity(0.35),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 12,
-                      ),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          )
-        // ── Styles applied: show all-clear or per-heading PASS/FAIL ─────
-        else if (_headingStyleResults.isEmpty && _headingStyleLoaded)
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: _green.withOpacity(0.06),
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: _green.withOpacity(0.2)),
-            ),
-            child: const Row(
-              children: [
-                Icon(Icons.check_circle_outline, color: _green, size: 16),
-                SizedBox(width: 10),
-                Tr('All headings have correct template styling  ✓',
-                  style: TextStyle(color: _green, fontSize: 13),
-                ),
-              ],
-            ),
-          )
-        else
-          ..._headingStyleResults.map(
-            (r) => _buildHeadingStyleCard(r as Map<String, dynamic>),
-          ),
-      ],
+  Widget _missingHeadingCard(Map<String, dynamic> item) {
+    final issueId = item['issue_id'] as String? ?? '';
+    final name = item['name'] as String? ?? 'Untitled section';
+    final level = (item['level'] as num?)?.toInt() ?? 1;
+    final optional = item['optional'] == true;
+    final adding = _addingMissing.contains(issueId);
+    _ghostKeys.putIfAbsent(issueId, () => GlobalKey());
+    final ctrl = _missingControllers.putIfAbsent(
+      issueId,
+      () => TextEditingController(),
     );
-  }
-
-  Widget _buildHeadingStyleCard(Map<String, dynamic> result) {
-    final status = result['status'] as String? ?? 'ok';
-    final name = result['heading'] as String? ?? '';
-    final paraIdx = (result['paraIndex'] as num?)?.toInt();
-    final matchedTxt = result['matched_text'] as String?;
-    final level = (result['heading_level'] as num?)?.toInt() ?? 1;
-    final expected = result['expected_style'] as Map? ?? {};
-    final actual = result['actual_style'] as Map? ?? {};
-    final mismatches = (result['mismatches'] as List?)?.cast<String>() ?? [];
-    final required = result['required'] as bool? ?? true;
-    final key = '${name}_$paraIdx';
-    final isApplying =
-        _applyingHeadingStyle.contains(key) ||
-        _applyingHeadingStyle.contains('add_$name') ||
-        _applyingHeadingStyle.contains('${name}_null');
-
-    // if (status == 'ok') return const SizedBox.shrink();
-
-    final Color accentColor =
-        status == 'missing' ? _red : (status == 'ok' ? _green : _orange);
-    final IconData icon =
-        status == 'missing'
-            ? Icons.add_circle_outline
-            : (status == 'ok' ? Icons.check_circle : Icons.style_outlined);
+    final focus = _missingFocus.putIfAbsent(
+      issueId,
+      () => FocusNode(),
+    );
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: _surface,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: accentColor.withOpacity(0.3)),
+        border: Border.all(color: _border),
       ),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // ── Header row ────────────────────────────────────────────────
-          Padding(
-            padding: const EdgeInsets.fromLTRB(14, 12, 14, 10),
-            child: Row(
-              children: [
-                Container(
-                  width: 32,
-                  height: 32,
-                  decoration: BoxDecoration(
-                    color: accentColor.withOpacity(0.12),
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                  alignment: Alignment.center,
-                  child: Icon(icon, color: accentColor, size: 16),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Text(
-                            name,
-                            style: TextStyle(
-                              color: _textPri,
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          _Tag('H$level', _blue),
-                          if (!required) ...[
-                            const SizedBox(width: 6),
-                            _Tag('optional', _textSec),
-                          ],
-                        ],
-                      ),
-                      const SizedBox(height: 3),
-                      if (status == 'missing')
-                        Tr('Heading not found in document',
-                          style: TextStyle(
-                            color: _red.withOpacity(0.8),
-                            fontSize: 11,
-                          ),
-                        )
-                      else if (matchedTxt != null)
-                        Text(
-                          'Found: "$matchedTxt"',
-                          style: TextStyle(color: _textSec, fontSize: 11),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                    ],
-                  ),
-                ),
-                _Tag(
-                  status == 'missing'
-                      ? 'MISSING'
-                      : (status == 'ok' ? 'FIXED' : 'STYLE MISMATCH'),
-                  accentColor,
-                ),
-              ],
-            ),
-          ),
-
-          // ── Mismatch details for style_mismatch ────────────────────────
-          if (status == 'style_mismatch' && mismatches.isNotEmpty)
-            Container(
-              width: double.infinity,
-              margin: const EdgeInsets.fromLTRB(14, 0, 14, 10),
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: _bg,
-                borderRadius: BorderRadius.circular(6),
-                border: Border.all(color: _border),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      // Expected
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Tr('EXPECTED',
-                              style: TextStyle(
-                                color: _green,
-                                fontSize: 9,
-                                fontWeight: FontWeight.w700,
-                                letterSpacing: 0.5,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            if (expected['font_name'] != null)
-                              Text(
-                                'Font: ${expected['font_name']}',
-                                style: TextStyle(
-                                  color: _textSec,
-                                  fontSize: 10,
-                                ),
-                              ),
-                            if (expected['font_size'] != null)
-                              Text(
-                                'Size: ${expected['font_size']}pt',
-                                style: TextStyle(
-                                  color: _textSec,
-                                  fontSize: 10,
-                                ),
-                              ),
-                            if (expected['bold'] != null)
-                              Text(
-                                'Bold: ${expected['bold']}',
-                                style: TextStyle(
-                                  color: _textSec,
-                                  fontSize: 10,
-                                ),
-                              ),
-                          ],
-                        ),
-                      ),
-                      Icon(
-                        Icons.arrow_forward,
-                        color: _textSec,
-                        size: 12,
-                      ),
-                      // Actual
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Tr('ACTUAL',
-                              style: TextStyle(
-                                color: _red,
-                                fontSize: 9,
-                                fontWeight: FontWeight.w700,
-                                letterSpacing: 0.5,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            if (actual['font_name'] != null)
-                              Text(
-                                'Font: ${actual['font_name']}',
-                                style: TextStyle(
-                                  color: _textSec,
-                                  fontSize: 10,
-                                ),
-                              ),
-                            if (actual['font_size'] != null)
-                              Text(
-                                'Size: ${actual['font_size']}pt',
-                                style: TextStyle(
-                                  color: _textSec,
-                                  fontSize: 10,
-                                ),
-                              ),
-                            if (actual['bold'] != null)
-                              Text(
-                                'Bold: ${actual['bold']}',
-                                style: TextStyle(
-                                  color: _textSec,
-                                  fontSize: 10,
-                                ),
-                              ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-
-          // ── Action button ─────────────────────────────────────────────
-          Padding(
-            padding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
-            child: SizedBox(
-              width: double.infinity,
-              child:
-                  status == 'ok'
-                      ? Container(
-                        padding: const EdgeInsets.symmetric(vertical: 10),
-                        decoration: BoxDecoration(
-                          color: _green.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(6),
-                          border: Border.all(color: _green.withOpacity(0.3)),
-                        ),
-                        child: const Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(Icons.check, color: _green, size: 14),
-                            SizedBox(width: 8),
-                            Tr('Heading styling matches template',
-                              style: TextStyle(
-                                color: _green,
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ],
-                        ),
-                      )
-                      : ElevatedButton.icon(
-                        onPressed:
-                            isApplying
-                                ? null
-                                : () {
-                                  if (status == 'missing') {
-                                    _addMissingHeading(result);
-                                  } else {
-                                    _applyHeadingStyle(result);
-                                  }
-                                },
-                        icon:
-                            isApplying
-                                ? const SizedBox(
-                                  width: 13,
-                                  height: 13,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    color: Colors.white,
-                                  ),
-                                )
-                                : Icon(
-                                  status == 'missing'
-                                      ? Icons.add
-                                      : Icons.auto_fix_high,
-                                  size: 14,
-                                ),
-                        label: Text(
-                          isApplying
-                              ? 'Applying…'
-                              : status == 'missing'
-                              ? 'Add "$name" with Template Style'
-                              : 'Apply Template Style to Heading',
-                          style: const TextStyle(fontSize: 12),
-                        ),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: accentColor,
-                          foregroundColor: Colors.white,
-                          disabledBackgroundColor: accentColor.withOpacity(
-                            0.35,
-                          ),
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 14,
-                            vertical: 10,
-                          ),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(6),
-                          ),
-                        ),
-                      ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildParagraphStyleSection() {
-    final issueCount = _paragraphStyleIssues.length;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            const Icon(Icons.article_outlined, color: _purple, size: 18),
-            const SizedBox(width: 8),
-            Tr('Paragraph Style Compliance',
-              style: TextStyle(
-                color: _textPri,
-                fontSize: 15,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            const SizedBox(width: 8),
-            if (issueCount > 0)
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                decoration: BoxDecoration(
-                  color: _orange.withOpacity(0.12),
-                  borderRadius: BorderRadius.circular(10),
-                ),
+          Row(
+            children: [
+              Expanded(
                 child: Text(
-                  '$issueCount issues',
-                  style: const TextStyle(
-                    color: _orange,
-                    fontSize: 11,
+                  name,
+                  style: TextStyle(
+                    color: _textPri,
+                    fontSize: 15,
                     fontWeight: FontWeight.w700,
                   ),
                 ),
               ),
-            const Spacer(),
-            if (_paragraphStyleLoading)
-              const SizedBox(
-                width: 14,
-                height: 14,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  color: _purple,
-                ),
-              )
-            else
+              _chip('H$level', _blue),
+              if (optional) ...[
+                const SizedBox(width: 6),
+                _chip('Optional', _yellow),
+              ],
+            ],
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: ctrl,
+            focusNode: focus,
+            minLines: 4,
+            maxLines: 10,
+            enabled: !adding,
+            style: TextStyle(color: _textPri, fontSize: 13, height: 1.4),
+            decoration: InputDecoration(
+              hintText: 'Content for this heading...',
+              hintStyle: TextStyle(color: _textSec.withOpacity(0.6)),
+              filled: true,
+              fillColor: _ap.scaffold,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: BorderSide(color: _border),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: BorderSide(color: _border),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: const BorderSide(color: _blue),
+              ),
+              contentPadding: const EdgeInsets.all(12),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
               TextButton.icon(
-                onPressed: () {
-                  setState(() {
-                    _paragraphStyleLoaded = false;
-                  });
-                  _loadParagraphStyleCheck();
-                },
-                icon: const Icon(Icons.refresh, size: 13),
-                label: const Tr('Refresh', style: TextStyle(fontSize: 11)),
+                onPressed: () => _showGhostInPreview(issueId),
+                icon: const Icon(Icons.visibility_outlined, size: 16),
+                label: const Text('Show in preview'),
                 style: TextButton.styleFrom(foregroundColor: _textSec),
               ),
-          ],
-        ),
-        const SizedBox(height: 4),
-        Tr('Scans all body paragraphs for font, size, alignment, and line-spacing compliance.',
-          style: TextStyle(color: _textSec, fontSize: 11, height: 1.4),
-        ),
-        const SizedBox(height: 12),
-
-        if (_paragraphStyleError != null)
-          _buildAlertBanner('Error', _paragraphStyleError!, _red)
-        else if (_paragraphStyleLoading)
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: 16),
-            child: Center(child: CircularProgressIndicator(color: _purple)),
-          )
-        else if (_paragraphStyleIssues.isEmpty && _paragraphStyleLoaded)
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: _green.withOpacity(0.06),
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: _green.withOpacity(0.2)),
-            ),
-            child: const Row(
-              children: [
-                Icon(Icons.check_circle_outline, color: _green, size: 16),
-                SizedBox(width: 10),
-                Tr('All paragraphs match template styling  ✓',
-                  style: TextStyle(color: _green, fontSize: 13),
-                ),
-              ],
-            ),
-          )
-        else if (_paragraphStyleIssues.isNotEmpty) ...[
-          // Apply all button
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton.icon(
-              onPressed: _applyingAllParaStyle ? null : _applyAllParagraphStyle,
-              icon:
-                  _applyingAllParaStyle
-                      ? const SizedBox(
+              const SizedBox(width: 8),
+              ElevatedButton.icon(
+                onPressed: adding ? null : () => _addMissingHeading(item),
+                icon: adding
+                    ? const SizedBox(
                         width: 14,
                         height: 14,
                         child: CircularProgressIndicator(
@@ -4122,380 +3467,137 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
                           color: Colors.white,
                         ),
                       )
-                      : const Icon(Icons.auto_fix_high, size: 14),
-              label: Text(
-                _applyingAllParaStyle
-                    ? 'Applying to all paragraphs…'
-                    : 'Fix All $issueCount Paragraphs',
-                style: const TextStyle(fontSize: 12),
-              ),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: _purple,
-                foregroundColor: Colors.white,
-                disabledBackgroundColor: _purple.withOpacity(0.35),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 14,
-                  vertical: 10,
-                ),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(6),
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(height: 10),
-          // Issue list (collapsed — show first 5)
-          ..._paragraphStyleIssues
-              .take(5)
-              .map(
-                (i) => _buildParagraphStyleIssueRow(i as Map<String, dynamic>),
-              ),
-          if (_paragraphStyleIssues.length > 5)
-            Padding(
-              padding: const EdgeInsets.only(top: 6),
-              child: Text(
-                '… and ${_paragraphStyleIssues.length - 5} more paragraphs',
-                style: TextStyle(color: _textSec, fontSize: 11),
-              ),
-            ),
-        ],
-      ],
-    );
-  }
-
-  Widget _buildParagraphStyleIssueRow(Map<String, dynamic> issue) {
-    final preview = issue['text_preview'] as String? ?? '';
-    final mismatches = (issue['mismatches'] as List?)?.cast<Map>() ?? [];
-    return Container(
-      margin: const EdgeInsets.only(bottom: 6),
-      padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(
-        color: _surface,
-        borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: _orange.withOpacity(0.2)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const Icon(Icons.short_text, color: _orange, size: 13),
-              const SizedBox(width: 6),
-              Expanded(
-                child: Text(
-                  preview,
-                  style: TextStyle(color: _textSec, fontSize: 11),
-                  overflow: TextOverflow.ellipsis,
+                    : const Icon(Icons.add, size: 16),
+                label: Text(adding ? 'Adding…' : 'Add'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: _green,
+                  foregroundColor: Colors.white,
                 ),
               ),
             ],
           ),
-          if (mismatches.isNotEmpty) ...[
-            const SizedBox(height: 4),
-            Wrap(
-              spacing: 6,
-              runSpacing: 4,
-              children:
-                  mismatches.map((m) {
-                    final prop = m['property'] as String? ?? '';
-                    final expected = m['expected'];
-                    final actual = m['actual'];
-                    return Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 6,
-                        vertical: 2,
-                      ),
-                      decoration: BoxDecoration(
-                        color: _orange.withOpacity(0.08),
-                        borderRadius: BorderRadius.circular(4),
-                        border: Border.all(color: _orange.withOpacity(0.2)),
-                      ),
-                      child: Text(
-                        '$prop: $actual → $expected',
-                        style: const TextStyle(
-                          color: _orange,
-                          fontSize: 9,
-                          fontFamily: 'monospace',
-                        ),
-                      ),
-                    );
-                  }).toList(),
-            ),
-          ],
         ],
       ),
     );
   }
 
-  Widget _buildSectionRow(int index, Map<String, dynamic> sec) {
-    final name = sec['name'] as String? ?? '';
-    final order = (sec['order'] as num?)?.toInt() ?? 0;
-    final required = sec['required'] as bool? ?? true;
-    final status = sec['status'] as String? ?? 'missing';
-    final matched = sec['matched_heading'] as String?;
-    final layer = sec['match_layer'] as String?;
-    final docPos = (sec['document_position'] as num?)?.toInt();
-    final expanded = _expandedSections.contains(index);
-    final statusC = _statusColor(status);
-    final layerC = _layerColor(layer);
-
+  Widget _chip(String label, Color color) {
     return Container(
-      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
-        color: _surface,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: statusC.withOpacity(0.25)),
+        color: color.withOpacity(0.15),
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(color: color.withOpacity(0.4)),
       ),
-      child: Column(
-        children: [
-          InkWell(
-            borderRadius: BorderRadius.circular(10),
-            onTap:
-                () => setState(
-                  () =>
-                      expanded
-                          ? _expandedSections.remove(index)
-                          : _expandedSections.add(index),
-                ),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-              child: Row(
-                children: [
-                  Container(
-                    width: 28,
-                    height: 28,
-                    decoration: BoxDecoration(
-                      color: statusC.withOpacity(0.12),
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    alignment: Alignment.center,
-                    child: Text(
-                      '$order',
-                      style: TextStyle(
-                        color: statusC,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Row(
-                      children: [
-                        Text(
-                          name,
-                          style: TextStyle(
-                            color: _textPri,
-                            fontSize: 14,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                        if (!required) ...[
-                          const SizedBox(width: 8),
-                          _Tag('optional', _textSec),
-                        ],
-                      ],
-                    ),
-                  ),
-                  if (matched != null && matched != name) ...[
-                    Icon(Icons.arrow_forward, size: 12, color: _textSec),
-                    const SizedBox(width: 6),
-                    Text(
-                      matched,
-                      style: TextStyle(color: _textSec, fontSize: 12),
-                    ),
-                    const SizedBox(width: 8),
-                  ],
-                  if (docPos != null)
-                    Text(
-                      '@$docPos',
-                      style: TextStyle(color: _textSec, fontSize: 11),
-                    ),
-                  const SizedBox(width: 12),
-                  if (layer != null) _Tag(layer, layerC),
-                  const SizedBox(width: 8),
-                  _Tag(status, statusC),
-                  const SizedBox(width: 8),
-                  Icon(
-                    expanded
-                        ? Icons.keyboard_arrow_up
-                        : Icons.keyboard_arrow_down,
-                    color: _textSec,
-                    size: 18,
-                  ),
-                ],
-              ),
-            ),
-          ),
-          if (expanded) _buildFixPanel(name, status, matched, layer, required),
-        ],
+      child: Text(
+        label,
+        style: TextStyle(
+          color: color,
+          fontSize: 10,
+          fontWeight: FontWeight.w600,
+        ),
       ),
     );
   }
 
-  Widget _buildFixPanel(
-    String name,
-    String status,
-    String? matched,
-    String? layer,
-    bool required,
-  ) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(56, 0, 16, 16),
-      decoration: BoxDecoration(
-        color: _bg,
-        borderRadius: BorderRadius.vertical(bottom: Radius.circular(10)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Divider(color: _border, height: 1),
-          const SizedBox(height: 12),
-          Text(
-            _fixExplanation(name, status, matched, layer),
-            style: TextStyle(color: _textSec, fontSize: 12, height: 1.5),
-          ),
-          const SizedBox(height: 12),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: _buildFixButtons(name, status, matched),
-          ),
-        ],
-      ),
+  void _focusMissingHeading(String issueId) {
+    _goToTab(_missingHeadingsTabIndex);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _missingFocus[issueId]?.requestFocus();
+    });
+  }
+
+  void _showGhostInPreview(String issueId) {
+    _flashGhostId = issueId;
+    if (mounted) setState(() {});
+    _goToTab(_reviewTabIndex);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final ctx = _ghostKeys[issueId]?.currentContext;
+      if (ctx != null) {
+        Scrollable.ensureVisible(
+          ctx,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut,
+          alignment: 0.3,
+        );
+      }
+      Future.delayed(const Duration(milliseconds: 1600), () {
+        if (mounted && _flashGhostId == issueId) {
+          setState(() => _flashGhostId = null);
+        }
+      });
+    });
+  }
+
+  Future<void> _addMissingHeading(Map<String, dynamic> item) async {
+    final issueId = item['issue_id'] as String? ?? '';
+    final name = item['name'] as String? ?? '';
+    if (issueId.isEmpty || name.isEmpty) return;
+    final ctrl = _missingControllers.putIfAbsent(
+      issueId,
+      () => TextEditingController(),
     );
-  }
-
-  String _fixExplanation(
-    String name,
-    String status,
-    String? matched,
-    String? layer,
-  ) {
-    switch (status) {
-      case 'missing':
-        return 'The section "$name" was not found in your document. Add this heading.';
-      case 'wrong_order':
-        return '"$name" appears in the wrong position. It should come earlier.';
-      case 'empty':
-        return 'The section "$name" has no content after its heading.';
-      case 'found' when layer == 'synonym':
-        return '"$matched" was matched to "$name" via synonym detection. Consider renaming to "$name".';
-      case 'found' when layer == 'fuzzy':
-        return '"$matched" was matched to "$name" via fuzzy match (possible typo). Consider fixing.';
-      default:
-        return 'Section found and correctly placed. ✓';
-    }
-  }
-
-  List<Widget> _buildFixButtons(String name, String status, String? matched) {
-    final buttons = <Widget>[];
-    switch (status) {
-      case 'missing':
-        buttons.add(
-          _FixButton(
-            label: 'Add "$name" heading',
-            icon: Icons.add,
-            color: _green,
-            onTap: () => _applyFix('add_heading', {'section': name}),
-          ),
-        );
-        break;
-      case 'wrong_order':
-        buttons.add(
-          _FixButton(
-            label: 'Reorder to correct position',
-            icon: Icons.swap_vert,
-            color: _yellow,
-            onTap: () => _applyFix('reorder_section', {'section': name}),
-          ),
-        );
-        break;
-      case 'empty':
-        buttons.add(
-          _FixButton(
-            label: 'Mark as acknowledged',
-            icon: Icons.check,
-            color: _textSec,
-            onTap: () => _showSnack('Acknowledged', _textSec),
-          ),
-        );
-        break;
-      case 'found':
-        if (matched != null && matched != name) {
-          buttons.add(
-            _FixButton(
-              label: 'Rename "$matched" → "$name"',
-              icon: Icons.edit,
-              color: _blue,
-              onTap:
-                  () => _applyFix('rename_heading', {
-                    'old': matched,
-                    'new': name,
-                  }),
-            ),
+    setState(() => _addingMissing.add(issueId));
+    try {
+      final auth = context.read<AuthProvider>();
+      final resp = await http.post(
+        Uri.parse(
+          '$_baseUrl/documents/add-missing-heading/${widget.documentId}'
+          '?user_id=${auth.userId}',
+        ),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'section_name': name,
+          'content': ctrl.text,
+        }),
+      );
+      if (!mounted) return;
+      if (resp.statusCode == 200) {
+        final data = jsonDecode(resp.body) as Map<String, dynamic>;
+        setState(() {
+          final blocks = data['document_blocks'] as List<dynamic>?;
+          if (blocks != null && blocks.isNotEmpty) {
+            _previewBlocks = _bustImageUrls(
+              blocks
+                  .map((b) => Map<String, dynamic>.from(b as Map))
+                  .toList(),
+            );
+          }
+          _missingHeadings =
+              (data['missing_headings'] as List<dynamic>? ?? [])
+                  .map((m) => Map<String, dynamic>.from(m as Map))
+                  .toList();
+          _missingHeadingsReason =
+              data['missing_headings_reason'] as String? ?? '';
+          _missingControllers.remove(issueId)?.dispose();
+          _missingFocus.remove(issueId)?.dispose();
+          _ghostKeys.remove(issueId);
+          _addingMissing.remove(issueId);
+          _isFixApplied = true;
+        });
+        _showSnack('Heading added', _green);
+        _markDirty();
+        if (_tocData['has_toc'] == true) {
+          _showSnack(
+            'Update the table of contents in the Document Lists tab',
+            _yellow,
           );
         }
-        break;
+      } else {
+        var msg = 'Failed to add heading (${resp.statusCode})';
+        try {
+          final detail = jsonDecode(resp.body)['detail'];
+          if (detail != null) msg = detail.toString();
+        } catch (_) {}
+        _showSnack(msg, _red);
+        setState(() => _addingMissing.remove(issueId));
+      }
+    } catch (e) {
+      _showSnack('Error: $e', _red);
+      if (mounted) setState(() => _addingMissing.remove(issueId));
     }
-    buttons.add(
-      _FixButton(
-        label: 'Ignore',
-        icon: Icons.visibility_off_outlined,
-        color: _textSec,
-        onTap: () => _showSnack('Issue ignored', _textSec),
-      ),
-    );
-    return buttons;
-  }
-
-  Widget _buildLayerLegend() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: _surface,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: _border),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Tr('Layer 2 — Heading Match Method',
-            style: TextStyle(
-              color: _textSec,
-              fontSize: 11,
-              fontWeight: FontWeight.w600,
-              letterSpacing: 0.5,
-            ),
-          ),
-          const SizedBox(height: 10),
-          Wrap(
-            spacing: 16,
-            runSpacing: 8,
-            children: [
-              _LegendItem('exact', _green, 'Exact text match'),
-              _LegendItem(
-                'synonym',
-                _blue,
-                'Known alias (e.g. "Intro" → "Introduction")',
-              ),
-              _LegendItem(
-                'fuzzy',
-                _yellow,
-                'Typo correction (e.g. "Methdology")',
-              ),
-              _LegendItem(
-                'semantic',
-                const Color(0xFFA855F7),
-                'Semantic similarity (MiniLM)',
-              ),
-              _LegendItem('missing', _red, 'Not found'),
-            ],
-          ),
-        ],
-      ),
-    );
   }
 
   Widget _buildAlertBanner(
@@ -4545,229 +3647,6 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
                 style: TextStyle(color: color, fontSize: 12),
               ),
             ),
-        ],
-      ),
-    );
-  }
-
-  // ─────────────────────────────────────────────────────────────────────────
-  // Tab 2: Content Mismatch
-  // ─────────────────────────────────────────────────────────────────────────
-
-  Widget _buildContentMismatchTab(
-    List<dynamic> issues, {
-    String modelMode = 'zero_shot',
-  }) {
-    if (issues.isEmpty) {
-      return _buildEmptyState(
-        Icons.psychology_outlined,
-        'No content issues detected',
-        'Grammar, paragraph relevance, and plagiarism checks found no issues.',
-        color: _green,
-      );
-    }
-    final hasTrained = issues.any((i) => (i as Map)['mode'] == 'trained_model');
-    final hasZeroShot = issues.any((i) => (i as Map)['mode'] == 'zero_shot');
-    final hasHybrid = issues.any((i) => (i as Map)['detection'] == 'hybrid');
-
-    String modeLabel;
-    String modeDesc;
-    Color modeBannerColor;
-    if (hasHybrid || hasTrained) {
-      modeLabel = '🤖  Hybrid Mode Active (trained + zero-shot)';
-      modeDesc =
-          'Both the trained model and semantic similarity agree — high confidence.';
-      modeBannerColor = _green;
-    } else if (hasZeroShot) {
-      modeLabel = '⚡  Zero-Shot Mode Active';
-      modeDesc =
-          'Using semantic similarity only. Train the model for better accuracy.';
-      modeBannerColor = _blue;
-    } else {
-      modeLabel = '🔑  Keyword Mode Active';
-      modeDesc = 'Install sentence-transformers for better results.';
-      modeBannerColor = _yellow;
-    }
-
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(24),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _buildInfoBanner(modeLabel, modeDesc, modeBannerColor),
-          const SizedBox(height: 16),
-          ...issues.map(
-            (i) => _buildContentIssueCard(i as Map<String, dynamic>),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildContentIssueCard(Map<String, dynamic> issue) {
-    final func = issue['function'] as String? ?? '';
-    if (func.isNotEmpty) {
-      return _buildPipelineIssueCard(issue);
-    }
-
-    final heading = issue['heading'] as String? ?? '';
-    final message = issue['message'] as String? ?? '';
-    final mode =
-        issue['mode'] as String? ??
-        issue['detection'] as String? ??
-        'zero_shot';
-    final severity = issue['severity'] as String? ?? 'warning';
-    final confidence = _safeDouble(issue['confidence']) ?? 0.0;
-    final ownSimilarity = _safeDouble(issue['own_similarity']);
-    final bestMatchScore = _safeDouble(issue['best_match_score']);
-    final bestMatchHeading = issue['best_match_heading'] as String?;
-    final pct = (confidence * 100).toInt();
-    final gap =
-        (ownSimilarity != null && bestMatchScore != null)
-            ? bestMatchScore - ownSimilarity
-            : null;
-    String modeText;
-    Color modeColor;
-    if (mode == 'hybrid') {
-      modeText = 'HYBRID';
-      modeColor = _green;
-    } else if (mode == 'trained_model' || mode == 'trained') {
-      modeText = 'ML MODEL';
-      modeColor = _green;
-    } else if (mode == 'zero_shot') {
-      modeText = 'ZERO-SHOT';
-      modeColor = _blue;
-    } else {
-      modeText = 'KEYWORD';
-      modeColor = _yellow;
-    }
-    final borderColor = severity == 'error' ? _red : _orange;
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: _surface,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: borderColor.withOpacity(0.3)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                width: 4,
-                height: 44,
-                decoration: BoxDecoration(
-                  color: borderColor,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-              const SizedBox(width: 12),
-              _Tag(severity == 'error' ? 'ERROR' : 'WARNING', borderColor),
-              const SizedBox(width: 6),
-              _Tag('CONTENT MISMATCH', _purple.withOpacity(0.7)),
-              const SizedBox(width: 6),
-              _Tag(modeText, modeColor),
-              const Spacer(),
-              Text(
-                '$pct% mismatch',
-                style: TextStyle(
-                  color: pct > 85 ? _red : _orange,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              const Icon(Icons.title, color: _orange, size: 14),
-              const SizedBox(width: 6),
-              Text(
-                'Section: "$heading"',
-                style: TextStyle(
-                  color: _textPri,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 6),
-          Text(
-            message,
-            style: TextStyle(color: _textSec, fontSize: 12, height: 1.4),
-          ),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              Tr('Mismatch confidence: ',
-                style: TextStyle(color: _textSec, fontSize: 10),
-              ),
-              Expanded(
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(4),
-                  child: LinearProgressIndicator(
-                    value: confidence.clamp(0.0, 1.0),
-                    minHeight: 5,
-                    backgroundColor: _border,
-                    valueColor: AlwaysStoppedAnimation(
-                      confidence > 0.85 ? _red : _orange,
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Text(
-                '$pct%',
-                style: TextStyle(
-                  color: confidence > 0.85 ? _red : _orange,
-                  fontSize: 10,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ],
-          ),
-          if (ownSimilarity != null || bestMatchHeading != null) ...[
-            const SizedBox(height: 10),
-            Divider(color: _border, height: 1),
-            const SizedBox(height: 10),
-            if (ownSimilarity != null)
-              _DiffRow(
-                label: 'Own score',
-                text:
-                    '${ownSimilarity.toStringAsFixed(3)}  ← fit to current heading'
-                    '${ownSimilarity < 0.45 ? "  ⚠ very low" : ""}',
-                color:
-                    ownSimilarity < 0.40
-                        ? _red
-                        : ownSimilarity < 0.52
-                        ? _orange
-                        : _yellow,
-              ),
-            if (bestMatchHeading != null && bestMatchScore != null) ...[
-              const SizedBox(height: 6),
-              _DiffRow(
-                label: 'Better fit',
-                text:
-                    '"$bestMatchHeading"  →  score: ${bestMatchScore.toStringAsFixed(3)}'
-                    '${gap != null ? "  (gap +${gap.toStringAsFixed(3)})" : ""}',
-                color: _green,
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Tip: Consider moving this content to "$bestMatchHeading".',
-                style: TextStyle(
-                  color: _textSec,
-                  fontSize: 10,
-                  fontStyle: FontStyle.italic,
-                ),
-              ),
-            ],
-          ],
         ],
       ),
     );

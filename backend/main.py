@@ -2274,7 +2274,48 @@ async def analyze_document_endpoint(document_id: int, user_id: int = Query(...))
                 normalized_issues.extend(normalized_heading_issues)
         except Exception as exc:
             print(f"[analyze] heading analysis error (non-fatal): {exc}")
-        
+
+    # Missing template headings — single source of truth for the
+    # "Missing Headings" tab and the ghost headings in the preview.
+    # heading_analysis' type=="missing_section" issues are superseded by this
+    # and removed from the issues list so they don't appear in Formatting.
+    missing_headings: List[Dict[str, Any]] = []
+    missing_headings_reliable = False
+    missing_headings_reason = ""
+    if file_path.endswith(".docx") and tmpl:
+        try:
+            from missing_sections import (
+                build_previews,
+                detect_missing_sections,
+                splice_ghost_blocks,
+            )
+            ms_info = detect_missing_sections(
+                file_path, tmpl.get("required_sections", [])
+            )
+            missing_headings_reliable = bool(ms_info.get("reliable"))
+            missing_headings_reason = ms_info.get("reason", "") or ""
+            if missing_headings_reliable:
+                ms_previews = build_previews(ms_info)
+                document_blocks = splice_ghost_blocks(document_blocks, ms_previews)
+                missing_headings = [
+                    _missing_heading_payload(p) for p in ms_previews
+                ]
+        except Exception as exc:
+            print(f"[analyze] missing-sections error (non-fatal): {exc}")
+
+    normalized_issues = [
+        i for i in normalized_issues
+        if (i.get("type") or "").lower() != "missing_section"
+    ]
+    style_issues = [
+        i for i in style_issues
+        if (i.get("type") or "").lower() != "missing_section"
+    ]
+    content_issues = [
+        i for i in content_issues
+        if (i.get("type") or "").lower() != "missing_section"
+    ]
+
     return {
         "document_id": document_id,
         "filename": doc["filename"],
@@ -2302,6 +2343,9 @@ async def analyze_document_endpoint(document_id: int, user_id: int = Query(...))
         "content_checker_mode": "ensemble_with_learning",
         "content_checker_version": "perfect",
         "template_heading_matches": template_heading_matches,
+        "missing_headings": missing_headings,
+        "missing_headings_reliable": missing_headings_reliable,
+        "missing_headings_reason": missing_headings_reason,
         "compliance_score": score,
         "total_issues": len(normalized_issues),
         "major_issues": major_count,
@@ -3177,6 +3221,183 @@ async def apply_content_fix(
         "status": "success",
         "message": msg,
         **commit,
+    }
+
+
+def _missing_heading_payload(preview: Dict[str, Any]) -> Dict[str, Any]:
+    """Shape a build_previews() entry for the analyze/missing-headings API."""
+    return {
+        "issue_id": preview.get("issue_id"),
+        "name": preview.get("name"),
+        "level": preview.get("level", 1),
+        "optional": bool(preview.get("optional")),
+        "insert_before_paragraph_id": preview.get("insert_before_paragraph_id"),
+        "position": preview.get("position"),
+        "placeholder_text": preview.get("placeholder_text"),
+    }
+
+
+def _missing_headings_state(
+    document_id: int,
+    working_copy: str,
+    doc: Any,
+    tmpl: Dict[str, Any],
+    base_blocks: Optional[List[Dict[str, Any]]] = None,
+) -> Dict[str, Any]:
+    """
+    Run detect_missing_sections + build_previews on the working copy and
+    return {missing_headings, reliable, reason, document_blocks} with ghost
+    blocks spliced in. document_blocks are rebuilt from the working copy when
+    base_blocks is not supplied.
+    """
+    from missing_sections import (
+        build_previews,
+        detect_missing_sections,
+        splice_ghost_blocks,
+    )
+
+    required_sections = tmpl.get("required_sections", [])
+    info = detect_missing_sections(working_copy, required_sections)
+    reliable = bool(info.get("reliable"))
+    reason = info.get("reason", "") or ""
+    previews = build_previews(info) if reliable else []
+
+    if base_blocks is None:
+        base_blocks = []
+        try:
+            norm_filename = _filename_for_parse(working_copy, doc["filename"])
+            doc_model = parse_file(working_copy, norm_filename)
+            image_paths = save_document_images(doc_model, document_id, UPLOAD_DIR)
+            base_blocks = build_document_blocks(doc_model, image_paths)
+        except Exception as exc:
+            print(f"[missing-headings] block rebuild error: {exc}")
+
+    return {
+        "missing_headings": [_missing_heading_payload(p) for p in previews],
+        "missing_headings_reliable": reliable,
+        "missing_headings_reason": reason,
+        "document_blocks": splice_ghost_blocks(base_blocks, previews),
+    }
+
+
+def _refresh_cached_analysis_missing_headings(
+    document_id: int,
+    state: Dict[str, Any],
+) -> None:
+    """Update the cached analyze-result json so a reload shows new state."""
+    path = _analysis_result_path(document_id)
+    if not os.path.exists(path):
+        return
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        data["document_blocks"] = state.get("document_blocks", [])
+        data["missing_headings"] = state.get("missing_headings", [])
+        data["missing_headings_reliable"] = state.get("missing_headings_reliable", False)
+        data["missing_headings_reason"] = state.get("missing_headings_reason", "")
+        tmp = path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(data, f, default=str)
+        os.replace(tmp, path)
+    except Exception as exc:
+        print(f"[missing-headings] cache update error (non-fatal): {exc}")
+
+
+@app.post("/api/documents/add-missing-heading/{document_id}", tags=["Documents"])
+async def add_missing_heading_endpoint(
+    document_id: int,
+    user_id: int = Query(...),
+    payload: Dict[str, Any] = Body(default={}),
+):
+    """
+    Insert a missing template heading + user-typed content into the working
+    copy. Idempotent: returns inserted=false when the heading already exists.
+    """
+    from missing_sections import normalize_required_sections
+
+    section_name = str(payload.get("section_name") or "").strip()
+    if not section_name:
+        raise HTTPException(status_code=400, detail="section_name is required")
+    content = str(payload.get("content") or "")
+    if len(content) > 20000:
+        raise HTTPException(status_code=400, detail="content too long (max 20000 chars)")
+
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM documents WHERE id = ? AND user_id = ?", (document_id, user_id))
+    doc = cursor.fetchone()
+    conn.close()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    tmpl = get_template_by_id(doc["template_id"])
+    if not tmpl:
+        raise HTTPException(status_code=400, detail="Template not found")
+
+    required_sections = tmpl.get("required_sections", [])
+    known_names = {
+        str(s.get("name") or "").strip().lower()
+        for s in normalize_required_sections(required_sections)
+    }
+    if section_name.lower() not in known_names:
+        raise HTTPException(status_code=400, detail="Unknown section for this template")
+
+    working_copy = _ensure_formatted_working_copy(doc, tmpl)
+
+    from missing_sections import insert_missing_section_by_name
+    insert_result = insert_missing_section_by_name(
+        working_copy,
+        required_sections,
+        section_name,
+        content=content,
+        formatting_rules=tmpl.get("formatting_rules") or {},
+    )
+    inserted = bool(insert_result.get("inserted"))
+    message = insert_result.get("reason") or (
+        f'Added a "{insert_result.get("section_name") or section_name}" section.'
+    )
+
+    commit = _commit_working_document(document_id, working_copy, doc)
+    state = _missing_headings_state(
+        document_id, working_copy, doc, tmpl,
+        base_blocks=commit.get("document_blocks") or [],
+    )
+    _refresh_cached_analysis_missing_headings(document_id, state)
+
+    return {
+        "status": "success",
+        "inserted": inserted,
+        "message": message,
+        "document_blocks": state["document_blocks"],
+        "missing_headings": state["missing_headings"],
+        "missing_headings_reliable": state["missing_headings_reliable"],
+        "missing_headings_reason": state["missing_headings_reason"],
+        "export_path": commit.get("export_path"),
+        "working_copy": commit.get("working_copy"),
+    }
+
+
+@app.get("/api/documents/missing-headings/{document_id}", tags=["Documents"])
+def missing_headings_endpoint(document_id: int, user_id: int = Query(...)):
+    """Current missing template headings + preview blocks (ghosts spliced)."""
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM documents WHERE id = ? AND user_id = ?", (document_id, user_id))
+    doc = cursor.fetchone()
+    conn.close()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    tmpl = get_template_by_id(doc["template_id"])
+    if not tmpl:
+        raise HTTPException(status_code=400, detail="Template not found")
+
+    working_copy = _ensure_formatted_working_copy(doc, tmpl)
+    state = _missing_headings_state(document_id, working_copy, doc, tmpl)
+    return {
+        "status": "success",
+        "document_id": document_id,
+        **state,
     }
 
 
