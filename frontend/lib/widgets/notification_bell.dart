@@ -49,6 +49,9 @@ class NotificationBell extends StatelessWidget {
   }
 
   void _showDesktopPanel(BuildContext context, AppPalette palette) {
+    // Refresh the list so the popup has fresh data (and a loading state)
+    // on first open after login.
+    context.read<NotificationProvider>().loadFirstPage();
     final RenderBox button = context.findRenderObject() as RenderBox;
     final Offset offset = button.localToGlobal(Offset.zero);
     final Size size = button.size;

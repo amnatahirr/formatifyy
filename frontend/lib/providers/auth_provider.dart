@@ -147,6 +147,7 @@ class AuthProvider extends ChangeNotifier {
     await _syncOrgAfterAuth();
     _notificationProvider?.startPolling();
     _notificationProvider?.refreshUnreadCount();
+    _notificationProvider?.loadFirstPage();
   }
 
   /// Wipe any leftover auto-login / remembered profile so launch always

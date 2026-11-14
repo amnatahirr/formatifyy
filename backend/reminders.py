@@ -36,7 +36,7 @@ _STAGE_TO_TYPE = {
 }
 
 
-def notify_students(cursor, students, title, message, deadline_id, stage) -> int:
+def notify_students(cursor, students, title, message, deadline_id, stage: int = 0) -> int:
     """Insert in-app notifications via the unified service (never raises)."""
     ntype = _STAGE_TO_TYPE.get(stage, NotificationType.DEADLINE_TODAY)
     for s in students:

@@ -17,7 +17,14 @@ class NotificationProvider extends ChangeNotifier with WidgetsBindingObserver {
   bool _isInForeground = true;
   bool _hasMore = true;
   bool _unreadOnly = false;
+  bool _disposed = false;
+  Timer? _refreshRetryTimer;
   GlobalKey<ScaffoldMessengerState>? messengerKey;
+
+  /// Test seam: when set, replaces http.get for all provider requests.
+  @visibleForTesting
+  static Future<http.Response> Function(Uri url,
+      {Map<String, String>? headers})? httpGetOverride;
 
   List<AppNotification> get items => _items;
   int get unreadCount => _unreadCount;
@@ -34,6 +41,8 @@ class NotificationProvider extends ChangeNotifier with WidgetsBindingObserver {
 
   @override
   void dispose() {
+    _disposed = true;
+    _refreshRetryTimer?.cancel();
     _pollingTimer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
@@ -71,6 +80,8 @@ class NotificationProvider extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   void clear() {
+    _refreshRetryTimer?.cancel();
+    _refreshRetryTimer = null;
     _items.clear();
     _unreadCount = 0;
     _lastKnownUnreadCount = null;
@@ -90,12 +101,42 @@ class NotificationProvider extends ChangeNotifier with WidgetsBindingObserver {
     await loadFirstPage();
   }
 
-  Future<void> refreshUnreadCount() async {
+  Future<http.Response> _get(String url, Duration timeout) {
+    final override = httpGetOverride;
+    final uri = Uri.parse(url);
+    if (override != null) {
+      return override(uri, headers: ApiConfig.getHeaders())
+          .timeout(timeout);
+    }
+    return http
+        .get(uri, headers: ApiConfig.getHeaders())
+        .timeout(timeout);
+  }
+
+  /// Retry a failed unread-count refresh once after a short delay.
+  /// [isRetry] prevents retry loops; guards against dispose/clear.
+  void _scheduleRefreshRetry({required bool isRetry}) {
+    if (isRetry || _disposed) return;
+    if (_refreshRetryTimer?.isActive == true) return;
+    _refreshRetryTimer = Timer(const Duration(milliseconds: 1500), () {
+      _refreshRetryTimer = null;
+      if (!_disposed) {
+        refreshUnreadCount(isRetry: true);
+      }
+    });
+  }
+
+  Future<void> refreshUnreadCount({bool isRetry = false}) async {
     try {
-      final response = await http.get(
-        Uri.parse('$_baseUrl/notifications/unread-count'),
-        headers: ApiConfig.getHeaders(),
-      ).timeout(const Duration(seconds: 10));
+      final response = await _get(
+        '$_baseUrl/notifications/unread-count',
+        const Duration(seconds: 10),
+      );
+
+      if (response.statusCode == 401) {
+        _scheduleRefreshRetry(isRetry: isRetry);
+        return;
+      }
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
@@ -105,29 +146,36 @@ class NotificationProvider extends ChangeNotifier with WidgetsBindingObserver {
         _lastKnownUnreadCount = newCount;
         _unreadCount = newCount;
 
-        if (newCount > oldCount) {
-          await loadFirstPage();
-          if (_items.isNotEmpty) {
-            final newest = _items.first;
-            final ctx = messengerKey?.currentContext;
-            if (ctx != null) {
-              ScaffoldMessenger.of(ctx).showSnackBar(
-                SnackBar(
-                  content: Text(newest.title),
-                  duration: const Duration(seconds: 3),
-                  behavior: SnackBarBehavior.floating,
-                ),
-              );
-            }
-          }
-        }
-
+        // State must be committed before any toast attempt — a missing
+        // messenger must never abort the refresh.
         _error = false;
         _errorMessage = null;
         notifyListeners();
+
+        if (newCount > oldCount) {
+          unawaited(loadFirstPage());
+          if (_items.isNotEmpty) {
+            final newest = _items.first;
+            try {
+              final ctx = messengerKey?.currentContext;
+              if (ctx != null) {
+                ScaffoldMessenger.of(ctx).showSnackBar(
+                  SnackBar(
+                    content: Text(newest.title),
+                    duration: const Duration(seconds: 3),
+                    behavior: SnackBarBehavior.floating,
+                  ),
+                );
+              }
+            } catch (e) {
+              debugPrint('[NotificationProvider] Toast failed (non-fatal): $e');
+            }
+          }
+        }
       }
     } catch (e) {
       debugPrint('[NotificationProvider] Failed to refresh unread count: $e');
+      _scheduleRefreshRetry(isRetry: isRetry);
       _error = true;
       _errorMessage = 'Failed to refresh notifications';
       notifyListeners();
@@ -142,10 +190,10 @@ class NotificationProvider extends ChangeNotifier with WidgetsBindingObserver {
 
     try {
       final query = _unreadOnly ? '?limit=50&unread_only=true' : '?limit=50';
-      final response = await http.get(
-        Uri.parse('$_baseUrl/notifications$query'),
-        headers: ApiConfig.getHeaders(),
-      ).timeout(const Duration(seconds: 15));
+      final response = await _get(
+        '$_baseUrl/notifications$query',
+        const Duration(seconds: 15),
+      );
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
@@ -188,10 +236,10 @@ class NotificationProvider extends ChangeNotifier with WidgetsBindingObserver {
       final uri = Uri.parse('$_baseUrl/notifications')
           .replace(queryParameters: queryParams);
 
-      final response = await http.get(
-        uri,
-        headers: ApiConfig.getHeaders(),
-      ).timeout(const Duration(seconds: 15));
+      final response = await _get(
+        uri.toString(),
+        const Duration(seconds: 15),
+      );
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
