@@ -8,14 +8,17 @@ import '../../widgets/admin/admin_ui.dart';
 import 'submission_detail_screen.dart';
 
 class SubmissionReviewScreen extends StatefulWidget {
-  const SubmissionReviewScreen({super.key});
+  final SupervisorApiService? api;
+  final Widget Function(BuildContext context, FinalSubmissionModel item)? detailBuilder;
+
+  const SubmissionReviewScreen({super.key, this.api, this.detailBuilder});
 
   @override
   State<SubmissionReviewScreen> createState() => _SubmissionReviewScreenState();
 }
 
 class _SubmissionReviewScreenState extends State<SubmissionReviewScreen> {
-  final SupervisorApiService _api = SupervisorApiService();
+  late final SupervisorApiService _api = widget.api ?? SupervisorApiService();
   List<FinalSubmissionModel> _submissions = const [];
   String? _error;
   bool _loading = true;
@@ -44,14 +47,30 @@ class _SubmissionReviewScreenState extends State<SubmissionReviewScreen> {
   }
 
   void _openDetail(FinalSubmissionModel item) {
+    final builder = widget.detailBuilder;
     Navigator.of(context)
-        .push(
-          MaterialPageRoute(
-            builder: (_) => SubmissionDetailScreen(submissionId: item.id, titleHint: item.title),
-          ),
+        .push<bool>(
+          builder != null
+              ? MaterialPageRoute<bool>(
+                  builder: (routeContext) => builder(routeContext, item),
+                )
+              : MaterialPageRoute<bool>(
+                  builder: (_) => SubmissionDetailScreen(
+                    submissionId: item.id,
+                    titleHint: item.title,
+                  ),
+                ),
         )
-        .then((_) {
-      if (mounted) _loadSubmissions();
+        .then((decided) {
+      if (!mounted) return;
+      if (decided == true) {
+        // Decision succeeded — drop the row immediately, then refetch.
+        setState(
+          () => _submissions =
+              _submissions.where((s) => s.id != item.id).toList(),
+        );
+      }
+      _loadSubmissions();
     });
   }
 

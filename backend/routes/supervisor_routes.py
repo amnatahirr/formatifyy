@@ -541,8 +541,14 @@ def get_supervisor_home(user_id: Annotated[int | None, Query()] = None):
 
     cursor.execute(
         """
-        SELECT COUNT(*) FROM final_submissions
-        WHERE supervisor_id = ? AND status = 'pending'
+        SELECT COUNT(*) FROM final_submissions fs
+        WHERE fs.supervisor_id = ?
+          AND fs.status IN ('pending', 'pending_review')
+          AND fs.id = (
+              SELECT MAX(n.id) FROM final_submissions n
+              WHERE n.group_id = fs.group_id
+                AND n.supervisor_id = fs.supervisor_id
+          )
         """,
         (supervisor_id,),
     )
@@ -1838,6 +1844,12 @@ def list_final_submissions(
     supervisor_id = supervisor["id"]
     status_filter = (status or "pending").strip().lower()
 
+    # Resubmissions insert a new row each time; only the newest submission per
+    # group can still be awaiting a decision, so pending hides older pending
+    # rows (they remain reachable via status=all / decided filters).
+    pending_like = status_filter in ("", "pending", "pending_review")
+    revision_like = status_filter in ("revision", "revision_requested")
+
     conn = get_db()
     cursor = conn.cursor()
     query = """
@@ -1847,7 +1859,18 @@ def list_final_submissions(
         WHERE fs.supervisor_id = ?
     """
     params: list[Any] = [supervisor_id]
-    if status_filter and status_filter != "all":
+    if pending_like:
+        query += """
+            AND fs.status IN ('pending', 'pending_review')
+            AND fs.id = (
+                SELECT MAX(n.id) FROM final_submissions n
+                WHERE n.group_id = fs.group_id
+                  AND n.supervisor_id = fs.supervisor_id
+            )
+        """
+    elif revision_like:
+        query += " AND fs.status IN ('revision', 'revision_requested')"
+    elif status_filter != "all":
         query += " AND fs.status = ?"
         params.append(status_filter)
     query += " ORDER BY datetime(fs.submitted_at) DESC, fs.id DESC"
@@ -2087,6 +2110,25 @@ def _decide_submission(
 
         conn.commit()
         _flush_notifications(pending_notifications)
+
+        # Email every student who received the in-app notification
+        # (background thread; never blocks or fails the request).
+        try:
+            import submission_mail
+
+            submission_mail.queue_decision_emails(
+                submission_id=submission_id,
+                org_id=_supervisor_org_id(supervisor),
+                decision=new_status,
+                supervisor_name=supervisor.get("name") or "",
+                file_name=(row["filename"] or row["title"] or "") if row else "",
+                note=note or "",
+                decided_at=resolved_at,
+                student_emails=student_emails,
+            )
+        except Exception:  # noqa: BLE001
+            logger.exception("Failed to queue decision emails")
+
         updated = _load_submission_row(cursor, submission_id, supervisor_id)
         return {
             "success": True,

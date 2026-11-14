@@ -1516,6 +1516,51 @@ def create_final_submission(
             (submission_id, org_id),
         )
         row = cursor.fetchone()
+
+        # Email the assigned supervisor (background thread; never blocks
+        # or fails the request). Runs after commit + notification flush.
+        try:
+            import submission_mail
+
+            sup_email = (supervisor["email"] if supervisor else "") or ""
+            sup_name = (supervisor["name"] if supervisor else "") or ""
+            report = _parse_analysis_report_blob(row["analysis_report"] if row else None)
+            stats = report.get("stats") if isinstance(report.get("stats"), dict) else {}
+            issues = report.get("issues") if isinstance(report.get("issues"), list) else []
+            plag_raw = stats.get("avg_plagiarism_risk")
+            try:
+                plag_score = float(plag_raw) if plag_raw is not None else None
+                if plag_score is not None and 0 < plag_score <= 1:
+                    plag_score = round(plag_score * 100, 1)
+            except (TypeError, ValueError):
+                plag_score = None
+            grammar_count = sum(
+                1 for i in issues
+                if isinstance(i, dict) and str(i.get("function") or "").lower() == "grammar"
+            ) or int(stats.get("grammar_issues") or 0) or None
+            comp_raw = report.get("compliance_score")
+            try:
+                comp_score = float(comp_raw) if comp_raw is not None else None
+            except (TypeError, ValueError):
+                comp_score = None
+
+            submission_mail.queue_submission_received_email(
+                submission_id=submission_id,
+                org_id=org_id,
+                supervisor_name=sup_name,
+                supervisor_email=sup_email,
+                student_name=student.get("username") or "",
+                group_name=(row["group_title"] if row else "") or "",
+                project_title=(row["project_title"] if row else "") or "",
+                file_name=(row["filename"] if row and row["filename"] else (row["title"] if row else "")) or "",
+                submitted_at=str(row["submitted_at"]) if row and row["submitted_at"] else "",
+                plagiarism_score=plag_score,
+                compliance_score=comp_score,
+                grammar_count=grammar_count,
+            )
+        except Exception:  # noqa: BLE001
+            logger.exception("Failed to queue submission email")
+
         return {
             "success": True,
             "message": "Submitted for supervisor review.",
