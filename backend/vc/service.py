@@ -417,6 +417,7 @@ def resolve_project_download(
         content_map,
         assembled,
         int(project["template_id"]),
+        get_section_images_map(project_id),
     )
     name = project.get("name") or "project"
     safe = "".join(c if c.isalnum() or c in ("-", "_") else "_" for c in name)
@@ -655,22 +656,23 @@ def get_section_image_path(project_id: int, section_id: str, image_id: int, user
     return row["file_path"]
 
 
-def get_section_images_map(project_id: int) -> Dict[str, List[str]]:
-    """Return section_id -> list of image file paths for merge assembly."""
+def get_section_images_map(project_id: int) -> Dict[str, List[Dict[str, Any]]]:
+    """Return section_id -> [{"id": image_id, "path": file_path}, ...] for merge assembly."""
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute(
         """
-        SELECT section_id, file_path FROM section_images
+        SELECT id, section_id, file_path FROM section_images
         WHERE project_id = ?
-        ORDER BY section_id, created_at ASC
+        ORDER BY section_id, created_at ASC, id ASC
         """,
         (project_id,),
     )
-    result: Dict[str, List[str]] = {}
+    result: Dict[str, List[Dict[str, Any]]] = {}
     for row in cursor.fetchall():
-        sid = row["section_id"]
-        result.setdefault(sid, []).append(row["file_path"])
+        result.setdefault(row["section_id"], []).append(
+            {"id": row["id"], "path": row["file_path"]}
+        )
     conn.close()
     return result
 
