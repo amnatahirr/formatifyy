@@ -49,6 +49,12 @@ class DocumentPreviewPanel extends StatefulWidget {
   final Map<int, double> headingPt;
   final double lineSpacing;
 
+  /// Collaboration preview: no editing, no ribbon.
+  final bool readOnly;
+
+  /// false = start with only the Word-style column visible.
+  final bool showOriginalInitially;
+
   const DocumentPreviewPanel({
     super.key,
     required this.blocks,
@@ -70,6 +76,8 @@ class DocumentPreviewPanel extends StatefulWidget {
     this.bodyPt = 12,
     this.headingPt = const {1: 16, 2: 14, 3: 12},
     this.lineSpacing = 1.5,
+    this.readOnly = false,
+    this.showOriginalInitially = true,
   });
 
   @override
@@ -135,6 +143,7 @@ class _DocumentPreviewPanelState extends State<DocumentPreviewPanel> {
     super.initState();
     _replacementService = ImageReplacementService(imageBaseUrl: widget.imageBaseUrl);
     _editFocus = FocusNode(onKeyEvent: _onEditorKey);
+    _showOriginal = widget.showOriginalInitially;
     _initBlocks();
   }
 
@@ -518,6 +527,7 @@ class _DocumentPreviewPanelState extends State<DocumentPreviewPanel> {
   }
 
   void _select(String? uid, {int? cursor}) {
+    if (widget.readOnly) return;
     if (uid == _selectedUid && (uid == null || _editingUid == uid)) return;
     setState(() => _selectedUid = uid);
     _syncEditor(cursor: cursor);
@@ -1078,7 +1088,7 @@ class _DocumentPreviewPanelState extends State<DocumentPreviewPanel> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _wordTitleBar(pages.length),
-          _ribbon(),
+          if (!widget.readOnly) _ribbon(),
           Expanded(
             child: LayoutBuilder(
               builder: (ctx, c) {
@@ -1126,7 +1136,7 @@ class _DocumentPreviewPanelState extends State<DocumentPreviewPanel> {
           const Icon(Icons.description, color: Colors.white, size: 18),
           const SizedBox(width: 8),
           Expanded(
-            child: Tr('Corrected — Word preview',
+            child: Tr(widget.readOnly ? 'Document preview' : 'Corrected — Word preview',
               style: const TextStyle(
                 color: Colors.white,
                 fontWeight: FontWeight.w700,
@@ -1375,7 +1385,9 @@ class _DocumentPreviewPanelState extends State<DocumentPreviewPanel> {
     final b = _sel;
     final info = (b != null && _isTextual(b))
         ? '${_styleName(b)} · ${_fontOf(b)} · ${_fmt(_sizeOf(b))}pt'
-        : 'No paragraph selected — click text to edit';
+        : (widget.readOnly
+            ? 'Read-only preview'
+            : 'No paragraph selected — click text to edit');
     const st = TextStyle(color: Colors.white, fontSize: 11);
     return Container(
       height: 26,

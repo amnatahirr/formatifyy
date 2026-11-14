@@ -12,6 +12,7 @@ import '../../../providers/document_provider.dart';
 import '../../../providers/fyp_provider.dart';
 import '../../../theme/app_theme.dart';
 import '../section_editor_screen.dart';
+import '../../../widgets/document_preview_panel.dart';
 
 import '../../../widgets/tr.dart';
 
@@ -282,6 +283,98 @@ class _ProjectEditorTabState extends State<ProjectEditorTab> {
     }
   }
 
+  // ─── Word-style document preview (same panel as Analysis) ───
+
+  Future<Map<String, dynamic>?>? _previewFuture;
+  String _previewSig = '';
+
+  int? _wordDocId(Map<String, dynamic> project) {
+    final v = project['my_document_id'];
+    if (v == null) return null;
+    return v is int ? v : int.tryParse(v.toString());
+  }
+
+  Widget _wordPreview(
+    Map<String, dynamic> project,
+    List<Map<String, dynamic>> sections,
+  ) {
+    final docId = _wordDocId(project)!;
+    final userId =
+        context.read<AuthProvider>().userId ?? DevUserConfig.backendUserId;
+
+    // Re-fetch only when the document/section versions change.
+    final sig = '$docId|${project['base_document_path']}|'
+        '${project['shared_snapshot_path']}|'
+        '${sections.map((s) => '${s['latest_version']}').join(',')}';
+    if (sig != _previewSig || _previewFuture == null) {
+      _previewSig = sig;
+      _previewFuture =
+          context.read<DocumentProvider>().getPreview(docId, userId);
+    }
+
+    // Fallback = old text cards (used if the Word preview can't load).
+    final sectionsHaveContent = sections.any(
+      (s) => ((s['latest_content'] as String?) ?? '').trim().isNotEmpty,
+    );
+    final previewBlocks = (project['preview_blocks'] as List? ?? [])
+        .map((e) => Map<String, dynamic>.from(e as Map))
+        .toList();
+    final Widget fallback = sectionsHaveContent
+        ? Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children:
+                sections.map((s) => _PreviewSection(section: s)).toList(),
+          )
+        : (previewBlocks.isNotEmpty
+            ? _DocumentBlocksPreview(blocks: previewBlocks)
+            : const Tr(
+                'Nothing to preview yet. Upload a document or use Edit here to add content.',
+                style: TextStyle(color: Color(0xFF94A3B8), fontSize: 13),
+              ));
+
+    return FutureBuilder<Map<String, dynamic>?>(
+      future: _previewFuture,
+      builder: (ctx, snap) {
+        if (snap.connectionState != ConnectionState.done) {
+          return const SizedBox(
+            height: 240,
+            child: Center(child: CircularProgressIndicator()),
+          );
+        }
+        final raw = snap.data == null ? null : snap.data!['formatted_lines'];
+        final blocks = raw is List
+            ? raw
+                .whereType<Map>()
+                .map((e) => Map<String, dynamic>.from(e))
+                .toList()
+            : <Map<String, dynamic>>[];
+        if (blocks.isEmpty) return fallback;
+
+        final h = (MediaQuery.of(ctx).size.height * 0.8)
+            .clamp(520.0, 900.0)
+            .toDouble();
+        return SizedBox(
+          height: h,
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(10),
+            child: DocumentPreviewPanel(
+              blocks: blocks,
+              issues: const [],
+              imageBaseUrl: '',
+              documentId: docId,
+              appliedFixes: const {},
+              ignoredIssueIds: const {},
+              onApplyFix: (_, __) {},
+              onIgnoreIssue: (_) {},
+              readOnly: true,
+              showOriginalInitially: false,
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   Future<int?> _resolveDocumentId(
     Map<String, dynamic> project,
     DocumentProvider docs,
@@ -505,7 +598,9 @@ class _ProjectEditorTabState extends State<ProjectEditorTab> {
             style: TextStyle(color: Color(0xFF94A3B8), fontSize: 12),
           ),
           const SizedBox(height: 12),
-          if (sectionsHaveContent)
+          if (_wordDocId(project) != null)
+            _wordPreview(project, sections)
+          else if (sectionsHaveContent)
             ...sections.map((s) => _PreviewSection(section: s))
           else if (previewBlocks.isNotEmpty)
             _DocumentBlocksPreview(blocks: previewBlocks)

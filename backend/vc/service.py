@@ -716,6 +716,9 @@ def get_project_detail(project_id: int, user_id: int) -> Dict[str, Any]:
     project["sections"] = get_sections_with_latest(project_id)
     project["members"] = list_project_members(project_id)
     project["preview_blocks"] = _extract_preview_blocks(project)
+    from vc.reports_sync import _get_member_document_id
+
+    project["my_document_id"] = _get_member_document_id(project_id, user_id)
     # TEMP DEBUG: remove once preview works
     print(
         f"[VC-DEBUG] preview_blocks={len(project['preview_blocks'])} for project {project_id}",
