@@ -12,7 +12,20 @@ class MySupervisorScreen extends StatefulWidget {
   /// Opens the Choose Supervisor tab (e.g. after rejection).
   final VoidCallback? onChooseSupervisor;
 
-  const MySupervisorScreen({super.key, this.onChooseSupervisor});
+  /// Quick-access cards (open the same tabs as the sidebar).
+  final VoidCallback? onOpenMilestones;
+  final VoidCallback? onOpenMeetingNotes;
+  final VoidCallback? onOpenPlagiarism;
+  final VoidCallback? onOpenStatusTracker;
+
+  const MySupervisorScreen({
+    super.key,
+    this.onChooseSupervisor,
+    this.onOpenMilestones,
+    this.onOpenMeetingNotes,
+    this.onOpenPlagiarism,
+    this.onOpenStatusTracker,
+  });
 
   @override
   State<MySupervisorScreen> createState() => _MySupervisorScreenState();
@@ -109,6 +122,8 @@ class _MySupervisorScreenState extends State<MySupervisorScreen> {
       child: ListView(
         padding: const EdgeInsets.all(32),
         children: [
+          _quickAccessCards(),
+          const SizedBox(height: 26),
           Tr('Your FYP supervisor assignment status.',
             style: TextStyle(color: _p.textSecondary, fontSize: 14),
           ),
@@ -124,6 +139,123 @@ class _MySupervisorScreenState extends State<MySupervisorScreen> {
           else
             _genericCard(statusMap!),
         ],
+      ),
+    );
+  }
+
+  // ─── Quick access cards (Milestones / Meeting Notes / Plagiarism / Status) ───
+
+  Widget _quickAccessCards() {
+    final items = <_QuickItem>[
+      if (widget.onOpenMilestones != null)
+        _QuickItem(
+          'Milestones',
+          'View your FYP milestone checklist',
+          Icons.checklist_outlined,
+          const Color(0xFF6366F1),
+          widget.onOpenMilestones!,
+        ),
+      if (widget.onOpenMeetingNotes != null)
+        _QuickItem(
+          'Meeting Notes',
+          'Read-only notes from your supervisor',
+          Icons.sticky_note_2_outlined,
+          const Color(0xFF06B6D4),
+          widget.onOpenMeetingNotes!,
+        ),
+      if (widget.onOpenPlagiarism != null)
+        _QuickItem(
+          'Plagiarism Report',
+          'Score and matched sources',
+          Icons.policy_outlined,
+          const Color(0xFFEC4899),
+          widget.onOpenPlagiarism!,
+        ),
+      if (widget.onOpenStatusTracker != null)
+        _QuickItem(
+          'Status Tracker',
+          'Submission review status and decisions',
+          Icons.track_changes_outlined,
+          const Color(0xFF10B981),
+          widget.onOpenStatusTracker!,
+        ),
+    ];
+    if (items.isEmpty) return const SizedBox.shrink();
+
+    return LayoutBuilder(
+      builder: (context, c) {
+        const gap = 14.0;
+        final cols = c.maxWidth >= 1100 ? 4 : (c.maxWidth >= 560 ? 2 : 1);
+        final w = (c.maxWidth - gap * (cols - 1)) / cols;
+        return Wrap(
+          spacing: gap,
+          runSpacing: gap,
+          children: items
+              .map((f) => SizedBox(width: w, child: _quickCard(f)))
+              .toList(),
+        );
+      },
+    );
+  }
+
+  Widget _quickCard(_QuickItem f) {
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: InkWell(
+        onTap: f.onTap,
+        borderRadius: BorderRadius.circular(_p.isDark ? _p.cardRadius : 12),
+        child: Container(
+          padding: const EdgeInsets.all(18),
+          decoration: BoxDecoration(
+            color: _p.surface,
+            borderRadius: BorderRadius.circular(_p.isDark ? _p.cardRadius : 12),
+            border: Border.all(color: _p.isDark ? _p.borderStrong : _p.border),
+            boxShadow: _p.isDark ? _p.cardShadow : null,
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: f.color.withOpacity(0.14),
+                  borderRadius: BorderRadius.circular(11),
+                ),
+                child: Icon(f.icon, color: f.color, size: 21),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Tr(
+                      f.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w600,
+                        color: _p.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Tr(
+                      f.subtitle,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: _p.textSecondary,
+                        height: 1.3,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(Icons.chevron_right_rounded, color: _p.textMuted, size: 18),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -666,4 +798,12 @@ class _MySupervisorScreenState extends State<MySupervisorScreen> {
 
 extension on String {
   String ifEmpty(String fallback) => isEmpty ? fallback : this;
+}
+
+class _QuickItem {
+  final String title, subtitle;
+  final IconData icon;
+  final Color color;
+  final VoidCallback onTap;
+  const _QuickItem(this.title, this.subtitle, this.icon, this.color, this.onTap);
 }

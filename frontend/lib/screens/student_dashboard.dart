@@ -378,22 +378,6 @@ class _StudentDashboardState extends State<StudentDashboard> {
                     },
                   ),
                   _buildSidebarItem(7, Icons.badge_outlined, 'My Supervisor'),
-                  _buildSidebarItem(8, Icons.checklist_outlined, 'Milestones'),
-                  _buildSidebarItem(
-                    9,
-                    Icons.sticky_note_2_outlined,
-                    'Meeting Notes',
-                  ),
-                  _buildSidebarItem(
-                    10,
-                    Icons.policy_outlined,
-                    'Plagiarism Report',
-                  ),
-                  _buildSidebarItem(
-                    11,
-                    Icons.track_changes_outlined,
-                    'Status Tracker',
-                  ),
                 ],
 
                 _sidebarLabel('Account'),
@@ -499,7 +483,9 @@ class _StudentDashboardState extends State<StudentDashboard> {
   }
 
   Widget _buildSidebarItem(int index, IconData icon, String label) {
-    final isSelected = _selectedIndex == index;
+    final isSelected =
+        _selectedIndex == index ||
+        (index == 7 && _selectedIndex >= 8 && _selectedIndex <= 11);
 
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -699,6 +685,36 @@ class _StudentDashboardState extends State<StudentDashboard> {
   }
 
   Widget _buildBody() {
+    final inner = _buildBodyInner();
+    final showBack =
+        DevUserConfig.hasFypModule &&
+        !isCompact(context) &&
+        _activeAnalysis == null &&
+        _activeProjectId == null &&
+        _selectedIndex >= 8 &&
+        _selectedIndex <= 11;
+    if (!showBack) return inner;
+
+    return Column(
+      children: [
+        Align(
+          alignment: Alignment.centerLeft,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(24, 12, 24, 0),
+            child: TextButton.icon(
+              onPressed: () => _goTo(7),
+              icon: const Icon(Icons.arrow_back_rounded, size: 18),
+              label: const Tr('Back to My Supervisor'),
+              style: TextButton.styleFrom(foregroundColor: _p.accent),
+            ),
+          ),
+        ),
+        Expanded(child: inner),
+      ],
+    );
+  }
+
+  Widget _buildBodyInner() {
     if (_activeAnalysis != null) {
       final r = _activeAnalysis!;
       return AnalyzeScreen(
@@ -807,6 +823,10 @@ class _StudentDashboardState extends State<StudentDashboard> {
             );
           case 7:
             return MySupervisorScreen(
+              onOpenMilestones: () => _goTo(8),
+              onOpenMeetingNotes: () => _goTo(9),
+              onOpenPlagiarism: () => _goTo(10),
+              onOpenStatusTracker: () => _goTo(11),
               onChooseSupervisor:
                   context.watch<FypProvider>().canChooseSupervisor
                   ? () => setState(() {
