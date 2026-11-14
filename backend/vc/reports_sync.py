@@ -151,6 +151,48 @@ def _documents_has_org_id(cursor) -> bool:
     return "org_id" in {row[1] for row in cursor.fetchall()}
 
 
+def _project_has_manual_edits(project_id: int) -> bool:
+    """
+    True once the team has changed the project after the last document upload:
+    a section save/rollback commit newer than the last 'import' commit, or any
+    section image. Until then the uploaded .docx is the source of truth and is
+    shown as-is (tables, images and formatting intact).
+    """
+    conn = get_db()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        SELECT 1 FROM section_commits
+        WHERE project_id = ?
+          AND commit_type != 'import'
+          AND created_at > COALESCE(
+                (SELECT MAX(created_at) FROM section_commits
+                 WHERE project_id = ? AND commit_type = 'import'),
+                ''
+              )
+        LIMIT 1
+        """,
+        (project_id, project_id),
+    )
+    edited = cursor.fetchone() is not None
+
+    if not edited:
+        cursor.execute(
+            "SELECT 1 FROM section_images WHERE project_id = ? LIMIT 1",
+            (project_id,),
+        )
+        edited = cursor.fetchone() is not None
+
+    conn.close()
+    return edited
+
+
+def _copy_if_different(src: str, dst: str) -> None:
+    if os.path.abspath(src) != os.path.abspath(dst):
+        shutil.copy2(src, dst)
+
+
 def _upsert_member_document(
     project_id: int,
     user_id: int,
@@ -204,10 +246,23 @@ def _upsert_member_document(
     return int(doc_id)
 
 
-def sync_project_to_member_reports(project_id: int) -> Optional[Dict[str, Any]]:
+def sync_project_to_member_reports(
+    project_id: int,
+    *,
+    reset_working: bool = False,
+) -> Optional[Dict[str, Any]]:
     """
-    Build a live DOCX snapshot from current section content and register/update
-    a My Reports document for every project member.
+    Build/refresh the shared DOCX snapshot and register/update a My Reports
+    document for every project member.
+
+    - No manual edits since the last upload  -> snapshot = the uploaded .docx
+      itself (nothing is lost: text, tables, images, formatting).
+    - Team has edited sections / added images -> snapshot is assembled from the
+      latest section text + section images.
+
+    reset_working=True (used right after "Upload new version") also deletes
+    each member's cached working copy so the preview/analysis re-read the new
+    file instead of a stale one.
     """
     from vc.service import (
         get_latest_content_map,
@@ -232,7 +287,12 @@ def sync_project_to_member_reports(project_id: int) -> Optional[Dict[str, Any]]:
     os.makedirs(project_dir, exist_ok=True)
     snapshot_path = os.path.join(project_dir, "collaboration_live.docx")
 
-    if has_content:
+    edited = _project_has_manual_edits(project_id)
+
+    if has_base and not edited:
+        # Original upload is untouched -> use it byte-for-byte.
+        _copy_if_different(base_path, snapshot_path)
+    elif has_content:
         section_images = get_section_images_map(project_id)
         assemble_merged_docx(
             sections,
@@ -242,7 +302,7 @@ def sync_project_to_member_reports(project_id: int) -> Optional[Dict[str, Any]]:
             section_images,
         )
     else:
-        shutil.copy2(base_path, snapshot_path)
+        _copy_if_different(base_path, snapshot_path)
 
     raw_name = (project.get("base_document_filename") or "").strip()
     if raw_name:
@@ -262,6 +322,14 @@ def sync_project_to_member_reports(project_id: int) -> Optional[Dict[str, Any]]:
             file_path=snapshot_path,
         )
         member_docs[uid] = doc_id
+
+        if reset_working:
+            stale = os.path.join(UPLOAD_DIR, "working", f"doc_{doc_id}_working.docx")
+            try:
+                if os.path.exists(stale):
+                    os.remove(stale)
+            except OSError:
+                pass
 
     conn = get_db()
     cursor = conn.cursor()

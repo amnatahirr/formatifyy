@@ -14,6 +14,7 @@ import '../../../theme/app_theme.dart';
 import '../section_editor_screen.dart';
 import '../../../widgets/document_preview_panel.dart';
 
+import '../document_editor_screen.dart';
 import '../../../widgets/tr.dart';
 
 /// Document tab — preview by default, download / edit / upload new version /
@@ -82,6 +83,27 @@ class _ProjectEditorTabState extends State<ProjectEditorTab> {
     }
   }
 
+Future<void> _openDocumentEditor(Map<String, dynamic> project) async {
+  final docId = _wordDocId(project);
+  if (docId == null) {
+    // document abhi nahi hai: purane section editor wali list dikhao
+    setState(() => _editMode = !_editMode);
+    return;
+  }
+  final saved = await Navigator.push<bool>(
+    context,
+    MaterialPageRoute(
+      builder: (_) => DocumentEditorScreen(
+        projectId: widget.projectId,
+        documentId: docId,
+      ),
+    ),
+  );
+  if (saved == true && mounted) {
+    setState(() => _previewSig = '');
+    widget.onReload();
+  }
+}
   Future<void> _uploadNewVersion() async {
     final result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
@@ -501,7 +523,7 @@ class _ProjectEditorTabState extends State<ProjectEditorTab> {
                     style: ElevatedButton.styleFrom(),
                   ),
                   OutlinedButton.icon(
-                    onPressed: () => setState(() => _editMode = !_editMode),
+                    onPressed: () => _openDocumentEditor(project),
                     icon: Icon(
                       _editMode ? Icons.visibility : Icons.edit,
                       size: 16,
@@ -570,21 +592,15 @@ class _ProjectEditorTabState extends State<ProjectEditorTab> {
         ),
         const SizedBox(height: 20),
         if (_editMode) ...[
-          const Tr('Edit sections',
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 16,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          const SizedBox(height: 12),
-          ...sections.map(
-            (s) => _SectionTile(
-              projectId: widget.projectId,
-              section: s,
-              onChanged: widget.onReload,
-            ),
-          ),
+          const Tr('Edit sections', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w700)),
+  const SizedBox(height: 12),
+  ...sections.map(
+    (s) => _SectionTile(
+      projectId: widget.projectId,
+      section: s,
+      onChanged: widget.onReload,
+    ),
+  ),
         ] else ...[
           const Tr('Document preview',
             style: TextStyle(

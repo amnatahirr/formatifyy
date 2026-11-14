@@ -40,6 +40,8 @@ class DocumentPreviewPanel extends StatefulWidget {
   final void Function(Map<String, dynamic> result, Map<String, dynamic> issue)? onImageReplaced;
   final void Function(Map<String, dynamic> result, Map<String, dynamic> issue)? onImageRemoved;
   final void Function(List<Map<String, dynamic>> blocks)? onBlocksChanged;
+  final void Function(List<Map<String, dynamic>> blocks)? onBlocksReady;
+  final void Function(Map<String, dynamic>? block)? onBlockSelected;
   final Map<String, GlobalKey>? ghostKeys;
   final String? flashGhostIssueId;
   final void Function(String issueId)? onGhostTap;
@@ -48,6 +50,8 @@ class DocumentPreviewPanel extends StatefulWidget {
   final double bodyPt;
   final Map<int, double> headingPt;
   final double lineSpacing;
+
+ 
 
   /// Collaboration preview: no editing, no ribbon.
   final bool readOnly;
@@ -71,7 +75,9 @@ class DocumentPreviewPanel extends StatefulWidget {
     this.onBlocksChanged,
     this.ghostKeys,
     this.flashGhostIssueId,
+    this.onBlocksReady, 
     this.onGhostTap,
+    this.onBlockSelected,
     this.defaultFont = 'Times New Roman',
     this.bodyPt = 12,
     this.headingPt = const {1: 16, 2: 14, 3: 12},
@@ -89,6 +95,7 @@ class _DocumentPreviewPanelState extends State<DocumentPreviewPanel> {
 
   late List<Map<String, dynamic>> _blocks;
   int _uidSeq = 0;
+  final int _cacheBust = DateTime.now().millisecondsSinceEpoch;
   String? _selectedUid;
 
   final List<String> _undo = [];
@@ -137,6 +144,19 @@ class _DocumentPreviewPanelState extends State<DocumentPreviewPanel> {
     MapEntry('Purple', 0xFF7030A0),
     MapEntry('Grey', 0xFF595959),
   ];
+  List<Map<String, dynamic>> _snapshot() => _blocks.where((b) => !_isGhost(b)).map((b) {
+      final m = Map<String, dynamic>.from(b);
+      m.remove('_uid');
+      return m;
+    }).toList();
+
+void _announceReady() {
+  final cb = widget.onBlocksReady;
+  if (cb == null) return;
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    if (mounted) cb(_snapshot());
+  });
+}
 
   @override
   void initState() {
@@ -145,6 +165,7 @@ class _DocumentPreviewPanelState extends State<DocumentPreviewPanel> {
     _editFocus = FocusNode(onKeyEvent: _onEditorKey);
     _showOriginal = widget.showOriginalInitially;
     _initBlocks();
+    _announceReady();
   }
 
   @override
@@ -153,6 +174,7 @@ class _DocumentPreviewPanelState extends State<DocumentPreviewPanel> {
     if (!identical(old.blocks, widget.blocks) &&
         jsonEncode(old.blocks) != jsonEncode(widget.blocks)) {
       _initBlocks();
+      _announceReady();
       _undo.clear();
       _redo.clear();
       _selectedUid = null;
@@ -338,7 +360,7 @@ class _DocumentPreviewPanelState extends State<DocumentPreviewPanel> {
       '$base/static/uploads/$rel',
       '$base/api/files/$rel',
       '$base/files/$rel',
-    }.toList();
+    }.map((u) => '$u?v=$_cacheBust').toList();
   }
 
   String _imageUrl(String rawPath) {

@@ -9,7 +9,7 @@ import uuid
 from typing import Any, Dict, List, Optional
 
 from docx import Document
-from fastapi import HTTPException, UploadFile
+from fastapi import HTTPException, UploadFile, File , Form
 
 from database import get_db
 from template_logic.templates import get_template_by_id
@@ -182,7 +182,8 @@ def create_project(
             filename=base_document_filename,
             details={"initial": True},
         )
-        reports_sync = sync_project_to_member_reports(project_id)
+        
+        reports_sync = sync_project_to_member_reports(project_id, reset_working=True)
         if reports_sync and user_id in reports_sync.get("member_documents", {}):
             base_document_id = reports_sync["member_documents"][user_id]
 
@@ -253,11 +254,80 @@ def create_project_with_document(
     )
 
 
+
+def edit_project_document(
+    project_id: int,
+    user_id: int,
+    ops: List[Dict[str, Any]],
+    message: str = "",
+    images: Optional[List[UploadFile]] = None,
+) -> Dict[str, Any]:
+    """
+    Patch the current project document in place (text edits + new images) and
+    save the result as a new version (same path as 'Upload new version').
+    """
+    _require_member(project_id, user_id)
+    project = _get_project(project_id)
+
+    src = None
+    for key in ("shared_snapshot_path", "base_document_path"):
+        cand = project.get(key)
+        if cand and os.path.exists(cand):
+            src = cand
+            break
+    if not src:
+        raise HTTPException(status_code=404, detail="No document to edit")
+    if not ops:
+        raise HTTPException(status_code=400, detail="No changes")
+
+    from vc.doc_edit import apply_text_edits
+
+    project_dir = os.path.join(VC_UPLOAD_DIR, f"project_{project_id}")
+    work_dir = os.path.join(project_dir, f"edit_{uuid.uuid4().hex[:8]}")
+    os.makedirs(work_dir, exist_ok=True)
+
+    try:
+        image_paths: List[str] = []
+        for i, up in enumerate(images or []):
+            ext = os.path.splitext(up.filename or "")[1].lower()
+            if ext not in ALLOWED_IMAGE_EXTENSIONS:
+                raise HTTPException(status_code=400, detail="Unsupported image format")
+            dest = os.path.join(work_dir, f"img_{i}{ext}")
+            with open(dest, "wb") as f:
+                shutil.copyfileobj(up.file, f)
+            image_paths.append(dest)
+
+        edited = os.path.join(work_dir, "edited.docx")
+        stats = apply_text_edits(src, edited, ops, image_paths)
+        if stats.get("image_anchor_missing"):
+                raise HTTPException(
+                status_code=400,
+                detail="Image ka anchor paragraph document mein nahi mila. "
+                       "Paragraph dobara select karke image add karo.",
+            )
+        if not any(stats.values()):
+            raise HTTPException(status_code=400, detail="No matching paragraphs found")
+
+        filename = (project.get("base_document_filename") or "document.docx").strip()
+        if not filename.lower().endswith(".docx"):
+            filename += ".docx"
+
+        detail = upload_project_document(
+            project_id, user_id, edited, filename, message=message
+        )
+    finally:
+        shutil.rmtree(work_dir, ignore_errors=True)
+
+    detail["edit_stats"] = stats
+    return detail
+
+
 def upload_project_document(
     project_id: int,
     user_id: int,
     docx_path: str,
     original_filename: str,
+    message: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Attach or replace the project document.
@@ -295,6 +365,8 @@ def upload_project_document(
     conn.commit()
     conn.close()
 
+    commit_message = (message or "").strip() or f"Document upload: {original_filename}"
+
     section_contents = extract_sections_from_docx(permanent_doc_path, template_sections)
     commits_created = 0
     for sec in template_sections:
@@ -307,7 +379,7 @@ def upload_project_document(
             sid,
             user_id,
             content,
-            message=f"Document upload: {original_filename}",
+            message=commit_message,
             commit_type="import",
         )
         commits_created += 1
@@ -317,7 +389,7 @@ def upload_project_document(
         user_id,
         "new_version" if had_previous_document else "upload",
         filename=original_filename,
-        details={"commits_created": commits_created},
+        details={"commits_created": commits_created, "message": commit_message},
     )
 
     # Notify other members when a new document version is uploaded (never breaks upload).
@@ -350,7 +422,7 @@ def upload_project_document(
             import logging
             logging.getLogger(__name__).exception("Failed to send new-version notification: %s", exc)
 
-    reports_sync = sync_project_to_member_reports(project_id)
+    reports_sync = sync_project_to_member_reports(project_id, reset_working=True)
     detail = get_project_detail(project_id, user_id)
     detail["upload"] = {
         "filename": original_filename,

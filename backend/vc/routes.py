@@ -1,15 +1,16 @@
 """FastAPI routes for the Version Control & Collaboration module."""
 
-from __future__ import annotations
+
 
 import os
 import shutil
 import uuid
-from typing import Any, Callable, Dict, Optional
 
+from fastapi import Body
+from vc.service import edit_project_document
 from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
-
+from typing import Any, Callable, Dict, List, Optional
 from vc.models import (
     CommitRequest,
     InviteMemberRequest,
@@ -121,6 +122,23 @@ async def api_upload_project_document(
             except OSError:
                 pass
 
+from fastapi import Request
+
+@router.post("/projects/{project_id}/document/edit")
+async def edit_document(
+    project_id: int,
+    request: Request,
+    user_id: int = Query(...),
+):
+    import json
+    form = await request.form()
+    try:
+        ops_list = json.loads(form.get("ops") or "[]")
+    except ValueError:
+        raise HTTPException(status_code=400, detail="ops must be valid JSON")
+    message = form.get("message") or ""
+    images = [f for f in form.getlist("images") if hasattr(f, "filename")]
+    return edit_project_document(project_id, user_id, ops_list, message, images)
 
 @router.post("/projects/join")
 async def api_join_project(body: JoinProjectRequest, user_id: int = Query(...)):
