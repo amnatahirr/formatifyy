@@ -14,7 +14,7 @@ import 'supervisor/plagiarism_monitor_screen.dart';
 import 'supervisor/submission_review_screen.dart';
 import 'supervisor/supervisor_home_screen.dart';
 import 'supervisor/supervisor_more_screen.dart';
-import 'supervisor/supervisor_notifications_screen.dart';
+import '../screens/notifications_screen.dart';
 
 import '../widgets/tr.dart';
 class _MobileNavItem {
@@ -35,7 +35,10 @@ const List<_MobileNavItem> _kMobileNavItems = [
 ];
 
 class SupervisorDashboard extends StatefulWidget {
-  const SupervisorDashboard({super.key});
+  /// Optional initial sidebar tab (e.g. from a notification deep link).
+  final int? initialTab;
+
+  const SupervisorDashboard({super.key, this.initialTab});
 
   @override
   State<SupervisorDashboard> createState() => _SupervisorDashboardState();
@@ -110,6 +113,15 @@ class _SupervisorDashboardState extends State<SupervisorDashboard> {
       return;
     }
     setState(() => _selectedTab = index);
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    final t = widget.initialTab;
+    if (t != null && t >= 0 && t < _tabs.length) {
+      _selectedTab = t;
+    }
   }
 
   String get _title {
@@ -589,7 +601,7 @@ class _SupervisorDashboardState extends State<SupervisorDashboard> {
           onOpenProfile: () => _selectTab(_profileTabIndex),
         );
       case 7:
-        return const SupervisorNotificationsScreen();
+        return const NotificationsScreen(embedded: true);
       default:
         return const _SupervisorProfileView();
     }

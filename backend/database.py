@@ -33,6 +33,7 @@ def get_db():
         check_same_thread=False,
         timeout=30
     )
+    conn.execute("PRAGMA busy_timeout = 30000")
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -212,6 +213,7 @@ def init_db():
             required_sections TEXT,
             formatting_rules TEXT,
             created_by INTEGER NOT NULL,
+            org_id INTEGER DEFAULT 1,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (university_id) REFERENCES universities(id),
             FOREIGN KEY (created_by) REFERENCES users(id)
@@ -500,11 +502,16 @@ def init_db():
         cursor.execute("ALTER TABLE notifications ADD COLUMN payload_json TEXT")
     if "read_at" not in notification_columns:
         cursor.execute("ALTER TABLE notifications ADD COLUMN read_at DATETIME")
-    
+    if "dedupe_key" not in notification_columns:
+        cursor.execute("ALTER TABLE notifications ADD COLUMN dedupe_key TEXT")
+
     # Add index for efficient queries
     cursor.execute("SELECT name FROM sqlite_master WHERE type='index' AND name='idx_notifications_user_read_created'")
     if not cursor.fetchone():
         cursor.execute("CREATE INDEX idx_notifications_user_read_created ON notifications(user_id, is_read, created_at DESC)")
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='index' AND name='idx_notifications_user_dedupe'")
+    if not cursor.fetchone():
+        cursor.execute("CREATE INDEX idx_notifications_user_dedupe ON notifications(user_id, dedupe_key)")
 
     # 13. Group documents waiting for supervisor review
     cursor.execute("""
@@ -996,6 +1003,8 @@ def _ensure_organizations_schema(cursor) -> None:
     _cols = [r[1] for r in cursor.fetchall()]
     if _cols and "stage" not in _cols:
         cursor.execute("DROP TABLE deadline_reminders_sent")
+        _cols = []
+    if not _cols:
         cursor.execute("""
     CREATE TABLE IF NOT EXISTS deadline_reminders_sent (
         id INTEGER PRIMARY KEY AUTOINCREMENT,

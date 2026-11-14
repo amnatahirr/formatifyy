@@ -308,13 +308,18 @@ def _create_notification(
     related_type: str,
     related_id: int,
     org_id: int,
-) -> None:
-    """Legacy wrapper - now uses the unified notification service."""
-    from services.notification_service import notify, NotificationType
-    
+) -> dict[str, Any] | None:
+    """Resolve the recipient and return notify() kwargs.
+
+    Does NOT send the notification — callers must pass the returned dict to
+    _flush_notifications() AFTER conn.commit(), because notify() uses its own
+    connection and would hit "database is locked" inside an open write txn.
+    """
+    from services.notification_service import NotificationType
+
     email = (recipient_email or "").strip().lower()
     if not email:
-        return
+        return None
 
     cursor.execute(
         "SELECT id, org_id FROM users WHERE LOWER(email) = LOWER(?) AND COALESCE(org_id, 1) = ?",
@@ -337,20 +342,29 @@ def _create_notification(
         "submission_rejected": NotificationType.SUBMISSION_REJECTED,
         "document_comment": NotificationType.SUPERVISOR_COMMENT,
         "plagiarism_flag": NotificationType.PLAGIARISM_HIGH,
+        "group_discarded": NotificationType.GROUP_DISCARDED,
     }
     new_type = type_map.get(notification_type, notification_type)
 
-    notify(
-        org_id=recipient_org_id,
-        user_id=user_id,
-        type=new_type,
-        title=title,
-        body=message,
-        entity_type=related_type,
-        entity_id=related_id,
-        payload={"screen": _get_screen_for_type(new_type), "entity_id": related_id},
-    )
-    logger.info("Notification queued for %s (org_id=%s): %s", email, recipient_org_id, title)
+    return {
+        "org_id": recipient_org_id,
+        "user_id": user_id,
+        "type": new_type,
+        "title": title,
+        "body": message,
+        "entity_type": related_type,
+        "entity_id": related_id,
+        "payload": {"screen": _get_screen_for_type(new_type), "entity_id": related_id},
+    }
+
+
+def _flush_notifications(pending: list) -> None:
+    """Send notifications collected via _create_notification after commit."""
+    from services.notification_service import notify
+
+    for kwargs in pending:
+        if kwargs:
+            notify(**kwargs)
 
 
 def _get_screen_for_type(notification_type: str) -> str:
@@ -367,6 +381,7 @@ def _get_screen_for_type(notification_type: str) -> str:
         NotificationType.SUBMISSION_REJECTED: "submissions",
         NotificationType.SUPERVISOR_COMMENT: "analyze",
         NotificationType.PLAGIARISM_HIGH: "analyze",
+        NotificationType.GROUP_DISCARDED: "assignment_requests",
     }
     return screen_map.get(notification_type, "notifications")
 
@@ -713,6 +728,7 @@ def discard_group(
 
     conn = get_db()
     cursor = conn.cursor()
+    pending_notifications: list = []
     try:
         cursor.execute(
             """
@@ -763,21 +779,24 @@ def discard_group(
         group_title = group["title"] or "your group"
         note_suffix = f" Reason: {reason}" if reason else ""
         for student_email in student_emails:
-            _create_notification(
-                cursor,
-                recipient_email=student_email,
-                title="Group discarded by supervisor",
-                message=(
-                    f"{supervisor_name} discarded group '{group_title}'. "
-                    f"This frees their supervision slot.{note_suffix}"
-                ),
-                notification_type="group_discarded",
-                related_type="fyp_group",
-                related_id=group_id,
-                org_id=_supervisor_org_id(supervisor),
+            pending_notifications.append(
+                _create_notification(
+                    cursor,
+                    recipient_email=student_email,
+                    title="Group discarded by supervisor",
+                    message=(
+                        f"{supervisor_name} discarded group '{group_title}'. "
+                        f"This frees their supervision slot.{note_suffix}"
+                    ),
+                    notification_type="group_discarded",
+                    related_type="fyp_group",
+                    related_id=group_id,
+                    org_id=_supervisor_org_id(supervisor),
+                )
             )
 
         conn.commit()
+        _flush_notifications(pending_notifications)
         return {
             "success": True,
             "message": f"Group '{group_title}' discarded. Slot freed.",
@@ -845,6 +864,7 @@ def accept_assignment_request(
 
     conn = get_db()
     cursor = conn.cursor()
+    pending_notifications: list = []
     try:
         cursor.execute(
             """
@@ -955,21 +975,24 @@ def accept_assignment_request(
 
         supervisor_name = supervisor.get("name") or "Your supervisor"
         topic = request_row["project_title"] or request_row["group_name"]
-        _create_notification(
-            cursor,
-            recipient_email=request_row["student_leader_email"],
-            title="Assignment request accepted",
-            message=(
-                f"{supervisor_name} accepted your group '{request_row['group_name']}' "
-                f"for topic '{topic}'."
-            ),
-            notification_type="assignment_accepted",
-            related_type="assignment_request",
-            related_id=request_id,
-            org_id=_supervisor_org_id(supervisor),
+        pending_notifications.append(
+            _create_notification(
+                cursor,
+                recipient_email=request_row["student_leader_email"],
+                title="Assignment request accepted",
+                message=(
+                    f"{supervisor_name} accepted your group '{request_row['group_name']}' "
+                    f"for topic '{topic}'."
+                ),
+                notification_type="assignment_accepted",
+                related_type="assignment_request",
+                related_id=request_id,
+                org_id=_supervisor_org_id(supervisor),
+            )
         )
 
         conn.commit()
+        _flush_notifications(pending_notifications)
         cursor.execute(
             """
             SELECT ar.*, d.name AS department_name, d.code AS department_code
@@ -1022,6 +1045,7 @@ def reject_assignment_request(
 
     conn = get_db()
     cursor = conn.cursor()
+    pending_notifications: list = []
     try:
         cursor.execute(
             """
@@ -1051,21 +1075,24 @@ def reject_assignment_request(
         )
 
         supervisor_name = supervisor.get("name") or "Your supervisor"
-        _create_notification(
-            cursor,
-            recipient_email=request_row["student_leader_email"],
-            title="Assignment request rejected",
-            message=(
-                f"{supervisor_name} rejected your group '{request_row['group_name']}'. "
-                f"Reason: {reason}"
-            ),
-            notification_type="assignment_rejected",
-            related_type="assignment_request",
-            related_id=request_id,
-            org_id=_supervisor_org_id(supervisor),
+        pending_notifications.append(
+            _create_notification(
+                cursor,
+                recipient_email=request_row["student_leader_email"],
+                title="Assignment request rejected",
+                message=(
+                    f"{supervisor_name} rejected your group '{request_row['group_name']}'. "
+                    f"Reason: {reason}"
+                ),
+                notification_type="assignment_rejected",
+                related_type="assignment_request",
+                related_id=request_id,
+                org_id=_supervisor_org_id(supervisor),
+            )
         )
 
         conn.commit()
+        _flush_notifications(pending_notifications)
         cursor.execute(
             """
             SELECT ar.*, d.name AS department_name, d.code AS department_code
@@ -1571,6 +1598,7 @@ def add_document_comment(
 
     conn = get_db()
     cursor = conn.cursor()
+    pending_notifications: list = []
     try:
         doc = _require_group_document(
             cursor,
@@ -1603,18 +1631,20 @@ def add_document_comment(
         supervisor_name = supervisor.get("name") or "Your supervisor"
         snippet = paragraph["text"][:80] + ("…" if len(paragraph["text"] or "") > 80 else "")
         for student_email in student_emails:
-            _create_notification(
-                cursor,
-                recipient_email=student_email,
-                title="New document comment",
-                message=(
-                    f"{supervisor_name} commented on '{doc['title']}': {comment_text} "
-                    f"(paragraph: {snippet})"
-                ),
-                notification_type="document_comment",
-                related_type="document_comment",
-                related_id=comment_id,
-                org_id=_supervisor_org_id(supervisor),
+            pending_notifications.append(
+                _create_notification(
+                    cursor,
+                    recipient_email=student_email,
+                    title="New document comment",
+                    message=(
+                        f"{supervisor_name} commented on '{doc['title']}': {comment_text} "
+                        f"(paragraph: {snippet})"
+                    ),
+                    notification_type="document_comment",
+                    related_type="document_comment",
+                    related_id=comment_id,
+                    org_id=_supervisor_org_id(supervisor),
+                )
             )
 
         # Mark document + linked final submission as needing revision so Status Tracker updates
@@ -1637,6 +1667,7 @@ def add_document_comment(
         )
 
         conn.commit()
+        _flush_notifications(pending_notifications)
         paragraphs = _serialize_review_paragraphs(cursor, document_id)
         return {
             "success": True,
@@ -1974,6 +2005,7 @@ def _decide_submission(
     supervisor_id = supervisor["id"]
     conn = get_db()
     cursor = conn.cursor()
+    pending_notifications: list = []
     try:
         row = _load_submission_row(cursor, submission_id, supervisor_id)
         if row["status"] != "pending":
@@ -1998,15 +2030,17 @@ def _decide_submission(
                 student_emails = [fallback]
 
         for student_email in student_emails:
-            _create_notification(
-                cursor,
-                recipient_email=student_email,
-                title=notify_title,
-                message=notify_message,
-                notification_type=f"submission_{new_status}",
-                related_type="final_submission",
-                related_id=submission_id,
-                org_id=_supervisor_org_id(supervisor),
+            pending_notifications.append(
+                _create_notification(
+                    cursor,
+                    recipient_email=student_email,
+                    title=notify_title,
+                    message=notify_message,
+                    notification_type=f"submission_{new_status}",
+                    related_type="final_submission",
+                    related_id=submission_id,
+                    org_id=_supervisor_org_id(supervisor),
+                )
             )
 
         group_doc_id = row["group_document_id"] if "group_document_id" in row.keys() else None
@@ -2052,6 +2086,7 @@ def _decide_submission(
                 )
 
         conn.commit()
+        _flush_notifications(pending_notifications)
         updated = _load_submission_row(cursor, submission_id, supervisor_id)
         return {
             "success": True,
@@ -2379,6 +2414,7 @@ async def flag_group_plagiarism(
 
     conn = get_db()
     cursor = conn.cursor()
+    pending_notifications: list = []
     try:
         cursor.execute(
             """
@@ -2419,17 +2455,20 @@ async def flag_group_plagiarism(
             (note or message, flagged_at, group_id),
         )
 
-        _create_notification(
-            cursor,
-            recipient_email=student_email,
-            title="Plagiarism warning",
-            message=message,
-            notification_type="plagiarism_flag",
-            related_type="fyp_group",
-            related_id=group_id,
-            org_id=_supervisor_org_id(supervisor),
+        pending_notifications.append(
+            _create_notification(
+                cursor,
+                recipient_email=student_email,
+                title="Plagiarism warning",
+                message=message,
+                notification_type="plagiarism_flag",
+                related_type="fyp_group",
+                related_id=group_id,
+                org_id=_supervisor_org_id(supervisor),
+            )
         )
         conn.commit()
+        _flush_notifications(pending_notifications)
         return {
             "success": True,
             "message": "Warning notification sent to the student.",
@@ -2540,6 +2579,7 @@ def create_meeting_note(
 
     conn = get_db()
     cursor = conn.cursor()
+    pending_notifications: list = []
     try:
         group = _require_accepted_group(
             cursor, group_id, supervisor_id, org_id=_supervisor_org_id(supervisor)
@@ -2557,20 +2597,23 @@ def create_meeting_note(
         student_email = (group["student_contact_email"] or "").strip() or _get_group_student_email(
             cursor, group_id, supervisor_id
         )
-        _create_notification(
-            cursor,
-            recipient_email=student_email,
-            title="New meeting note",
-            message=(
-                f"Your supervisor added a meeting note for '{group['title']}' "
-                f"({meeting_day.isoformat()}): {topic}"
-            ),
-            notification_type="meeting_note",
-            related_type="meeting_note",
-            related_id=note_id,
-            org_id=_supervisor_org_id(supervisor),
+        pending_notifications.append(
+            _create_notification(
+                cursor,
+                recipient_email=student_email,
+                title="New meeting note",
+                message=(
+                    f"Your supervisor added a meeting note for '{group['title']}' "
+                    f"({meeting_day.isoformat()}): {topic}"
+                ),
+                notification_type="meeting_note",
+                related_type="meeting_note",
+                related_id=note_id,
+                org_id=_supervisor_org_id(supervisor),
+            )
         )
         conn.commit()
+        _flush_notifications(pending_notifications)
 
         cursor.execute(
             """

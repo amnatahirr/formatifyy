@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import html
+import logging
 import os
 import smtplib
 import ssl
@@ -10,6 +11,8 @@ from email.message import EmailMessage
 from pathlib import Path
 
 from dotenv import load_dotenv
+
+logger = logging.getLogger(__name__)
 
 # Always load backend/.env (safe if already loaded by main.py)
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
@@ -43,18 +46,30 @@ def _smtp_settings() -> dict:
     }
 
 
+def smtp_missing_vars() -> list[str]:
+    """Names of required SMTP env vars that are unset/empty (never values)."""
+    missing = []
+    for var in ("SMTP_HOST", "SMTP_USER", "SMTP_PASSWORD"):
+        if not (os.getenv(var) or "").strip():
+            missing.append(var)
+    return missing
+
+
 def build_invite_email_text(
     *,
     inviter_name: str,
     project_name: str,
     invite_code: str,
+    role: str | None = None,
 ) -> str:
     """Plain-text fallback for clients that don't render HTML."""
+    role_line = f"Your role: {role}\n\n" if role else ""
     return (
         "Formatify\n\n"
         "You're invited to collaborate\n\n"
         f"{inviter_name} invited you to join the project\n"
         f'"{project_name}"\n\n'
+        f"{role_line}"
         "Your invite code:\n"
         f"  {invite_code}\n\n"
         "How to join:\n"
@@ -71,11 +86,18 @@ def build_invite_email_html(
     inviter_name: str,
     project_name: str,
     invite_code: str,
+    role: str | None = None,
 ) -> str:
     """Approved light-theme HTML invite layout (inline CSS for email clients)."""
     safe_inviter = html.escape(inviter_name)
     safe_project = html.escape(project_name)
     safe_code = html.escape(invite_code)
+    role_block = ""
+    if role:
+        role_block = f"""
+              <p style="margin:12px 0 0 0;font-size:14px;color:#475569;">
+                Your role: <strong style="color:#0f172a;">{html.escape(role)}</strong>
+              </p>"""
 
     return f"""\
 <!DOCTYPE html>
@@ -112,7 +134,7 @@ def build_invite_email_html(
               </p>
               <p style="margin:0;font-size:17px;font-weight:600;color:#0f172a;">
                 {safe_project}
-              </p>
+              </p>{role_block}
             </td>
           </tr>
           <tr>
@@ -164,25 +186,28 @@ def build_invite_email_html(
 """
 
 
-def send_invite_email(
+def build_invite_message(
     *,
     to_email: str,
     inviter_name: str,
     project_name: str,
     invite_code: str,
-) -> None:
-    """Send a project invite-code email via configured SMTP (Gmail App Password)."""
+    role: str | None = None,
+) -> EmailMessage:
+    """Build the full invite EmailMessage (subject + text + HTML)."""
     settings = _smtp_settings()
     subject = f'You\'re invited to collaborate on "{project_name}" in Formatify'
     text_body = build_invite_email_text(
         inviter_name=inviter_name,
         project_name=project_name,
         invite_code=invite_code,
+        role=role,
     )
     html_body = build_invite_email_html(
         inviter_name=inviter_name,
         project_name=project_name,
         invite_code=invite_code,
+        role=role,
     )
 
     msg = EmailMessage()
@@ -191,7 +216,12 @@ def send_invite_email(
     msg["To"] = to_email
     msg.set_content(text_body)
     msg.add_alternative(html_body, subtype="html")
+    return msg
 
+
+def _deliver(msg: EmailMessage) -> None:
+    """Send a built message via SMTP. Raises on failure."""
+    settings = _smtp_settings()
     context = ssl.create_default_context()
     with smtplib.SMTP(settings["host"], settings["port"], timeout=30) as server:
         server.ehlo()
@@ -199,6 +229,70 @@ def send_invite_email(
         server.ehlo()
         server.login(settings["user"], settings["password"])
         server.send_message(msg)
+
+
+def send_project_invite(
+    *,
+    to_email: str,
+    inviter_name: str,
+    project_name: str,
+    invite_code: str,
+    role: str = "editor",
+) -> dict:
+    """Single invite-email path for every UI entry point.
+
+    Sends synchronously and reports the real outcome — never raises.
+    Returns {"email_sent": bool, "reason": str}.
+    """
+    try:
+        msg = build_invite_message(
+            to_email=to_email,
+            inviter_name=inviter_name,
+            project_name=project_name,
+            invite_code=invite_code,
+            role=role,
+        )
+    except RuntimeError as exc:
+        reason = "SMTP not configured" if "not configured" in str(exc) else f"send failed: {type(exc).__name__}"
+        logger.warning("Project invite email not sent to %s: %s", to_email, reason)
+        return {"email_sent": False, "reason": reason}
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("Failed to build project invite email for %s", to_email)
+        return {"email_sent": False, "reason": f"send failed: {type(exc).__name__}"}
+
+    try:
+        _deliver(msg)
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("Failed to send project invite email to %s", to_email)
+        reason = (
+            "SMTP not configured"
+            if isinstance(exc, RuntimeError) and "not configured" in str(exc)
+            else f"send failed: {type(exc).__name__}"
+        )
+        return {"email_sent": False, "reason": reason}
+
+    return {"email_sent": True, "reason": ""}
+
+
+def send_invite_email(
+    *,
+    to_email: str,
+    inviter_name: str,
+    project_name: str,
+    invite_code: str,
+) -> None:
+    """Send a project invite-code email via configured SMTP (Gmail App Password).
+
+    Legacy raising variant kept for backwards compatibility — new code should
+    use send_project_invite() which reports {email_sent, reason}.
+    """
+    msg = build_invite_message(
+        to_email=to_email,
+        inviter_name=inviter_name,
+        project_name=project_name,
+        invite_code=invite_code,
+    )
+    _deliver(msg)
 
 
 def smtp_configured() -> bool:

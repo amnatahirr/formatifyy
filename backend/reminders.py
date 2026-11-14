@@ -6,6 +6,7 @@ from typing import Any
 
 from database import get_db
 from email_service import send_emails_async, build_deadline_email
+from services.notification_service import notify, NotificationType
 
 logger = logging.getLogger(__name__)
 
@@ -14,7 +15,7 @@ REMINDER_WINDOW_DAYS = 3  # is se pehle reminder shuru nahi hota
 
 def students_for_deadline(cursor, org_id, department_id, target_semester):
     sql = (
-        "SELECT id, email,username FROM users "
+        "SELECT id, email,username, org_id FROM users "
         "WHERE org_id = ? AND role = 'student' AND COALESCE(is_graduated, 0) = 0"
     )
     params: list[Any] = [org_id]
@@ -28,15 +29,27 @@ def students_for_deadline(cursor, org_id, department_id, target_semester):
     return cursor.fetchall()
 
 
-def notify_students(cursor, students, title, message, deadline_id) -> int:
+_STAGE_TO_TYPE = {
+    3: NotificationType.DEADLINE_REMINDER_3_DAYS,
+    1: NotificationType.DEADLINE_REMINDER_1_DAY,
+    0: NotificationType.DEADLINE_TODAY,
+}
+
+
+def notify_students(cursor, students, title, message, deadline_id, stage) -> int:
+    """Insert in-app notifications via the unified service (never raises)."""
+    ntype = _STAGE_TO_TYPE.get(stage, NotificationType.DEADLINE_TODAY)
     for s in students:
-        cursor.execute(
-            """
-            INSERT INTO notifications
-                (user_id, recipient_email, title, message, type, related_type, related_id)
-            VALUES (?, ?, ?, ?, 'deadline', 'deadline', ?)
-            """,
-            (s["id"], s["email"], title, message, deadline_id),
+        notify(
+            org_id=int(s["org_id"] or 1),
+            user_id=s["id"],
+            type=ntype,
+            title=title,
+            body=message,
+            entity_type="deadline",
+            entity_id=deadline_id,
+            payload={"screen": "deadlines", "deadline_id": deadline_id},
+            dedupe_key=f"deadline_{deadline_id}_{s['id']}_{stage}",
         )
     return len(students)
 
@@ -63,6 +76,7 @@ def run_deadline_reminders() -> dict[str, int]:
     cur = conn.cursor()
     sent_total = 0
     emails: list[tuple[str, str, str]] = []
+    pending_notifications: list[tuple[dict, str, str, int, int]] = []
     try:
         cur.execute(
             f"""
@@ -92,7 +106,8 @@ def run_deadline_reminders() -> dict[str, int]:
                 )
                 if cur.rowcount != 1:
                     continue  # is stage ki reminder pehle ja chuki
-                notify_students(cur, [s], title, message, dl["id"])
+                # Defer: notify() uses its own connection, so it must run after commit.
+                pending_notifications.append((s, title, message, dl["id"], stage))
                 if s["email"]:
                     subject, text, html = build_deadline_email(
                         title=dl["title"],
@@ -105,6 +120,10 @@ def run_deadline_reminders() -> dict[str, int]:
                 sent_total += 1
 
         conn.commit()
+        # In-app notifications via notify() (own connection) — only after commit
+        # so the deadline_reminders_sent write lock is released.
+        for s, ntitle, nmessage, deadline_id, nstage in pending_notifications:
+            notify_students(cur, [s], ntitle, nmessage, deadline_id, nstage)
         send_emails_async(emails)  # commit ke BAAD, taake DB lock na rahe
         logger.info("Deadline reminders: %s deadlines, %s notifications", len(deadlines), sent_total)
         return {"deadlines": len(deadlines), "notifications": sent_total, "emails_queued": len(emails)}

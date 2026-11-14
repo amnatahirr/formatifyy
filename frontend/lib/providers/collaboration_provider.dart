@@ -168,9 +168,11 @@ class CollaborationProvider extends ChangeNotifier {
         final data = Map<String, dynamic>.from(jsonDecode(resp.body) as Map);
         final status = data['status'] as String? ?? 'invite_sent';
         final projectName = (data['project_name'] as String?)?.trim();
-        final message = projectName != null && projectName.isNotEmpty
-            ? 'Invite email sent to $trimmed for "$projectName"'
-            : 'Invite email sent to $trimmed';
+        final backendMessage = data['message'] as String?;
+        final message = backendMessage ??
+            (projectName != null && projectName.isNotEmpty
+                ? 'Invite email sent to $trimmed for "$projectName"'
+                : 'Invite email sent to $trimmed');
         return {
           'ok': true,
           'status': status,
@@ -178,6 +180,9 @@ class CollaborationProvider extends ChangeNotifier {
           'email': data['email'] ?? trimmed,
           'project_name': projectName,
           'invite_code': data['invite_code'],
+          'email_sent': data['email_sent'],
+          'email_reason': data['email_reason'],
+          'account_exists': data['account_exists'],
         };
       }
       return {

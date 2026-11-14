@@ -1,5 +1,4 @@
 import '../models/app_notification.dart';
-import '../config/dev_user_config.dart';
 
 class NotificationRoute {
   final String routeName;
@@ -11,68 +10,120 @@ class NotificationRoute {
 NotificationRoute? routeNotification(AppNotification notification, String userRole) {
   final payload = notification.payload ?? {};
   final screen = payload['screen'] as String?;
+  final isAdmin = userRole == 'admin';
+  final isSuperAdmin = userRole == 'super_admin' || userRole == 'superadmin';
+  final isSupervisor = userRole == 'supervisor';
 
-  if (screen == 'analyze' && payload['document_id'] != null) {
+  NotificationRoute analyzeRoute() {
+    final docId = payload['document_id'];
+    if (docId is! int) {
+      return NotificationRoute(routeName: '/notifications');
+    }
     return NotificationRoute(
       routeName: '/analyze',
-      arguments: {'documentId': payload['document_id'] as int},
-    );
-  }
-
-  if (screen == 'submissions' && payload['submission_id'] != null) {
-    if (userRole == 'student') {
-      return NotificationRoute(
-        routeName: '/status-tracker',
-        arguments: {'submissionId': payload['submission_id'] as int},
-      );
-    }
-  }
-
-  if (screen == 'assignment_requests') {
-    if (userRole == 'supervisor') {
-      return NotificationRoute(
-        routeName: '/supervisor-dashboard',
-        arguments: {'initialTab': 2},
-      );
-    }
-  }
-
-  if (screen == 'comments' && payload['document_id'] != null) {
-    return NotificationRoute(
-      routeName: '/analyze',
-      arguments: {'documentId': payload['document_id'] as int},
-    );
-  }
-
-  if (screen == 'meeting_notes') {
-    if (userRole == 'student') {
-      return NotificationRoute(routeName: '/meeting-notes');
-    }
-  }
-
-  if (screen == 'collaboration' && payload['project_id'] != null) {
-    return NotificationRoute(
-      routeName: '/collaboration/project',
       arguments: {
-        'projectId': payload['project_id'] as int,
-        'tab': payload['tab'] as int? ?? 0,
+        'documentId': docId,
+        'documentName': payload['document_name'],
+        'templateId': payload['template_id'],
+        'templateName': payload['template_name'],
+        'freeform': payload['freeform'] ?? false,
       },
     );
   }
 
-  if (screen == 'deadlines' && DevUserConfig.hasFypModule) {
-    return NotificationRoute(routeName: '/milestones');
+  switch (screen) {
+    case 'analyze':
+    case 'comments':
+      return analyzeRoute();
+
+    case 'submissions':
+      if (isSupervisor) {
+        return NotificationRoute(
+          routeName: '/supervisor-dashboard',
+          arguments: {'initialTab': 3},
+        );
+      }
+      if (payload['submission_id'] != null) {
+        return NotificationRoute(
+          routeName: '/status-tracker',
+          arguments: {'submissionId': payload['submission_id'] as int},
+        );
+      }
+      break;
+
+    case 'assignment_requests':
+      if (isSupervisor) {
+        return NotificationRoute(
+          routeName: '/supervisor-dashboard',
+          arguments: {'initialTab': 1},
+        );
+      }
+      break;
+
+    case 'meeting_notes':
+      if (userRole == 'student') {
+        return NotificationRoute(routeName: '/meeting-notes');
+      }
+      break;
+
+    case 'collaboration':
+      if (payload['project_id'] != null) {
+        return NotificationRoute(
+          routeName: '/collaboration/project',
+          arguments: {
+            'projectId': payload['project_id'] as int,
+            'tab': payload['tab'] as int? ?? 0,
+          },
+        );
+      }
+      break;
+
+    case 'deadlines':
+      return NotificationRoute(routeName: '/milestones');
+
+    case 'templates':
+      if (isAdmin) {
+        return NotificationRoute(
+          routeName: '/admin-dashboard',
+          arguments: {'initialId': 3},
+        );
+      }
+      if (isSuperAdmin) {
+        return NotificationRoute(routeName: '/super-admin');
+      }
+      return NotificationRoute(routeName: '/student-dashboard');
+
+    case 'users':
+      if (isAdmin) {
+        return NotificationRoute(
+          routeName: '/admin-dashboard',
+          arguments: {'initialId': 6},
+        );
+      }
+      if (isSuperAdmin) {
+        return NotificationRoute(routeName: '/super-admin');
+      }
+      break;
+
+    case 'supervisors':
+      if (isAdmin) {
+        return NotificationRoute(
+          routeName: '/admin-dashboard',
+          arguments: {'initialId': 2},
+        );
+      }
+      if (isSuperAdmin) {
+        return NotificationRoute(routeName: '/super-admin');
+      }
+      break;
+
+    case 'notifications':
+      return NotificationRoute(routeName: '/notifications');
   }
 
-  if (screen == 'users' && userRole == 'admin') {
-    return NotificationRoute(routeName: '/admin-dashboard', arguments: {'initialTab': 0});
-  }
-
-  if (screen == 'supervisors' && userRole == 'admin') {
-    return NotificationRoute(routeName: '/admin-dashboard', arguments: {'initialTab': 1});
-  }
-
-  return null;
+  // Unknown or unhandled screen: open the notifications list instead of
+  // showing an error snackbar.
+  return NotificationRoute(routeName: '/notifications');
 }
 
 String getErrorMessageForType(String type) {

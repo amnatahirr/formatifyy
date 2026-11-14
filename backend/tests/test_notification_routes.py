@@ -46,7 +46,7 @@ def test_users():
         user1_id, user1_org = row["id"], row["org_id"]
     else:
         cur.execute(
-            "INSERT INTO users (username, email, password, role, org_id) VALUES (?, ?, ?, 'student', 1)",
+            "INSERT INTO users (username, email, password_hash, role, org_id) VALUES (?, ?, ?, 'student', 1)",
             ("test_user1", "test1@example.com", "hashed_pw"),
         )
         user1_id = cur.lastrowid
@@ -59,7 +59,7 @@ def test_users():
         user2_id, user2_org = row["id"], row["org_id"]
     else:
         cur.execute(
-            "INSERT INTO users (username, email, password, role, org_id) VALUES (?, ?, ?, 'student', 1)",
+            "INSERT INTO users (username, email, password_hash, role, org_id) VALUES (?, ?, ?, 'student', 1)",
             ("test_user2", "test2@example.com", "hashed_pw"),
         )
         user2_id = cur.lastrowid
@@ -79,7 +79,7 @@ def test_users():
                 ("Test Org 2", "TEST2", "fmt_test2", "university", "core,fyp"),
             )
         cur.execute(
-            "INSERT INTO users (username, email, password, role, org_id) VALUES (?, ?, ?, 'student', 2)",
+            "INSERT INTO users (username, email, password_hash, role, org_id) VALUES (?, ?, ?, 'student', 2)",
             ("test_user3", "test3@example.com", "hashed_pw"),
         )
         user3_id = cur.lastrowid

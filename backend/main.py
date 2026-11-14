@@ -39,6 +39,7 @@ from __future__ import annotations
 import asyncio
 import datetime
 import json
+import logging
 import os
 import random
 import re
@@ -55,6 +56,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from routes.notification_routes import router as notification_router
+from services.notification_service import notify, NotificationType
 from pipeline.aggregator import aggregate
 from routes.admin_routes import router as admin_router
 from routes.supervisor_routes import router as supervisor_router
@@ -173,6 +175,7 @@ os.makedirs(OUTPUT_DIR, exist_ok=True)
 # Ensure database tables and seed data exist on startup
 init_db()
 
+logger = logging.getLogger(__name__)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -198,6 +201,17 @@ app.add_middleware(
 @app.on_event("startup")
 def _start_reminders():
     start_scheduler()
+    try:
+        from vc.invite_mail import smtp_missing_vars
+        missing_smtp = smtp_missing_vars()
+        if missing_smtp:
+            logger.warning(
+                "SMTP is not fully configured — invite/notification emails will fail. "
+                "Missing env vars: %s",
+                ", ".join(missing_smtp),
+            )
+    except Exception:
+        logger.exception("SMTP configuration check failed at startup")
 
 @app.on_event("shutdown")
 def _stop_reminders():
@@ -401,6 +415,31 @@ async def signup(payload: UserSignupRequest, request: Request):
     cursor.execute("SELECT * FROM users WHERE id = ?", (new_id,))
     user = cursor.fetchone()
     conn.close()
+
+    # Notify org admins about the new signup (never breaks signup).
+    try:
+        conn_n = get_db()
+        cur_n = conn_n.cursor()
+        cur_n.execute(
+            "SELECT id FROM users WHERE role = 'admin' AND org_id = ?",
+            (org_id,),
+        )
+        admin_ids = [r["id"] for r in cur_n.fetchall()]
+        conn_n.close()
+        for admin_id in admin_ids:
+            notify(
+                org_id=org_id,
+                user_id=admin_id,
+                type=NotificationType.NEW_USER_SIGNUP,
+                title="New student signup",
+                body=f"{user['username']} ({user['email']}) created an account.",
+                entity_type="user",
+                entity_id=int(user["id"]),
+                payload={"screen": "users", "user_id": int(user["id"])},
+                dedupe_key=f"signup_{user['id']}_admin_{admin_id}",
+            )
+    except Exception:
+        logger.exception("Failed to send signup notification for user %s", new_id)
 
     token = create_access_token(
         user_id=int(user["id"]),
@@ -690,6 +729,31 @@ async def create_template(
     conn.commit()
     new_id = cursor.lastrowid
     conn.close()
+
+    # Notify students of this org about the new template (never breaks creation).
+    try:
+        conn_n = get_db()
+        cur_n = conn_n.cursor()
+        cur_n.execute(
+            "SELECT id FROM users WHERE role = 'student' AND org_id = ?",
+            (org_id,),
+        )
+        student_ids = [r["id"] for r in cur_n.fetchall()]
+        conn_n.close()
+        for student_id in student_ids:
+            notify(
+                org_id=org_id,
+                user_id=student_id,
+                type=NotificationType.TEMPLATE_PUBLISHED,
+                title="New template available",
+                body=f"A new template '{payload.name}' is ready to use.",
+                entity_type="template",
+                entity_id=new_id,
+                payload={"screen": "templates", "template_id": new_id},
+                dedupe_key=f"template_{new_id}_user_{student_id}",
+            )
+    except Exception:
+        logger.exception("Failed to send template notification for template %s", new_id)
 
     tmpl = get_template_by_id(new_id, org_id=org_id)
     return {"success": True, "template": tmpl}
@@ -2386,6 +2450,77 @@ def _analysis_in_thread(document_id: int, user_id: int, freeform: bool) -> Dict[
     return asyncio.run(fn(document_id, user_id))
 
 
+def _notify_analysis_result(
+    document_id: int,
+    user_id: int,
+    *,
+    ok: bool,
+    error: Optional[str] = None,
+    result: Optional[Dict[str, Any]] = None,
+    finished_at: Optional[str] = None,
+) -> None:
+    """Notify the document owner that background analysis finished/failed.
+
+    Never raises — notification failures must not break the analysis flow.
+    """
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT d.filename, d.template_id, d.is_freeform, t.name AS template_name,
+                   u.org_id
+            FROM documents d
+            LEFT JOIN templates t ON t.id = d.template_id
+            LEFT JOIN users u ON u.id = d.user_id
+            WHERE d.id = ?
+            """,
+            (document_id,),
+        )
+        row = cur.fetchone()
+        conn.close()
+        if not row:
+            return
+        org_id = int(row["org_id"] or 1)
+        filename = row["filename"] or f"document_{document_id}"
+        template_id = int(row["template_id"] or 0)
+        template_name = row["template_name"] or ""
+        is_freeform = bool(row["is_freeform"])
+
+        issues = (result or {}).get("issues") or []
+        issue_count = len(issues) if isinstance(issues, list) else 0
+
+        if ok:
+            ntype = NotificationType.ANALYSIS_FINISHED
+            title = "Analysis complete"
+            body = f"Analysis finished for '{filename}' — {issue_count} issue(s) found."
+        else:
+            ntype = NotificationType.ANALYSIS_FAILED
+            title = "Analysis failed"
+            body = f"Analysis failed for '{filename}': {(error or 'unknown error')[:200]}"
+
+        notify(
+            org_id=org_id,
+            user_id=user_id,
+            type=ntype,
+            title=title,
+            body=body,
+            entity_type="document",
+            entity_id=document_id,
+            payload={
+                "screen": "analyze",
+                "document_id": document_id,
+                "document_name": filename,
+                "template_id": template_id,
+                "template_name": template_name,
+                "freeform": is_freeform,
+            },
+            dedupe_key=f"analysis_{document_id}_{finished_at or 'done'}",
+        )
+    except Exception:
+        logger.exception("Failed to send analysis notification for document %s", document_id)
+
+
 async def _analysis_worker(document_id: int, user_id: int, freeform: bool) -> None:
     job = _analysis_jobs[document_id]
     try:
@@ -2395,11 +2530,24 @@ async def _analysis_worker(document_id: int, user_id: int, freeform: bool) -> No
         with open(tmp, "w", encoding="utf-8") as f:
             json.dump(result, f, default=str)
         os.replace(tmp, path)  # atomic auto-save
-        job.update(status="completed", error=None, finished_at=datetime.datetime.utcnow().isoformat())
+        finished_at = datetime.datetime.utcnow().isoformat()
+        job.update(status="completed", error=None, finished_at=finished_at)
+        _notify_analysis_result(
+            document_id, user_id, ok=True, result=result, finished_at=finished_at
+        )
     except HTTPException as exc:
+        finished_at = datetime.datetime.utcnow().isoformat()
         job.update(status="failed", error=str(exc.detail))
+        _notify_analysis_result(
+            document_id, user_id, ok=False,
+            error=str(exc.detail), finished_at=finished_at,
+        )
     except Exception as exc:
+        finished_at = datetime.datetime.utcnow().isoformat()
         job.update(status="failed", error=str(exc))
+        _notify_analysis_result(
+            document_id, user_id, ok=False, error=str(exc), finished_at=finished_at
+        )
 
 
 @app.post("/api/documents/analyze-start/{document_id}", tags=["Documents"])

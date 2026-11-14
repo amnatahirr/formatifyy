@@ -30,7 +30,8 @@ import 'student/my_supervisor_screen.dart';
 import 'student/fyp_milestones_screen.dart';
 import 'student/plagiarism_report_screen.dart';
 import 'student/status_tracker_screen.dart';
-import '../widgets/notifications_panel.dart';
+import '../widgets/notification_bell.dart';
+import 'notifications_screen.dart';
 import '../widgets/student/mobile_status_summary_card.dart';
 import '../widgets/student/desktop_semester_deadline_card.dart';
 import '../utils/responsive.dart';
@@ -636,7 +637,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
             if (!compact)
               Row(
                 children: [
-                  NotificationsPanelButton(),
+                  const NotificationBell(),
                   SizedBox(width: 12),
                   GestureDetector(
                     onTap: () {
@@ -893,7 +894,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
       case 12:
         return _buildSettingsPage();
       case kNotificationsTabIndex:
-        return const StudentNotificationsPage();
+        return const NotificationsScreen(embedded: true);
       default:
         return const SizedBox.shrink();
     }

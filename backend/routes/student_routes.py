@@ -1320,6 +1320,7 @@ def create_final_submission(
 
     conn = get_db()
     cursor = conn.cursor()
+    pending_notifications: list = []
     try:
         org_id = _resolve_student_org_id(
             cursor, int(student["id"]), request, prefer_user=True
@@ -1462,19 +1463,19 @@ def create_final_submission(
             user_row = cursor.fetchone()
             notify_user_id = user_row["id"] if user_row else None
             notify_org_id = int(user_row["org_id"] if user_row and user_row["org_id"] else org_id)
-            
-            from services.notification_service import notify, NotificationType
-            notify(
-                org_id=notify_org_id,
-                user_id=notify_user_id,
-                type=NotificationType.STUDENT_SUBMITTED,
-                title="New final submission",
-                body=f"{group['title']} submitted '{title}' for review.",
-                entity_type="final_submission",
-                entity_id=submission_id,
-                payload={"screen": "submissions", "submission_id": submission_id},
-            )
-            
+
+            from services.notification_service import NotificationType
+            pending_notifications.append({
+                "org_id": notify_org_id,
+                "user_id": notify_user_id,
+                "type": NotificationType.STUDENT_SUBMITTED,
+                "title": "New final submission",
+                "body": f"{group['title']} submitted '{title}' for review.",
+                "entity_type": "final_submission",
+                "entity_id": submission_id,
+                "payload": {"screen": "submissions", "submission_id": submission_id},
+            })
+
             # Check plagiarism score and notify if high
             try:
                 report = json.loads(report_json) if report_json else {}
@@ -1483,20 +1484,26 @@ def create_final_submission(
                 if 0 < plagiarism_score <= 1:
                     plagiarism_score = round(plagiarism_score * 100, 1)
                 if plagiarism_score > 30:  # Threshold for high plagiarism
-                    notify(
-                        org_id=notify_org_id,
-                        user_id=notify_user_id,
-                        type=NotificationType.PLAGIARISM_HIGH,
-                        title="High plagiarism score detected",
-                        body=f"Submission '{title}' has {plagiarism_score}% plagiarism score.",
-                        entity_type="final_submission",
-                        entity_id=submission_id,
-                        payload={"screen": "submissions", "submission_id": submission_id},
-                    )
+                    pending_notifications.append({
+                        "org_id": notify_org_id,
+                        "user_id": notify_user_id,
+                        "type": NotificationType.PLAGIARISM_HIGH,
+                        "title": "High plagiarism score detected",
+                        "body": f"Submission '{title}' has {plagiarism_score}% plagiarism score.",
+                        "entity_type": "final_submission",
+                        "entity_id": submission_id,
+                        "payload": {"screen": "submissions", "submission_id": submission_id},
+                    })
             except Exception as exc:
                 logger.exception("Failed to check plagiarism for notification: %s", exc)
 
         conn.commit()
+
+        # Send notifications only after the write transaction commits —
+        # notify() uses its own connection and would hit "database is locked".
+        from services.notification_service import notify
+        for _n in pending_notifications:
+            notify(**_n)
 
         cursor.execute(
             """
@@ -2223,6 +2230,7 @@ def reply_to_student_comment(
 
     conn = get_db()
     cursor = conn.cursor()
+    pending_notifications: list = []
     try:
         parent = _require_student_comment(
             cursor, comment_id, email, org_id=int(student.get("org_id") or 1)
@@ -2267,20 +2275,24 @@ def reply_to_student_comment(
             user_row = cursor.fetchone()
             notify_user_id = user_row["id"] if user_row else None
             notify_org_id = int(user_row["org_id"] if user_row and user_row["org_id"] else org_id)
-            
-            from services.notification_service import notify, NotificationType
-            notify(
-                org_id=notify_org_id,
-                user_id=notify_user_id,
-                type=NotificationType.STUDENT_REPLY,
-                title="Student replied to your comment",
-                body=f"{student_name}: {snippet}",
-                entity_type="document_comment",
-                entity_id=reply_id,
-                payload={"screen": "comments", "comment_id": reply_id},
-            )
+
+            from services.notification_service import NotificationType
+            pending_notifications.append({
+                "org_id": notify_org_id,
+                "user_id": notify_user_id,
+                "type": NotificationType.STUDENT_REPLY,
+                "title": "Student replied to your comment",
+                "body": f"{student_name}: {snippet}",
+                "entity_type": "document_comment",
+                "entity_id": reply_id,
+                "payload": {"screen": "comments", "comment_id": reply_id},
+            })
 
         conn.commit()
+
+        from services.notification_service import notify
+        for _n in pending_notifications:
+            notify(**_n)
         paragraphs = _serialize_student_review_paragraphs(cursor, parent["document_id"])
         return {
             "success": True,

@@ -12,6 +12,11 @@ import 'screens/supervisor_dashboard.dart';
 import 'screens/super_admin/super_admin_screen.dart';
 import 'screens/mobile_qr_upload_screen.dart';
 import 'screens/mobile_qr_download_screen.dart';
+import 'screens/analyze_screen.dart';
+import 'screens/notifications_screen.dart';
+import 'screens/student_meeting_notes_screen.dart';
+import 'screens/student/fyp_milestones_screen.dart';
+import 'screens/student/status_tracker_screen.dart';
 import 'providers/auth_provider.dart';
 import 'providers/document_provider.dart';
 import 'providers/template_provider.dart';
@@ -170,8 +175,18 @@ final messengerKey = GlobalKey<ScaffoldMessengerState>();
             routes: {
               '/login': (_) => const LoginScreen(),
               '/student-dashboard': (_) => const StudentDashboard(),
-              '/admin-dashboard': (_) => const AdminDashboard(),
-              '/supervisor-dashboard': (_) => const SupervisorDashboard(),
+              '/admin-dashboard': (context) {
+                final args = ModalRoute.of(context)?.settings.arguments;
+                final initialId =
+                    args is Map ? args['initialId'] as int? : null;
+                return AdminDashboard(initialId: initialId);
+              },
+              '/supervisor-dashboard': (context) {
+                final args = ModalRoute.of(context)?.settings.arguments;
+                final initialTab =
+                    args is Map ? args['initialTab'] as int? : null;
+                return SupervisorDashboard(initialTab: initialTab);
+              },
               '/super-admin': (_) => const SuperAdminScreen(),
               '/new-report': (_) => const StudentDashboard(initialIndex: 1),
               '/collaboration': (_) => const StudentDashboard(initialIndex: 3),
@@ -188,6 +203,32 @@ final messengerKey = GlobalKey<ScaffoldMessengerState>();
                   initialIndex: 3,
                   initialProjectId: projectId,
                   initialProjectTab: initialTab,
+                );
+              },
+              '/notifications': (_) => const NotificationsScreen(),
+              '/meeting-notes': (_) => const StudentMeetingNotesScreen(),
+              '/milestones': (_) => const FypMilestonesScreen(),
+              '/status-tracker': (_) => const StatusTrackerScreen(),
+              '/analyze': (context) {
+                final args = ModalRoute.of(context)?.settings.arguments;
+                final documentId = args is Map
+                    ? args['documentId'] as int?
+                    : (args is int ? args : null);
+                if (documentId == null) {
+                  return const StudentDashboard();
+                }
+                return AnalyzeScreen(
+                  documentId: documentId,
+                  documentName:
+                      (args is Map ? args['documentName'] as String? : null) ??
+                          'Document',
+                  templateId:
+                      (args is Map ? args['templateId'] as int? : null) ?? 0,
+                  templateName:
+                      (args is Map ? args['templateName'] as String? : null) ??
+                          '',
+                  freeformAnalysis:
+                      (args is Map ? args['freeform'] as bool? : null) ?? false,
                 );
               },
             },

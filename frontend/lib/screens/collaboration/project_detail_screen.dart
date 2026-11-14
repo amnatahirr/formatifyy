@@ -10,6 +10,7 @@ import 'tabs/project_editor_tab.dart';
 import 'tabs/project_members_tab.dart';
 import 'tabs/project_version_history_tab.dart';
 import 'widgets/invite_menu_dialog.dart';
+import '../../widgets/notification_bell.dart';
 
 import '../../widgets/tr.dart';
 /// Project Detail — Document / Members / Version History / Activity.
@@ -224,7 +225,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen>
       appBar: AppBar(
         backgroundColor: const Color(0xFF141B27),
         title: Text('$name — $subtitle'),
-        actions: [_inviteButton(project)],
+        actions: [const NotificationBell(), _inviteButton(project)],
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(48),
           child: _tabBar(),

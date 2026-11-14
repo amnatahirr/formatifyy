@@ -6,6 +6,7 @@ import '../../services/super_admin_api_service.dart';
 import '../../utils/responsive.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/admin/admin_ui.dart';
+import '../../widgets/notification_bell.dart';
 
 import '../../widgets/tr.dart';
 
@@ -1425,6 +1426,8 @@ class _SuperAdminScreenState extends State<SuperAdminScreen> {
               onPressed: _showMobileSearchSheet,
             ),
           const SizedBox(width: 8),
+          const NotificationBell(),
+          const SizedBox(width: 4),
           _topIconButton(
             icon: Icons.refresh_rounded,
             tooltip: 'Refresh',

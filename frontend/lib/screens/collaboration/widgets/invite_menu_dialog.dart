@@ -51,12 +51,17 @@ class _InviteMenuDialogState extends State<InviteMenuDialog> {
     final ok = result['ok'] == true;
     final message =
         (result['message'] as String?) ?? (ok ? 'Invite email sent' : 'Invite failed');
+    // Green only when the backend confirms the email was actually sent;
+    // orange when the invite was recorded but delivery failed.
+    final emailSent = result.containsKey('email_sent')
+        ? result['email_sent'] == true
+        : ok;
+    final snackColor = !ok
+        ? const Color(0xFFEF4444)
+        : (emailSent ? const Color(0xFF10B981) : const Color(0xFFF59E0B));
 
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: ok ? const Color(0xFF10B981) : const Color(0xFFEF4444),
-      ),
+      SnackBar(content: Text(message), backgroundColor: snackColor),
     );
 
     if (ok) {

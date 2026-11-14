@@ -352,6 +352,30 @@ async def qr_upload_receive(token: str, file: UploadFile = File(...)):
 
     data["document_id"] = doc_id
     data["filename"] = original_name
+
+    # Notify the user that the phone upload arrived (never breaks the upload).
+    try:
+        from services.notification_service import notify, NotificationType
+
+        conn_n = get_db()
+        cur_n = conn_n.cursor()
+        cur_n.execute("SELECT org_id FROM users WHERE id = ?", (data["user_id"],))
+        user_row = cur_n.fetchone()
+        conn_n.close()
+        notify(
+            org_id=int((user_row["org_id"] if user_row else None) or 1),
+            user_id=data["user_id"],
+            type=NotificationType.QR_UPLOAD_RECEIVED,
+            title="Document uploaded from phone",
+            body=f"'{original_name}' was uploaded via QR code.",
+            entity_type="document",
+            entity_id=doc_id,
+            payload={"screen": "analyze", "document_id": doc_id},
+            dedupe_key=f"qr_upload_{doc_id}",
+        )
+    except Exception:
+        pass
+
     return HTMLResponse(
         _PAGE.format(
             body='<h2 class="ok">Uploaded ✓</h2><p>You can close this page and return to the app.</p>'

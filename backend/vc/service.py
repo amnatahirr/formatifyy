@@ -320,6 +320,36 @@ def upload_project_document(
         details={"commits_created": commits_created},
     )
 
+    # Notify other members when a new document version is uploaded (never breaks upload).
+    if had_previous_document:
+        try:
+            from services.notification_service import notify, NotificationType
+
+            members = list_project_members(project_id)
+            project_name = (project.get("name") or "Untitled project").strip()
+            uploader = _get_user(user_id)
+            uploader_name = (
+                (uploader.get("username") or "").strip()
+                or (uploader.get("email") or "").strip()
+                or f"user_{user_id}"
+            )
+            for member in members:
+                if member["user_id"] == user_id:
+                    continue
+                notify(
+                    org_id=int(project.get("org_id") or 1),
+                    user_id=member["user_id"],
+                    type=NotificationType.NEW_VERSION,
+                    title=f"New version of '{project_name}'",
+                    body=f"{uploader_name} uploaded a new version: {original_filename}",
+                    entity_type="collaboration_project",
+                    entity_id=project_id,
+                    payload={"screen": "collaboration", "project_id": project_id},
+                )
+        except Exception as exc:
+            import logging
+            logging.getLogger(__name__).exception("Failed to send new-version notification: %s", exc)
+
     reports_sync = sync_project_to_member_reports(project_id)
     detail = get_project_detail(project_id, user_id)
     detail["upload"] = {
@@ -838,27 +868,68 @@ def invite_member_by_email(project_id: int, inviter_id: int, email: str) -> Dict
         or "A teammate"
     )
 
+    # Single invite-email path shared by every UI entry point. Sends
+    # synchronously so the API can report the real delivery outcome.
+    from vc.invite_mail import send_project_invite
+
+    mail_result = send_project_invite(
+        to_email=cleaned,
+        inviter_name=inviter_name,
+        project_name=project_name,
+        invite_code=invite_code,
+        role="editor",
+    )
+    email_sent = bool(mail_result.get("email_sent"))
+    email_reason = str(mail_result.get("reason") or "")
+
+    # In-app notification if the invitee already has an account in this org
+    # (never breaks the invite). No write transaction is open here.
+    invitee = None
     try:
-        from vc.invite_mail import send_invite_email
-        send_invite_email(
-            to_email=cleaned,
-            inviter_name=inviter_name,
-            project_name=project_name,
-            invite_code=invite_code,
+        from services.notification_service import notify, NotificationType
+
+        project_org = int(project.get("org_id") or 1)
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT id, org_id FROM users WHERE LOWER(TRIM(email)) = LOWER(?)"
+            " AND COALESCE(org_id, 1) = ?",
+            (cleaned, project_org),
         )
-    except RuntimeError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
+        invitee = cursor.fetchone()
+        conn.close()
+        if invitee:
+            notify(
+                org_id=int(invitee["org_id"] or project_org),
+                user_id=invitee["id"],
+                type=NotificationType.COLLABORATION_INVITE,
+                title=f"{inviter_name} invited you to '{project_name}'",
+                body=f"{inviter_name} invited you to collaborate on '{project_name}'.",
+                entity_type="collaboration_project",
+                entity_id=project_id,
+                payload={"screen": "collaboration", "project_id": project_id},
+                dedupe_key=f"collab_invite_{project_id}_{invitee['id']}",
+            )
     except Exception as exc:
-        raise HTTPException(
-            status_code=502,
-            detail=f"Failed to send invite email: {exc}",
-        ) from exc
+        import logging
+        logging.getLogger(__name__).exception("Failed to send invite notification: %s", exc)
+
+    if email_sent:
+        message = f"Invitation emailed to {cleaned}"
+        if not invitee:
+            message += " (no account yet — invitation email only)"
+    else:
+        message = f"Invite saved but email failed: {email_reason or 'unknown error'}"
 
     return {
-        "status": "invite_sent",
+        "status": "invite_sent" if email_sent else "invite_email_failed",
         "email": cleaned,
         "project_name": project_name,
         "invite_code": invite_code,
+        "email_sent": email_sent,
+        "email_reason": email_reason,
+        "account_exists": invitee is not None,
+        "message": message,
     }
 
 

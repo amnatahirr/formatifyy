@@ -9,12 +9,15 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from database import get_db
 
 logger = logging.getLogger(__name__)
+
+_LOCK_RETRY_DELAYS = (0.2, 0.5, 1.0)
 
 
 class NotificationType:
@@ -34,6 +37,8 @@ class NotificationType:
     COLLABORATION_INVITE = "collaboration_invite"
     MERGE_CONFLICT = "merge_conflict"
     MEMBER_COMMIT = "member_commit"
+    NEW_VERSION = "new_version"
+    GROUP_DISCARDED = "group_discarded"
     
     # Supervisor notifications
     NEW_ASSIGNMENT_REQUEST = "new_assignment_request"
@@ -45,6 +50,9 @@ class NotificationType:
     # Org admin notifications
     SUPERVISOR_CREATED = "supervisor_created"
     NEW_USER_SIGNUP = "new_user_signup"
+    TEMPLATE_PUBLISHED = "template_published"
+    QR_UPLOAD_RECEIVED = "qr_upload_received"
+    TRANSLATION_FINISHED = "translation_finished"
     
     # Deadline reminders
     DEADLINE_REMINDER_3_DAYS = "deadline_reminder_3_days"
@@ -63,10 +71,13 @@ def notify(
     entity_id: Optional[int] = None,
     payload: Optional[Dict[str, Any]] = None,
     dedupe_key: Optional[str] = None,
+    conn=None,
 ) -> Optional[int]:
     """
     Create a notification. Never raises; logs errors and continues.
-    
+
+    Retries up to 3 times on "database is locked"/busy errors.
+
     Args:
         org_id: Organization ID (required for multi-tenancy)
         user_id: Recipient user ID (optional, fallback to recipient_email in legacy)
@@ -77,64 +88,101 @@ def notify(
         entity_id: ID of related entity
         payload: JSON-serializable dict for deep-link/route data
         dedupe_key: Optional key to prevent duplicate notifications (e.g., deadline reminders)
-    
+        conn: Optional existing sqlite3 connection. When given, the row is written
+            on that connection and is NOT committed or closed here — the caller's
+            transaction controls visibility. Prefer calling notify() after the
+            caller's conn.commit() instead.
+
     Returns:
         Notification ID if successful, None otherwise
     """
-    try:
-        conn = get_db()
-        cursor = conn.cursor()
-        
-        # Check for duplicate if dedupe_key provided
-        if dedupe_key:
+    for attempt in range(len(_LOCK_RETRY_DELAYS) + 1):
+        own_conn = conn is None
+        active_conn = None
+        try:
+            active_conn = conn if conn is not None else get_db()
+            cursor = active_conn.cursor()
+
+            # Check for duplicate only when an explicit dedupe_key is provided.
+            # Without a key there is NO dedupe — same type/entity may legitimately recur.
+            if dedupe_key:
+                cursor.execute(
+                    """
+                    SELECT id FROM notifications
+                    WHERE user_id IS ? AND dedupe_key = ?
+                    ORDER BY created_at DESC LIMIT 1
+                    """,
+                    (user_id, dedupe_key),
+                )
+                if cursor.fetchone():
+                    logger.debug("Deduped notification: user_id=%s dedupe_key=%s", user_id, dedupe_key)
+                    if own_conn:
+                        active_conn.close()
+                    return None
+
+            # Legacy readers match on recipient_email when user_id IS NULL, so
+            # store the recipient's real email when we can resolve it.
+            recipient_email = ""
+            if user_id is not None:
+                cursor.execute(
+                    "SELECT email FROM users WHERE id = ?",
+                    (user_id,),
+                )
+                email_row = cursor.fetchone()
+                if email_row and email_row["email"]:
+                    recipient_email = str(email_row["email"])
+
+            payload_json = json.dumps(payload) if payload else None
+
             cursor.execute(
                 """
-                SELECT id FROM notifications
-                WHERE org_id = ? AND type = ? AND related_id = ?
-                ORDER BY created_at DESC LIMIT 1
+                INSERT INTO notifications
+                    (user_id, recipient_email, title, message, type, is_read,
+                     related_type, related_id, org_id, body, entity_type,
+                     payload_json, dedupe_key, created_at)
+                VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
                 """,
-                (org_id, type, entity_id),
+                (
+                    user_id,
+                    recipient_email,
+                    title,
+                    body,
+                    type,
+                    entity_type,
+                    entity_id,
+                    org_id,
+                    body,
+                    entity_type,
+                    payload_json,
+                    dedupe_key,
+                ),
             )
-            if cursor.fetchone():
-                logger.debug("Deduped notification: org_id=%s type=%s entity_id=%s", org_id, type, entity_id)
-                conn.close()
-                return None
-        
-        payload_json = json.dumps(payload) if payload else None
-        
-        cursor.execute(
-            """
-            INSERT INTO notifications
-                (user_id, recipient_email, title, message, type, is_read, related_type, related_id,
-                 org_id, body, entity_type, payload_json, created_at)
-            VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-            """,
-            (
-                user_id,
-                "",  # recipient_email is deprecated but kept for schema compat (empty string instead of NULL)
-                title,
-                body,
-                type,
-                entity_type,
-                entity_id,
-                org_id,
-                body,
-                entity_type,
-                payload_json,
-            ),
-        )
-        notification_id = cursor.lastrowid
-        conn.commit()
-        conn.close()
-        
-        logger.info("Notification created: id=%s org_id=%s user_id=%s type=%s", 
-                   notification_id, org_id, user_id, type)
-        return notification_id
-        
-    except Exception as exc:
-        logger.exception("Failed to create notification: org_id=%s user_id=%s type=%s", 
-                       org_id, user_id, type)
-        return None
+            notification_id = cursor.lastrowid
+            if own_conn:
+                active_conn.commit()
+                active_conn.close()
+
+            logger.info("Notification created: id=%s org_id=%s user_id=%s type=%s",
+                       notification_id, org_id, user_id, type)
+            return notification_id
+
+        except Exception as exc:
+            if own_conn and active_conn is not None:
+                try:
+                    active_conn.close()
+                except Exception:
+                    pass
+            err = str(exc).lower()
+            is_lock = "locked" in err or "busy" in err
+            if is_lock and attempt < len(_LOCK_RETRY_DELAYS):
+                time.sleep(_LOCK_RETRY_DELAYS[attempt])
+                continue
+            logger.exception(
+                "Failed to create notification: org_id=%s user_id=%s type=%s",
+                org_id, user_id, type,
+            )
+            return None
+    return None
 
 
 def notify_many(
@@ -147,6 +195,7 @@ def notify_many(
     entity_type: Optional[str] = None,
     entity_id: Optional[int] = None,
     payload: Optional[Dict[str, Any]] = None,
+    conn=None,
 ) -> List[Optional[int]]:
     """
     Create notifications for multiple recipients. Never raises.
@@ -165,6 +214,7 @@ def notify_many(
             entity_type=entity_type,
             entity_id=entity_id,
             payload=payload,
+            conn=conn,
         )
         results.append(result)
     return results

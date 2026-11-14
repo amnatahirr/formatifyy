@@ -9,7 +9,11 @@ import '../config/dev_user_config.dart';
 import '../providers/auth_provider.dart';
 
 class NotificationsScreen extends StatefulWidget {
-  const NotificationsScreen({Key? key}) : super(key: key);
+  /// When true the screen is hosted inside a dashboard tab — taps must not
+  /// pop the host route before navigating.
+  final bool embedded;
+
+  const NotificationsScreen({Key? key, this.embedded = false}) : super(key: key);
 
   @override
   State<NotificationsScreen> createState() => _NotificationsScreenState();
@@ -17,7 +21,6 @@ class NotificationsScreen extends StatefulWidget {
 
 class _NotificationsScreenState extends State<NotificationsScreen> {
   final ScrollController _scrollController = ScrollController();
-  bool _showUnreadOnly = false;
 
   @override
   void initState() {
@@ -38,7 +41,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     if (_scrollController.position.pixels >=
         _scrollController.position.maxScrollExtent - 200) {
       final provider = context.read<NotificationProvider>();
-      if (provider.items.isNotEmpty) {
+      if (provider.items.isNotEmpty && provider.hasMore) {
         final lastId = provider.items.last.id;
         provider.loadMore(beforeId: lastId);
       }
@@ -53,7 +56,9 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     provider.markRead(notification.id);
 
     if (route != null) {
-      Navigator.of(context).pop();
+      if (!widget.embedded) {
+        Navigator.of(context).pop();
+      }
       Navigator.of(context).pushNamed(route.routeName, arguments: route.arguments);
     } else {
       final errorMessage = getErrorMessageForType(notification.type);
@@ -129,9 +134,9 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         children: [
           FilterChip(
             label: Tr('All'),
-            selected: !_showUnreadOnly,
+            selected: !provider.unreadOnly,
             onSelected: (selected) {
-              setState(() => _showUnreadOnly = false);
+              if (selected) provider.setUnreadOnly(false);
             },
             selectedColor: palette.accentSoft,
             checkmarkColor: palette.accent,
@@ -140,9 +145,9 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
           const SizedBox(width: 8),
           FilterChip(
             label: Tr('Unread'),
-            selected: _showUnreadOnly,
+            selected: provider.unreadOnly,
             onSelected: (selected) {
-              setState(() => _showUnreadOnly = true);
+              if (selected) provider.setUnreadOnly(true);
             },
             selectedColor: palette.accentSoft,
             checkmarkColor: palette.accent,
@@ -153,25 +158,50 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     );
   }
 
+  static String _dayGroup(String isoString) {
+    try {
+      final date = DateTime.parse(isoString).toLocal();
+      final now = DateTime.now();
+      final today = DateTime(now.year, now.month, now.day);
+      final day = DateTime(date.year, date.month, date.day);
+      if (day == today) return 'Today';
+      if (day == today.subtract(const Duration(days: 1))) return 'Yesterday';
+      return 'Earlier';
+    } catch (_) {
+      return 'Earlier';
+    }
+  }
+
   Widget _buildList(AppPalette palette, NotificationProvider provider, dynamic auth) {
-    final items = _showUnreadOnly
-        ? provider.items.where((n) => !n.isRead).toList()
-        : provider.items;
+    // Server already filters when unreadOnly is set — items arrive newest-first.
+    final items = provider.items;
 
     if (items.isEmpty) {
       return Center(
         child: Tr(
-          _showUnreadOnly ? 'No unread notifications' : 'No notifications',
+          provider.unreadOnly ? 'No unread notifications' : 'No notifications',
           style: TextStyle(color: palette.textSecondary),
         ),
       );
     }
 
+    // Flatten into [header, item, item, header, item, ...] entries.
+    final entries = <Object>[];
+    String? lastGroup;
+    for (final n in items) {
+      final group = _dayGroup(n.createdAt);
+      if (group != lastGroup) {
+        entries.add(group);
+        lastGroup = group;
+      }
+      entries.add(n);
+    }
+
     return ListView.builder(
       controller: _scrollController,
-      itemCount: items.length + (provider.loading ? 1 : 0),
+      itemCount: entries.length + (provider.loading ? 1 : 0),
       itemBuilder: (context, index) {
-        if (index >= items.length) {
+        if (index >= entries.length) {
           return const Center(
             child: Padding(
               padding: EdgeInsets.all(16),
@@ -180,7 +210,23 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
           );
         }
 
-        final item = items[index];
+        final entry = entries[index];
+        if (entry is String) {
+          return Padding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 6),
+            child: Tr(
+              entry,
+              style: TextStyle(
+                color: palette.textMuted,
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.8,
+              ),
+            ),
+          );
+        }
+
+        final item = entry as AppNotification;
         return _NotificationListItem(
           notification: item,
           onTap: () => _handleTap(item),

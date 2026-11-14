@@ -54,7 +54,7 @@ class NotificationResponse(BaseModel):
 def list_notifications(
     request: Request,
     unread_only: Annotated[bool, Query()] = False,
-    limit: Annotated[int, Query()] = 50,
+    limit: Annotated[int, Query(ge=1, le=100)] = 50,
     before_id: Annotated[Optional[int], Query()] = None,
 ):
     """
@@ -69,7 +69,11 @@ def list_notifications(
     cursor = conn.cursor()
     try:
         sql = """
-            SELECT id, user_id, title, body, type, is_read, related_type as entity_type, related_id as entity_id,
+            SELECT id, user_id, title,
+                   COALESCE(NULLIF(body, ''), NULLIF(message, ''), '') AS body,
+                   type, is_read,
+                   COALESCE(entity_type, related_type) AS entity_type,
+                   related_id AS entity_id,
                    payload_json, created_at, read_at
             FROM notifications
             WHERE user_id = ? AND COALESCE(org_id, 1) = ?
@@ -102,7 +106,7 @@ def list_notifications(
                 "id": row["id"],
                 "user_id": row["user_id"],
                 "title": row["title"],
-                "body": row["body"],
+                "body": row["body"] or "",
                 "type": row["type"],
                 "is_read": bool(row["is_read"]),
                 "entity_type": row["entity_type"],

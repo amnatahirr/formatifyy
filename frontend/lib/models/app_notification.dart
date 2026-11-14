@@ -36,8 +36,8 @@ class AppNotification {
     return AppNotification(
       id: json['id'] as int,
       type: json['type'] as String,
-      title: json['title'] as String,
-      body: json['body'] as String,
+      title: json['title'] as String? ?? '',
+      body: json['body'] as String? ?? json['message'] as String? ?? '',
       entityType: entityType,
       entityId: entityId,
       payload: payload,

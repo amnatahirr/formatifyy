@@ -15,6 +15,8 @@ class NotificationProvider extends ChangeNotifier with WidgetsBindingObserver {
   Timer? _pollingTimer;
   int? _lastKnownUnreadCount;
   bool _isInForeground = true;
+  bool _hasMore = true;
+  bool _unreadOnly = false;
   GlobalKey<ScaffoldMessengerState>? messengerKey;
 
   List<AppNotification> get items => _items;
@@ -22,6 +24,8 @@ class NotificationProvider extends ChangeNotifier with WidgetsBindingObserver {
   bool get loading => _loading;
   bool get error => _error;
   String? get errorMessage => _errorMessage;
+  bool get hasMore => _hasMore;
+  bool get unreadOnly => _unreadOnly;
 
   NotificationProvider() {
     _baseUrl = ApiConfig.getBaseUrl();
@@ -73,8 +77,17 @@ class NotificationProvider extends ChangeNotifier with WidgetsBindingObserver {
     _loading = false;
     _error = false;
     _errorMessage = null;
+    _hasMore = true;
+    _unreadOnly = false;
     stopPolling();
     notifyListeners();
+  }
+
+  /// Switch the list between all notifications and unread-only (server-side).
+  Future<void> setUnreadOnly(bool value) async {
+    if (_unreadOnly == value) return;
+    _unreadOnly = value;
+    await loadFirstPage();
   }
 
   Future<void> refreshUnreadCount() async {
@@ -92,7 +105,7 @@ class NotificationProvider extends ChangeNotifier with WidgetsBindingObserver {
         _lastKnownUnreadCount = newCount;
         _unreadCount = newCount;
 
-        if (newCount > oldCount && oldCount > 0) {
+        if (newCount > oldCount) {
           await loadFirstPage();
           if (_items.isNotEmpty) {
             final newest = _items.first;
@@ -128,8 +141,9 @@ class NotificationProvider extends ChangeNotifier with WidgetsBindingObserver {
     notifyListeners();
 
     try {
+      final query = _unreadOnly ? '?limit=50&unread_only=true' : '?limit=50';
       final response = await http.get(
-        Uri.parse('$_baseUrl/notifications?limit=50'),
+        Uri.parse('$_baseUrl/notifications$query'),
         headers: ApiConfig.getHeaders(),
       ).timeout(const Duration(seconds: 15));
 
@@ -140,6 +154,7 @@ class NotificationProvider extends ChangeNotifier with WidgetsBindingObserver {
                 .toList() ??
             [];
         _items = notifications;
+        _hasMore = notifications.length >= 50;
         _unreadCount = notifications.where((n) => !n.isRead).length;
         _error = false;
         _errorMessage = null;
@@ -158,13 +173,14 @@ class NotificationProvider extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   Future<void> loadMore({int? beforeId}) async {
-    if (_loading) return;
+    if (_loading || !_hasMore) return;
 
     _loading = true;
     notifyListeners();
 
     try {
       final queryParams = <String, String>{'limit': '50'};
+      if (_unreadOnly) queryParams['unread_only'] = 'true';
       if (beforeId != null) {
         queryParams['before_id'] = beforeId.toString();
       }
@@ -184,6 +200,7 @@ class NotificationProvider extends ChangeNotifier with WidgetsBindingObserver {
                 .toList() ??
             [];
         _items.addAll(notifications);
+        _hasMore = notifications.length >= 50;
         _error = false;
         _errorMessage = null;
       } else {

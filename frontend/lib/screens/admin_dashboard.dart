@@ -19,6 +19,8 @@ import '../utils/logout_confirm.dart';
 import '../utils/responsive.dart';
 import '../theme/app_theme.dart';
 import '../widgets/admin/admin_ui.dart';
+import '../widgets/notification_bell.dart';
+import '../screens/notifications_screen.dart';
 
 import '../widgets/tr.dart';
 
@@ -47,7 +49,10 @@ class _NavGroup {
 }
 
 class AdminDashboard extends StatefulWidget {
-  const AdminDashboard({super.key});
+  /// Optional initial nav item id (e.g. from a notification deep link).
+  final int? initialId;
+
+  const AdminDashboard({super.key, this.initialId});
 
   @override
   State<AdminDashboard> createState() => _AdminDashboardState();
@@ -123,6 +128,12 @@ class _AdminDashboardState extends State<AdminDashboard> {
       shortLabel: 'More',
       icon: Icons.settings_rounded,
     ),
+    _AdminNavItem(
+      id: 11,
+      label: 'Notifications',
+      shortLabel: 'Alerts',
+      icon: Icons.notifications_rounded,
+    ),
   ];
 
   /// Sidebar sections (visual only).
@@ -130,7 +141,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
     _NavGroup('WORKSPACE', [0, 8]),
     _NavGroup('ORGANIZATION', [1, 2, 6, 7]),
     _NavGroup('DOCUMENTS', [3, 4, 5, 9]),
-    _NavGroup('SYSTEM', [10]),
+    _NavGroup('SYSTEM', [10, 11]),
   ];
 
   /// Primary destinations shown in the mobile bottom bar.
@@ -156,6 +167,10 @@ class _AdminDashboardState extends State<AdminDashboard> {
   @override
   void initState() {
     super.initState();
+    final id = widget.initialId;
+    if (id != null && _allItems.any((i) => i.id == id)) {
+      _selectedId = id;
+    }
     _refreshOrgFlags();
   }
 
@@ -215,6 +230,8 @@ class _AdminDashboardState extends State<AdminDashboard> {
         return 'Upload a file and verify against a template';
       case 10:
         return 'System configuration';
+      case 11:
+        return 'Your notifications and alerts';
       default:
         return DevUserConfig.hasFypModule
             ? 'Modules: ${DevUserConfig.modulesLabel}'
@@ -763,6 +780,8 @@ class _AdminDashboardState extends State<AdminDashboard> {
             ),
             const SizedBox(width: 12),
           ],
+          const NotificationBell(),
+          const SizedBox(width: 8),
           Tooltip(
             message: 'Logout',
             child: InkWell(
@@ -836,6 +855,8 @@ class _AdminDashboardState extends State<AdminDashboard> {
         return const AdminVerifyScreen();
       case 10:
         return const AdminSettingsScreen();
+      case 11:
+        return const NotificationsScreen(embedded: true);
       default:
         return const SizedBox();
     }

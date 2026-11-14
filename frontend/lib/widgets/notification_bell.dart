@@ -52,11 +52,14 @@ class NotificationBell extends StatelessWidget {
     final RenderBox button = context.findRenderObject() as RenderBox;
     final Offset offset = button.localToGlobal(Offset.zero);
     final Size size = button.size;
+    final screenWidth = MediaQuery.of(context).size.width;
+    // ~340-360px wide, clamped so it never exceeds the viewport.
+    final panelWidth = (screenWidth - 24).clamp(240.0, 360.0).toDouble();
 
     showMenu(
       context: context,
       position: RelativeRect.fromLTRB(
-        offset.dx + size.width - 300,
+        offset.dx + size.width - panelWidth,
         offset.dy + size.height + 8,
         offset.dx,
         offset.dy + size.height + 8,
@@ -65,9 +68,9 @@ class NotificationBell extends StatelessWidget {
         PopupMenuItem(
           enabled: false,
           child: SizedBox(
-            width: 300,
+            width: panelWidth,
             height: 400,
-            child: _NotificationPanel(),
+            child: const NotificationPanel(),
           ),
         ),
       ],
@@ -104,7 +107,9 @@ class _Badge extends StatelessWidget {
   }
 }
 
-class _NotificationPanel extends StatelessWidget {
+class NotificationPanel extends StatelessWidget {
+  const NotificationPanel({Key? key}) : super(key: key);
+
   @override
   Widget build(BuildContext context) {
     final palette = context.watch<ThemeProvider>().palette;
@@ -113,48 +118,95 @@ class _NotificationPanel extends StatelessWidget {
     return Column(
       children: [
         Container(
-          padding: const EdgeInsets.all(12),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           decoration: BoxDecoration(
             border: Border(bottom: BorderSide(color: palette.border)),
           ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                'Notifications',
-                style: TextStyle(
-                  color: palette.textPrimary,
-                  fontWeight: FontWeight.w600,
-                  fontSize: 16,
-                ),
-              ),
-              Row(
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              // Narrow headers can't fit both text buttons — collapse
+              // "Mark all read" to an icon so nothing overflows.
+              final narrow = constraints.maxWidth < 270;
+              return Row(
                 children: [
-                  if (provider.unreadCount > 0)
-                    TextButton(
-                      onPressed: () => provider.markAllRead(),
-                      child: Text(
-                        'Mark all read',
-                        style: TextStyle(color: palette.accent, fontSize: 12),
-                      ),
-                    ),
-                  TextButton(
-                    onPressed: () {
-                      Navigator.of(context).pop();
-                      Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => const NotificationsScreen(),
-                        ),
-                      );
-                    },
+                  Expanded(
                     child: Text(
-                      'View all',
-                      style: TextStyle(color: palette.accent, fontSize: 12),
+                      'Notifications',
+                      style: TextStyle(
+                        color: palette.textPrimary,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 16,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (narrow)
+                        IconButton(
+                          tooltip: 'Mark all read',
+                          onPressed: provider.unreadCount > 0
+                              ? () => provider.markAllRead()
+                              : null,
+                          icon: Icon(
+                            Icons.done_all,
+                            size: 18,
+                            color: provider.unreadCount > 0
+                                ? palette.accent
+                                : palette.textSecondary,
+                          ),
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(
+                              minWidth: 32, minHeight: 32),
+                        )
+                      else
+                        TextButton(
+                          onPressed: provider.unreadCount > 0
+                              ? () => provider.markAllRead()
+                              : null,
+                          style: TextButton.styleFrom(
+                            visualDensity: VisualDensity.compact,
+                            padding: const EdgeInsets.symmetric(horizontal: 6),
+                            minimumSize: Size.zero,
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          ),
+                          child: Text(
+                            'Mark all read',
+                            style: TextStyle(
+                              color: provider.unreadCount > 0
+                                  ? palette.accent
+                                  : palette.textSecondary,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ),
+                      TextButton(
+                        onPressed: () {
+                          Navigator.of(context).pop();
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => const NotificationsScreen(),
+                            ),
+                          );
+                        },
+                        style: TextButton.styleFrom(
+                          visualDensity: VisualDensity.compact,
+                          padding: const EdgeInsets.symmetric(horizontal: 6),
+                          minimumSize: Size.zero,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                        child: Text(
+                          'View all',
+                          style: TextStyle(color: palette.accent, fontSize: 12),
+                        ),
+                      ),
+                    ],
+                  ),
                 ],
-              ),
-            ],
+              );
+            },
           ),
         ),
         Expanded(
@@ -312,7 +364,22 @@ class _NotificationTile extends StatelessWidget {
       case 'deadline_reminder_3_days':
       case 'deadline_reminder_1_day':
       case 'deadline_today':
+      case 'deadline': // legacy literal written by old reminder inserts
         return Icons.calendar_today_outlined;
+      case 'group_discarded':
+        return Icons.group_off_outlined;
+      case 'new_version':
+        return Icons.upload_outlined;
+      case 'template_published':
+        return Icons.description_outlined;
+      case 'qr_upload_received':
+        return Icons.qr_code_scanner_outlined;
+      case 'translation_finished':
+        return Icons.translate_outlined;
+      case 'upload_rejected':
+        return Icons.block_outlined;
+      case 'student_resubmitted':
+        return Icons.refresh_outlined;
       default:
         return Icons.notifications_outlined;
     }

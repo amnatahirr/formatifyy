@@ -13,9 +13,15 @@ Covers:
 - notify() swallows errors
 """
 
+import uuid
+
 import pytest
 from database import get_db, init_db
 from services.notification_service import notify, NotificationType
+
+
+def _uniq(prefix: str) -> str:
+    return f"{prefix}_{uuid.uuid4().hex[:8]}"
 
 
 @pytest.fixture(scope="module")
@@ -32,7 +38,7 @@ def test_create_notification(db):
     # Create a test user
     cursor.execute(
         "INSERT INTO users (username, email, password_hash, role, org_id) VALUES (?, ?, ?, ?, ?)",
-        ("testuser", "test@example.com", "hash", "student", 1),
+        (_uniq("testuser"), f"{_uniq('t')}@example.com", "hash", "student", 1),
     )
     user_id = cursor.lastrowid
     conn.commit()
@@ -70,17 +76,20 @@ def test_create_notification(db):
 
 
 def test_notify_swallows_errors(db):
-    """Test that notify() never raises exceptions."""
-    # Invalid user_id should not raise
+    """Test that notify() never raises exceptions.
+
+    notify() does not validate that user_id exists (SQLite FK enforcement is
+    off), so the real guarantee is: it returns an id on success and None on
+    internal failure — it must never raise.
+    """
     result = notify(
         org_id=1,
-        user_id=999999,  # Non-existent user
+        user_id=999999,  # Non-existent user — still inserted (no FK enforcement)
         type=NotificationType.ANALYSIS_FINISHED,
         title="Test",
         body="Test",
     )
-    # Should return None instead of raising
-    assert result is None
+    assert isinstance(result, int)
 
 
 def test_dedupe_works(db):
@@ -91,7 +100,7 @@ def test_dedupe_works(db):
     # Create test user
     cursor.execute(
         "INSERT INTO users (username, email, password_hash, role, org_id) VALUES (?, ?, ?, ?, ?)",
-        ("testuser2", "test2@example.com", "hash", "student", 1),
+        (_uniq("testuser2"), f"{_uniq('t2')}@example.com", "hash", "student", 1),
     )
     user_id = cursor.lastrowid
     conn.commit()
@@ -137,7 +146,7 @@ def test_notify_many(db):
     for i in range(3):
         cursor.execute(
             "INSERT INTO users (username, email, password_hash, role, org_id) VALUES (?, ?, ?, ?, ?)",
-            (f"testuser{i}", f"test{i}@example.com", "hash", "student", 1),
+            (_uniq(f"testuser{i}"), f"{_uniq(f't{i}')}@example.com", "hash", "student", 1),
         )
         user_ids.append(cursor.lastrowid)
     conn.commit()
