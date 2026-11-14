@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../providers/auth_provider.dart';
+import '../../providers/document_provider.dart';
 import '../../providers/fyp_provider.dart';
 import '../../theme/app_theme.dart';
 
@@ -230,9 +231,341 @@ class _MySupervisorScreenState extends State<MySupervisorScreen> {
             group['project_title']?.toString() ?? data['project_title']?.toString() ?? '—',
           ),
           _infoRow('Group ID', groupId?.toString() ?? '—'),
+          const SizedBox(height: 8),
+          ElevatedButton.icon(
+            onPressed: () => _openSendReportDialog(groupId),
+            icon: const Icon(Icons.send_rounded, size: 18),
+            label: const Tr('Send Report to Supervisor'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: _p.accent,
+              foregroundColor: Colors.white,
+            ),
+          ),
         ],
       ),
     );
+  }
+
+  // ─── Send Report to Supervisor (reuses DocumentProvider.submitFinalSubmission) ───
+
+  void _snack(String msg, {bool error = false}) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(msg),
+        backgroundColor:
+            error ? const Color(0xFFEF4444) : const Color(0xFF10B981),
+      ),
+    );
+  }
+
+  String _reportStatusLabel(String status) {
+    switch (status.toLowerCase()) {
+      case 'completed':
+      case 'formatted':
+        return 'Completed';
+      case 'processing':
+        return 'In Progress';
+      case 'uploaded':
+      case 'pending':
+        return 'Ready to Analyze';
+      case 'draft':
+        return 'Draft';
+      default:
+        return 'Formatted';
+    }
+  }
+
+  Color _reportStatusColor(String status) {
+    switch (status.toLowerCase()) {
+      case 'completed':
+      case 'formatted':
+        return const Color(0xFF10B981);
+      case 'processing':
+        return const Color(0xFFEAB308);
+      case 'uploaded':
+      case 'pending':
+        return const Color(0xFF6366F1);
+      case 'draft':
+        return const Color(0xFFEF4444);
+      default:
+        return const Color(0xFF10B981);
+    }
+  }
+
+  String _reportTimeAgo(dynamic value) {
+    if (value == null) return 'just now';
+    var s = value.toString().trim();
+    if (!s.endsWith('Z') && !s.contains('+')) s += 'Z';
+    final parsed = DateTime.tryParse(s)?.toLocal();
+    if (parsed == null) return 'just now';
+    final d = DateTime.now().difference(parsed);
+    if (d.isNegative || d.inSeconds < 30) return 'just now';
+    if (d.inDays >= 7) {
+      final w = (d.inDays / 7).floor();
+      return '$w week${w > 1 ? 's' : ''} ago';
+    }
+    if (d.inDays > 0) return '${d.inDays} day${d.inDays > 1 ? 's' : ''} ago';
+    if (d.inHours > 0) {
+      return '${d.inHours} hour${d.inHours > 1 ? 's' : ''} ago';
+    }
+    if (d.inMinutes > 0) {
+      return '${d.inMinutes} minute${d.inMinutes > 1 ? 's' : ''} ago';
+    }
+    return 'less than a minute ago';
+  }
+
+  Widget _reportChip(String text, Color color, {IconData? icon}) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.13),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (icon != null) ...[
+            Icon(icon, size: 11, color: color),
+            const SizedBox(width: 4),
+          ],
+          Text(
+            text,
+            style: TextStyle(
+              fontSize: 10.5,
+              fontWeight: FontWeight.w700,
+              color: color,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _openSendReportDialog(dynamic rawGroupId) async {
+    final auth = context.read<AuthProvider>();
+    final docs = context.read<DocumentProvider>();
+    final p = context.read<ThemeProvider>().palette;
+
+    final userId = auth.userId;
+    final email = (auth.userEmail ?? auth.email ?? '').trim();
+    final groupId = int.tryParse('${rawGroupId ?? ''}');
+
+    if (userId == null || email.isEmpty) {
+      _snack('Please sign in again to send', error: true);
+      return;
+    }
+    if (groupId == null) {
+      _snack('No accepted supervisor group found yet.', error: true);
+      return;
+    }
+
+    // Refresh My Reports list (not awaited; dialog rebuilds when it arrives).
+    docs.fetchDocuments(userId);
+
+    final picked = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (ctx) {
+        int? selectedId;
+        return StatefulBuilder(
+          builder: (ctx, setLocal) => AnimatedBuilder(
+            animation: docs,
+            builder: (ctx, _) {
+              final list = docs.documents;
+              Widget body;
+              if (docs.isLoading && list.isEmpty) {
+                body = Center(
+                  child: CircularProgressIndicator(color: p.accent),
+                );
+              } else if (list.isEmpty) {
+                body = Center(
+                  child: Text(
+                    'No reports found. Upload a document from New Report first.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: p.textSecondary),
+                  ),
+                );
+              } else {
+                body = ListView.separated(
+                  itemCount: list.length,
+                  separatorBuilder: (_, __) => const SizedBox(height: 10),
+                  itemBuilder: (_, i) {
+                    final doc = list[i];
+                    final id = doc['id'];
+                    final selected =
+                        id != null && selectedId != null && '$id' == '$selectedId';
+                    final status = (doc['status'] ?? 'draft').toString();
+                    final sColor = _reportStatusColor(status);
+                    final formatted = doc['has_formatted'] == true;
+                    return InkWell(
+                      borderRadius: BorderRadius.circular(12),
+                      onTap: id == null
+                          ? null
+                          : () => setLocal(() {
+                                selectedId = id is int ? id : int.tryParse('$id');
+                              }),
+                      child: Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: selected ? p.accentSoft : p.surfaceAlt,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: selected ? p.accent : p.border,
+                            width: selected ? 1.5 : 1,
+                          ),
+                        ),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Icon(
+                              selected
+                                  ? Icons.radio_button_checked
+                                  : Icons.radio_button_unchecked,
+                              size: 20,
+                              color: selected ? p.accent : p.textMuted,
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    (doc['filename'] ?? 'Untitled').toString(),
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      color: p.textPrimary,
+                                      fontSize: 13.5,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 3),
+                                  Text(
+                                    '${doc['template_name'] ?? 'No template'} · Modified ${_reportTimeAgo(doc['created_at'])}',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      color: p.textSecondary,
+                                      fontSize: 11.5,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Wrap(
+                                    spacing: 6,
+                                    runSpacing: 6,
+                                    children: [
+                                      _reportChip(
+                                        _reportStatusLabel(status),
+                                        sColor,
+                                      ),
+                                      if (formatted)
+                                        _reportChip(
+                                          'Formatted saved',
+                                          const Color(0xFF10B981),
+                                          icon: Icons.check_circle,
+                                        ),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                );
+              }
+
+              return AlertDialog(
+                backgroundColor: p.surface,
+                title: Text(
+                  'Send Report to Supervisor',
+                  style: TextStyle(color: p.textPrimary, fontSize: 18),
+                ),
+                content: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 520),
+                  child: SizedBox(
+                    width: double.maxFinite,
+                    height: 400,
+                    child: body,
+                  ),
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(ctx),
+                    child: const Tr('Cancel'),
+                  ),
+                  ElevatedButton.icon(
+                    onPressed: selectedId == null
+                        ? null
+                        : () {
+                            final doc = list.firstWhere(
+                              (d) => '${d['id']}' == '$selectedId',
+                            );
+                            Navigator.pop(
+                              ctx,
+                              Map<String, dynamic>.from(doc),
+                            );
+                          },
+                    icon: const Icon(Icons.send_rounded, size: 16),
+                    label: const Tr('Send'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF10B981),
+                      foregroundColor: Colors.white,
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+        );
+      },
+    );
+
+    if (picked == null || !mounted) return;
+    await _submitReport(picked, groupId, userId, email);
+  }
+
+  Future<void> _submitReport(
+    Map<String, dynamic> doc,
+    int groupId,
+    int userId,
+    String email,
+  ) async {
+    final docs = context.read<DocumentProvider>();
+    final rawId = doc['id'];
+    final docId = rawId is int ? rawId : int.tryParse('$rawId');
+    if (docId == null) {
+      _snack('Invalid document', error: true);
+      return;
+    }
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(
+        child: CircularProgressIndicator(color: Color(0xFF10B981)),
+      ),
+    );
+
+    final result = await docs.submitFinalSubmission(
+      userId: userId,
+      groupId: groupId,
+      title: (doc['filename'] ?? 'Report').toString(),
+      filename: (doc['filename'] ?? 'document.docx').toString(),
+      studentContactEmail: email,
+      sourceDocumentId: docId,
+      analysisReport: docs.analysisReportFor(docId),
+    );
+
+    if (!mounted) return;
+    Navigator.of(context, rootNavigator: true).pop(); // close loader
+
+    if (result != null) {
+      _snack('Sent to supervisor for review');
+    } else {
+      _snack(docs.errorMessage ?? 'Failed to send', error: true);
+    }
   }
 
   Widget _genericCard(Map<String, dynamic> data) {
