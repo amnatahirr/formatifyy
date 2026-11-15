@@ -109,7 +109,8 @@ def _pretty_date(raw: str) -> str:
 
 
 def _wrap_html(*, accent: str, badge: str, heading: str, greeting: str,
-               intro: str, title: str, due: str, description: str, closing: str) -> str:
+               intro: str, title: str, due: str, description: str, closing: str,
+               label: str = "Deadline", footer: str = "") -> str:
     desc_block = ""
     if description:
         desc_block = (
@@ -137,7 +138,7 @@ def _wrap_html(*, accent: str, badge: str, heading: str, greeting: str,
             <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#F9FAFB;border:1px solid #E5E7EB;border-left:5px solid {accent};border-radius:8px;">
               <tr><td style="padding:18px 20px;">
                 <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
-                  <tr><td style="font-size:12px;color:#6B7280;text-transform:uppercase;letter-spacing:0.8px;">Deadline</td></tr>
+                  <tr><td style="font-size:12px;color:#6B7280;text-transform:uppercase;letter-spacing:0.8px;">{escape(label)}</td></tr>
                   <tr><td style="font-size:18px;font-weight:700;color:#111827;padding-top:4px;">{escape(title)}</td></tr>
                   <tr><td style="padding-top:14px;font-size:12px;color:#6B7280;text-transform:uppercase;letter-spacing:0.8px;">Due date</td></tr>
                   <tr><td style="font-size:16px;font-weight:600;color:{accent};padding-top:4px;">{escape(due)}</td></tr>
@@ -151,7 +152,7 @@ def _wrap_html(*, accent: str, badge: str, heading: str, greeting: str,
         <tr>
           <td style="background-color:#F9FAFB;border-top:1px solid #E5E7EB;padding:18px 32px;font-size:12px;line-height:18px;color:#9CA3AF;">
             This is an automated message from {BRAND_NAME}. Please do not reply to this email.<br>
-            You are receiving this because you are registered as a student on the platform.
+            {escape(footer or 'You are receiving this because you are registered as a student on the platform.')}
           </td>
         </tr>
       </table>
@@ -208,6 +209,86 @@ def build_deadline_email(
     html = _wrap_html(
         accent=accent, badge=badge, heading=heading, greeting=greeting,
         intro=intro, title=title, due=due, description=description, closing=closing,
+    )
+    return subject, text, html
+
+
+def build_milestone_email(
+    *,
+    milestone: str,
+    due_date: str,
+    phase: str = "",
+    group_name: str = "",
+    name: str = "",
+    days_left: int = 0,
+    audience: str = "student",
+) -> tuple[str, str, str]:
+    """Returns (subject, text_body, html_body) for an FYP milestone deadline."""
+    due = _pretty_date(due_date)
+    if name:
+        greeting = f"Dear {name},"
+    else:
+        greeting = "Dear Supervisor," if audience == "supervisor" else "Dear Student,"
+    phase_part = f" ({phase})" if phase else ""
+    group_part = f' for group "{group_name}"' if group_name else ""
+
+    if days_left < 0:
+        accent, badge = "#DC2626", "OVERDUE"
+        subject = f"Overdue: {milestone}"
+        heading = "Milestone deadline has passed"
+        if audience == "supervisor":
+            intro = (
+                f'The milestone "{milestone}"{phase_part}{group_part} was due on {due} '
+                "and is not completed yet."
+            )
+            closing = (
+                "You can review the group, extend the deadline, mark it for rework "
+                "or promote the group from the group details screen."
+            )
+        else:
+            intro = (
+                f'The deadline for the milestone "{milestone}"{phase_part}{group_part} '
+                f"has passed ({due}) and it is not completed yet."
+            )
+            closing = "Please contact your supervisor and complete this milestone as soon as possible."
+    elif days_left == 0:
+        accent, badge = "#DC2626", "DUE TODAY"
+        subject = f"Due Today: {milestone}"
+        heading = "Milestone deadline reminder"
+        intro = f'The milestone "{milestone}"{phase_part}{group_part} is due today.'
+        closing = "Please make sure your work is completed and submitted on time."
+    elif days_left == 1:
+        accent, badge = "#EA580C", "DUE TOMORROW"
+        subject = f"Due Tomorrow: {milestone}"
+        heading = "Milestone deadline reminder"
+        intro = f'The milestone "{milestone}"{phase_part}{group_part} is due tomorrow.'
+        closing = "Please make sure your work is completed and submitted on time."
+    else:
+        accent, badge = "#D97706", f"{days_left} DAYS LEFT"
+        subject = f"Reminder: {milestone} is due in {days_left} days"
+        heading = "Milestone deadline reminder"
+        intro = f'The milestone "{milestone}"{phase_part}{group_part} is due in {days_left} days.'
+        closing = "Please plan your work so that this milestone is completed on time."
+
+    description = " · ".join(
+        p for p in [phase, f"Group: {group_name}" if group_name else ""] if p
+    )
+    footer = (
+        "You are receiving this because you supervise this FYP group."
+        if audience == "supervisor"
+        else "You are receiving this because you are a member of this FYP group."
+    )
+    text = (
+        f"{greeting}\n\n{intro}\n\n"
+        f"Milestone : {milestone}\n"
+        f"Due date  : {due}\n"
+        + (f"Details   : {description}\n" if description else "")
+        + f"\n{closing}\n\n— {BRAND_NAME}\n"
+    )
+    html = _wrap_html(
+        accent=accent, badge=badge, heading=heading, greeting=greeting,
+        intro=intro, title=milestone, due=due, description=description,
+        closing=closing, label="Milestone", footer=footer,
     )
     return subject, text, html
 

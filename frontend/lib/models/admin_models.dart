@@ -244,6 +244,37 @@ class SemesterDeadlineModel {
       );
 }
 
+/// Admin-defined FYP milestone for a department (semester 6, 7 or 8).
+class MilestoneModel {
+  final int id;
+  final int departmentId;
+  final String departmentName;
+  final String name;
+  final int semester;
+  final String phase;
+  final String deadlineDate;
+
+  const MilestoneModel({
+    required this.id,
+    required this.departmentId,
+    required this.departmentName,
+    required this.name,
+    required this.semester,
+    required this.phase,
+    required this.deadlineDate,
+  });
+
+  factory MilestoneModel.fromJson(Map<String, dynamic> json) => MilestoneModel(
+        id: _asInt(json['id']),
+        departmentId: _asInt(json['department_id']),
+        departmentName: (json['department_name'] ?? '').toString(),
+        name: (json['name'] ?? '').toString(),
+        semester: _asInt(json['semester'], 6),
+        phase: (json['phase'] ?? '').toString(),
+        deadlineDate: (json['deadline_date'] ?? '').toString(),
+      );
+}
+
 class AnalyticsIssueBreakdown {
   final String label;
   final int percentage;

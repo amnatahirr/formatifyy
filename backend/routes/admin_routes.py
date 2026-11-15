@@ -1621,6 +1621,382 @@ def test_email(
     from email_service import send_test_email
     return send_test_email(to)
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# FYP MILESTONES (per department, semester 6 / 7 / 8)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+_MILESTONE_PHASE_LABEL = {6: "Proposal", 7: "FYP-1", 8: "FYP-2"}
+
+
+def _parse_milestone_semester(value) -> int:
+    try:
+        sem = int(value)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="semester must be 6, 7 or 8.")
+    if sem not in (6, 7, 8):
+        raise HTTPException(status_code=400, detail="semester must be 6, 7 or 8.")
+    return sem
+
+
+def _parse_milestone_date(value) -> str:
+    raw = str(value or "").strip()
+    if not raw:
+        raise HTTPException(status_code=400, detail="deadline_date is required.")
+    try:
+        return datetime.strptime(raw[:10], "%Y-%m-%d").date().isoformat()
+    except ValueError:
+        raise HTTPException(status_code=400, detail="deadline_date must be YYYY-MM-DD.")
+
+
+def _serialize_milestone(row) -> dict[str, Any]:
+    keys = set(row.keys())
+    sem = int(row["semester"])
+    return {
+        "id": row["id"],
+        "department_id": row["department_id"],
+        "department_name": (row["department_name"] if "department_name" in keys else "") or "",
+        "department_code": (row["department_code"] if "department_code" in keys else "") or "",
+        "name": row["name"],
+        "semester": sem,
+        "phase": _MILESTONE_PHASE_LABEL.get(sem, ""),
+        "deadline_date": _format_date(row["deadline_date"]),
+        "sort_order": int(row["sort_order"] or 0),
+        "is_active": bool(row["is_active"]) if row["is_active"] is not None else True,
+    }
+
+
+def _milestone_by_id(cursor, milestone_id: int, org_id: int):
+    cursor.execute(
+        """
+        SELECT dm.*, d.name AS department_name, d.code AS department_code
+        FROM department_milestones dm
+        LEFT JOIN departments d ON d.id = dm.department_id
+        WHERE dm.id = ? AND COALESCE(dm.org_id, 1) = ?
+        """,
+        (milestone_id, org_id),
+    )
+    return cursor.fetchone()
+
+
+@router.get("/milestones")
+def list_milestones(
+    request: Request,
+    department_id: int | None = Query(default=None),
+    user_id: int | None = Query(default=None),
+):
+    _require_admin(user_id)
+    org_id = _org_id(request)
+    conn = get_db()
+    cursor = conn.cursor()
+    try:
+        sql = """
+            SELECT dm.*, d.name AS department_name, d.code AS department_code
+            FROM department_milestones dm
+            LEFT JOIN departments d ON d.id = dm.department_id
+            WHERE COALESCE(dm.org_id, 1) = ?
+        """
+        params: list[Any] = [org_id]
+        if department_id is not None:
+            sql += " AND dm.department_id = ?"
+            params.append(department_id)
+        sql += " ORDER BY d.name ASC, dm.semester ASC, date(dm.deadline_date) ASC, dm.sort_order ASC, dm.id ASC"
+        cursor.execute(sql, params)
+        rows = [_serialize_milestone(r) for r in cursor.fetchall()]
+        return {"milestones": rows, "count": len(rows)}
+    finally:
+        conn.close()
+
+
+@router.post("/milestones")
+def create_milestone(
+    request: Request,
+    payload: dict[str, Any] = Body(...),
+    user_id: int | None = Query(default=None),
+):
+    _require_admin(user_id)
+    org_id = _org_id(request)
+    name = str(payload.get("name") or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Milestone name is required.")
+    semester = _parse_milestone_semester(payload.get("semester"))
+    deadline = _parse_milestone_date(payload.get("deadline_date"))
+    try:
+        department_id = int(payload.get("department_id"))
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="department_id is required.")
+
+    conn = get_db()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "SELECT id FROM departments WHERE id = ? AND org_id = ?",
+            (department_id, org_id),
+        )
+        if not cursor.fetchone():
+            raise HTTPException(status_code=404, detail="Department not found.")
+
+        cursor.execute(
+            """
+            SELECT id FROM department_milestones
+            WHERE COALESCE(org_id, 1) = ? AND department_id = ? AND semester = ?
+              AND LOWER(TRIM(name)) = LOWER(?)
+            """,
+            (org_id, department_id, semester, name),
+        )
+        if cursor.fetchone():
+            raise HTTPException(
+                status_code=409,
+                detail="This milestone already exists for that department and semester.",
+            )
+
+        cursor.execute(
+            """
+            SELECT COALESCE(MAX(sort_order), 0) + 1 FROM department_milestones
+            WHERE COALESCE(org_id, 1) = ? AND department_id = ? AND semester = ?
+            """,
+            (org_id, department_id, semester),
+        )
+        sort_order = int(cursor.fetchone()[0] or 1)
+        cursor.execute(
+            """
+            INSERT INTO department_milestones
+                (org_id, department_id, name, semester, deadline_date, sort_order, created_by)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (org_id, department_id, name, semester, deadline, sort_order, user_id),
+        )
+        new_id = cursor.lastrowid
+        conn.commit()
+
+        try:
+            from services.milestone_service import sync_department_groups
+
+            sync_department_groups(cursor, org_id, department_id)
+            conn.commit()
+        except Exception:  # noqa: BLE001
+            conn.rollback()
+            logger.exception("Could not sync groups after creating milestone %s", new_id)
+
+        return {"success": True, "milestone": _serialize_milestone(_milestone_by_id(cursor, new_id, org_id))}
+    except HTTPException:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+@router.put("/milestones/{milestone_id}")
+def update_milestone(
+    milestone_id: int,
+    request: Request,
+    payload: dict[str, Any] = Body(...),
+    user_id: int | None = Query(default=None),
+):
+    _require_admin(user_id)
+    org_id = _org_id(request)
+    conn = get_db()
+    cursor = conn.cursor()
+    try:
+        existing = _milestone_by_id(cursor, milestone_id, org_id)
+        if not existing:
+            raise HTTPException(status_code=404, detail="Milestone not found.")
+
+        name = str(payload.get("name", existing["name"]) or "").strip()
+        if not name:
+            raise HTTPException(status_code=400, detail="Milestone name is required.")
+        semester = (
+            _parse_milestone_semester(payload["semester"])
+            if "semester" in payload
+            else int(existing["semester"])
+        )
+        deadline = (
+            _parse_milestone_date(payload["deadline_date"])
+            if "deadline_date" in payload
+            else _format_date(existing["deadline_date"])
+        )
+
+        cursor.execute(
+            """
+            SELECT id FROM department_milestones
+            WHERE COALESCE(org_id, 1) = ? AND department_id = ? AND semester = ?
+              AND LOWER(TRIM(name)) = LOWER(?) AND id != ?
+            """,
+            (org_id, existing["department_id"], semester, name, milestone_id),
+        )
+        if cursor.fetchone():
+            raise HTTPException(
+                status_code=409,
+                detail="Another milestone with this name already exists for that semester.",
+            )
+
+        cursor.execute(
+            """
+            UPDATE department_milestones
+            SET name = ?, semester = ?, deadline_date = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ? AND COALESCE(org_id, 1) = ?
+            """,
+            (name, semester, deadline, milestone_id, org_id),
+        )
+        cursor.execute(
+            "UPDATE group_milestones SET name = ? WHERE dept_milestone_id = ?",
+            (name, milestone_id),
+        )
+        # New date → allow reminders to go out again.
+        if deadline != _format_date(existing["deadline_date"]):
+            cursor.execute(
+                """
+                DELETE FROM milestone_reminders_sent
+                WHERE group_milestone_id IN (
+                    SELECT id FROM group_milestones WHERE dept_milestone_id = ?
+                )
+                """,
+                (milestone_id,),
+            )
+        conn.commit()
+
+        try:
+            from services.milestone_service import sync_department_groups
+
+            sync_department_groups(cursor, org_id, int(existing["department_id"]))
+            conn.commit()
+        except Exception:  # noqa: BLE001
+            conn.rollback()
+            logger.exception("Could not sync groups after updating milestone %s", milestone_id)
+
+        return {"success": True, "milestone": _serialize_milestone(_milestone_by_id(cursor, milestone_id, org_id))}
+    except HTTPException:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+@router.delete("/milestones/{milestone_id}")
+def delete_milestone(
+    milestone_id: int,
+    request: Request,
+    user_id: int | None = Query(default=None),
+):
+    _require_admin(user_id)
+    org_id = _org_id(request)
+    conn = get_db()
+    cursor = conn.cursor()
+    try:
+        if not _milestone_by_id(cursor, milestone_id, org_id):
+            raise HTTPException(status_code=404, detail="Milestone not found.")
+        cursor.execute(
+            """
+            DELETE FROM milestone_reminders_sent
+            WHERE group_milestone_id IN (
+                SELECT id FROM group_milestones WHERE dept_milestone_id = ?
+            )
+            """,
+            (milestone_id,),
+        )
+        cursor.execute("DELETE FROM group_milestones WHERE dept_milestone_id = ?", (milestone_id,))
+        cursor.execute(
+            "DELETE FROM department_milestones WHERE id = ? AND COALESCE(org_id, 1) = ?",
+            (milestone_id, org_id),
+        )
+        conn.commit()
+        return {"success": True, "deleted_id": milestone_id}
+    except HTTPException:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+@router.post("/milestones/copy")
+def copy_milestones(
+    request: Request,
+    payload: dict[str, Any] = Body(...),
+    user_id: int | None = Query(default=None),
+):
+    """Copy every milestone of one department into another (duplicates are skipped)."""
+    _require_admin(user_id)
+    org_id = _org_id(request)
+    try:
+        from_id = int(payload.get("from_department_id"))
+        to_id = int(payload.get("to_department_id"))
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="from_department_id and to_department_id are required.")
+    if from_id == to_id:
+        raise HTTPException(status_code=400, detail="Choose two different departments.")
+
+    conn = get_db()
+    cursor = conn.cursor()
+    try:
+        for dept in (from_id, to_id):
+            cursor.execute(
+                "SELECT id FROM departments WHERE id = ? AND org_id = ?",
+                (dept, org_id),
+            )
+            if not cursor.fetchone():
+                raise HTTPException(status_code=404, detail="Department not found.")
+
+        cursor.execute(
+            """
+            SELECT name, semester, deadline_date, sort_order FROM department_milestones
+            WHERE COALESCE(org_id, 1) = ? AND department_id = ?
+            ORDER BY semester ASC, sort_order ASC, id ASC
+            """,
+            (org_id, from_id),
+        )
+        source = cursor.fetchall()
+        copied = skipped = 0
+        for m in source:
+            cursor.execute(
+                """
+                SELECT id FROM department_milestones
+                WHERE COALESCE(org_id, 1) = ? AND department_id = ? AND semester = ?
+                  AND LOWER(TRIM(name)) = LOWER(?)
+                """,
+                (org_id, to_id, m["semester"], m["name"]),
+            )
+            if cursor.fetchone():
+                skipped += 1
+                continue
+            cursor.execute(
+                """
+                INSERT INTO department_milestones
+                    (org_id, department_id, name, semester, deadline_date, sort_order, created_by)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (org_id, to_id, m["name"], m["semester"], m["deadline_date"], m["sort_order"], user_id),
+            )
+            copied += 1
+        conn.commit()
+
+        if copied:
+            try:
+                from services.milestone_service import sync_department_groups
+
+                sync_department_groups(cursor, org_id, to_id)
+                conn.commit()
+            except Exception:  # noqa: BLE001
+                conn.rollback()
+                logger.exception("Could not sync groups after copying milestones")
+        return {"success": True, "copied": copied, "skipped": skipped}
+    except HTTPException:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+@router.post("/run-milestone-reminders")
+def run_milestone_reminders_now(
+    request: Request,
+    user_id: int | None = Query(default=None),
+):
+    """For testing: run the milestone reminder job right now."""
+    _require_admin(user_id)
+    from services.milestone_service import run_milestone_reminders
+
+    return {"success": True, **run_milestone_reminders()}
+
+
 @router.get("/analytics")
 def get_admin_analytics(
     request: Request,

@@ -5,6 +5,7 @@ import '../config/dev_user_config.dart';
 import '../providers/auth_provider.dart';
 import '../screens/admin/analytics_screen.dart';
 import '../screens/admin/deadlines_screen.dart';
+import '../screens/admin/milestones_screen.dart';
 import '../screens/admin/semester_deadlines_screen.dart';
 import '../screens/admin/department_manager_screen.dart';
 import '../screens/admin/supervisor_management_screen.dart';
@@ -96,6 +97,13 @@ class _AdminDashboardState extends State<AdminDashboard> {
       icon: Icons.event_note_rounded,
       requiresFyp: true,
     ),
+    _AdminNavItem(
+      id: 12,
+      label: 'Milestones',
+      shortLabel: 'Goals',
+      icon: Icons.flag_rounded,
+      requiresFyp: true,
+    ),
    
     _AdminNavItem(
       id: 6,
@@ -140,7 +148,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
   static const _navGroups = <_NavGroup>[
     _NavGroup('WORKSPACE', [0, 8]),
     _NavGroup('ORGANIZATION', [1, 2, 6, 7]),
-    _NavGroup('DOCUMENTS', [3, 4, 5, 9]),
+    _NavGroup('DOCUMENTS', [3, 4, 12, 5, 9]),
     _NavGroup('SYSTEM', [10, 11]),
   ];
 
@@ -232,6 +240,8 @@ class _AdminDashboardState extends State<AdminDashboard> {
         return 'System configuration';
       case 11:
         return 'Your notifications and alerts';
+      case 12:
+        return 'Department milestones by semester';
       default:
         return DevUserConfig.hasFypModule
             ? 'Modules: ${DevUserConfig.modulesLabel}'
@@ -857,6 +867,8 @@ class _AdminDashboardState extends State<AdminDashboard> {
         return const AdminSettingsScreen();
       case 11:
         return const NotificationsScreen(embedded: true);
+      case 12:
+        return const MilestonesScreen(embedded: true);
       default:
         return const SizedBox();
     }

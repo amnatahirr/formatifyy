@@ -426,6 +426,12 @@ def _normalize_document_status(raw: Any) -> str:
 
 
 def _ensure_group_milestones(cursor, group_id: int, progress: float = 0) -> list[dict[str, Any]]:
+    from services.milestone_service import list_group_milestones
+
+    managed = list_group_milestones(cursor, group_id)
+    if managed is not None:
+        return managed
+
     defaults = [
         ("Proposal", 1, progress >= 30),
         ("Literature Review", 2, progress >= 60),
@@ -515,6 +521,7 @@ def _serialize_group(row) -> dict[str, Any]:
         "created_at": row["created_at"],
         "department_id": row["department_id"] if "department_id" in keys else None,
         "current_semester": row["current_semester"] if "current_semester" in keys else None,
+        "is_graduated": bool(row["is_graduated"]) if ("is_graduated" in keys and row["is_graduated"]) else False,
         "student_contact_email": (
             row["student_contact_email"] if "student_contact_email" in keys else ""
         ) or "",
@@ -655,7 +662,8 @@ def get_group_detail(
     try:
         cursor.execute(
             """
-            SELECT id, title, project_title, status, progress, member_names, deadline_date, created_at
+            SELECT id, title, project_title, status, progress, member_names, deadline_date, created_at,
+                   current_semester, department_id, is_graduated
             FROM fyp_groups
             WHERE id = ? AND supervisor_id = ? AND status = 'accepted'
             """,
@@ -716,6 +724,219 @@ def _sync_supervisor_current_groups(cursor, supervisor_id: int) -> int:
         (count, supervisor_id),
     )
     return count
+
+
+def _load_promotable_group(cursor, group_id: int, supervisor: dict[str, Any]):
+    cursor.execute(
+        """
+        SELECT id, title, current_semester, COALESCE(is_graduated, 0) AS is_graduated
+        FROM fyp_groups
+        WHERE id = ? AND supervisor_id = ? AND status = 'accepted'
+          AND COALESCE(org_id, 1) = ?
+        """,
+        (group_id, supervisor["id"], _supervisor_org_id(supervisor)),
+    )
+    group = cursor.fetchone()
+    if not group:
+        raise HTTPException(status_code=404, detail="Group not found.")
+    if int(group["is_graduated"] or 0):
+        raise HTTPException(status_code=409, detail="This group has already graduated.")
+    return group
+
+
+@router.post("/groups/{group_id}/promote")
+def promote_group_semester(
+    group_id: int,
+    user_id: Annotated[int | None, Query()] = None,
+):
+    """Promote the group (Proposal → FYP-1 → FYP-2 → Graduated); completes that semester's milestones."""
+    from services.milestone_service import promote_group
+
+    supervisor = _require_supervisor(user_id)
+    supervisor_id = supervisor["id"]
+    conn = get_db()
+    cursor = conn.cursor()
+    pending_notifications: list = []
+    try:
+        group = _load_promotable_group(cursor, group_id, supervisor)
+        result = promote_group(cursor, group_id)
+
+        group_title = group["title"] or "your group"
+        supervisor_name = supervisor.get("name") or "Your supervisor"
+        if result["graduated"]:
+            title = "Group graduated"
+            message = (
+                f"{supervisor_name} marked '{group_title}' as graduated. "
+                f"{result['completed_milestones']} milestone(s) completed."
+            )
+        else:
+            title = f"Promoted to {result['to_phase']}"
+            message = (
+                f"{supervisor_name} promoted '{group_title}' from {result['from_phase']} "
+                f"to {result['to_phase']}. {result['completed_milestones']} milestone(s) "
+                "marked completed."
+            )
+        for email in _get_group_notify_emails(cursor, group_id, supervisor_id):
+            pending_notifications.append(
+                _create_notification(
+                    cursor,
+                    recipient_email=email,
+                    title=title,
+                    message=message,
+                    notification_type="group_promoted",
+                    related_type="fyp_group",
+                    related_id=group_id,
+                    org_id=_supervisor_org_id(supervisor),
+                )
+            )
+        conn.commit()
+        _flush_notifications(pending_notifications)
+        return {"success": True, "message": message, **result}
+    except HTTPException:
+        conn.rollback()
+        raise
+    except (LookupError, ValueError) as exc:
+        conn.rollback()
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception:
+        conn.rollback()
+        logger.exception("Failed to promote group %s", group_id)
+        raise HTTPException(status_code=500, detail="Could not promote group.")
+    finally:
+        conn.close()
+
+
+@router.post("/groups/{group_id}/rework")
+def mark_group_rework(
+    group_id: int,
+    user_id: Annotated[int | None, Query()] = None,
+    payload: dict[str, Any] = Body(default_factory=dict),
+):
+    """Not promoted: current semester's pending milestones need rework (reason required)."""
+    from services.milestone_service import PHASE_BY_SEMESTER, mark_rework
+
+    supervisor = _require_supervisor(user_id)
+    supervisor_id = supervisor["id"]
+    note = (payload.get("note") or payload.get("reason") or "").strip()
+    if not note:
+        raise HTTPException(status_code=400, detail="A reason for not promoting is required.")
+    conn = get_db()
+    cursor = conn.cursor()
+    pending_notifications: list = []
+    try:
+        group = _load_promotable_group(cursor, group_id, supervisor)
+        count = mark_rework(cursor, group_id, note)
+        if count == 0:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "No pending milestones found for the current semester. "
+                    "Rework needs admin-defined milestones for this department."
+                ),
+            )
+        phase = PHASE_BY_SEMESTER.get(int(group["current_semester"] or 6), "this semester")
+        group_title = group["title"] or "your group"
+        supervisor_name = supervisor.get("name") or "Your supervisor"
+        message = (
+            f"{supervisor_name} did not promote '{group_title}'. "
+            f"You have to rework on the {phase} milestone(s)."
+        )
+        if note:
+            message += f" Note: {note}"
+        for email in _get_group_notify_emails(cursor, group_id, supervisor_id):
+            pending_notifications.append(
+                _create_notification(
+                    cursor,
+                    recipient_email=email,
+                    title="Milestone needs rework",
+                    message=message,
+                    notification_type="milestone_rework",
+                    related_type="fyp_group",
+                    related_id=group_id,
+                    org_id=_supervisor_org_id(supervisor),
+                )
+            )
+        conn.commit()
+        _flush_notifications(pending_notifications)
+        return {"success": True, "message": message, "flagged_milestones": count}
+    except HTTPException:
+        conn.rollback()
+        raise
+    except (LookupError, ValueError) as exc:
+        conn.rollback()
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception:
+        conn.rollback()
+        logger.exception("Failed to mark rework for group %s", group_id)
+        raise HTTPException(status_code=500, detail="Could not mark milestones for rework.")
+    finally:
+        conn.close()
+
+
+@router.post("/groups/{group_id}/milestones/{milestone_id}/extend")
+def extend_group_milestone(
+    group_id: int,
+    milestone_id: int,
+    user_id: Annotated[int | None, Query()] = None,
+    payload: dict[str, Any] = Body(default_factory=dict),
+):
+    """Give one group more time for a milestone (also clears its rework flag)."""
+    from services.milestone_service import extend_milestone
+
+    supervisor = _require_supervisor(user_id)
+    supervisor_id = supervisor["id"]
+    new_deadline = _parse_date(payload.get("deadline_date"))
+    if new_deadline is None:
+        raise HTTPException(status_code=400, detail="deadline_date (YYYY-MM-DD) is required.")
+    if new_deadline < date.today():
+        raise HTTPException(status_code=400, detail="The new deadline cannot be in the past.")
+
+    conn = get_db()
+    cursor = conn.cursor()
+    pending_notifications: list = []
+    try:
+        group = _load_promotable_group(cursor, group_id, supervisor)
+        cursor.execute(
+            """
+            SELECT dm.name FROM group_milestones gm
+            JOIN department_milestones dm ON dm.id = gm.dept_milestone_id
+            WHERE gm.id = ? AND gm.group_id = ?
+            """,
+            (milestone_id, group_id),
+        )
+        ms = cursor.fetchone()
+        if not ms or not extend_milestone(cursor, group_id, milestone_id, new_deadline):
+            raise HTTPException(status_code=404, detail="Pending milestone not found for this group.")
+
+        message = (
+            f"{supervisor.get('name') or 'Your supervisor'} extended the deadline of "
+            f"'{ms['name']}' to {new_deadline.isoformat()}."
+        )
+        for email in _get_group_notify_emails(cursor, group_id, supervisor_id):
+            pending_notifications.append(
+                _create_notification(
+                    cursor,
+                    recipient_email=email,
+                    title="Milestone deadline extended",
+                    message=message,
+                    notification_type="milestone_extended",
+                    related_type="fyp_group",
+                    related_id=group_id,
+                    org_id=_supervisor_org_id(supervisor),
+                )
+            )
+        conn.commit()
+        _flush_notifications(pending_notifications)
+        return {"success": True, "message": message, "deadline_date": new_deadline.isoformat()}
+    except HTTPException:
+        conn.rollback()
+        raise
+    except Exception:
+        conn.rollback()
+        logger.exception("Failed to extend milestone %s", milestone_id)
+        raise HTTPException(status_code=500, detail="Could not extend milestone.")
+    finally:
+        conn.close()
 
 
 @router.post("/groups/{group_id}/discard")
@@ -2087,7 +2308,7 @@ def _decide_submission(
                 """
                 UPDATE group_milestones
                 SET is_completed = 1, completed_at = ?
-                WHERE group_id = ? AND LOWER(name) = 'final doc'
+                WHERE group_id = ? AND LOWER(name) = 'final doc' AND dept_milestone_id IS NULL
                 """,
                 (resolved_at, row["group_id"]),
             )

@@ -150,6 +150,14 @@ def start_scheduler() -> None:
         run_deadline_reminders, "cron", hour=9, minute=0,
         id="deadline_reminders", replace_existing=True,
     )
+    try:
+        from services.milestone_service import run_milestone_reminders
+        _scheduler.add_job(
+            run_milestone_reminders, "cron", hour=9, minute=5,
+            id="milestone_reminders", replace_existing=True,
+        )
+    except Exception:
+        logger.exception("Milestone reminder job could not be scheduled")
     _scheduler.start()
     logger.info("Reminder scheduler started (daily 09:00 PKT)")
 

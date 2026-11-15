@@ -152,7 +152,7 @@ class _FypMilestonesScreenState extends State<FypMilestonesScreen> {
       child: ListView(
         padding: const EdgeInsets.all(32),
         children: [
-          Tr('Track Proposal → Literature Review → Final Doc for your FYP group.',
+          Tr('Track your FYP milestones, deadlines and supervisor decisions.',
             style: TextStyle(color: _p.textSecondary, fontSize: 14),
           ),
           const SizedBox(height: 8),
@@ -175,7 +175,7 @@ class _FypMilestonesScreenState extends State<FypMilestonesScreen> {
               ),
             )
           else
-            ...milestones.map(_milestoneTile),
+            ...milestones.map(_milestoneTileV2),
         ],
       ),
     );
@@ -281,7 +281,7 @@ class _FypMilestonesScreenState extends State<FypMilestonesScreen> {
               ),
             )
           else
-            ...milestones.map(_mobileMilestoneBar),
+            ...milestones.map(_mobileMilestoneBarV2),
         ],
       ),
     );
@@ -354,6 +354,210 @@ class _FypMilestonesScreenState extends State<FypMilestonesScreen> {
                 ),
               ),
             ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  static const _bad = Color(0xFFEF4444);
+
+  ({String label, Color color, IconData icon}) _statusStyle(Map<String, dynamic> m) {
+    final done = m['is_completed'] == true;
+    final status = (m['status'] ?? (done ? 'completed' : 'pending')).toString();
+    switch (status) {
+      case 'completed':
+        return (label: 'Completed', color: _done, icon: Icons.check_circle);
+      case 'rework':
+        return (label: 'Rework required', color: _bad, icon: Icons.replay_circle_filled);
+      case 'overdue':
+        return (label: 'Overdue', color: _bad, icon: Icons.error);
+      case 'due_soon':
+        return (label: 'Due soon', color: _warn, icon: Icons.schedule);
+      case 'upcoming':
+        return (label: 'Upcoming', color: _p.accent, icon: Icons.radio_button_unchecked);
+      default:
+        return done
+            ? (label: 'Completed', color: _done, icon: Icons.check_circle)
+            : (label: 'Pending', color: _p.textMuted, icon: Icons.radio_button_unchecked);
+    }
+  }
+
+  List<String> _metaLines(Map<String, dynamic> m) {
+    final done = m['is_completed'] == true;
+    final phase = (m['phase'] ?? '').toString();
+    final semester = m['semester'];
+    final deadline = _parseDate(m['deadline_date']);
+    final daysLabel = done ? null : _daysRemainingLabel(deadline);
+    return [
+      if (semester != null) 'Semester $semester${phase.isNotEmpty ? ' · $phase' : ''}',
+      if (deadline != null) 'Due ${_formatDate(m['deadline_date'])}',
+      if (daysLabel != null) daysLabel,
+      if (m['extended'] == true) 'Deadline extended',
+    ];
+  }
+
+  Widget _reworkBox(Map<String, dynamic> m) {
+    final note = (m['rework_note'] ?? '').toString().trim();
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(top: 10),
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: _bad.withOpacity(0.10),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: _bad.withOpacity(0.35)),
+      ),
+      child: Text(
+        note.isEmpty
+            ? 'You have to rework on this milestone.'
+            : 'You have to rework on this milestone.\nSupervisor note: $note',
+        style: const TextStyle(color: _bad, fontSize: 12.5, height: 1.4, fontWeight: FontWeight.w600),
+      ),
+    );
+  }
+
+  Widget _milestoneTileV2(Map<String, dynamic> m) {
+    final s = _statusStyle(m);
+    final done = m['is_completed'] == true;
+    final name = (m['name'] ?? 'Milestone').toString();
+    final completedAt = (m['completed_at'] ?? '').toString();
+    final meta = _metaLines(m);
+    final isRework = (m['status'] ?? '').toString() == 'rework';
+    final highlight = done || isRework || (m['status'] ?? '').toString() == 'overdue';
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: BoxDecoration(
+          color: _p.surface,
+          borderRadius: BorderRadius.circular(_p.isDark ? _p.cardRadius : 12),
+          border: Border.all(
+            color: highlight
+                ? s.color.withOpacity(0.4)
+                : (_p.isDark ? _p.borderStrong : _p.border),
+          ),
+          boxShadow: _p.isDark ? _p.cardShadow : null,
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(s.icon, color: s.color, size: 26),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        name,
+                        style: TextStyle(
+                          color: _p.textPrimary,
+                          fontWeight: FontWeight.w600,
+                          decoration: done ? TextDecoration.lineThrough : null,
+                          decorationColor: _p.textMuted,
+                        ),
+                      ),
+                      if (meta.isNotEmpty) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          meta.join('  ·  '),
+                          style: TextStyle(color: _p.textSecondary, fontSize: 12),
+                        ),
+                      ],
+                      if (done && completedAt.isNotEmpty) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          'Completed ${_formatDate(completedAt)}',
+                          style: TextStyle(color: _p.textMuted, fontSize: 12),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: s.color.withOpacity(0.13),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    s.label,
+                    style: TextStyle(color: s.color, fontSize: 11, fontWeight: FontWeight.w700),
+                  ),
+                ),
+              ],
+            ),
+            if (isRework) _reworkBox(m),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _mobileMilestoneBarV2(Map<String, dynamic> m) {
+    final s = _statusStyle(m);
+    final done = m['is_completed'] == true;
+    final name = (m['name'] ?? 'Milestone').toString();
+    final meta = _metaLines(m);
+    final isRework = (m['status'] ?? '').toString() == 'rework';
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
+        decoration: BoxDecoration(
+          color: _p.surface,
+          borderRadius: BorderRadius.circular(_p.isDark ? _p.cardRadius : 12),
+          border: Border.all(
+            color: (done || isRework)
+                ? s.color.withOpacity(0.4)
+                : (_p.isDark ? _p.borderStrong : _p.border),
+          ),
+          boxShadow: _p.isDark ? _p.cardShadow : null,
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    name,
+                    style: TextStyle(
+                      color: _p.textPrimary,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 14,
+                      decoration: done ? TextDecoration.lineThrough : null,
+                      decorationColor: _p.textMuted,
+                    ),
+                  ),
+                ),
+                Text(
+                  s.label,
+                  style: TextStyle(color: s.color, fontSize: 12, fontWeight: FontWeight.w700),
+                ),
+              ],
+            ),
+            if (meta.isNotEmpty) ...[
+              const SizedBox(height: 6),
+              Text(meta.join('  ·  '), style: TextStyle(color: _p.textSecondary, fontSize: 11.5)),
+            ],
+            const SizedBox(height: 10),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(4),
+              child: LinearProgressIndicator(
+                value: done ? 1.0 : 0.0,
+                minHeight: 7,
+                backgroundColor: _p.border,
+                color: s.color,
+              ),
+            ),
+            if (isRework) _reworkBox(m),
           ],
         ),
       ),

@@ -156,6 +156,52 @@ class SupervisorApiService {
     return Map<String, dynamic>.from(data as Map? ?? const {});
   }
 
+  /// Promote the group to the next semester (completes this semester's milestones).
+  Future<Map<String, dynamic>> promoteGroup({
+    required int userId,
+    required int groupId,
+  }) async {
+    final data = await _request(
+      'POST',
+      '/supervisor/groups/$groupId/promote',
+      queryParameters: {'user_id': userId},
+    );
+    return Map<String, dynamic>.from(data as Map? ?? const {});
+  }
+
+  /// Not promoted: student has to rework the current milestones.
+  Future<Map<String, dynamic>> markGroupRework({
+    required int userId,
+    required int groupId,
+    String? note,
+  }) async {
+    final data = await _request(
+      'POST',
+      '/supervisor/groups/$groupId/rework',
+      queryParameters: {'user_id': userId},
+      body: {
+        if (note != null && note.trim().isNotEmpty) 'note': note.trim(),
+      },
+    );
+    return Map<String, dynamic>.from(data as Map? ?? const {});
+  }
+
+  /// Extend one milestone's deadline for this group (YYYY-MM-DD).
+  Future<Map<String, dynamic>> extendMilestone({
+    required int userId,
+    required int groupId,
+    required int milestoneId,
+    required String deadlineDate,
+  }) async {
+    final data = await _request(
+      'POST',
+      '/supervisor/groups/$groupId/milestones/$milestoneId/extend',
+      queryParameters: {'user_id': userId},
+      body: {'deadline_date': deadlineDate},
+    );
+    return Map<String, dynamic>.from(data as Map? ?? const {});
+  }
+
   Future<List<AssignmentRequestModel>> fetchAssignmentRequests(
     int userId, {
     String status = 'pending',

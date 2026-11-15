@@ -584,6 +584,39 @@ def init_db():
         )
     """)
 
+    # 15b. Admin-defined milestones per department (semester 6/7/8)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS department_milestones (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            org_id INTEGER DEFAULT 1,
+            department_id INTEGER NOT NULL,
+            name TEXT NOT NULL,
+            semester INTEGER NOT NULL,
+            deadline_date DATE NOT NULL,
+            sort_order INTEGER DEFAULT 0,
+            is_active INTEGER DEFAULT 1,
+            created_by INTEGER,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (department_id) REFERENCES departments(id)
+        )
+    """)
+    _ensure_column(cursor, "group_milestones", "dept_milestone_id", "dept_milestone_id INTEGER")
+    _ensure_column(cursor, "group_milestones", "rework_note", "rework_note TEXT")
+    _ensure_column(cursor, "group_milestones", "rework_at", "rework_at DATETIME")
+    _ensure_column(cursor, "group_milestones", "deadline_override", "deadline_override DATE")
+    _ensure_column(cursor, "fyp_groups", "is_graduated", "is_graduated INTEGER DEFAULT 0")
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS milestone_reminders_sent (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            group_milestone_id INTEGER NOT NULL,
+            email TEXT NOT NULL,
+            stage INTEGER NOT NULL,
+            sent_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE (group_milestone_id, email, stage)
+        )
+    """)
+
     # 16. Paragraphs belonging to a submitted group document
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS document_paragraphs (

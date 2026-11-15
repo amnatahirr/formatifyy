@@ -59,6 +59,12 @@ class NotificationType:
     DEADLINE_REMINDER_1_DAY = "deadline_reminder_1_day"
     DEADLINE_TODAY = "deadline_today"
 
+    # Milestones
+    MILESTONE_REMINDER = "milestone_reminder"
+    MILESTONE_OVERDUE = "milestone_overdue"
+    GROUP_PROMOTED = "group_promoted"
+    MILESTONE_REWORK = "milestone_rework"
+
 
 def notify(
     org_id: int,

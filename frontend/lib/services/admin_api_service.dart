@@ -228,6 +228,47 @@ Future<Map<String, dynamic>> promoteSemester(int userId, {List<int> excludeIds =
     await _request('DELETE', '/admin/deadlines/$id', queryParameters: {'user_id': userId});
   }
 
+  Future<List<MilestoneModel>> fetchMilestones(int userId, {int? departmentId}) async {
+    final data = await _request(
+      'GET',
+      '/admin/milestones',
+      queryParameters: {'user_id': userId, 'department_id': departmentId},
+    );
+    final map = Map<String, dynamic>.from(data as Map);
+    return List<Map<String, dynamic>>.from(map['milestones'] ?? const [])
+        .map(MilestoneModel.fromJson)
+        .toList();
+  }
+
+  Future<void> createMilestone(int userId, Map<String, dynamic> body) async {
+    await _request('POST', '/admin/milestones', queryParameters: {'user_id': userId}, body: body);
+  }
+
+  Future<void> updateMilestone(int userId, int id, Map<String, dynamic> body) async {
+    await _request('PUT', '/admin/milestones/$id', queryParameters: {'user_id': userId}, body: body);
+  }
+
+  Future<void> deleteMilestone(int userId, int id) async {
+    await _request('DELETE', '/admin/milestones/$id', queryParameters: {'user_id': userId});
+  }
+
+  Future<Map<String, dynamic>> copyMilestones(
+    int userId, {
+    required int fromDepartmentId,
+    required int toDepartmentId,
+  }) async {
+    final data = await _request(
+      'POST',
+      '/admin/milestones/copy',
+      queryParameters: {'user_id': userId},
+      body: {
+        'from_department_id': fromDepartmentId,
+        'to_department_id': toDepartmentId,
+      },
+    );
+    return Map<String, dynamic>.from(data as Map);
+  }
+
   Future<List<SemesterDeadlineModel>> fetchSemesterDeadlines(int userId) async {
     final data = await _request(
       'GET',

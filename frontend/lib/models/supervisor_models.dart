@@ -90,6 +90,8 @@ class SupervisorGroupSummary {
   final List<String> memberNames;
   final String deadlineDate;
   final bool isBehind;
+  final int? currentSemester;
+  final bool isGraduated;
 
   const SupervisorGroupSummary({
     required this.id,
@@ -100,6 +102,8 @@ class SupervisorGroupSummary {
     required this.memberNames,
     required this.deadlineDate,
     required this.isBehind,
+    this.currentSemester,
+    this.isGraduated = false,
   });
 
   String get membersLabel => memberNames.isEmpty ? '—' : memberNames.join(', ');
@@ -116,6 +120,8 @@ class SupervisorGroupSummary {
       memberNames: _asStringList(json['member_names']),
       deadlineDate: (json['deadline_date'] ?? '').toString(),
       isBehind: json['is_behind'] == true || json['track_status']?.toString() == 'behind',
+      currentSemester: _asIntOrNull(json['current_semester']),
+      isGraduated: json['is_graduated'] == true || json['is_graduated'] == 1,
     );
   }
 }
@@ -208,26 +214,65 @@ class AssignmentRequestModel {
   }
 }
 
+
 class GroupMilestoneModel {
   final int id;
   final String name;
   final int sortOrder;
   final bool isCompleted;
 
+  // Additional milestone properties
+  final int? semester;
+  final String phase;
+  final String? deadlineDate;
+  final String status;
+  final int? daysLeft;
+  final String reworkNote;
+  final bool extended;
+  final bool isManaged;
+
   const GroupMilestoneModel({
     required this.id,
     required this.name,
     required this.sortOrder,
     required this.isCompleted,
+    this.semester,
+    this.phase = '',
+    this.deadlineDate,
+    this.status = 'pending',
+    this.daysLeft,
+    this.reworkNote = '',
+    this.extended = false,
+    this.isManaged = false,
   });
 
-  factory GroupMilestoneModel.fromJson(Map<String, dynamic> json) => GroupMilestoneModel(
+  factory GroupMilestoneModel.fromJson(
+    Map<String, dynamic> json,
+  ) =>
+      GroupMilestoneModel(
         id: _asInt(json['id']),
         name: (json['name'] ?? '').toString(),
         sortOrder: _asInt(json['sort_order']),
-        isCompleted: json['is_completed'] == true || json['is_completed'] == 1,
+        isCompleted: json['is_completed'] == true ||
+            json['is_completed'] == 1,
+        semester: _asIntOrNull(json['semester']),
+        phase: (json['phase'] ?? '').toString(),
+        deadlineDate: _asStringOrNull(json['deadline_date']),
+        status: (json['status'] ??
+                ((json['is_completed'] == true ||
+                        json['is_completed'] == 1)
+                    ? 'completed'
+                    : 'pending'))
+            .toString(),
+        daysLeft: _asIntOrNull(json['days_left']),
+        reworkNote: (json['rework_note'] ?? '').toString(),
+        extended: json['extended'] == true ||
+            json['extended'] == 1,
+        isManaged: json['is_managed'] == true ||
+            json['is_managed'] == 1,
       );
 }
+
 
 class GroupDocumentSummary {
   final int id;

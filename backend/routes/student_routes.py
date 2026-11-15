@@ -485,6 +485,12 @@ def _list_group_milestones(cursor, group_id: int, progress: float = 0) -> list[d
     {id, name, sort_order, is_completed, completed_at} ordered by sort_order.
     Seeds the three canonical rows if missing so student/supervisor views match.
     """
+    from services.milestone_service import list_group_milestones
+
+    managed = list_group_milestones(cursor, group_id)
+    if managed is not None:
+        return managed
+
     from datetime import datetime
 
     defaults = [
