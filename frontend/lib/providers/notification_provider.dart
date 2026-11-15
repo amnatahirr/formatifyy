@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import '../config/api_config.dart';
 import '../models/app_notification.dart';
+import '../services/local_notification_service.dart';
 
 class NotificationProvider extends ChangeNotifier with WidgetsBindingObserver {
   late final String _baseUrl;
@@ -54,6 +55,7 @@ class NotificationProvider extends ChangeNotifier with WidgetsBindingObserver {
       case AppLifecycleState.resumed:
         _isInForeground = true;
         refreshUnreadCount();
+        _checkForBanners();
         break;
       case AppLifecycleState.paused:
       case AppLifecycleState.inactive:
@@ -67,10 +69,12 @@ class NotificationProvider extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   void startPolling() {
+    unawaited(LocalNotificationService.requestPermission());
     _pollingTimer?.cancel();
-    _pollingTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+        _pollingTimer = Timer.periodic(const Duration(seconds: 10), (_) {
       if (_isInForeground) {
         refreshUnreadCount();
+        _checkForBanners();   // NEW
       }
     });
   }
@@ -90,6 +94,7 @@ class NotificationProvider extends ChangeNotifier with WidgetsBindingObserver {
     _errorMessage = null;
     _hasMore = true;
     _unreadOnly = false;
+    unawaited(LocalNotificationService.resetBaseline());
     stopPolling();
     notifyListeners();
   }
@@ -126,6 +131,36 @@ class NotificationProvider extends ChangeNotifier with WidgetsBindingObserver {
     });
   }
 
+   Future<void> _checkForBanners() async {
+    try {
+      final response = await _get(
+        '$_baseUrl/notifications?limit=20&unread_only=true',
+        const Duration(seconds: 10),
+      );
+      debugPrint('[banner] status=${response.statusCode}');
+      if (response.statusCode != 200) return;
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      final list = (data['notifications'] as List?)
+              ?.map((j) => AppNotification.fromJson(j as Map<String, dynamic>))
+              .toList() ??
+          [];
+      debugPrint('[banner] unread ids=${list.map((n) => n.id).toList()}');
+      await LocalNotificationService.showNewOnes(
+        0,
+        list
+            .map((n) => <String, dynamic>{
+                  'id': n.id,
+                  'title': n.title,
+                  'body': n.body,
+                  'is_read': n.isRead,
+                })
+            .toList(),
+      );
+    } catch (e) {
+      debugPrint('[NotificationProvider] banner check failed: $e');
+    }
+  }
+
   Future<void> refreshUnreadCount({bool isRetry = false}) async {
     try {
       final response = await _get(
@@ -143,6 +178,7 @@ class NotificationProvider extends ChangeNotifier with WidgetsBindingObserver {
         final newCount = data['unread_count'] as int? ?? 0;
 
         final oldCount = _lastKnownUnreadCount ?? 0;
+        debugPrint('[poll] ${DateTime.now().toIso8601String()} new=$newCount old=$oldCount');
         _lastKnownUnreadCount = newCount;
         _unreadCount = newCount;
 
@@ -152,7 +188,7 @@ class NotificationProvider extends ChangeNotifier with WidgetsBindingObserver {
         _errorMessage = null;
         notifyListeners();
 
-        if (newCount > oldCount) {
+         if (newCount > 0 && newCount >= oldCount) {
           unawaited(loadFirstPage());
           if (_items.isNotEmpty) {
             final newest = _items.first;
@@ -204,6 +240,17 @@ class NotificationProvider extends ChangeNotifier with WidgetsBindingObserver {
         _items = notifications;
         _hasMore = notifications.length >= 50;
         _unreadCount = notifications.where((n) => !n.isRead).length;
+        unawaited(LocalNotificationService.showNewOnes(
+          0,
+          notifications
+              .map((n) => <String, dynamic>{
+                    'id': n.id,
+                    'title': n.title,
+                    'body': n.body,
+                    'is_read': n.isRead,
+                  })
+              .toList(),
+        ));
         _error = false;
         _errorMessage = null;
       } else {

@@ -27,6 +27,7 @@ import 'providers/fyp_provider.dart';
 import 'theme/app_theme.dart';
 import 'providers/analysis_job_provider.dart';
 import 'providers/lang_provider.dart';
+import 'services/local_notification_service.dart';
 
 import 'providers/notification_provider.dart';
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
@@ -47,6 +48,9 @@ void main() async {
   if (shouldBootstrap) {
     DevUserConfig.initialize(userId);
   }
+  WidgetsFlutterBinding.ensureInitialized();
+await LocalNotificationService.init();
+
   runApp(MyApp(devUserKey: shouldBootstrap ? userId : null));
 }
 

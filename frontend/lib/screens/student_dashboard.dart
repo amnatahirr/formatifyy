@@ -40,6 +40,7 @@ import '../widgets/document_preview_panel.dart';
 import '../providers/lang_provider.dart';
 import '../widgets/tr.dart';
 import '../providers/analysis_job_provider.dart';
+import '../providers/notification_provider.dart';
 
 /// Mobile bottom-nav → existing `_selectedIndex` targets.
 /// Notifications has no desktop sidebar entry; uses [kNotificationsTabIndex].
@@ -123,6 +124,10 @@ class _StudentDashboardState extends State<StudentDashboard> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+  if (!mounted) return;
+  context.read<NotificationProvider>().startPolling();
+});
     _selectedIndex = widget.initialIndex.clamp(0, kNotificationsTabIndex);
     _activeProjectId = widget.initialProjectId;
     _projectDetailTab = widget.initialProjectTab;
