@@ -245,6 +245,27 @@ def _match_required_section(text: str, section_map: Dict[str, Dict[str, Any]]) -
     return None
 
 
+def _ensure_bullet_cache(doc) -> None:
+    """docx_lists.make_bullet caches the bullet numId on the Document object and
+    reads it before it was ever set on a freshly opened document
+    ('Document' object has no attribute '_formatify_bullet_numid'). Pre-set it."""
+    try:
+        if not hasattr(doc, "_formatify_bullet_numid"):
+            doc._formatify_bullet_numid = None
+    except Exception:
+        pass
+
+
+def _is_list_item_not_heading(para) -> bool:
+    """Real Word list item (direct numPr / List style) that is NOT Heading-styled.
+    Such a paragraph is a bullet/numbered item and must never be turned into a heading
+    (_apply_word_heading strips numPr, which silently deletes the bullet)."""
+    try:
+        return _is_real_list_paragraph(para) and not _paragraph_has_heading_style(para)
+    except Exception:
+        return False
+
+
 def _apply_word_heading(doc, para, level: int, spec: dict, align_map: dict) -> None:
     """Assign built-in Word Heading style plus template font specs."""
     level = max(1, min(4, level))
@@ -755,6 +776,7 @@ def _apply_detected_lists(doc, body_start=None) -> int:
     """
     from docx_tools.list_detection import detect_list_groups
     from docx_tools.docx_lists import apply_bullets_to_indices, has_numbering
+    _ensure_bullet_cache(doc)
 
     skip_before = None
     if body_start is not None:
@@ -949,6 +971,8 @@ def _reformat_docx(
 
     # ── Apply styles to paragraphs (never rewrite paragraph text) ────────────
     n_demoted = 0
+    n_kept_lists = 0
+    _ensure_bullet_cache(doc)
     for para_idx, para in enumerate(doc.paragraphs):
         if body_start is not None and _paragraph_is_before_body_start(doc, para, body_start):
             prev_was_heading = False
@@ -981,6 +1005,11 @@ def _reformat_docx(
                         level = max(1, min(4, int(_m.group(1))))
         else:
             level = _detect_heading_level(para, text, section_map, classified)
+        if level is not None and _is_list_item_not_heading(para):
+            # Short bullet items ("Planning", "Design") look like headings to the
+            # classifier; keep them as list items so their bullets survive export.
+            level = None
+            n_kept_lists += 1
         is_heading = level is not None
 
         if is_heading:
@@ -1028,6 +1057,8 @@ def _reformat_docx(
 
         prev_was_heading = is_heading
 
+    if n_kept_lists:
+        print(f"[reformatter] kept {n_kept_lists} list item(s) as bullets (not headings)")
     if n_demoted:
         print(f"[reformatter] demoted {n_demoted} wrongly-styled heading(s) to body text")
 
@@ -1043,7 +1074,7 @@ def _reformat_docx(
         if n_lists:
             print(f"[reformatter] converted {n_lists} paragraph(s) to real bullets")
     except Exception as exc:
-        print(f"[reformatter] list conversion skipped (non-fatal): {exc}")
+        print(f"[reformatter] list conversion skipped (non-fatal): {type(exc).__name__}: {exc!r}")
 
     # Generic pagination rules (heading -> intro -> image/table -> caption).
     # Must run AFTER all style work so the keep flags are not overwritten.
@@ -1054,6 +1085,67 @@ def _reformat_docx(
 
     doc.save(output_path)
     return output_path
+
+
+def remove_empty_body_paragraph_gaps(doc_or_path, body_start=None) -> int:
+    """Collapse runs of 2+ fully empty body paragraphs into one (kills big blank gaps).
+
+    Accepts a python-docx Document or a .docx path (saved in place). Conservative: skips
+    paragraphs holding drawings, fields, bookmarks, page/section breaks, and everything
+    before the Formatify body start. Returns the number of paragraphs removed.
+    """
+    from docx import Document
+    from docx.oxml.ns import qn
+
+    is_path = isinstance(doc_or_path, (str, os.PathLike))
+    doc = Document(str(doc_or_path)) if is_path else doc_or_path
+    if body_start is None:
+        try:
+            from docx_tools.docx_fields import find_formatify_body_start_element
+            body_start = find_formatify_body_start_element(doc)
+        except Exception:
+            body_start = None
+    skip_before = None
+    if body_start is not None:
+        try:
+            from docx_tools.docx_fields import _paragraph_is_before_body_start as skip_before
+        except Exception:
+            skip_before = None
+
+    def _is_plain_empty(p) -> bool:
+        if (p.text or "").strip():
+            return False
+        el = p._element
+        for tag in ("w:drawing", "w:pict", "w:fldChar", "w:fldSimple", "w:instrText",
+                    "w:bookmarkStart", "w:sectPr", "w:object"):
+            if el.find(".//" + qn(tag)) is not None:
+                return False
+        for br in el.iter(qn("w:br")):
+            if br.get(qn("w:type")) in ("page", "column"):
+                return False
+        return True
+
+    removed = 0
+    prev_empty = False
+    for p in list(doc.paragraphs):
+        if skip_before is not None and body_start is not None:
+            try:
+                if skip_before(doc, p, body_start):
+                    prev_empty = False
+                    continue
+            except Exception:
+                pass
+        if _is_plain_empty(p):
+            if prev_empty:
+                p._element.getparent().remove(p._element)
+                removed += 1
+                continue
+            prev_empty = True
+        else:
+            prev_empty = False
+    if is_path and removed:
+        doc.save(str(doc_or_path))
+    return removed
 
 
 def _create_formatted_docx(

@@ -24,13 +24,44 @@ def _numbering_root(doc):
     return doc.part.numbering_part.element
 
 
+_ABS_NAME = "FormatifyBullets"
+
+
+def _find_existing_bullet_num(root) -> Optional[int]:
+    """numId of a bullet definition we created earlier (found by its abstractNum name).
+    Works across save/reopen and needs no attribute on the Document object."""
+    abs_ids = set()
+    for a in root.findall(qn("w:abstractNum")):
+        nm = a.find(qn("w:name"))
+        if nm is not None and nm.get(qn("w:val")) == _ABS_NAME:
+            abs_ids.add(a.get(qn("w:abstractNumId")))
+    if not abs_ids:
+        return None
+    for n in root.findall(qn("w:num")):
+        ref = n.find(qn("w:abstractNumId"))
+        if ref is not None and ref.get(qn("w:val")) in abs_ids:
+            return int(n.get(qn("w:numId")))
+    return None
+
+
 def ensure_bullet_numbering(doc) -> int:
     """Create (once per document) a multilevel bullet definition; return its numId."""
-    cached = getattr(doc, _CACHE_ATTR, None)
+    try:
+        cached = getattr(doc, _CACHE_ATTR, None)
+    except Exception:
+        cached = None
     if cached:
         return cached
 
     root = _numbering_root(doc)
+    existing = _find_existing_bullet_num(root)
+    if existing:
+        try:
+            setattr(doc, _CACHE_ATTR, existing)
+        except Exception:
+            pass
+        return existing
+
     abs_ids = [int(a.get(qn("w:abstractNumId"))) for a in root.findall(qn("w:abstractNum"))]
     num_ids = [int(n.get(qn("w:numId"))) for n in root.findall(qn("w:num"))]
     abs_id = (max(abs_ids) + 1) if abs_ids else 1
@@ -48,7 +79,7 @@ def ensure_bullet_numbering(doc) -> int:
         )
     abstract = parse_xml(
         f'<w:abstractNum {nsdecls("w")} w:abstractNumId="{abs_id}">'
-        f'<w:multiLevelType w:val="hybridMultilevel"/>{"".join(lvls)}</w:abstractNum>'
+        f'<w:multiLevelType w:val="hybridMultilevel"/><w:name w:val="{_ABS_NAME}"/>{"".join(lvls)}</w:abstractNum>'
     )
     num = parse_xml(
         f'<w:num {nsdecls("w")} w:numId="{num_id}"><w:abstractNumId w:val="{abs_id}"/></w:num>'
@@ -62,7 +93,10 @@ def ensure_bullet_numbering(doc) -> int:
         root.append(abstract)
     root.append(num)
 
-    setattr(doc, _CACHE_ATTR, num_id)
+    try:
+        setattr(doc, _CACHE_ATTR, num_id)
+    except Exception:
+        pass   # caching is optional; _find_existing_bullet_num finds it next time
     return num_id
 
 
