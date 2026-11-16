@@ -1,2 +1,0 @@
-# Cached MinHashLSH + FAISS artifacts are written here by build_corpus_index().
-# Safe to delete; indexes will rebuild on next run.
