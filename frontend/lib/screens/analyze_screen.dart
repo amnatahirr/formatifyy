@@ -530,7 +530,6 @@ void dispose() {
           ),
         );
       }
-      _isFixApplied = true;
     });
      _markDirty();
   }
@@ -945,7 +944,6 @@ void dispose() {
         }
         return b;
       }).toList();
-      _isFixApplied = true;
     });
     _showSnack(
       cleared
@@ -1007,7 +1005,6 @@ void dispose() {
           }
         }
       }
-      _isFixApplied = true;
     });
     _showSnack('Image removed from document', _green);
   }
@@ -1035,7 +1032,6 @@ void dispose() {
     setState(() {
       if (pid.isNotEmpty) _appliedFixes[pid] = correctedText;
       _ignoredIssueIds.remove(issueId);
-      _isFixApplied = true;
     });
     _applyContentFixToBackend(issue, correctedText).then((ok) {
       if (!ok && mounted) {
@@ -3575,7 +3571,6 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
           _missingFocus.remove(issueId)?.dispose();
           _ghostKeys.remove(issueId);
           _addingMissing.remove(issueId);
-          _isFixApplied = true;
         });
         _showSnack('Heading added', _green);
         _markDirty();
