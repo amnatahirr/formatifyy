@@ -905,6 +905,39 @@ class DocumentProvider extends ChangeNotifier {
     }
   }
 
+
+/// Save edited preview blocks (keeps type/level/images/tables etc.).
+Future<bool> saveDocumentBlocks(
+  int documentId,
+  List<Map<String, dynamic>> blocks,
+  int userId,
+) async {
+  try {
+    final response = await http.put(
+      Uri.parse("$baseUrl/$documentId/blocks?user_id=$userId"),
+      headers: ApiConfig.getHeaders(json: true),
+      body: jsonEncode({"blocks": blocks}),
+    );
+
+    if (response.statusCode == 200) {
+      _errorMessage = null;
+      await fetchDocuments(userId);
+      notifyListeners();
+      return true;
+    }
+    _errorMessage = _detail(response.body) ??
+        "Failed to save document (${response.statusCode})";
+    debugPrint("[v0] Save blocks failed: ${response.statusCode} ${response.body}");
+    notifyListeners();
+    return false;
+  } catch (e) {
+    _errorMessage = "Save error: $e";
+    debugPrint("[v0] Save blocks error: $e");
+    notifyListeners();
+    return false;
+  }
+}
+
   /// Rename a report. Returns the saved name, or null on failure.
   Future<String?> renameDocument(
     int documentId,

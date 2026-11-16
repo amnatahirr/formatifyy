@@ -9,7 +9,7 @@ return_exceptions=True.
 from __future__ import annotations
 
 import asyncio
-from typing import Any, Dict, List, Union
+from typing import Any, Dict, List, Optional, Union
 
 import anthropic
 
@@ -26,9 +26,13 @@ async def dispatch_all(
     client: anthropic.AsyncAnthropic,
     batches: List[Batch],
     template: Union[str, Dict[str, Any]],
+    outline: Optional[Dict[str, Any]] = None,
 ) -> List[Dict[str, Any]]:
     """
     Run all analysis functions across all batches in parallel.
+
+    `outline` is the document-level heading outline (functions/outline.py); it is
+    passed to formatting so heading levels are never re-decided per batch.
 
     Image ethics + relevance share a single local vision pass per batch
     (one BLIP caption + one CLIP score per image).
@@ -45,7 +49,7 @@ async def dispatch_all(
             _safe_call(check_grammar, client, batch)
         ))
         tasks.append(asyncio.ensure_future(
-            _safe_call_formatting(check_formatting, client, batch, template)
+            _safe_call_formatting(check_formatting, client, batch, template, outline)
         ))
         # Combined local image ethics + relevance (faster than two separate passes)
         tasks.append(asyncio.ensure_future(
@@ -118,10 +122,10 @@ async def _safe_call(fn, client, batch) -> List[Dict[str, Any]]:
         return []
 
 
-async def _safe_call_formatting(fn, client, batch, template) -> List[Dict[str, Any]]:
-    """Formatting function has an extra parameter (the full template dict)."""
+async def _safe_call_formatting(fn, client, batch, template, outline=None) -> List[Dict[str, Any]]:
+    """Formatting takes the full template dict plus the resolved heading outline."""
     try:
-        return await fn(client, batch, template)
+        return await fn(client, batch, template, outline=outline)
     except Exception as exc:
         print(f"[dispatcher] formatting failed: {exc}")
         return []

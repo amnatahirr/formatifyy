@@ -7,7 +7,7 @@ from __future__ import annotations
 import os
 import re
 import shutil
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 
 def _para_index(paragraph_id: str) -> int | None:
@@ -188,7 +188,6 @@ def apply_text_fix(
     return False, "Could not locate original text in paragraph."
 
 
-_HEADING_NUM_PREFIX_RE = re.compile(r"^(\d+(?:\.\d+)*)\.?\s+")
 _HEADING_STYLE_RE = re.compile(r"(?i)^heading\s*([1-4])$")
 
 
@@ -206,14 +205,23 @@ def _set_paragraph_text(para, text: str) -> None:
 
 def renumber_heading_prefixes(file_path: str) -> int:
     """
-    Rewrite numeric prefixes on Heading 1–4 paragraphs to a clean outline:
-    1. … / 1.1 … / 1.1.1 … / 2. …
-    Strips broken prefixes like 0.1 so Abstract becomes 1. Abstract.
+    Rewrite numeric prefixes on Heading 1–3 paragraphs to a clean outline:
+    1. … / 1.1. … / 1.1.1. … / 2. …
+
+    - Strips EVERY stale typed prefix first ("2)", "1.6.", "0.1", "(a)"), so an
+      old "2) System Design" can never end up as "2. 2) System Design".
+    - Follows the reformatter's policy: Heading 4, front-matter titles (Abstract,
+      Acknowledgement …) and TOC/List-of headings are NOT numbered.
     """
     if not file_path.endswith(".docx") or not os.path.exists(file_path):
         return 0
 
     from docx import Document as DocxDoc
+    from docx_tools.heading_analysis import strip_typed_prefixes
+    from docx_tools.reformatter import (
+        _UNNUMBERED_FRONTMATTER_TITLES,
+        _is_meta_list_section_title,
+    )
 
     doc = DocxDoc(file_path)
     counters = [0, 0, 0, 0]
@@ -225,16 +233,33 @@ def renumber_heading_prefixes(file_path: str) -> int:
         if not match:
             continue
 
+        raw = (para.text or "").strip()
+        if not raw:
+            continue
+
         level = int(match.group(1))
+        body = strip_typed_prefixes(raw) or raw
+
+        # Unnumbered headings: strip the stale number, keep counters untouched
+        if (
+            level >= 4
+            or body.lower() in _UNNUMBERED_FRONTMATTER_TITLES
+            or _is_meta_list_section_title(body)
+        ):
+            if body != raw:
+                _set_paragraph_text(para, body)
+                changed += 1
+            continue
+
+        # Never emit 0.x — a subsection before any chapter starts its parent at 1
+        for i in range(level - 1):
+            if counters[i] == 0:
+                counters[i] = 1
         counters[level - 1] += 1
         for i in range(level, 4):
             counters[i] = 0
 
         prefix = ".".join(str(counters[i]) for i in range(level)) + "."
-        raw = (para.text or "").strip()
-        if not raw:
-            continue
-        body = _HEADING_NUM_PREFIX_RE.sub("", raw).strip() or raw
         new_text = f"{prefix} {body}"
         if new_text != raw:
             _set_paragraph_text(para, new_text)
@@ -341,45 +366,6 @@ def demote_heading_to_body(
     return True, "Demoted to Normal."
 
 
-# def apply_all_text_fixes(
-#     file_path: str,
-#     fixes: List[Dict[str, Any]],
-# ) -> Dict[str, Any]:
-#     """Apply a batch of text fixes. Each fix needs paragraph_id + suggestion."""
-#     applied = 0
-#     skipped = 0
-#     errors: List[str] = []
-
-#     heading_applied = False
-#     for fix in fixes:
-#         fix_type = fix.get("fix_type", "text")
-#         if fix_type == "heading":
-#             ok, msg = apply_heading_fix(
-#                 file_path,
-#                 fix.get("paragraph_id", ""),
-#                 int(fix.get("heading_level", 1) or 1),
-#                 renumber=False,
-#             )
-#             if ok:
-#                 heading_applied = True
-#         else:
-#             ok, msg = apply_text_fix(
-#                 file_path,
-#                 fix.get("paragraph_id", ""),
-#                 fix.get("original", ""),
-#                 fix.get("suggestion", ""),
-#             )
-#         if ok:
-#             applied += 1
-#         else:
-#             skipped += 1
-#             errors.append(msg)
-
-#     if heading_applied:
-#         renumber_heading_prefixes(file_path)
-
-#     return {"applied": applied, "skipped": skipped, "errors": errors}
-
 def apply_all_text_fixes(
     file_path: str,
     fixes: List[Dict[str, Any]],
@@ -432,12 +418,19 @@ def apply_all_text_fixes(
         "failed_ids": failed_ids,
     }
 
+
 def apply_template_reformat(
     file_path: str,
     formatting_rules: Dict[str, Any],
     required_sections: List[Dict[str, Any]],
+    heading_plan: Optional[Dict[int, Dict[str, Any]]] = None,
 ) -> Tuple[bool, str]:
-    """Re-apply admin template styles to an existing working DOCX in place."""
+    """
+    Re-apply admin template styles to an existing working DOCX in place.
+
+    ``heading_plan`` (from heading_analysis.heading_plan_from_matches) makes the
+    export follow the analysis decisions instead of re-detecting headings.
+    """
     if not file_path.endswith(".docx"):
         return False, "Template reformat is only supported for DOCX files."
 
@@ -456,6 +449,7 @@ def apply_template_reformat(
             report,
             formatting_rules,
             required_sections or [],
+            heading_plan=heading_plan,
         )
         shutil.move(tmp_path, file_path)
         return True, "Template formatting applied."

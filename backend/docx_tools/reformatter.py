@@ -13,6 +13,12 @@ Supports:
     stay together; tables never split rows; oversized images are scaled)
   - Downloadable DOCX output
   - Optional PDF export (if LibreOffice is available)
+
+Heading decisions: when ``heading_plan`` is supplied (built from the analysis
+result by heading_analysis.heading_plan_from_matches) the export applies exactly
+that plan. Without it, heading_analysis.classify_paragraphs_for_reformat is the
+single detector. The old admin-list matcher is only a last-resort fallback when
+classification itself failed.
 """
 
 from __future__ import annotations
@@ -25,6 +31,7 @@ from typing import Any, Dict, List, Optional
 
 from models import AnalysisReport
 from docx_tools.docx_styles import force_heading_style
+from docx_tools.heading_analysis import strip_typed_prefixes
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -91,9 +98,8 @@ def _parse_section_map(required_sections: List[Dict[str, Any]]) -> Dict[str, Dic
 
 
 def _strip_heading_number_prefix(text: str) -> str:
-    """Strip existing decimal heading prefixes (e.g. '1.2.3 Title' → 'Title')."""
-    cleaned = text.strip().rstrip(":").strip()
-    return re.sub(r"^[\d]+(?:\.[\d]+)*\.?\s+", "", cleaned).strip()
+    """Strip ALL typed heading prefixes ('1.2.3 Title', '2) Title', '2. 2) Title' → 'Title')."""
+    return strip_typed_prefixes(text)
 
 
 def _normalize_section_title(text: str) -> str:
@@ -150,8 +156,9 @@ def _detect_heading_level(
     """
     Return heading level (1-4) if paragraph is a heading, else None.
 
-    Prefers Pass A/B classification when available; falls back to admin-list
-    soft match and existing Word Heading styles.
+    LAST-RESORT fallback (used only when heading classification failed): prefers
+    classification when available, then admin-list soft match and existing Word
+    Heading styles.
     """
     if classified and classified.get("level"):
         return max(1, min(4, int(classified["level"])))
@@ -195,7 +202,7 @@ def _is_meta_list_section_title(text: str) -> bool:
 
 def _match_required_section(text: str, section_map: Dict[str, Dict[str, Any]]) -> Optional[Dict[str, Any]]:
     """
-    PASS A soft lookup — exact, numbered, substring, and abbreviated forms
+    Fallback soft lookup — exact, numbered, substring, and abbreviated forms
     (e.g. document "Problem" ↔ template "Problem Statement").
     """
     normalized = _normalize_section_title(text)
@@ -219,8 +226,6 @@ def _match_required_section(text: str, section_map: Dict[str, Dict[str, Any]]) -
         if key in normalized and len(normalized) <= len(key) + 8:
             return sec
 
-        # Abbreviation: doc tokens ⊆ template tokens ("problem" ⊆ "problem statement")
-        # Require coverage >= 0.5 OR a single primary content word (not "main"/"the").
         key_tokens = {t for t in key.split() if t and t not in {"the", "a", "an", "and", "of", "for"}}
         content_tokens = {t for t in text_tokens if t not in {"the", "a", "an", "and", "of", "for", "main"}}
         if content_tokens and key_tokens and content_tokens.issubset(key_tokens):
@@ -269,6 +274,45 @@ def _apply_word_heading(doc, para, level: int, spec: dict, align_map: dict) -> N
         pf.keep_together = True
     except Exception:
         pass
+
+
+# A paragraph that an earlier export wrongly turned into a numbered heading:
+# "2. 2) System Design", "3.1.1. 5) Deployment", "1.2. (a) Foo"
+_STALE_HEADING_NUMBER_RE = re.compile(
+    r"^\d+(?:\.\d+)*\.\s+(?=(?:\d+\)|\(?[a-zA-Z]\))\s)"
+)
+# Looks like a list item ("2) foo", "(a) foo", or double prefix "2. 2) foo")
+_LISTISH_RE = re.compile(
+    r"^\s*(?:\d+(?:\.\d+)*\.?\s+)?(?:\(?\d+\)|\(?[a-zA-Z]\))\s+\S"
+)
+
+
+def _paragraph_has_heading_style(para) -> bool:
+    """True only for built-in 'Heading N' styles (not Title/Subtitle/TOC)."""
+    try:
+        name = (para.style.name or "").strip().lower() if para.style is not None else ""
+    except Exception:
+        return False
+    return bool(re.match(r"^heading\s*\d$", name))
+
+
+def _demote_to_body(doc, para) -> None:
+    """Reset a wrongly-promoted Heading paragraph to Normal body text."""
+    from docx.oxml.ns import qn
+
+    try:
+        para.style = doc.styles["Normal"]
+    except Exception:
+        return
+    p_pr = para._element.get_or_add_pPr()
+    num_pr = p_pr.find(qn("w:numPr"))
+    if num_pr is not None:
+        p_pr.remove(num_pr)
+    # Leftover from a previous export: "2. 2) System Design" -> "2) System Design"
+    original = para.text or ""
+    fixed = _STALE_HEADING_NUMBER_RE.sub("", original, count=1)
+    if fixed != original and fixed.strip():
+        _set_paragraph_text_preserve_style(para, fixed.strip())
 
 
 def parse_template_styles(rules_input: str | Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
@@ -764,17 +808,25 @@ def reformat_document(
     report: AnalysisReport,
     rules_input: str | Dict[str, Any],
     required_sections: Optional[List[Dict[str, Any]]] = None,
+    heading_plan: Optional[Dict[int, Dict[str, Any]]] = None,
 ) -> str:
     """
     Apply formatting corrections to a DOCX file based on the analysis report
     and template rules. Returns the path to the reformatted file.
+
+    ``heading_plan`` = {paragraph index: {"level": 1-4, ...}} built from the
+    analysis result (heading_analysis.heading_plan_from_matches). When given,
+    the export applies exactly these headings and demotes every other
+    Heading-styled paragraph.
 
     For non-DOCX inputs (PDF/TXT), creates a new DOCX from scratch.
     """
     ext = os.path.splitext(input_path)[1].lower()
 
     if ext == ".docx":
-        return _reformat_docx(input_path, output_path, report, rules_input, required_sections)
+        return _reformat_docx(
+            input_path, output_path, report, rules_input, required_sections, heading_plan
+        )
     else:
         # For PDF/TXT → create a basic formatted DOCX
         return _create_formatted_docx(input_path, output_path, report, rules_input)
@@ -786,6 +838,7 @@ def _reformat_docx(
     report: AnalysisReport,
     rules_input: str | Dict[str, Any],
     required_sections: Optional[List[Dict[str, Any]]] = None,
+    heading_plan: Optional[Dict[int, Dict[str, Any]]] = None,
 ) -> str:
     """Reformat an existing DOCX — copy first, then apply styles without altering text."""
     import shutil
@@ -822,24 +875,53 @@ def _reformat_docx(
     except Exception as exc:
         print(f"[reformatter] body-start lookup skipped: {exc}")
 
-    # Pass A/B classification so inferred headings (e.g. "Specific Objectives")
-    # receive Word Heading styles — not just admin-list lookups.
+    # ── Heading decisions: ONE source of truth ───────────────────────────────
+    # 1) heading_plan from the analysis (Claude + template + rules), or
+    # 2) heading_analysis.classify_paragraphs_for_reformat (same rules, no LLM).
+    # The old admin-list matcher (_detect_heading_level fallback) only runs if
+    # BOTH of these were unavailable — it knows nothing about list items.
     heading_map: Dict[int, Dict[str, Any]] = {}
-    try:
-        from docx_tools.heading_analysis import classify_paragraphs_for_reformat
-        heading_map = classify_paragraphs_for_reformat(
-            list(doc.paragraphs),
-            required_sections or [],
-        )
-        matched_n = sum(1 for v in heading_map.values() if v.get("source") == "matched")
-        inferred_n = sum(1 for v in heading_map.values() if v.get("source") == "inferred")
-        print(
-            f"[reformatter] heading classification: "
-            f"{matched_n} matched, {inferred_n} inferred, "
-            f"{len(heading_map)} total"
-        )
-    except Exception as exc:
-        print(f"[reformatter] heading classification fallback (non-fatal): {exc}")
+    use_plan = False
+    if heading_plan is not None:
+        heading_map = {int(k): v for k, v in heading_plan.items()}
+        # Guard: the plan is keyed by paragraph index of the ANALYSED document. If the
+        # working copy gained/lost paragraphs (cover, TOC, edits) the indices drift,
+        # so check the stored heading text against the paragraph at that index.
+        _paras = doc.paragraphs
+        _checked = _bad = 0
+        for _i, _v in heading_map.items():
+            _t = (_v.get("text") or "").strip()
+            if not _t:
+                continue
+            _checked += 1
+            if _i >= len(_paras) or _strip_heading_number_prefix(_paras[_i].text).lower() \
+                    != _strip_heading_number_prefix(_t).lower():
+                _bad += 1
+        if _checked and _bad / _checked > 0.2:
+            print(f"[reformatter] heading plan ignored: {_bad}/{_checked} headings do not "
+                  f"match paragraph text (indices drifted) -> using classification")
+            heading_plan = None
+            heading_map = {}
+        else:
+            use_plan = True
+            print(f"[reformatter] using analysis heading plan: {len(heading_map)} headings")
+    if heading_plan is None:
+        try:
+            from docx_tools.heading_analysis import classify_paragraphs_for_reformat
+            heading_map = classify_paragraphs_for_reformat(
+                list(doc.paragraphs),
+                required_sections or [],
+            )
+            use_plan = True
+            matched_n = sum(1 for v in heading_map.values() if v.get("source") == "matched")
+            inferred_n = sum(1 for v in heading_map.values() if v.get("source") == "inferred")
+            print(
+                f"[reformatter] heading classification: "
+                f"{matched_n} matched, {inferred_n} inferred, "
+                f"{len(heading_map)} total"
+            )
+        except Exception as exc:
+            print(f"[reformatter] heading classification fallback (non-fatal): {exc}")
 
     prev_was_heading = False
     number_tracker = _HeadingNumberTracker() if numbering_style == "decimal" else None
@@ -866,6 +948,7 @@ def _reformat_docx(
             print(f"[reformatter] body section margin skip: {exc}")
 
     # ── Apply styles to paragraphs (never rewrite paragraph text) ────────────
+    n_demoted = 0
     for para_idx, para in enumerate(doc.paragraphs):
         if body_start is not None and _paragraph_is_before_body_start(doc, para, body_start):
             prev_was_heading = False
@@ -877,7 +960,27 @@ def _reformat_docx(
             continue
 
         classified = heading_map.get(para_idx)
-        level = _detect_heading_level(para, text, section_map, classified)
+        if use_plan:
+            level = (
+                max(1, min(4, int(classified.get("level") or 1)))
+                if classified else None
+            )
+            if level is None and _paragraph_has_heading_style(para):
+                # A previous export (or the author) styled this as a heading, but
+                # the analysis says it is body text / a list item. Only demote when
+                # we hold the analysis plan, or when it clearly reads as a list item.
+                if heading_plan is not None or _LISTISH_RE.match(text):
+                    _demote_to_body(doc, para)
+                    n_demoted += 1
+                    text = para.text.strip()
+                else:
+                    # No analysis plan: keep an existing Heading N style (e.g. one the
+                    # user just applied) instead of flattening it to body text.
+                    _m = re.match(r"^heading\s*(\d)$", (para.style.name or "").strip().lower())
+                    if _m:
+                        level = max(1, min(4, int(_m.group(1))))
+        else:
+            level = _detect_heading_level(para, text, section_map, classified)
         is_heading = level is not None
 
         if is_heading:
@@ -925,13 +1028,16 @@ def _reformat_docx(
 
         prev_was_heading = is_heading
 
+    if n_demoted:
+        print(f"[reformatter] demoted {n_demoted} wrongly-styled heading(s) to body text")
+
     try:
         from docx_tools.docx_fields import strip_accidental_body_outline_numbering
         strip_accidental_body_outline_numbering(doc)
     except Exception as exc:
         print(f"[reformatter] outline cleanup skipped: {exc}")
 
-    # NEW: detect plain-text lists and convert them to real Word bullets.
+    # Detect plain-text lists and convert them to real Word bullets.
     try:
         n_lists = _apply_detected_lists(doc, body_start)
         if n_lists:
@@ -939,7 +1045,7 @@ def _reformat_docx(
     except Exception as exc:
         print(f"[reformatter] list conversion skipped (non-fatal): {exc}")
 
-    # NEW: generic pagination rules (heading -> intro -> image/table -> caption).
+    # Generic pagination rules (heading -> intro -> image/table -> caption).
     # Must run AFTER all style work so the keep flags are not overwritten.
     try:
         _apply_pagination_rules(doc, body_start)
@@ -1037,7 +1143,7 @@ def _create_formatted_docx(
             if getattr(block, "caption", None):
                 cap = doc.add_paragraph()
                 cap.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                cap.paragraph_format.keep_together = True          # NEW
+                cap.paragraph_format.keep_together = True
                 run = cap.add_run(block.caption)
                 run.italic = True
                 try:
@@ -1055,8 +1161,8 @@ def _create_formatted_docx(
             try:
                 para = doc.add_paragraph()
                 para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                para.paragraph_format.keep_with_next = True        # NEW: image stays with caption
-                para.paragraph_format.keep_together = True         # NEW
+                para.paragraph_format.keep_with_next = True        # image stays with caption
+                para.paragraph_format.keep_together = True
                 run = para.add_run()
                 width_in = usable_width_in * 0.85
                 if block.width_pt and block.width_pt > 0:
@@ -1067,7 +1173,7 @@ def _create_formatted_docx(
                 if caption_text:
                     cap = doc.add_paragraph()
                     cap.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                    cap.paragraph_format.keep_together = True      # NEW
+                    cap.paragraph_format.keep_together = True
                     try:
                         cap.style = doc.styles["Caption"]
                     except Exception:
@@ -1102,7 +1208,7 @@ def _create_formatted_docx(
             # Orphan caption (no image bound) — still center it
             para = doc.add_paragraph()
             para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-            para.paragraph_format.keep_together = True             # NEW
+            para.paragraph_format.keep_together = True
             run = para.add_run(text)
             run.italic = True
             n_para += 1
@@ -1134,7 +1240,12 @@ def _create_formatted_docx(
             prev_was_heading = False
             continue
 
-        if looks_like_heading_line(text) or (word_count <= 10 and text.isupper()):
+        # Typed list items ("2) System Design") are never headings
+        typed_list_item = bool(_LISTISH_RE.match(text))
+
+        if not typed_list_item and (
+            looks_like_heading_line(text) or (word_count <= 10 and text.isupper())
+        ):
             if text.isupper() or re.match(
                 r"(?i)^(abstract|introduction|conclusion|references|methodology)\b",
                 text,
@@ -1144,7 +1255,12 @@ def _create_formatted_docx(
             else:
                 heading_level = 2
                 spec = styles.get("heading2", styles["heading1"])
-        elif word_count <= 10 and text.istitle() and not ends_sentence:
+        elif (
+            not typed_list_item
+            and word_count <= 10
+            and text.istitle()
+            and not ends_sentence
+        ):
             heading_level = 2
             spec = styles.get("heading2", styles["heading1"])
         else:
@@ -1160,7 +1276,7 @@ def _create_formatted_docx(
                 force_heading_style(para, doc, heading_level)
             except Exception:
                 pass
-            _set_keep(para, with_next=True, together=True)         # NEW
+            _set_keep(para, with_next=True, together=True)
         prev_was_heading = heading_level > 0
         n_para += 1
 
@@ -1169,7 +1285,7 @@ def _create_formatted_docx(
         f"{n_table} tables, {n_image} images"
     )
 
-    # NEW: generic pagination rules (heading -> intro -> image/table -> caption)
+    # Generic pagination rules (heading -> intro -> image/table -> caption)
     try:
         _apply_pagination_rules(doc)
     except Exception as exc:

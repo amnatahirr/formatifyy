@@ -2709,185 +2709,240 @@ class _StudentDashboardState extends State<StudentDashboard> {
 
   void _showEditDialog(Map<String, dynamic> doc, int userId) {
     final docProvider = context.read<DocumentProvider>();
-    final editController = TextEditingController();
-    bool isLoading = true;
-    String? editError;
 
     showDialog(
       context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setState) {
-          // Load document content
-          if (isLoading) {
-            docProvider
-                .getPreview(doc['id'], userId)
-                .then((previewData) {
-                  if (previewData != null) {
-                    editController.text =
-                        previewData['formatted_content'] ?? '';
-                  }
-                  setState(() => isLoading = false);
-                })
-                .catchError((error) {
-                  setState(() {
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        List<Map<String, dynamic>>? blocks;
+        bool isLoading = true;
+        bool isSaving = false;
+        bool hasChanges = false;
+        String? editError;
+        bool started = false;
+
+        return StatefulBuilder(
+          builder: (ctx, setDialogState) {
+            // Load once
+            if (!started) {
+              started = true;
+              docProvider.getPreview(doc['id'], userId).then((previewData) {
+                if (previewData == null) {
+                  setDialogState(() {
                     isLoading = false;
                     editError = 'Failed to load document';
                   });
+                  return;
+                }
+                final rawLines =
+                    previewData['formatted_lines'] ?? previewData['blocks'];
+                List<Map<String, dynamic>> loaded = [];
+                if (rawLines is List) {
+                  loaded = rawLines.map<Map<String, dynamic>>((line) {
+                    if (line is Map) return Map<String, dynamic>.from(line);
+                    return {'type': 'paragraph', 'text': line.toString()};
+                  }).toList();
+                }
+                if (loaded.isEmpty) {
+                  loaded = [
+                    {
+                      'type': 'paragraph',
+                      'text': previewData['formatted_content'] ?? '',
+                    },
+                  ];
+                }
+                setDialogState(() {
+                  blocks = loaded;
+                  isLoading = false;
                 });
-          }
+              }).catchError((_) {
+                setDialogState(() {
+                  isLoading = false;
+                  editError = 'Failed to load document';
+                });
+              });
+            }
 
-          return Dialog(
-            backgroundColor: _p.surfaceAlt,
-            insetPadding: EdgeInsets.all(32),
-            child: Container(
-              decoration: BoxDecoration(
-                color: _p.surfaceAlt,
-                borderRadius: BorderRadius.circular(
-                  _p.isDark ? _p.cardRadius : 12,
+            Future<void> save() async {
+              if (blocks == null) return;
+              setDialogState(() => isSaving = true);
+              final success = await docProvider.saveDocumentBlocks(
+                doc['id'],
+                blocks!,
+                userId,
+              );
+              if (!mounted) return;
+              setDialogState(() => isSaving = false);
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: success
+                      ? const Tr('Document saved successfully')
+                      : Text(docProvider.errorMessage ?? 'Failed to save document'),
+                  backgroundColor: success
+                      ? const Color(0xFF10B981)
+                      : const Color(0xFFEF4444),
                 ),
-                border: Border.all(
-                  color: _p.isDark ? _p.borderStrong : _p.border,
+              );
+              if (success) Navigator.pop(dialogContext);
+            }
+
+            Future<void> close() async {
+              if (!hasChanges) {
+                Navigator.pop(dialogContext);
+                return;
+              }
+              final discard = await showDialog<bool>(
+                context: ctx,
+                builder: (c) => AlertDialog(
+                  backgroundColor: _p.surface,
+                  title: Tr('Discard changes?',
+                      style: TextStyle(color: _p.textPrimary)),
+                  content: Tr('You have unsaved changes.',
+                      style: TextStyle(color: _p.textSecondary)),
+                  actions: [
+                    TextButton(
+                        onPressed: () => Navigator.pop(c, false),
+                        child: Tr('Keep editing')),
+                    TextButton(
+                        onPressed: () => Navigator.pop(c, true),
+                        child: Tr('Discard')),
+                  ],
                 ),
-                boxShadow: _p.isDark ? _p.cardShadow : null,
-              ),
-              child: Column(
-                children: [
-                  // Header
-                  Container(
-                    padding: EdgeInsets.all(20),
-                    decoration: BoxDecoration(
-                      border: Border(bottom: BorderSide(color: _p.border)),
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Tr(
-                          'Edit Document',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w600,
-                            color: _p.textPrimary,
-                          ),
-                        ),
-                        GestureDetector(
-                          onTap: () => Navigator.pop(context),
-                          child: Icon(Icons.close, color: _p.textSecondary),
-                        ),
-                      ],
-                    ),
-                  ),
-                  // Content
-                  if (isLoading)
-                    Expanded(child: Center(child: CircularProgressIndicator()))
-                  else if (editError != null)
-                    Expanded(
-                      child: Center(
-                        child: Text(
-                          editError!,
-                          style: TextStyle(color: _p.textSecondary),
-                        ),
+              );
+              if (discard == true) Navigator.pop(dialogContext);
+            }
+
+            return Dialog(
+              backgroundColor: _p.surfaceAlt,
+              insetPadding: const EdgeInsets.all(24),
+              child: Container(
+                width: MediaQuery.of(ctx).size.width * 0.85,
+                height: MediaQuery.of(ctx).size.height * 0.85,
+                decoration: BoxDecoration(
+                  color: _p.surfaceAlt,
+                  borderRadius:
+                      BorderRadius.circular(_p.isDark ? _p.cardRadius : 12),
+                  border: Border.all(
+                      color: _p.isDark ? _p.borderStrong : _p.border),
+                  boxShadow: _p.isDark ? _p.cardShadow : null,
+                ),
+                child: Column(
+                  children: [
+                    // Header
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 20, vertical: 16),
+                      decoration: BoxDecoration(
+                        border: Border(bottom: BorderSide(color: _p.border)),
                       ),
-                    )
-                  else
-                    Expanded(
-                      child: SingleChildScrollView(
-                        padding: EdgeInsets.all(32),
-                        child: TextField(
-                          controller: editController,
-                          maxLines: null,
-                          style: TextStyle(
-                            color: _p.textPrimary,
-                            fontSize: 14,
-                            height: 1.6,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Tr('Edit Document',
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w600,
+                                      color: _p.textPrimary,
+                                    )),
+                                Text(
+                                  doc['filename'] ?? '',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                      fontSize: 12, color: _p.textSecondary),
+                                ),
+                              ],
+                            ),
                           ),
-                          decoration: InputDecoration(
-                            hintText: 'Edit your document here...',
-                            hintStyle: TextStyle(
-                              color: _p.textMuted,
-                              fontSize: 14,
-                            ),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(8),
-                              borderSide: BorderSide(color: _p.border),
-                            ),
-                            enabledBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(8),
-                              borderSide: BorderSide(color: _p.border),
-                            ),
-                            focusedBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(8),
-                              borderSide: BorderSide(color: _p.accent),
-                            ),
-                            filled: true,
-                            fillColor: _p.surface,
-                            contentPadding: EdgeInsets.all(16),
+                          IconButton(
+                            icon: Icon(Icons.close, color: _p.textSecondary),
+                            onPressed: close,
                           ),
-                        ),
+                        ],
                       ),
                     ),
-                  // Footer buttons
-                  Container(
-                    padding: EdgeInsets.all(20),
-                    decoration: BoxDecoration(
-                      border: Border(top: BorderSide(color: _p.border)),
+
+                    // Word-like editable preview
+                    Expanded(
+                      child: isLoading
+                          ? Center(
+                              child: CircularProgressIndicator(
+                                  color: _p.accent))
+                          : editError != null
+                              ? Center(
+                                  child: Text(editError!,
+                                      style: TextStyle(
+                                          color: _p.textSecondary)))
+                              : DocumentPreviewPanel(
+                                  blocks: blocks!,
+                                  issues: const [],
+                                  imageBaseUrl: '',
+                                  documentId: doc['id'] ?? 0,
+                                  appliedFixes: const {},
+                                  ignoredIssueIds: const {},
+                                  onApplyFix: (_, __) {},
+                                  onIgnoreIssue: (_) {},
+                                  onBlocksChanged: (updated) {
+                                    blocks = updated
+                                        .map<Map<String, dynamic>>((e) =>
+                                            Map<String, dynamic>.from(e))
+                                        .toList();
+                                    if (!hasChanges) {
+                                      setDialogState(() => hasChanges = true);
+                                    }
+                                  },
+                                ),
                     ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.end,
-                      children: [
-                        TextButton(
-                          onPressed: () => Navigator.pop(context),
-                          child: Tr(
-                            'Cancel',
-                            style: TextStyle(color: _p.textPrimary),
+
+                    // Footer
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        border: Border(top: BorderSide(color: _p.border)),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          TextButton(
+                            onPressed: isSaving ? null : close,
+                            child: Tr('Cancel',
+                                style: TextStyle(color: _p.textPrimary)),
                           ),
-                        ),
-                        SizedBox(width: 12),
-                        ElevatedButton(
-                          onPressed: isLoading || editError != null
-                              ? null
-                              : () async {
-                                  final success = await docProvider
-                                      .saveDocumentContent(
-                                        doc['id'],
-                                        editController.text,
-                                        userId,
-                                      );
-                                  if (!mounted) return;
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      content: Tr(
-                                        success
-                                            ? 'Document saved successfully'
-                                            : 'Failed to save document',
-                                      ),
-                                      backgroundColor: success
-                                          ? Color(0xFF10B981)
-                                          : Color(0xFFEF4444),
-                                    ),
-                                  );
-                                  if (success) Navigator.pop(context);
-                                },
-                          style: ElevatedButton.styleFrom(),
-                          child: Tr(
-                            'Save Changes',
-                            style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
-                            ),
+                          const SizedBox(width: 12),
+                          ElevatedButton(
+                            onPressed: (isLoading ||
+                                    editError != null ||
+                                    isSaving ||
+                                    !hasChanges)
+                                ? null
+                                : save,
+                            child: isSaving
+                                ? const SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(
+                                        strokeWidth: 2, color: Colors.white))
+                                : const Tr('Save Changes',
+                                    style: TextStyle(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w600)),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
-          );
-        },
-      ),
+            );
+          },
+        );
+      },
     );
   }
-
   void _showPreview(Map<String, dynamic> doc) {
     final auth = context.read<AuthProvider>();
     final docProvider = context.read<DocumentProvider>();

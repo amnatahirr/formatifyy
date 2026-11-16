@@ -1,43 +1,23 @@
 """
-functions/formatting.py — Formatting compliance checker.
+functions/formatting.py - Formatting compliance checker.
 
 Model: claude-haiku-4-5-20251001
 
-Compares the document structure against the selected template by
-injecting an EXPLICIT, per-heading-level rule block into the prompt,
-built directly from the structured template (required_sections +
-formatting_rules), rather than relying on a single free-text markdown
-blob that the model has to parse and prioritize itself.
-
-WHY THIS CHANGED
------------------
-The previous version injected `template.markdown_rules` (a pre-rendered
-string) as-is. That string only gave explicit heading examples for
-sections listed in `required_sections` — which are almost always
-Heading 1 (top-level chapters). Heading 2/3 subsections rarely appear
-in `required_sections`, so the model had no explicit instruction to
-check them and, per its own rule #3 ("match the section name"), had
-reason to skip anything not on that list. Result: Heading 1 got
-audited, Heading 2/3 silently did not.
-
-This version builds a dedicated "HEADING LEVEL RULES" block that:
-  1. Documents every heading level that's either used in
-     required_sections OR has explicit style rules in formatting_rules.
-  2. Explicitly states each level's rule applies to ANY paragraph that
-     functions as a section/subsection title at that level — not just
-     ones whose text matches a required_sections entry.
-  3. Instructs the model to audit every level independently instead of
-     stopping after Level 1.
-
-It also stops silently coercing a missing `heading_level` to `1`,
-which was mislabeling/masking genuine Heading 2+ detections downstream.
+HEADING LEVELS ARE NO LONGER DECIDED HERE.
+The single source of truth is the document-level outline built once by
+functions/outline.py (functions/heading_resolver.py). This LLM audit only
+checks font, spacing, alignment, margin and list formatting, and receives each
+paragraph's `expected_heading_level` so heading font rules use the right level.
+heading_style / section_order / missing_section issues are produced
+deterministically by outline_to_issues() and any such issue the LLM returns is
+discarded.
 """
 
 from __future__ import annotations
 
 import json
 import re
-from typing import Any, Dict, List, Union
+from typing import Any, Dict, List, Optional, Union
 
 import anthropic
 
@@ -48,115 +28,16 @@ from config import ANALYSIS_MODEL
 
 
 # --------------------------------------------------------------------------
-# Template -> explicit per-level heading rule block
+# Template -> prompt block (no heading-level rules: see module docstring)
 # --------------------------------------------------------------------------
 
-def _collect_heading_levels(required_sections: List[Any]) -> Dict[int, List[str]]:
-    """Map heading_level -> list of known example section names at that level."""
-    levels: Dict[int, List[str]] = {}
-    for sec in required_sections or []:
-        if isinstance(sec, dict):
-            name = str(sec.get("name", "")).strip()
-            level = int(sec.get("heading_level", 1) or 1)
-        else:
-            name, level = str(sec), 1
-        level = max(1, min(4, level))
-        if name:
-            levels.setdefault(level, []).append(name)
-    return levels
-
-
-def _style_desc(rules: Dict[str, Any], prefix: str) -> str:
-    if not any(k.startswith(prefix) for k in rules.keys()):
-        return ""
-    font = rules.get(f"{prefix}_font", "Times New Roman")
-    size = rules.get(f"{prefix}_size", 12)
-    bold = "Bold" if rules.get(f"{prefix}_bold", True) else "Regular"
-    italic = "Italic" if rules.get(f"{prefix}_italic", False) else "Non-Italic"
-    line_spacing = rules.get(f"{prefix}_line_spacing", 1.5)
-    return f"{font}, {size}pt, {bold}, {italic}, Line Spacing {line_spacing}"
-
-
-def _build_heading_rules_block(template: Dict[str, Any]) -> str:
-    """
-    Build an explicit, per-level heading instruction block from the
-    structured template (not the pre-rendered markdown string).
-    """
-    required_sections = template.get("required_sections", []) or []
-    rules = template.get("formatting_rules", {}) or {}
-    levels_map = _collect_heading_levels(required_sections)
-
-    lines: List[str] = []
-    for level in (1, 2, 3, 4):
-        prefix = f"heading{level}"
-        style_desc = _style_desc(rules, prefix)
-        examples = levels_map.get(level, [])
-
-        # Include this level if it has either known examples or explicit
-        # style rules. Skip only if the template genuinely never mentions it.
-        if not examples and not style_desc:
-            continue
-
-        example_txt = (
-            f" Known top-level examples of this level in this template: {', '.join(examples)}."
-            if examples
-            else " No fixed example list — identify candidates structurally (see rule below)."
-        )
-        style_txt = f" Required style: {style_desc}." if style_desc else ""
-
-        lines.append(
-            f"- HEADING LEVEL {level} → Word style 'Heading {level}'.{style_txt}{example_txt} "
-            f"IMPORTANT: this rule applies to ANY paragraph that functions as a section/subsection "
-            f"title at this level — whether or not its exact text appears in the required-sections "
-            f"list above. Do not skip a paragraph just because its name isn't pre-listed."
-        )
-
-    if not lines:
-        return "- No heading-level-specific rules configured for this template."
-
-    return "\n".join(lines)
-
-
 def _template_to_prompt_block(template: Union[str, Dict[str, Any]]) -> str:
-    """
-    Accepts either:
-      - a full structured template dict (preferred — has required_sections
-        and formatting_rules, enabling explicit per-level rules), or
-      - a legacy pre-rendered markdown string (fallback, for callers not
-        yet updated to pass the full dict).
-    """
+    """Accepts the structured template dict or a legacy markdown string."""
     if isinstance(template, dict):
         name = template.get("name", "Template")
-        required_sections = template.get("required_sections", []) or []
-        sections_text = "\n".join(
-            f"- Section {idx + 1}: **{sec.get('name', sec) if isinstance(sec, dict) else sec}** "
-            f"→ MUST use Word style **Heading {sec.get('heading_level', 1) if isinstance(sec, dict) else 1}**"
-            for idx, sec in enumerate(required_sections)
-        )
-        heading_rules_block = _build_heading_rules_block(template)
         base_markdown = template.get("markdown_rules", "")
-
-        return f"""# {name} — Formatting Specification
-
-## Required Document Sections (strict order)
-{sections_text}
-
-## HEADING LEVEL RULES (check EVERY level independently — do not stop after Level 1)
-{heading_rules_block}
-
-## Additional template detail
-{base_markdown}"""
-
-    # Legacy string fallback — still add the "check every level" nudge,
-    # since we can't build per-level examples from a raw string.
-    return f"""{template}
-
-## REMINDER — CHECK EVERY HEADING LEVEL INDEPENDENTLY
-Do not stop after auditing Heading 1. Independently verify every paragraph
-against Heading 2, Heading 3, and Heading 4 rules as well, including
-subsection titles that are not explicitly named in the required-sections
-list above. A document commonly has issues at multiple heading levels at
-the same time — missing Heading 2+ violations is a critical failure."""
+        return f"# {name} - Formatting Specification\n\n{base_markdown}"
+    return str(template)
 
 
 # --------------------------------------------------------------------------
@@ -177,6 +58,7 @@ async def check_formatting(
     client: anthropic.AsyncAnthropic,
     batch: Batch,
     template: Union[str, Dict[str, Any]],
+    outline: Optional[Dict[str, Any]] = None,
 ) -> List[Dict[str, Any]]:
     """
     Compare batch paragraphs against the template rules.
@@ -240,6 +122,10 @@ async def check_formatting(
             f"{len(candidate_groups)} candidate group(s)"
         )
 
+    lvl_by_pid = {
+        r.paragraph_id: r.expected_level
+        for r in (outline or {}).get("headings", [])
+    }
     paragraphs_payload = [
         {
             "paragraph_id": p.paragraph_id,
@@ -248,6 +134,7 @@ async def check_formatting(
             "heading_context": p.heading_context,
             "text": p.text[:400],
             "preconfirmed_list_item": p.paragraph_id in preconfirmed_pids,
+            "expected_heading_level": lvl_by_pid.get(p.paragraph_id),
         }
         for p in batch.paragraphs
     ]
@@ -286,31 +173,23 @@ list of features/objectives. Otherwise IGNORE — leave as Normal body text.
 
 AUDIT RULES:
 1. You must NEVER rewrite, summarize, or replace paragraph content. Only identify structural issues. The original text is sacred.
-2. The "suggestion" field must describe WHAT TO DO (e.g. "Apply Heading 1 style") — NEVER put replacement paragraph text in suggestion.
-3. Section titles MUST use Word style "Heading 1/2/3/4" — NOT just bold Normal text.
-4. Every issue MUST reference an existing paragraph_id from the input.
-5. For heading_style issues, you MUST include heading_level (1-4) — this is required, never omit it.
-6. HEADINGS — BE CONSERVATIVE:
-   - Emit heading_style ONLY when the paragraph is a true short section title AND its Word style is wrong.
-   - Do NOT emit heading_style for: list items, "Label: description" rows, "To …" objectives, Figure/Table captions, or long body sentences.
-   - Do NOT change a heading that is already the correct Heading 1–4 style.
-   - Do NOT invent extra headings just to "improve" structure.
-7. Use "heading_context" to understand hierarchy, but never promote list/body lines into headings.
-8. LISTS — BE CONSERVATIVE:
+2. The "suggestion" field must describe WHAT TO DO (e.g. "Apply bulleted list formatting") - NEVER put replacement paragraph text in suggestion.
+3. Every issue MUST reference an existing paragraph_id from the input.
+4. HEADING LEVELS ARE ALREADY RESOLVED. Do NOT report heading_style, section_order or missing_section issues - they are handled elsewhere and will be discarded. Paragraphs with a non-null "expected_heading_level" are headings: apply that level's font/size/spacing rules to them (font, spacing, alignment issues only).
+5. LISTS - BE CONSERVATIVE:
    - Prefer confirming the high-confidence pre-pass.
    - For ambiguous candidates, confirm only true parallel lists (2+ consecutive sibling items with the same pattern).
    - Do NOT flag a single standalone descriptive paragraph as needing bullets.
    - Do NOT bullet architecture/prose paragraphs that merely contain a colon.
-9. Prefer FEWER accurate issues over many false positives. False heading changes and false bullets are critical failures.
+6. Prefer FEWER accurate issues over many false positives. False bullets are critical failures.
 
 For each violation return:
 - "paragraph_id": exact paragraph_id from input (required)
 - "page": page number
-- "type": one of heading_style, section_order, missing_section, font, spacing, alignment, margin, list_formatting
+- "type": one of font, spacing, alignment, margin, list_formatting
 - "problem": what rule is violated (do NOT repeat paragraph text as a fix)
-- "reason": same as problem — what is wrong structurally (for list_formatting, also name the sibling paragraph_ids in the same list group)
-- "suggestion": instruction only (e.g. "Apply Heading 2 style to this subsection title" or "Convert this paragraph into a bulleted list item, grouped with paragraph_ids p12, p13, p14")
-- "heading_level": integer 1-4 (REQUIRED when type is heading_style — do not omit; omit or set 0 for other types)
+- "reason": same as problem - what is wrong structurally (for list_formatting, also name the sibling paragraph_ids in the same list group)
+- "suggestion": instruction only (e.g. "Convert this paragraph into a bulleted list item, grouped with paragraph_ids p12, p13, p14")
 - "original": copy of paragraph text exactly as-is
 - "severity": "major" or "minor" (list_formatting is typically "minor" unless it significantly hurts readability)
 
@@ -368,6 +247,8 @@ Return ONLY a valid JSON object. No markdown, no explanation, no code fences. Ju
 
         for iss in issues:
             issue_type = iss.get("type", "formatting")
+            if issue_type in ("heading_style", "section_order", "missing_section"):
+                continue  # resolved deterministically by functions/outline.py
             suggestion = iss.get("suggestion", "") or iss.get("problem", "")
             reason = iss.get("reason", "") or iss.get("problem", "")
             pid = iss.get("paragraph_id", "")
@@ -376,21 +257,7 @@ Return ONLY a valid JSON object. No markdown, no explanation, no code fences. Ju
             if issue_type == "list_formatting" and pid in seen_list_pids:
                 continue
 
-            raw_level = iss.get("heading_level")
-            if issue_type == "heading_style":
-                if raw_level is None or raw_level == "":
-                    print(
-                        f"[formatting] WARNING: heading_style issue on "
-                        f"paragraph_id={pid} missing heading_level "
-                        f"from model output; defaulting to 1 as last resort."
-                    )
-                    heading_level = 1
-                else:
-                    heading_level = max(1, min(4, int(float(raw_level))))
-                if not suggestion:
-                    suggestion = f"Apply Heading {heading_level} style to this section title"
-            else:
-                heading_level = 0
+            heading_level = 0
 
             if issue_type == "list_formatting" and pid:
                 seen_list_pids.add(pid)

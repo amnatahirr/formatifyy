@@ -8,29 +8,38 @@ Architecture (Claude-first when LLM candidates are provided)
 
   PASS A — Template soft-matching (cross-check):
       Match paragraph text against required_sections (synonyms/abbreviations).
+      Each template entry can be claimed ONCE (so duplicate names such as
+      Introduction H1 / Introduction H2 resolve in document order).
       Matched headings get the template level and source="matched".
 
-  RULE CROSS-CHECK — Hard negatives (captions, list items, long body sentences)
-      reject false Claude positives. Deterministic detect_heading() supports
-      recovery of clear headings Claude may have missed.
+  RULE CROSS-CHECK — Hard negatives (captions, list items, "2) foo" items,
+      runs of "1. 2. 3." lines, long body sentences) reject false Claude
+      positives. Deterministic detect_heading() recovers clear headings
+      Claude may have missed.
 
   PASS B — Structural inference for unnumbered sub-headings Claude missed
       (source="inferred").
+
+  COMPOUND PARTS — template entry "A & B" (H2): separate lines "A" / "B"
+      under it become children (H3), not sibling H2s.
 
   CLAUDE-ONLY extras — Claude headings that do not match the template are
       marked source="claude_only" and require a user Keep/Discard decision
       before style apply.
 
-  When claude_candidates is None, behaviour falls back to the original
-  deterministic Pass A/B pipeline (used by reformatter / unit tests).
+  When claude_candidates is None, behaviour falls back to the deterministic
+  Pass A/B pipeline (used by reformatter / unit tests).
 
   Missing template headings → source="missing".
+
+  heading_plan_from_matches() turns the final decisions into the single plan
+  that the exporter (reformatter) must follow.
 """
 
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
 from models import DocumentModel
@@ -76,6 +85,38 @@ _STOPWORDS = frozenset({
     "with", "we", "they", "these", "those",
 })
 
+# ── Typed prefixes / list-item patterns ──────────────────────────────────────
+# Matches ONE leading typed marker: "1.", "1.2.3", "2)", "(2)", "(a)", "a)", "IV."
+_TYPED_PREFIX_RE = re.compile(
+    r"^\s*(?:\(?\d+(?:\.\d+)*[.)]?\)?|[IVXLC]+\.|\(?[a-zA-Z]\))\s+"
+)
+# "2) System Design", "(a) Foo", "b) Foo" -> list item, never a heading
+_PAREN_LIST_RE = re.compile(r"^\s*(?:\(?\d+\)|\(?[a-zA-Z]\))\s+\S")
+# "1. foo", "2) foo" used for consecutive-run detection
+_DOT_NUM_RE = re.compile(r"^\s*(\d+)[.)]\s+\S")
+# "2. 2) System Design" / "3.1.1. 5) Deployment" -> an old export put a heading
+# number in front of a list item.
+_DOUBLE_PREFIX_RE = re.compile(
+    r"^\s*\d+(?:\.\d+)*\.?\s+(?:\d+\)|\(?[a-zA-Z]\))\s+\S"
+)
+
+
+def strip_typed_prefixes(text: str) -> str:
+    """'3.1.1. 5) Deployment' -> 'Deployment' (loops until no prefix is left)."""
+    t = (text or "").strip().rstrip(":").strip()
+    for _ in range(4):
+        n = _TYPED_PREFIX_RE.sub("", t, count=1).strip()
+        if not n or n == t:
+            break
+        t = n
+    return t
+
+
+def _looks_like_typed_list_item(text: str) -> bool:
+    t = (text or "").strip()
+    return bool(_PAREN_LIST_RE.match(t) or _DOUBLE_PREFIX_RE.match(t))
+
+
 # Front-matter section patterns to exclude from missing-heading detection
 _FRONTMATTER_PATTERNS = [
     re.compile(r"^(title\s*page|cover\s*page|title|cover)$", re.I),
@@ -105,6 +146,7 @@ class TemplateEntry:
     level: int
     parent: Optional[str]
     order: int
+    aliases: List[str] = field(default_factory=list)
 
 
 @dataclass
@@ -125,13 +167,13 @@ class MatchContext:
     last_matched_h1: Optional[str] = None
     last_matched_h2: Optional[str] = None
     last_matched_h3: Optional[str] = None
+    # Template entries already matched once (an entry is claimed by ONE paragraph)
+    claimed_orders: set = field(default_factory=set)
+    last_entry: Optional[TemplateEntry] = None
 
 
 def _normalize(text: str) -> str:
-    cleaned = (text or "").strip().rstrip(":").strip()
-    cleaned = re.sub(r"^[\d]+(?:\.[\d]+)*\.?\s+", "", cleaned).strip()
-    cleaned = re.sub(r"^[IVXLC]+\.\s+", "", cleaned, flags=re.IGNORECASE).strip()
-    return cleaned.lower()
+    return strip_typed_prefixes(text).lower()
 
 
 def missing_heading_issue_id(name: str) -> str:
@@ -236,8 +278,6 @@ def _text_match_score(text: str, template_name: str) -> float:
     # Doc text is a shorter form of the template name ("Problem" → "Problem Statement")
     if text_content and name_content and text_content.issubset(name_content):
         coverage = len(text_content) / max(1, len(name_content))
-        # Require either strong coverage OR a single primary noun abbreviation
-        # with no competing unique tokens on the doc side (already guaranteed by subset).
         if coverage >= 0.5:
             return 0.82
         if len(text_content) == 1:
@@ -246,8 +286,6 @@ def _text_match_score(text: str, template_name: str) -> float:
                 return 0.0
             return 0.72
 
-    # Overlap must be near-complete — a single shared generic noun is not enough
-    # when either side still has distinguishing content words.
     overlap = len(text_tokens & name_tokens)
     content_overlap = len(text_content & name_content)
     if name_content and content_overlap >= len(name_content) and content_overlap >= 2:
@@ -264,28 +302,46 @@ def _text_match_score(text: str, template_name: str) -> float:
     return 0.0
 
 
+def _compound_parts(name: str) -> List[str]:
+    """'Assumptions & Constraints' -> ['Assumptions', 'Constraints']; [] if not compound."""
+    parts = [
+        p.strip()
+        for p in re.split(r"\s*(?:&|/|,|\band\b)\s*", name or "", flags=re.I)
+        if p.strip()
+    ]
+    return parts if len(parts) > 1 else []
+
+
 def build_template_outline(required_sections: List[Any]) -> List[TemplateEntry]:
     """
     Build a flat template outline with parent links from required_sections.
     Filters out front-matter entries (cover, info, TOC, lists) - only real
     body content headings are considered for missing-heading detection.
+
+    A section dict may carry ``aliases: ["Overview", ...]`` — alternative
+    document titles that should match this exact entry.
     """
     entries: List[TemplateEntry] = []
     parent_stack: Dict[int, Optional[str]] = {0: None, 1: None, 2: None, 3: None}
     order_counter = 0
 
     for idx, sec in enumerate(required_sections or []):
+        aliases: List[str] = []
         if isinstance(sec, str):
             name = sec.strip()
             level = 1
         elif isinstance(sec, dict):
             name = str(sec.get("name") or "").strip()
             level = int(sec.get("heading_level") or sec.get("headingLevel") or 1)
+            raw_aliases = sec.get("aliases") or []
+            if isinstance(raw_aliases, str):
+                raw_aliases = [raw_aliases]
+            aliases = [str(a).strip() for a in raw_aliases if str(a).strip()]
         else:
             continue
         if not name:
             continue
-        
+
         # Skip front-matter entries
         if _is_frontmatter_section(name):
             continue
@@ -293,7 +349,9 @@ def build_template_outline(required_sections: List[Any]) -> List[TemplateEntry]:
         level = max(1, min(4, level))
         parent = parent_stack.get(level - 1)
         order_counter += 1
-        entries.append(TemplateEntry(name=name, level=level, parent=parent, order=order_counter))
+        entries.append(
+            TemplateEntry(name=name, level=level, parent=parent, order=order_counter, aliases=aliases)
+        )
         parent_stack[level] = name
         for deeper in range(level + 1, 5):
             parent_stack[deeper] = None
@@ -364,6 +422,37 @@ def _is_heading_style(style_name: Optional[str]) -> Optional[int]:
     return None
 
 
+def _is_toc_style(block: AnalysisBlock) -> bool:
+    low = (block.style_name or "").lower()
+    return low.startswith("toc") or "table of contents" in low
+
+
+def find_numbered_list_runs(blocks: List[AnalysisBlock], min_len: int = 3) -> set[int]:
+    """
+    Block indices that belong to a run of consecutive short lines numbered
+    1. 2. 3. (or 1) 2) 3)) — an SDLC-style list or a typed table of contents,
+    never a set of headings. Blank blocks are ignored while scanning.
+    """
+    idxs = [i for i, b in enumerate(blocks) if (b.text or "").strip()]
+    out: set[int] = set()
+    k = 0
+    while k < len(idxs):
+        m = _DOT_NUM_RE.match(blocks[idxs[k]].text)
+        if m and int(m.group(1)) == 1:
+            j = k + 1
+            while j < len(idxs):
+                mj = _DOT_NUM_RE.match(blocks[idxs[j]].text)
+                if not mj or int(mj.group(1)) != j - k + 1:
+                    break
+                j += 1
+            if j - k >= min_len:
+                out.update(idxs[k:j])
+            k = max(j, k + 1)
+        else:
+            k += 1
+    return out
+
+
 def detect_heading(block: AnalysisBlock) -> Tuple[bool, float]:
     """Step 1 — decide if a block is a heading."""
     text = (block.text or "").strip()
@@ -373,6 +462,8 @@ def detect_heading(block: AnalysisBlock) -> Tuple[bool, float]:
     if _CAPTION_RE.match(text):
         return False, 0.05
     if _LIST_ITEM_RE.match(text):
+        return False, 0.1
+    if _looks_like_typed_list_item(text):
         return False, 0.1
     # Objective-style infinitives are list body, never headings
     if re.match(r"^To\s+[a-z]+\b", text, re.IGNORECASE) and _word_count(text) >= 6:
@@ -453,6 +544,8 @@ def _is_bullet_or_list(text: str) -> bool:
         return True
     if re.match(r"^\d+[\.\)]\s+\S", stripped):
         return True
+    if _looks_like_typed_list_item(stripped):
+        return True
     # Infinitive / gerund goal-style items also read as list bodies under a heading
     if re.match(r"^To\s+[a-z]+\b", stripped, re.IGNORECASE):
         return True
@@ -484,6 +577,9 @@ def _looks_like_section_label(text: str) -> bool:
     # Never promote objective infinitives to headings
     if re.match(r"^To\s+[a-z]+\b", stripped, re.IGNORECASE):
         return False
+    # Never promote typed list items ("2) System Design")
+    if _looks_like_typed_list_item(stripped):
+        return False
     words = _word_count(stripped)
     if words < 1 or words > 8:
         return False
@@ -498,7 +594,6 @@ def _looks_like_section_label(text: str) -> bool:
     # Prefer title case / uppercase / short Capitalized phrases
     if stripped.istitle() or stripped.isupper():
         return True
-    # "Specific objectives" / mixed case — require starting capital
     if stripped[0].isupper() and words <= 5:
         return True
     return False
@@ -533,15 +628,9 @@ def _nearest_preceding_heading(
         row = results[prev_idx]
         if not row.get("is_heading"):
             continue
-        # Prefer matched / numbered / styled headings as parents
         level = _infer_block_heading_level(blocks[prev_idx], row)
         if level is None:
             continue
-        source = row.get("source")
-        if source == "inferred" and not blocks[prev_idx].numbering_prefix:
-            # Skip chaining inferred→inferred more than one hop when a numbered
-            # sibling exists nearby — still allow if nothing else is available.
-            pass
         return prev_idx, level
     return None, None
 
@@ -569,6 +658,9 @@ def detect_unnumbered_subheading(
     if block.numbering_prefix or _LIST_ITEM_RE.match(text) or _CAPTION_RE.match(text):
         return False, 0.0, None, None
 
+    if _looks_like_typed_list_item(text):
+        return False, 0.0, None, None
+
     if not _looks_like_section_label(text):
         return False, 0.0, None, None
 
@@ -579,7 +671,6 @@ def detect_unnumbered_subheading(
     if parent_idx is None or parent_level is None:
         return False, 0.0, None, None
 
-    # Prefer parents that are matched, numbered, or Word-styled (not free floating)
     parent_block = blocks[parent_idx]
     parent_row = results[parent_idx]
     parent_is_reliable = (
@@ -599,7 +690,6 @@ def detect_unnumbered_subheading(
     if not next_is_body and not next_is_list:
         return False, 0.0, None, None
 
-    # Avoid promoting when the next block is another short title-like line.
     if (
         not next_is_body
         and not next_is_list
@@ -607,7 +697,6 @@ def detect_unnumbered_subheading(
     ):
         return False, 0.0, None, None
 
-    # Don't double-promote a numbered heading
     if results[idx].get("is_heading") and block.numbering_prefix:
         return False, 0.0, None, None
 
@@ -622,7 +711,6 @@ def detect_unnumbered_subheading(
         score += 0.1
     if block.prev_blank or parent_block.next_blank:
         score += 0.04
-    # Immediate child of parent is strongest signal ("Main Goal" → "Specific Objectives")
     if parent_idx == idx - 1:
         score += 0.06
 
@@ -633,9 +721,13 @@ def _detect_unnumbered_subheadings(
     blocks: List[AnalysisBlock],
     results: List[Dict[str, Any]],
     heading_indices: List[int],
+    skip_indices: Optional[set] = None,
 ) -> None:
     """PASS B — promote structurally obvious unnumbered sub-headings."""
+    skip_indices = skip_indices or set()
     for idx, block in enumerate(blocks):
+        if idx in skip_indices:
+            continue
         is_sub, confidence, parent_level, parent_idx = detect_unnumbered_subheading(
             block, blocks, idx, results,
         )
@@ -646,9 +738,6 @@ def _detect_unnumbered_subheadings(
         child_level = min(4, parent_level + 1)
 
         # Sibling case: numbered heading → unnumbered label → list
-        # e.g. "2.6.1 Main Goal" → "Specific Objectives" → "To develop…"
-        # should share Main Goal's level (H3 under "2.6 Main Objectives"),
-        # not become H4 beneath Main Goal.
         next_text = (blocks[idx + 1].text or "").strip() if idx + 1 < len(blocks) else ""
         if (
             parent_idx == idx - 1
@@ -705,14 +794,30 @@ def match_template_heading(
     *,
     min_score: float = 0.65,
 ) -> Tuple[Optional[str], Optional[float]]:
-    """PASS A — match heading text to a template entry (soft/synonym aware)."""
+    """
+    PASS A — match heading text to a template entry (soft/synonym/alias aware).
+
+    Every template entry is claimed by at most one paragraph, so the second
+    "Introduction" resolves to the second Introduction entry (H2), and the
+    parts of a compound entry ("Assumptions" of "Assumptions & Constraints")
+    cannot each claim it again.
+    """
     best_name: Optional[str] = None
+    best_entry: Optional[TemplateEntry] = None
     best_score = 0.0
 
     for entry in template:
-        base = _text_match_score(text, entry.name)
+        if entry.order in context.claimed_orders:
+            continue
+        base = max(
+            _text_match_score(text, candidate)
+            for candidate in [entry.name, *entry.aliases]
+        )
         if base < min_score:
             continue
+        # Only a PART of a compound title matched: prefer a full-title match elsewhere
+        if base < 0.9 and _compound_parts(entry.name):
+            base -= 0.05
         if not _parent_matches(context, entry):
             base *= 0.35
         if entry.level == 1:
@@ -720,9 +825,13 @@ def match_template_heading(
         if base > best_score:
             best_score = base
             best_name = entry.name
+            best_entry = entry
 
-    if best_score < min_score:
+    if best_entry is None or best_score < min_score:
         return None, None
+
+    context.claimed_orders.add(best_entry.order)
+    context.last_entry = best_entry
     return best_name, round(best_score, 3)
 
 
@@ -785,6 +894,54 @@ def _infer_levels_from_sequence(
         current = level
 
 
+def _demote_compound_parts(
+    blocks: List[AnalysisBlock],
+    results: List[Dict[str, Any]],
+    outline: List[TemplateEntry],
+) -> None:
+    """
+    Template entry "Assumptions & Constraints" (H2):
+      - document line "Assumptions & Constraints"  -> matched H2 (unchanged)
+      - lines "Assumptions" / "Constraints" below it -> H3 children (not H2 siblings)
+    If the document only has the parts (no combined line), the first part is the
+    matched entry and its sibling parts keep the same level.
+    """
+    compounds = {e.name: e for e in outline if _compound_parts(e.name)}
+    if not compounds:
+        return
+
+    current: Optional[Tuple[TemplateEntry, int, bool]] = None  # (entry, level, matched_is_part)
+    for idx, row in enumerate(results):
+        if not row.get("is_heading"):
+            continue
+        lvl = _level_to_int(row.get("level")) or 1
+
+        if row.get("source") == "matched":
+            entry = compounds.get(row.get("matched_template_heading"))
+            if entry:
+                is_part = _normalize(blocks[idx].text) != _normalize(entry.name)
+                current = (entry, lvl, is_part)
+            else:
+                current = None
+            continue
+
+        if not current:
+            continue
+
+        entry, parent_lvl, is_part = current
+        body = _normalize(blocks[idx].text)
+        if any(_normalize(p) == body for p in _compound_parts(entry.name)):
+            child_lvl = parent_lvl if is_part else min(4, parent_lvl + 1)
+            row.update({
+                "level": _level_label(child_lvl),
+                "source": "inferred",
+                "heading_kind": "compound_part",
+                "user_decision": "keep",
+            })
+        elif lvl <= parent_lvl:
+            current = None
+
+
 def find_missing_template_headings(
     results: List[Dict[str, Any]],
     outline: List[TemplateEntry],
@@ -792,26 +949,38 @@ def find_missing_template_headings(
     """
     Admin template headings with no matching content in the uploaded document.
     Returned as synthetic classification rows with source="missing".
+
+    Entries are compared by their unique ``order`` (so two entries named
+    "Introduction" are tracked separately). Rows without that key fall back to
+    name/synonym comparison.
     """
+    has_orders = any("matched_template_order" in r for r in results)
+    matched_orders = {
+        r.get("matched_template_order")
+        for r in results
+        if r.get("source") == "matched" and r.get("matched_template_order") is not None
+    }
     matched_names = {
         (r.get("matched_template_heading") or "").strip().lower()
         for r in results
         if r.get("matched_template_heading") and r.get("source") == "matched"
     }
-    # Also consider soft synonym hits already recorded
+
     missing: List[Dict[str, Any]] = []
     for entry in outline:
         found = False
-        for name in matched_names:
-            if not name:
-                continue
-            if _normalize(name) == _normalize(entry.name) or _synonym_match(name, entry.name):
-                found = True
-                break
-            # Soft reverse: doc matched a shorter form of this template entry
-            if _text_match_score(name, entry.name) >= 0.65:
-                found = True
-                break
+        if has_orders:
+            found = entry.order in matched_orders
+        else:
+            for name in matched_names:
+                if not name:
+                    continue
+                if _normalize(name) == _normalize(entry.name) or _synonym_match(name, entry.name):
+                    found = True
+                    break
+                if _text_match_score(name, entry.name) >= 0.65:
+                    found = True
+                    break
         if found:
             continue
         missing.append({
@@ -842,6 +1011,8 @@ def _is_hard_negative_heading(text: str) -> bool:
     if not text:
         return True
     if _CAPTION_RE.match(text) or _LIST_ITEM_RE.match(text):
+        return True
+    if _looks_like_typed_list_item(text):
         return True
     if re.match(r"^To\s+[a-z]+\b", text, re.IGNORECASE) and _word_count(text) >= 6:
         return True
@@ -906,6 +1077,16 @@ def analyze_headings(
     claude_by_idx = _index_claude_candidates(blocks, claude_candidates)
     use_claude = bool(claude_by_idx)
 
+    # Runs of "1. 2. 3." / "1) 2) 3)" lines are lists (or a typed TOC), not headings
+    list_idx = find_numbered_list_runs(blocks)
+
+    def _neg(i: int, t: str) -> bool:
+        return (
+            i in list_idx
+            or _is_toc_style(blocks[i])
+            or _is_hard_negative_heading(t)
+        )
+
     results: List[Dict[str, Any]] = []
     heading_indices: List[int] = []
     context = MatchContext()
@@ -914,6 +1095,7 @@ def analyze_headings(
     for idx, block in enumerate(blocks):
         text = (block.text or "").strip()
         claude = claude_by_idx.get(idx)
+        negative = _neg(idx, text)
         is_heading = False
         det_conf = 0.0
         source: Optional[str] = None
@@ -921,29 +1103,21 @@ def analyze_headings(
         heading_kind: Optional[str] = None
 
         if use_claude:
-            # Claude-first seed; hard negatives override Claude false positives
-            if claude and not _is_hard_negative_heading(text):
+            if claude and not negative:
                 is_heading = True
                 det_conf = float(claude.get("confidence") or 0.85)
                 try:
                     claude_level = max(1, min(4, int(claude.get("level") or 1)))
                 except (TypeError, ValueError):
                     claude_level = 1
-                # Prefer reliable numbering (1 / 1.1). Ignore broken 0.x prefixes.
-                # Empty outline: trust Claude structural level over any numbering.
-                depth = _reliable_numbering_depth(block.numbering_prefix)
-                if not outline:
-                    level_label = _level_label(claude_level)
-                else:
-                    level_label = _level_label(depth if depth is not None else claude_level)
-                # Empty template outline → structural inference (auto-apply styles).
-                # Otherwise seed as claude_only until Pass A matches a section.
+                # Typed numbers can be stale (old exports, "0.1", "2)"), so the
+                # structural level from Claude always wins over numbering depth.
+                level_label = _level_label(claude_level)
                 source = "inferred" if not outline else "claude_only"
                 heading_kind = "standard"
             else:
-                # Deterministic recovery for strong headings Claude missed
                 rule_hit, rule_conf = detect_heading(block)
-                if rule_hit and rule_conf >= 0.55 and not _is_hard_negative_heading(text):
+                if rule_hit and rule_conf >= 0.55 and not negative:
                     is_heading = True
                     det_conf = rule_conf
                     source = "inferred"
@@ -955,12 +1129,14 @@ def analyze_headings(
                     elif style_level is not None:
                         level_label = _level_label(style_level)
                     elif not outline:
-                        # No sections defined — treat orphan numbered 0.x as H1
                         level_label = _level_label(1)
                 else:
                     det_conf = round(1.0 - rule_conf, 3) if rule_hit else round(rule_conf, 3)
         else:
-            is_heading, det_conf = detect_heading(block)
+            if negative:
+                is_heading, det_conf = False, 0.05
+            else:
+                is_heading, det_conf = detect_heading(block)
             if not is_heading:
                 det_conf = round(1.0 - det_conf, 3)
             else:
@@ -979,6 +1155,7 @@ def analyze_headings(
             "block_id": block.block_id,
             "is_heading": is_heading,
             "matched_template_heading": None,
+            "matched_template_order": None,
             "level": level_label,
             "detection_confidence": round(det_conf, 3) if is_heading else (
                 det_conf if not use_claude else round(det_conf, 3)
@@ -987,7 +1164,7 @@ def analyze_headings(
             "heading_kind": heading_kind,
             "source": source,
             "user_decision": None,
-            "detected_by_claude": bool(claude) and not _is_hard_negative_heading(text),
+            "detected_by_claude": bool(claude) and not negative,
         }
         if is_heading:
             heading_indices.append(len(results))
@@ -996,19 +1173,20 @@ def analyze_headings(
     # ── PASS A — template soft-matching (cross-check) ────────────────────────
     for idx, block in enumerate(blocks):
         text = (block.text or "").strip()
-        if not text or _is_hard_negative_heading(text):
+        if not text or _neg(idx, text):
             continue
 
         matched, match_conf = match_template_heading(text, outline, context, min_score=0.65)
         if not matched:
             continue
 
-        entry = next((e for e in outline if e.name == matched), None)
+        entry = context.last_entry
         level = entry.level if entry else (_template_level_for_name(matched, outline) or 1)
 
         results[idx].update({
             "is_heading": True,
             "matched_template_heading": matched,
+            "matched_template_order": entry.order if entry else None,
             "match_confidence": match_conf,
             "level": _level_label(level),
             "source": "matched",
@@ -1038,10 +1216,13 @@ def analyze_headings(
                 results[idx]["source"] = "inferred"
 
     # ── PASS B — structural heading inference ────────────────────────────────
-    _detect_unnumbered_subheadings(blocks, results, heading_indices)
+    _detect_unnumbered_subheadings(blocks, results, heading_indices, skip_indices=list_idx)
 
     # Sequence-based level fill for anything still missing a level
     _infer_levels_from_sequence(heading_indices, blocks, results)
+
+    # Compound template sections: "A & B" (H2) → parts "A", "B" become H3
+    _demote_compound_parts(blocks, results, outline)
 
     # Finalize sources + apply user Keep/Discard for Claude-only extras
     outline_empty = len(outline) == 0
@@ -1051,9 +1232,14 @@ def analyze_headings(
         if not row.get("is_heading"):
             continue
 
-        # Prefer reliable numbering when not template-matched.
-        # Empty outline: keep Claude/structural level — do not overwrite with 0.x.
-        if row.get("source") != "matched" and not outline_empty:
+        # Numbering only fills levels for rows that no one decided structurally.
+        # Claude rows, matched rows and compound parts keep their own level.
+        if (
+            row.get("source") != "matched"
+            and not outline_empty
+            and row.get("heading_kind") != "compound_part"
+            and not row.get("detected_by_claude")
+        ):
             depth = _reliable_numbering_depth(blocks[idx].numbering_prefix)
             if depth is not None:
                 row["level"] = _level_label(depth)
@@ -1062,7 +1248,6 @@ def analyze_headings(
             if row.get("matched_template_heading"):
                 row["source"] = "matched"
             elif outline_empty:
-                # No required_sections — structural detection is the source of truth
                 row["source"] = "inferred"
             elif row.get("detected_by_claude"):
                 row["source"] = "claude_only"
@@ -1072,9 +1257,6 @@ def analyze_headings(
         pid = blocks[idx].paragraph_id or ""
         decision = decisions.get(str(pid)) or decisions.get(str(row.get("block_id")))
 
-        # Template has no sections: auto-keep detected headings so styles apply
-        # without a Keep/Discard gate (Claude extras only matter when a template
-        # outline exists to compare against).
         if outline_empty:
             if row.get("source") in ("claude_only", "inferred", None):
                 row["source"] = "inferred"
@@ -1087,12 +1269,11 @@ def analyze_headings(
                 row["fix_status"] = "discarded_by_user"
             continue
 
-        # Claude detections that never matched the template stay claude_only
-        # so the user can Keep/Discard — even if Pass B also inferred them.
         if (
             row.get("detected_by_claude")
             and not row.get("matched_template_heading")
             and row.get("source") != "matched"
+            and row.get("heading_kind") != "compound_part"
         ):
             row["source"] = "claude_only"
 
@@ -1108,7 +1289,6 @@ def analyze_headings(
         elif row.get("source") == "matched":
             row["user_decision"] = "keep"
         elif row.get("source") == "inferred":
-            # Inferred still auto-kept (existing reformatter behavior)
             row["user_decision"] = decision if decision in ("keep", "discard") else "keep"
             if decision == "discard":
                 row["is_heading"] = False
@@ -1240,6 +1420,33 @@ def classify_paragraphs_for_reformat(
             "text": blocks[block_pos].text,
         }
     return mapping
+
+
+def heading_plan_from_matches(matches: List[Dict[str, Any]]) -> Dict[int, Dict[str, Any]]:
+    """
+    Final analysis decisions → {paragraph index: {level, ...}} for the exporter.
+
+    This is the ONE source of truth for export: the reformatter must apply
+    exactly these headings (and demote any other Heading-styled paragraph)
+    instead of re-detecting headings with its own matcher.
+    """
+    plan: Dict[int, Dict[str, Any]] = {}
+    for m in matches or []:
+        pid = str(m.get("paragraph_id") or "")
+        if not (m.get("is_heading") and re.fullmatch(r"p\d+", pid)):
+            continue
+        if m.get("source") == "claude_only" and m.get("user_decision") != "keep":
+            continue
+        if m.get("fix_status") == "discarded_by_user":
+            continue
+        plan[int(pid[1:])] = {
+            "level": _level_to_int(m.get("level")) or 1,
+            "source": m.get("source"),
+            "matched_template_heading": m.get("matched_template_heading"),
+            "heading_kind": m.get("heading_kind"),
+            "text": m.get("text"),
+        }
+    return plan
 
 
 def _level_to_int(level: Optional[str]) -> Optional[int]:

@@ -863,13 +863,30 @@ async def _run_analysis(
     # Corpus plagiarism runs once on the full document (parallel with batch checks).
     from plagiarism.pipeline import check_document_against_fyp_corpus
 
-    dispatch_task = asyncio.create_task(dispatch_all(client, batches, tmpl))
+    # One document-level heading outline (template-anchored, deterministic levels).
+    # Never per batch - batches run in parallel and would disagree.
+    outline = None
+    try:
+        from functions.outline import build_outline
+        outline = await build_outline(client, doc_model, tmpl)
+    except Exception as exc:
+        print(f"[analysis] heading outline failed (non-fatal): {exc}")
+
+    dispatch_task = asyncio.create_task(
+        dispatch_all(client, batches, tmpl, outline=outline)
+    )
     corpus_task = asyncio.create_task(
         check_document_against_fyp_corpus(doc_model, document_id=job_id)
     )
     raw_issues, corpus_issues = await asyncio.gather(dispatch_task, corpus_task)
     if corpus_issues:
         raw_issues.extend(corpus_issues)
+    if outline is not None:
+        try:
+            from functions.outline import outline_to_issues
+            raw_issues.extend(outline_to_issues(outline, doc_model))
+        except Exception as exc:
+            print(f"[analysis] outline issues failed (non-fatal): {exc}")
     report = aggregate(raw_issues, doc_model, total_batches=len(batches))
 
     # ── Step 5: Reformat ──────────────────────────────────────────────────────
@@ -2960,6 +2977,94 @@ async def serve_upload_file(rel_path: str):
     return FileResponse(full)
 
 
+
+
+@app.put("/api/documents/{document_id}/blocks", tags=["Documents"])
+def save_document_blocks(
+    document_id: int,
+    payload: Dict[str, Any] = Body(...),
+    user_id: int = Query(...),
+):
+    """
+    Save edits made in the Word-style preview editor.
+
+    Body: {"blocks": [ {type, text, ...}, ... ]}  (the list the preview panel shows)
+    The edits are written into the document's working DOCX, which is the same
+    file the preview (from-document) and Export read from.  The original upload
+    is never touched.
+    """
+    from docx_tools.block_editor import apply_block_edits, docx_from_blocks
+
+    blocks = payload.get("blocks")
+    if not isinstance(blocks, list):
+        raise HTTPException(status_code=400, detail="'blocks' must be a list")
+
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT * FROM documents WHERE id = ? AND user_id = ?",
+        (document_id, user_id),
+    )
+    doc = cursor.fetchone()
+    if not doc:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    working_copy = _working_copy_path(document_id)
+    os.makedirs(os.path.dirname(working_copy), exist_ok=True)
+    original_path = str(doc["file_path"] or "")
+    images_dir = os.path.join(UPLOAD_DIR, "images", f"doc_{document_id}")
+
+    try:
+        if os.path.exists(working_copy):
+            source_is_docx = True
+        elif original_path.lower().endswith(".docx") and os.path.exists(original_path):
+            # Preview was showing the original, so edit a copy of it.
+            shutil.copy2(original_path, working_copy)
+            source_is_docx = True
+        else:
+            source_is_docx = False
+
+        if source_is_docx:
+            original_elements = build_preview_elements(working_copy, document_id, images_dir)
+            stats = apply_block_edits(working_copy, original_elements, blocks)
+            changed = stats["edited"] + stats["deleted"] + stats["inserted"]
+            if changed == 0 and stats["skipped"] > 0:
+                conn.close()
+                raise HTTPException(
+                    status_code=422,
+                    detail="Could not map the edits onto the document. Nothing was saved.",
+                )
+        else:
+            # PDF / TXT: no DOCX to patch, so build one from the edited text.
+            docx_from_blocks(working_copy, blocks)
+            stats = {"edited": len(blocks), "deleted": 0, "inserted": 0, "skipped": 0}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        conn.close()
+        import traceback; traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Failed to save edits: {exc}")
+
+    # Keep export + the My Reports "Formatted" copy in sync with the edits.
+    try:
+        shutil.copy2(working_copy, _export_copy_path(document_id))
+        saved_path = _saved_formatted_path(document_id)
+        if doc["formatted_file_path"] and os.path.exists(saved_path):
+            shutil.copy2(working_copy, saved_path)
+            encrypt_file(saved_path)
+    except Exception as exc:
+        print(f"[save-blocks] sync error (non-fatal): {exc}")
+
+    cursor.execute(
+        "UPDATE documents SET updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?",
+        (document_id, user_id),
+    )
+    conn.commit()
+    conn.close()
+    print(f"[save-blocks] doc={document_id} {stats}")
+    return {"success": True, "document_id": document_id, **stats}
+
 @app.get("/api/format-document/export/{document_id}", tags=["Documents"])
 def export_formatted_document(
     document_id: int,
@@ -3298,6 +3403,21 @@ async def apply_fix(
         raise HTTPException(status_code=400, detail=f"Unsupported fix_type: {fix_type}")
 
 
+import re
+from docx_tools.heading_analysis import heading_plan_from_matches
+
+
+def _heading_plan_for(doc_row):
+    """
+    Analysis ke saved heading matches se export plan banata hai.
+    Matches na milen to None (export classification par chalega).
+    """
+    matches = None
+    # TODO: jahan analyze heading matches save karta hai wahan se load karo, e.g.
+    # matches = json.loads(doc_row["heading_matches"] or "null")
+    return heading_plan_from_matches(matches) if matches else None
+
+
 @app.post("/api/documents/apply-content-fix/{document_id}", tags=["Documents"])
 async def apply_content_fix(
     document_id: int,
@@ -3319,16 +3439,22 @@ async def apply_content_fix(
         raise HTTPException(status_code=400, detail="Template not found")
 
     working_copy = _ensure_formatted_working_copy(doc, tmpl)
+    plan = _heading_plan_for(doc)
 
     fix_type = payload.get("fix_type", "text")
     if fix_type == "heading":
         level = int(payload.get("heading_level", 1) or 1)
         ok, msg = apply_heading_fix(working_copy, payload.get("paragraph_id", ""), level)
         if ok:
+            m = re.match(r"p(\d+)", str(payload.get("paragraph_id", "")))
+            if plan is not None and m:
+                # User ka fix plan mein daalo, warna export use body bana dega
+                plan[int(m.group(1))] = {"level": max(1, min(4, level)), "source": "user"}
             apply_template_reformat(
                 working_copy,
                 tmpl["formatting_rules"],
                 tmpl.get("required_sections", []),
+                heading_plan=plan,
             )
     elif fix_type in ("bullets", "apply_section_bullets"):
         para_indices = payload.get("para_indices", [])
@@ -3346,6 +3472,7 @@ async def apply_content_fix(
             working_copy,
             tmpl["formatting_rules"],
             tmpl.get("required_sections", []),
+            heading_plan=plan,
         )
     else:
         suggestion = payload.get("suggestion", "")
@@ -3549,212 +3676,7 @@ def missing_headings_endpoint(document_id: int, user_id: int = Query(...)):
     }
 
 
-# @app.post("/api/documents/apply-all-fixes/{document_id}", tags=["Documents"])
-# async def apply_all_fixes(
-#     document_id: int,
-#     user_id: int = Query(...),
-#     payload: Dict[str, Any] = Body(default={}),
-# ):
-#     """
-#     Apply ALL fixes on the working document:
-#       - heading style fixes
-#       - grammar/text fixes
-#       - missing bullet / list_formatting groups (deterministic detection)
-#       - template reformatting (H1–H3 numbering only; H4 style-only)
-#       - image formatting + TOC/LOT/LOF when configured
-#     """
-#     conn = get_db()
-#     cursor = conn.cursor()
-#     cursor.execute("SELECT * FROM documents WHERE id = ? AND user_id = ?", (document_id, user_id))
-#     doc = cursor.fetchone()
-#     conn.close()
 
-#     if not doc:
-#         raise HTTPException(status_code=404, detail="Document not found")
-
-#     tmpl = get_template_by_id(doc["template_id"])
-#     if not tmpl:
-#         raise HTTPException(status_code=400, detail="Template not found")
-
-#     working_copy = _ensure_formatted_working_copy(doc, tmpl)
-
-#     text_result = {"applied": 0, "skipped": 0, "errors": []}
-#     bullet_result = {"applied": [], "skipped": [], "groups": 0}
-#     fixes = payload.get("fixes", [])
-
-#     # Split payload fixes into heading / bullets / text
-#     heading_fixes = []
-#     bullet_fix_indices: list = []
-#     text_fixes = []
-#     for fix in fixes:
-#         ftype = (fix.get("fix_type") or "text").lower()
-#         itype = (fix.get("type") or "").lower()
-#         if ftype in ("heading", "heading_style") or itype == "heading_style":
-#             heading_fixes.append(fix)
-#         elif ftype in ("bullets", "apply_section_bullets", "list_formatting") or itype in (
-#             "missing_bullets", "list_formatting",
-#         ):
-#             indices = fix.get("para_indices") or []
-#             if not indices and isinstance(fix.get("fix_details"), dict):
-#                 indices = fix["fix_details"].get("para_indices") or []
-#             if not indices and fix.get("paragraph_id"):
-#                 m = re.match(r"p(\d+)", str(fix.get("paragraph_id", "")))
-#                 if m:
-#                     indices = [int(m.group(1))]
-#             bullet_fix_indices.extend(int(i) for i in indices)
-#         else:
-#             text_fixes.append(fix)
-
-#     if working_copy.endswith(".docx"):
-#         # 1) Heading fixes first (also strips any mistaken bullets on those paras)
-#         for fix in heading_fixes:
-#             ok, msg = apply_heading_fix(
-#                 working_copy,
-#                 fix.get("paragraph_id", ""),
-#                 int(fix.get("heading_level", 1) or 1),
-#                 renumber=False,
-#             )
-#             if ok:
-#                 text_result["applied"] += 1
-#             else:
-#                 text_result["skipped"] += 1
-#                 text_result["errors"].append(msg)
-#         if heading_fixes:
-#             renumber_heading_prefixes(working_copy)
-
-#         # 2) Grammar/text fixes
-#         if text_fixes:
-#             tr = apply_all_text_fixes(working_copy, text_fixes)
-#             text_result["applied"] += tr.get("applied", 0)
-#             text_result["skipped"] += tr.get("skipped", 0)
-#             text_result["errors"].extend(tr.get("errors") or [])
-
-#         # 3) Deterministic list detection — apply high-confidence groups
-#         #    (infinitives / markers / trigger lines) so "To develop…" lists
-#         #    are covered. Ambiguous Label:colon groups only apply when the
-#         #    formatting agent confirmed them in the payload fixes.
-#         try:
-#             from docx import Document as DocxDoc
-#             from docx.oxml.ns import qn
-#             from list_detection import detect_list_groups, groups_needing_numpr
-
-#             _SAFE_APPLY_DETECTIONS = {
-#                 "infinitive",
-#                 "gerund",
-#                 "trigger_line",
-#                 "trigger_follower",
-#                 "marker",
-#                 "bullet_marker",
-#             }
-
-#             docx = DocxDoc(working_copy)
-#             blocks = []
-#             for idx, p in enumerate(docx.paragraphs):
-#                 text = (p.text or "").strip()
-#                 if not text:
-#                     continue
-#                 style_name = (p.style.name or "").lower() if p.style else ""
-#                 has_numpr = p._element.find(f".//{qn('w:numPr')}") is not None
-#                 btype = "paragraph"
-#                 if has_numpr or "list" in style_name:
-#                     btype = "list_item"
-#                 elif "heading" in style_name:
-#                     btype = "heading"
-#                 blocks.append({
-#                     "index": idx,
-#                     "type": btype,
-#                     "text": text,
-#                     "style": style_name,
-#                     "has_numpr": has_numpr,
-#                     "paragraph_id": f"p{idx}",
-#                 })
-#             groups = groups_needing_numpr(detect_list_groups(blocks))
-#             safe_indices = {
-#                 i
-#                 for g in groups
-#                 if (g.detection or "").lower() in _SAFE_APPLY_DETECTIONS
-#                 for i in g.indices
-#             }
-#             all_indices = sorted(safe_indices | set(bullet_fix_indices))
-#             if all_indices:
-#                 applied, skipped = apply_section_bullets_to_file(working_copy, all_indices)
-#                 bullet_result = {
-#                     "applied": applied,
-#                     "skipped": skipped,
-#                     "groups": len(groups),
-#                 }
-#                 print(
-#                     f"[apply-all] bullets: {len(applied)} applied, "
-#                     f"{len(skipped)} skipped across {len(groups)} groups"
-#                 )
-#         except Exception as exc:
-#             print(f"[apply-all] bullet detection error (non-fatal): {exc}")
-#             bullet_result = {"applied": [], "skipped": [], "groups": 0, "error": str(exc)}
-
-#         # 4) Strip bullets from any remaining heading paragraphs
-#         try:
-#             _strip_bullets_from_headings(working_copy)
-#         except Exception as exc:
-#             print(f"[apply-all] strip heading bullets error (non-fatal): {exc}")
-
-#     apply_template_reformat(
-#         working_copy,
-#         tmpl["formatting_rules"],
-#         tmpl.get("required_sections", []),
-#     )
-
-#     # After reformat, headings may reappear with leftover bullets — clean again
-#     if working_copy.endswith(".docx"):
-#         try:
-#             _strip_bullets_from_headings(working_copy)
-#         except Exception:
-#             pass
-
-#     image_result = {"status": "skipped"}
-#     if working_copy.endswith(".docx"):
-#         try:
-#             client = await _get_ai_client()
-#             output_path = os.path.join(OUTPUT_DIR, f"images_formatted_{document_id}.docx")
-#             image_result = await format_document_images(
-#                 working_copy, output_path, client, tmpl.get("formatting_rules", {}),
-#             )
-#             shutil.copy2(output_path, working_copy)
-#         except Exception as exc:
-#             image_result = {"status": "error", "message": str(exc)}
-
-#     lists_result = {"status": "skipped"}
-#     if working_copy.endswith(".docx"):
-#         try:
-#             rules = tmpl.get("formatting_rules", {})
-#             # Prefer explicit UI toggles from payload; fall back to template rules
-#             include_toc = payload.get("include_toc", rules.get("include_toc", True))
-#             include_lot = payload.get("include_lot", rules.get("include_lot", True))
-#             include_lof = payload.get("include_lof", rules.get("include_lof", True))
-#             lists_result = generate_document_lists(
-#                 working_copy,
-#                 rules,
-#                 tmpl.get("required_sections", []),
-#                 include_toc=bool(include_toc),
-#                 include_lot=bool(include_lot),
-#                 include_lof=bool(include_lof),
-#                 toc_levels=str(
-#                     payload.get("toc_levels") or rules.get("toc_levels", "1-3")
-#                 ),
-#             )
-#         except Exception as exc:
-#             lists_result = {"status": "error", "message": str(exc)}
-
-#     commit = _commit_working_document(document_id, working_copy, doc)
-
-#     return {
-#         "status": "success",
-#         "message": "All fixes applied to formatted working document",
-#         "text_fixes": text_result,
-#         "bullet_fixes": bullet_result,
-#         "image_formatting": image_result,
-#         "document_lists": lists_result,
-#         **commit,
-#     }
 
 
 @app.post("/api/documents/apply-all-fixes/{document_id}", tags=["Documents"])

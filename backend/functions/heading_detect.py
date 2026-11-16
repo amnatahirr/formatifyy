@@ -14,7 +14,7 @@ from typing import Any, Dict, List, Optional, Sequence
 
 from config import ANALYSIS_MODEL
 
-_BATCH_SIZE = 80
+_BATCH_SIZE = 400
 
 
 def _safe_parse(text: str) -> dict:
@@ -34,17 +34,30 @@ def _safe_parse(text: str) -> dict:
 
 
 def _block_payload(blocks: Sequence[Any]) -> List[Dict[str, Any]]:
+    """
+    Compact payload: body prose is skipped so a whole document fits in one call.
+    Typed numbering is deliberately NOT sent - it must never drive heading level.
+    """
+    texts = [(getattr(b, "text", None) or "").strip() for b in blocks]
     payload: List[Dict[str, Any]] = []
-    for b in blocks:
-        text = (getattr(b, "text", None) or "").strip()
+    for i, b in enumerate(blocks):
+        text = texts[i]
         if not text:
             continue
+        style = getattr(b, "style_name", None) or ""
+        words = len(text.split())
+        # Skip body prose; paragraphs already in a Heading style always go through.
+        if not style.lower().startswith("heading") and (
+            words > 15 or text.endswith((".", "?", "!"))
+        ):
+            continue
+        nxt = next((t for t in texts[i + 1 : i + 4] if t), "")
         payload.append({
             "paragraph_id": getattr(b, "paragraph_id", "") or "",
-            "block_id": getattr(b, "block_id", None),
-            "text": text[:500],
-            "style": getattr(b, "style_name", None) or "",
-            "numbering_prefix": getattr(b, "numbering_prefix", None) or "",
+            "text": text[:200],
+            "style": style,
+            "words": words,
+            "next_text": nxt[:60],  # helps tell headings from list items
         })
     return payload
 
@@ -52,12 +65,22 @@ def _block_payload(blocks: Sequence[Any]) -> List[Dict[str, Any]]:
 def _template_section_names(template: Optional[Dict[str, Any]]) -> List[str]:
     names: List[str] = []
     for sec in (template or {}).get("required_sections", []) or []:
+        aliases: List[str] = []
         if isinstance(sec, dict):
             name = str(sec.get("name") or "").strip()
+            level = sec.get("heading_level") or sec.get("headingLevel")
+            raw_aliases = sec.get("aliases") or []
+            if isinstance(raw_aliases, str):
+                raw_aliases = [raw_aliases]
+            aliases = [str(a).strip() for a in raw_aliases if str(a).strip()]
         else:
             name = str(sec).strip()
+            level = None
         if name:
-            names.append(name)
+            label = f"{name} (H{level})" if level else name
+            if aliases:
+                label += f" (aliases: {', '.join(aliases)})"
+            names.append(label)
     return names
 
 
@@ -85,12 +108,23 @@ async def detect_headings_with_claude(
     )
 
     if has_outline:
-        level_rules = """5. Assign heading_level 1-4 from STRUCTURE + reliable numbering:
-   - "1." / "2." / "Chapter 1" → level 1
-   - "1.1" / "2.3" → level 2
-   - "1.1.1" → level 3
-   Prefer numbering depth when it starts at 1 (not 0).
+        level_rules = """5. heading_level = RELATIVE nesting (1 = chapter, 2 = section, 3 = subsection,
+   4 = sub-subsection) judged from document STRUCTURE only. IGNORE typed numbers
+   completely ("1.6", "2)", "Chapter 3", "0.1"). A line starting with "N)", "a)"
+   or a bullet is a LIST ITEM, never a heading.
 6. Prefer structural reality over the template list. If a real heading is missing from the template, still include it.
+   Typed numbers may be STALE (old exports): decide the level from nesting and the template
+   outline, never from the number in the text.
+   - A run of consecutive short lines numbered "1." "2." "3." or "1)" "2)" "3)" (for example an
+     SDLC list: Requirements Gathering, System Design, Implementation, Testing, Deployment)
+     is a LIST, never headings, even if a line equals a template section name.
+   - Text like "2. 2) System Design" is a list item that an old export prefixed with a number.
+   - If the template has a compound section "A & B", the document heading "A & B" is the
+     heading; separate lines "A" and "B" right under it are its CHILDREN (level + 1), not siblings.
+   - A template entry may list aliases, e.g. "Introduction (aliases: Overview)". A document line
+     equal to an alias is that entry's heading, at that entry's level.
+   - If the same section name appears twice in the template at different levels, the second
+     occurrence in the document belongs to the deeper entry.
 7. NEVER mark these as headings (even if short or Title Case):
    - Bullet / numbered list items ("• …", "- …", "1. Feature: description", "a) …")
    - "Label: long description" feature/module rows (e.g. "Admin Panel: It allows…", "Frontend (App): Students use…")
@@ -106,10 +140,11 @@ async def detect_headings_with_claude(
    - Level 2 = subsections under a major section (e.g. under Introduction: Problem Statement,
      Objectives, Scope)
    - Level 3 = sub-subsections under a level-2 heading
-   Correct conceptual numbering is 1, then 1.1 / 1.2, then 2, 2.1 — NEVER start at 0.1.
-   If text says "0.1. Abstract" or "0.1 Abstract", still assign heading_level 1 (Abstract is major).
-   If text says "0.1.1 Something" under Abstract, assign level 2 (first subsection), not level 3 from digits.
-6. Ignore zero-based prefixes ("0", "0.1", "0.1.2") when choosing level — treat them as typos.
+   IGNORE typed numbers completely ("1.6", "2)", "Chapter 3", "0.1"). A line starting
+   with "N)", "a)" or a bullet is a LIST ITEM, never a heading.
+6. Typed numbers are unreliable - use ROLE and nesting only.
+   A run of consecutive short lines numbered "1." "2." "3." or "1)" "2)" "3)" is a LIST,
+   never headings. "2. 2) System Design" is a list item with a stale heading number in front.
 7. Prefer title meaning + order: first major title → level 1; following nested titles → level 2/3.
 8. NEVER mark these as headings:
    - Bullet / numbered list items, "To …" objectives, Figure/Table captions
