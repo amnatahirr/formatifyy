@@ -3,21 +3,19 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
-import 'package:file_picker/file_picker.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../config/api_config.dart';
 
 class UploadProvider extends ChangeNotifier {
   final String baseUrl = ApiConfig.getBaseUrl();
- 
-  
+
   // Upload State
   bool isUploading = false;
   int uploadProgress = 0;
   String? uploadErrorMessage;
   String? lastUploadedDocumentId;
   List<DocumentSyncStatus> userDocuments = [];
-  
+
   // Sync State
   bool isSyncing = false;
   Map<int, SyncStatus> documentSyncStatus = {};
@@ -28,7 +26,7 @@ class UploadProvider extends ChangeNotifier {
   }) async {
     try {
       debugPrint("[v0] Initializing Google Drive for user $userId");
-      
+
       final response = await http.post(
         Uri.parse("$baseUrl/uploads/google-drive/auth/init?user_id=$userId"),
         headers: {"Content-Type": "application/json"},
@@ -44,7 +42,8 @@ class UploadProvider extends ChangeNotifier {
         notifyListeners();
         return true;
       } else {
-        uploadErrorMessage = "Failed to initialize Google Drive: ${response.statusCode}";
+        uploadErrorMessage =
+            "Failed to initialize Google Drive: ${response.statusCode}";
         debugPrint("[v0] Google Drive init failed: ${response.statusCode}");
         notifyListeners();
         return false;
@@ -57,12 +56,15 @@ class UploadProvider extends ChangeNotifier {
     }
   }
 
-
-  // Upload file from local storage
+  // Upload file from local storage.
+  // App (Android/iOS/desktop): filePath do.
+  // Web (browser, phone ka browser bhi): bytes + filename do.
   Future<bool> uploadLocalFile({
     required int userId,
     required int templateId,
-    required String filePath,
+    String? filePath,
+    Uint8List? bytes,
+    String? filename,
     String? sessionId,
   }) async {
     isUploading = true;
@@ -71,9 +73,21 @@ class UploadProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      debugPrint("[v0] Uploading local file: $filePath");
-      
-      final file = await http.MultipartFile.fromPath('file', filePath);
+      final http.MultipartFile file;
+      if (bytes != null) {
+        debugPrint("[v0] Uploading file from bytes: $filename (${bytes.length} bytes)");
+        file = http.MultipartFile.fromBytes(
+          'file',
+          bytes,
+          filename: filename ?? 'upload',
+        );
+      } else if (filePath != null) {
+        debugPrint("[v0] Uploading local file: $filePath");
+        file = await http.MultipartFile.fromPath('file', filePath);
+      } else {
+        throw ArgumentError('No file data provided (filePath or bytes required)');
+      }
+
       final request = http.MultipartRequest(
         'POST',
         Uri.parse("$baseUrl/uploads/local-upload"),
@@ -96,18 +110,24 @@ class UploadProvider extends ChangeNotifier {
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         lastUploadedDocumentId = data['document_id'].toString();
+        uploadProgress = 100;
         debugPrint("[v0] Local file uploaded: ${data['document_id']}");
-        
+
         // Start monitoring sync status
         startMonitoringSyncStatus(
           data['document_id'],
           userId,
         );
-        
+
         notifyListeners();
         return true;
       } else {
-        uploadErrorMessage = "Upload failed: ${response.statusCode}";
+        String detail = '';
+        try {
+          detail = jsonDecode(response.body)['detail']?.toString() ?? '';
+        } catch (_) {}
+        uploadErrorMessage =
+            "Upload failed: ${response.statusCode}${detail.isNotEmpty ? ' - $detail' : ''}";
         debugPrint("[v0] Upload failed: ${response.body}");
         notifyListeners();
         return false;
@@ -134,7 +154,7 @@ class UploadProvider extends ChangeNotifier {
   }) async {
     try {
       debugPrint("[v0] Opening Google Drive picker for user $userId");
-      
+
       final uri = Uri.parse("$baseUrl/auth/google/drive-picker")
           .replace(queryParameters: {
         'user_id': userId.toString(),
@@ -142,17 +162,18 @@ class UploadProvider extends ChangeNotifier {
 
       final response = await http.get(uri).timeout(
         const Duration(seconds: 10),
-        onTimeout: () => throw TimeoutException('Failed to get Drive picker URL'),
+        onTimeout: () =>
+            throw TimeoutException('Failed to get Drive picker URL'),
       );
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         final pickerUrl = data['picker_url'];
         final sessionId = data['session_id'];
-        
+
         debugPrint("[v0] Got Drive picker session: $sessionId");
         debugPrint("[v0] Opening URL: $pickerUrl");
-        
+
         // Open Google Drive in browser
         final driveUri = Uri.parse(pickerUrl);
         if (await canLaunchUrl(driveUri)) {
@@ -168,7 +189,8 @@ class UploadProvider extends ChangeNotifier {
           return false;
         }
       } else {
-        uploadErrorMessage = jsonDecode(response.body)['detail'] ?? "Failed to get Drive picker";
+        uploadErrorMessage =
+            jsonDecode(response.body)['detail'] ?? "Failed to get Drive picker";
         debugPrint("[v0] Error response: ${response.body}");
         notifyListeners();
         return false;
@@ -199,7 +221,7 @@ class UploadProvider extends ChangeNotifier {
       uploadProgress = 0;
       uploadErrorMessage = null;
       notifyListeners();
-      
+
       final uri = Uri.parse("$baseUrl/uploads/download-from-google-drive")
           .replace(queryParameters: {
         'user_id': userId.toString(),
@@ -216,37 +238,35 @@ class UploadProvider extends ChangeNotifier {
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         lastUploadedDocumentId = data['document_id'].toString();
-        
+
         debugPrint("[v0] File downloaded successfully from Google Drive");
         debugPrint("[v0] Document ID: ${data['document_id']}");
-        
+
         // Start monitoring sync status
         startMonitoringSyncStatus(
           data['document_id'],
           userId,
         );
-        
+
         uploadProgress = 100;
         uploadErrorMessage = null;
         notifyListeners();
         return true;
       } else {
-        uploadErrorMessage = jsonDecode(response.body)['detail'] ?? "Download failed";
+        uploadErrorMessage =
+            jsonDecode(response.body)['detail'] ?? "Download failed";
         debugPrint("[v0] Download failed: ${response.body}");
-        isUploading = false;
         notifyListeners();
         return false;
       }
     } on TimeoutException catch (e) {
       uploadErrorMessage = "Download timeout";
       debugPrint("[v0] Timeout: $e");
-      isUploading = false;
       notifyListeners();
       return false;
     } catch (e) {
       uploadErrorMessage = "Download error: $e";
       debugPrint("[v0] Download error: $e");
-      isUploading = false;
       notifyListeners();
       return false;
     } finally {
@@ -267,7 +287,7 @@ class UploadProvider extends ChangeNotifier {
 
     try {
       debugPrint("[v0] Exporting document to Google Drive: $documentId");
-      
+
       final uri = Uri.parse("$baseUrl/uploads/google-drive/export").replace(
         queryParameters: {
           'user_id': userId.toString(),
@@ -282,7 +302,6 @@ class UploadProvider extends ChangeNotifier {
       );
 
       if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
         debugPrint("[v0] Document exported to Google Drive");
         notifyListeners();
         return true;
@@ -305,20 +324,22 @@ class UploadProvider extends ChangeNotifier {
   // Start monitoring sync status (polling)
   void startMonitoringSyncStatus(int documentId, int userId) {
     debugPrint("[v0] Starting sync monitoring for doc $documentId");
-    
+
     Future.doWhile(() async {
       await Future.delayed(const Duration(seconds: 2));
-      
+
       try {
-        final response = await http.get(
-          Uri.parse(
-            "$baseUrl/uploads/sync-status/$documentId?user_id=$userId",
-          ),
-        ).timeout(const Duration(seconds: 5));
+        final response = await http
+            .get(
+              Uri.parse(
+                "$baseUrl/uploads/sync-status/$documentId?user_id=$userId",
+              ),
+            )
+            .timeout(const Duration(seconds: 5));
 
         if (response.statusCode == 200) {
           final data = jsonDecode(response.body);
-          
+
           documentSyncStatus[documentId] = SyncStatus(
             documentId: documentId,
             syncStatus: data['sync_status'] ?? 'unknown',
@@ -328,10 +349,10 @@ class UploadProvider extends ChangeNotifier {
                 ? DateTime.parse(data['last_synced'])
                 : null,
           );
-          
+
           debugPrint("[v0] Sync status: ${data['sync_status']}");
           notifyListeners();
-          
+
           // Stop polling when complete or failed
           return data['document_status'] != 'completed' &&
               data['document_status'] != 'failed';
@@ -339,7 +360,7 @@ class UploadProvider extends ChangeNotifier {
       } catch (e) {
         debugPrint("[v0] Sync status check error: $e");
       }
-      
+
       return true; // Continue polling
     });
   }
@@ -348,19 +369,21 @@ class UploadProvider extends ChangeNotifier {
   Future<void> loadUserDocuments(int userId) async {
     try {
       debugPrint("[v0] Loading documents for user $userId");
-      
-      final response = await http.get(
-        Uri.parse(
-          "$baseUrl/uploads/user-documents?user_id=$userId&include_sync_status=true",
-        ),
-      ).timeout(const Duration(seconds: 10));
+
+      final response = await http
+          .get(
+            Uri.parse(
+              "$baseUrl/uploads/user-documents?user_id=$userId&include_sync_status=true",
+            ),
+          )
+          .timeout(const Duration(seconds: 10));
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         userDocuments = (data['documents'] as List)
             .map((doc) => DocumentSyncStatus.fromJson(doc))
             .toList();
-        
+
         debugPrint("[v0] Loaded ${userDocuments.length} documents");
         notifyListeners();
       }
@@ -398,7 +421,8 @@ class GoogleDriveFile {
       name: json['name'],
       mimeType: json['mimeType'],
       modifiedTime: json['modifiedTime'],
-      fileSize: json['size'],
+      // Drive API size aksar String hota hai, isliye safe parse
+      fileSize: json['size'] == null ? null : int.tryParse(json['size'].toString()),
     );
   }
 }
