@@ -124,6 +124,88 @@ def _intro_sentence_title(doc, table) -> str:
     return ""
 
 
+_HEADING_NUM_RE = re.compile(r"^\d+(?:\.\d+)*\.?\s+")
+_META_TITLE_RE = re.compile(
+    r"(?i)^(table\s+of\s+contents|contents|list\s+of\s+(tables|figures))$"
+)
+
+# Header-signature -> human title (extendable; matched on deduped header cells)
+_HEADER_SIGNATURES = (
+    (
+        lambda cells: len(cells) >= 2
+        and re.match(r"(?i)^fr\s*id\b", cells[0])
+        and re.match(r"(?i)^fr\s*desc", cells[1]),
+        "Requirements Traceability Matrix",
+    ),
+    (
+        lambda cells: len(cells) >= 2
+        and re.match(r"(?i)^team\s+member", cells[0])
+        and re.match(r"(?i)^activit", cells[1]),
+        "Team Member Activity Allocation",
+    ),
+)
+
+
+def _deduped_header_cells(table) -> List[str]:
+    if not table.rows:
+        return []
+    return [
+        c.text.strip()
+        for c in dedupe_row_cells(table.rows[0].cells)
+        if c.text.strip()
+    ][:3]
+
+
+def _nearest_heading_title(doc, table) -> str:
+    """Nearest preceding heading paragraph before the table (stops at any
+    intervening table). Numbering prefixes are stripped."""
+    try:
+        idx = _body_index(doc, table._tbl)
+    except Exception:
+        return ""
+    children = _body_children(doc)
+    for el in reversed(children[:idx]):
+        if el.tag == W_TBL:
+            break
+        if el.tag != W_P:
+            continue
+        para = Paragraph(el, doc)
+        try:
+            style_name = (para.style.name or "").lower()
+        except Exception:
+            style_name = ""
+        is_heading = style_name.startswith("heading") or style_name == "title" or (
+            para._element.pPr is not None
+            and para._element.pPr.find(qn("w:outlineLvl")) is not None
+        )
+        if not is_heading:
+            continue
+        text = _HEADING_NUM_RE.sub("", (para.text or "").strip()).strip(" .")
+        if not text or _META_TITLE_RE.match(text):
+            continue
+        return text[:120]
+    return ""
+
+
+def _header_signature_title(table) -> str:
+    cells = _deduped_header_cells(table)
+    for predicate, title in _HEADER_SIGNATURES:
+        try:
+            if predicate(cells):
+                return title
+        except Exception:
+            continue
+    return ""
+
+
+def _header_fallback_title(table) -> str:
+    """Last resort: deduped header cells joined (never repeats merges)."""
+    cells = _deduped_header_cells(table)
+    if not cells:
+        return ""
+    return " — ".join(cells)[:80]
+
+
 def _shape_table_title(table) -> str:
     """Key-value / label-value tables: derive title from first merged cell."""
     if not table.rows:
@@ -202,7 +284,22 @@ def resolve_table_title(table, doc) -> Tuple[str, str]:
     if shape:
         return shape, "shape"
 
-    # 5 — LLM fallback intentionally not wired here (sync context, no client);
+    # 5 — header-signature mapping (FR ID.. -> RTM, Team Member/Activity ..)
+    sig = _header_signature_title(table)
+    if sig:
+        return sig, "shape"
+
+    # 6 — nearest preceding heading (e.g. "2.3.3. Requirements Traceability Matrix")
+    heading = _nearest_heading_title(doc, table)
+    if heading:
+        return heading, "heading"
+
+    # 7 — deduped header cells as last resort so a caption is never empty
+    fallback = _header_fallback_title(table)
+    if fallback:
+        return fallback, "header"
+
+    # 8 — LLM fallback intentionally not wired here (sync context, no client);
     #     callers may inject one later. Last resort: no description.
     return "", "none"
 

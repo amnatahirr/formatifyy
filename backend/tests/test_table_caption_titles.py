@@ -101,6 +101,33 @@ def test_resolve_title_prefers_label_paragraph(tmp_path):
     assert title == "FR01 – User Registration and Authentication Requirements"
 
 
+def test_resolve_title_heading_and_header_sources():
+    doc = Document()
+    _p(doc, "2.3.3. Requirements Traceability Matrix", style="Heading 2")
+    _p(doc, "This table maps requirements.")
+    t = _table(doc, ["Col A", "Col B"])
+    title, source = resolve_table_title(t, doc)
+    assert source == "heading"
+    assert title == "Requirements Traceability Matrix"
+
+    doc2 = Document()
+    t2 = _table(doc2, ["FR ID", "FR Description", "Business Needs"])
+    title2, source2 = resolve_table_title(t2, doc2)
+    assert source2 == "shape"
+    assert title2 == "Requirements Traceability Matrix"
+
+    t3 = _table(doc2, ["Team Member", "Activity"])
+    title3, _ = resolve_table_title(t3, doc2)
+    assert title3 == "Team Member Activity Allocation"
+
+    # header fallback: never empty when header cells exist
+    doc3 = Document()
+    t4 = _table(doc3, ["Alpha", "Beta"])
+    title4, source4 = resolve_table_title(t4, doc3)
+    assert source4 == "header"
+    assert title4 == "Alpha — Beta"
+
+
 def test_resolve_title_distinct_for_identical_headers(tmp_path):
     doc = Document()
     titles = []
