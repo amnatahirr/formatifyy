@@ -154,10 +154,27 @@ def _table_has_caption(doc, table) -> bool:
     return paragraph_has_seq_caption(cap_para._element, "Table")
 
 
+def dedupe_row_cells(cells) -> List:
+    """Drop repeated cells produced by merged (gridSpan/vMerge) regions.
+
+    python-docx ``row.cells`` repeats the same ``w:tc`` for merged columns;
+    identity on ``cell._tc`` is the reliable dedupe key.
+    """
+    seen = set()
+    out = []
+    for cell in cells:
+        key = id(cell._tc)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(cell)
+    return out
+
+
 def _infer_table_description(table) -> str:
     if not table.rows:
         return "Data table"
-    header_cells = [c.text.strip() for c in table.rows[0].cells]
+    header_cells = [c.text.strip() for c in dedupe_row_cells(table.rows[0].cells)]
     non_empty = [c for c in header_cells if c]
     if non_empty:
         joined = " — ".join(non_empty[:3])

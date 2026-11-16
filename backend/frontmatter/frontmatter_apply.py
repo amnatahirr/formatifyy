@@ -322,6 +322,7 @@ def fix_frontmatter_and_lists_order(docx_path: str) -> Dict[str, Any]:
         document_has_toc,
         find_formatify_body_start_element,
         insert_toc_field,
+        normalize_bookmarks,
         repair_formatify_body_start_bookmark,
         remove_blank_interstitial_pages,
         _prepare_toc_entries,
@@ -331,11 +332,17 @@ def fix_frontmatter_and_lists_order(docx_path: str) -> Dict[str, Any]:
     )
 
     doc = Document(docx_path)
+    try:
+        result_norm_start = normalize_bookmarks(doc)
+    except Exception as exc:
+        print(f"[frontmatter_apply] bookmark normalize (start) skipped: {exc}")
+        result_norm_start = {"error": str(exc)}
     result: Dict[str, Any] = {
         "bookmark_repaired": False,
         "lists_rearranged": False,
         "toc_rebuilt": False,
         "blank_pages_removed": {},
+        "bookmarks_normalized_start": result_norm_start,
     }
 
     # Always strip blank interstitial pages (cover/info merge artifact)
@@ -395,6 +402,12 @@ def fix_frontmatter_and_lists_order(docx_path: str) -> Dict[str, Any]:
         result["blank_pages_removed_final"] = final_clean
     except Exception as exc:
         print(f"[frontmatter_apply] final blank cleanup skipped: {exc}")
+
+    # GC stale/malformed managed bookmarks as the last mutation before save
+    try:
+        result["bookmarks_normalized_end"] = normalize_bookmarks(doc)
+    except Exception as exc:
+        print(f"[frontmatter_apply] bookmark normalize (end) skipped: {exc}")
 
     doc.save(docx_path)
     return result

@@ -9,14 +9,13 @@ from typing import Any, Dict, List
 from docx_tools.docx_fields import (
     _LOT_HEADING_RE,
     _element_is_before_body_start,
-    _ensure_bookmark_on_paragraph,
     _find_section_heading_paragraph,
-    _get_max_bookmark_id,
     _remove_lot_field_block,
     analyze_document_lists,
     arrange_front_matter_lists,
     ensure_update_fields_on_open,
     estimate_body_page_numbers,
+    get_or_create_toc_bookmark,
     insert_lot_field,
 )
 from services.table_caption_service import find_caption_near_table
@@ -71,7 +70,6 @@ def regenerate_list_of_tables(
 def _build_lot_entries(
     doc, assignments: List[Dict[str, Any]], cfg: Dict[str, Any]
 ) -> List[Dict[str, Any]]:
-    next_bookmark_id = _get_max_bookmark_id(doc) + 1
     entries: List[Dict[str, Any]] = []
     by_id = {a["table_id"]: a for a in assignments}
     list_pattern = cfg.get("list_of_tables_format") or cfg.get(
@@ -107,8 +105,7 @@ def _build_lot_entries(
         if not text:
             continue
 
-        bookmark_name = f"_Toc{next_bookmark_id:09d}"
-        _ensure_bookmark_on_paragraph(cap_para, bookmark_name, next_bookmark_id)
+        bookmark_name = get_or_create_toc_bookmark(doc, cap_para, "lot")
         entries.append(
             {
                 "level": 1,
@@ -117,6 +114,5 @@ def _build_lot_entries(
                 "page": page_map.get(cap_para._element, 1),
             }
         )
-        next_bookmark_id += 1
 
     return entries

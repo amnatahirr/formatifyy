@@ -9,6 +9,7 @@ required OOXML (w:fldChar / w:instrText) so lists update via Word's
 from __future__ import annotations
 
 import re
+import zlib
 from typing import Any, Dict, List, Optional, Tuple
 
 from docx.oxml import OxmlElement
@@ -1044,6 +1045,11 @@ def _set_caption_paragraph_properties(p_el: OxmlElement, *, center: bool = True)
         p_pr = OxmlElement("w:pPr")
         p_el.insert(0, p_pr)
 
+    # Captions are never headings: drop outline numbering + heading level
+    for tag in ("w:numPr", "w:outlineLvl"):
+        for el in list(p_pr.findall(qn(tag))):
+            p_pr.remove(el)
+
     p_style = p_pr.find(qn("w:pStyle"))
     if p_style is None:
         p_style = OxmlElement("w:pStyle")
@@ -1074,8 +1080,17 @@ def rebuild_caption_with_seq(
     label = label.strip().title()
     p_el = para._element
 
+    # Preserve bookmark markers (LoT/LoF anchors) across the rewrite
+    bm_starts = []
+    bm_ends = []
     for child in list(p_el):
-        if child.tag != qn("w:pPr"):
+        if child.tag == qn("w:bookmarkStart"):
+            bm_starts.append(child)
+            p_el.remove(child)
+        elif child.tag == qn("w:bookmarkEnd"):
+            bm_ends.append(child)
+            p_el.remove(child)
+        elif child.tag != qn("w:pPr"):
             p_el.remove(child)
 
     _set_caption_paragraph_properties(p_el, center=True)
@@ -1083,6 +1098,11 @@ def rebuild_caption_with_seq(
     _append_seq_field_runs(p_el, label, display_number=number or 1)
     suffix = description.strip()
     p_el.append(_text_run(f": {suffix}" if suffix else ":"))
+
+    for i, el in enumerate(bm_starts):
+        p_el.insert(i, el)
+    for el in bm_ends:
+        p_el.append(el)
 
 
 def paragraph_has_seq_caption(p_el: OxmlElement, label: str) -> bool:
@@ -1350,6 +1370,304 @@ def _ensure_bookmark_on_paragraph(para, bookmark_name: str, bookmark_id: int) ->
     p_el.append(bm_end)
 
 
+# ── Managed _Toc bookmark lifecycle ──────────────────────────────────────────
+#
+# TOC/LoF/LoT anchors are named "_Toc" + 9 digits derived deterministically
+# from (kind, paragraph id), so rebuilding lists reuses the same names instead
+# of minting new ones from "max id + 1" every run.
+
+_MANAGED_TOC_NAME_RE = re.compile(r"^_Toc\d{9}$")
+_W14_PARAFORMAT = "{http://schemas.microsoft.com/office/word/2010/wordml}paraId"
+
+
+def _paragraph_stable_key(p_el: OxmlElement) -> str:
+    """Stable per-paragraph key: w14:paraId, assigned once if absent."""
+    para_id = p_el.get(_W14_PARAFORMAT)
+    if not para_id:
+        para_id = "%08X" % (zlib.crc32(p_el.xml.encode("utf8", "ignore")) & 0xFFFFFFFF)
+        # Ensure uniqueness inside this document
+        seen = {
+            el.get(_W14_PARAFORMAT)
+            for el in p_el.getroottree().getroot().iter(qn("w:p"))
+        }
+        base = para_id
+        n = 1
+        while para_id in seen:
+            para_id = "%08X%X" % (zlib.crc32(base.encode()) & 0xFFFFFFFF, n)
+            n += 1
+        p_el.set(_W14_PARAFORMAT, para_id)
+    return para_id
+
+
+def _all_bookmark_names(doc) -> set:
+    return {
+        bm.get(qn("w:name"))
+        for bm in doc.element.body.iter(qn("w:bookmarkStart"))
+        if bm.get(qn("w:name"))
+    }
+
+
+def _alloc_bookmark_id(doc) -> int:
+    """Unique w:id not used by any bookmarkStart/bookmarkEnd in the document."""
+    used = set()
+    for tag in ("w:bookmarkStart", "w:bookmarkEnd"):
+        for el in doc.element.body.iter(qn(tag)):
+            try:
+                used.add(int(el.get(qn("w:id"), "0")))
+            except (TypeError, ValueError):
+                continue
+    candidate = max(used, default=0) + 1
+    while candidate in used:
+        candidate += 1
+    return candidate
+
+
+def _remove_bookmark_element_pair(p_el: OxmlElement, bm_start: OxmlElement) -> None:
+    """Remove a bookmarkStart and its matching bookmarkEnd (same w:id)."""
+    bm_id = bm_start.get(qn("w:id"))
+    for el in (bm_start,):
+        parent = el.getparent()
+        if parent is not None:
+            parent.remove(el)
+    if p_el is not None:
+        for end in list(p_el.iter(qn("w:bookmarkEnd"))):
+            if end.get(qn("w:id")) == bm_id:
+                parent = end.getparent()
+                if parent is not None:
+                    parent.remove(end)
+
+
+def get_or_create_toc_bookmark(doc, para, kind: str = "toc") -> str:
+    """Return the managed _Toc bookmark name for a paragraph, creating the
+    start/end pair if needed. Reuses an existing managed bookmark on the same
+    paragraph; a paragraph keeps at most one managed _Toc bookmark."""
+    p_el = para._element if hasattr(para, "_element") else para
+
+    managed = [
+        bm
+        for bm in p_el.iter(qn("w:bookmarkStart"))
+        if _MANAGED_TOC_NAME_RE.match(bm.get(qn("w:name")) or "")
+    ]
+    if managed:
+        keep = managed[0]
+        for extra in managed[1:]:
+            _remove_bookmark_element_pair(p_el, extra)
+        name = keep.get(qn("w:name"))
+        # Repair a missing end half
+        bm_id = keep.get(qn("w:id"))
+        has_end = any(
+            e.get(qn("w:id")) == bm_id for e in p_el.iter(qn("w:bookmarkEnd"))
+        )
+        if not has_end:
+            end = OxmlElement("w:bookmarkEnd")
+            end.set(qn("w:id"), str(bm_id))
+            p_el.append(end)
+        return name
+
+    key = _paragraph_stable_key(p_el)
+    taken = _all_bookmark_names(doc)
+    for probe in range(1000):
+        digest = zlib.crc32(f"{kind}:{key}:{probe}".encode()) % 1_000_000_000
+        name = f"_Toc{digest:09d}"
+        if name not in taken:
+            break
+    else:  # pragma: no cover - practically unreachable
+        name = f"_Toc{_alloc_bookmark_id(doc):09d}"
+
+    bm_id = _alloc_bookmark_id(doc)
+    bm_start = OxmlElement("w:bookmarkStart")
+    bm_start.set(qn("w:id"), str(bm_id))
+    bm_start.set(qn("w:name"), name)
+    bm_end = OxmlElement("w:bookmarkEnd")
+    bm_end.set(qn("w:id"), str(bm_id))
+    p_el.insert(0, bm_start)
+    p_el.append(bm_end)
+    return name
+
+
+def _managed_bookmark_name(name: Optional[str]) -> bool:
+    if not name:
+        return False
+    return bool(_MANAGED_TOC_NAME_RE.match(name)) or name in ("_Ref", "_GoBack")
+
+
+def normalize_bookmarks(doc) -> Dict[str, int]:
+    """Garbage-collect stale/malformed managed bookmarks.
+
+    - Removes managed _Toc/_Ref/_GoBack bookmark pairs not referenced by any
+      PAGEREF field or w:hyperlink w:anchor.
+    - Deletes orphan bookmarkEnd elements; repairs bookmarkStart without end.
+    - Keeps at most one managed _Toc bookmark per paragraph (prefers the
+      referenced one).
+    Never touches user bookmarks.
+    """
+    body = doc.element.body
+    referenced = set()
+    for instr in body.iter(qn("w:instrText")):
+        for m in re.finditer(r"PAGEREF\s+(\S+)", instr.text or ""):
+            referenced.add(m.group(1))
+    for hl in body.iter(qn("w:hyperlink")):
+        anchor = hl.get(qn("w:anchor"))
+        if anchor:
+            referenced.add(anchor)
+
+    removed = repaired = 0
+
+    # Index bookmark elements by w:id
+    starts: Dict[str, OxmlElement] = {}
+    start_names: Dict[str, str] = {}
+    for bm in list(body.iter(qn("w:bookmarkStart"))):
+        bid = bm.get(qn("w:id"))
+        if bid is not None:
+            starts[bid] = bm
+            start_names[bid] = bm.get(qn("w:name")) or ""
+    ends: Dict[str, OxmlElement] = {}
+    for e in list(body.iter(qn("w:bookmarkEnd"))):
+        bid = e.get(qn("w:id"))
+        if bid is not None:
+            ends[bid] = e
+
+    def _drop(el):
+        nonlocal removed
+        parent = el.getparent()
+        if parent is not None:
+            parent.remove(el)
+            removed += 1
+
+    # 1) bookmarkStart without end -> repair or drop
+    for bid, bm in list(starts.items()):
+        if bid in ends:
+            continue
+        name = start_names.get(bid, "")
+        if _managed_bookmark_name(name) and name not in referenced:
+            _drop(bm)
+            starts.pop(bid, None)
+        else:
+            p = bm
+            while p is not None and p.tag != qn("w:p"):
+                p = p.getparent()
+            if p is not None:
+                end = OxmlElement("w:bookmarkEnd")
+                end.set(qn("w:id"), bid)
+                p.append(end)
+                ends[bid] = end
+                repaired += 1
+            else:
+                _drop(bm)
+                starts.pop(bid, None)
+
+    # 2) unreferenced managed pairs -> remove both halves
+    for bid, bm in list(starts.items()):
+        name = start_names.get(bid, "")
+        end = ends.get(bid)
+        if end is None:
+            continue
+        if _managed_bookmark_name(name) and name not in referenced:
+            _drop(bm)
+            _drop(end)
+            starts.pop(bid, None)
+            ends.pop(bid, None)
+
+    # 3) orphan bookmarkEnd -> delete
+    for bid, e in list(ends.items()):
+        if bid not in starts:
+            _drop(e)
+            ends.pop(bid, None)
+
+    # 4) dedupe managed bookmarks per paragraph (keep referenced, else first)
+    for p in list(body.iter(qn("w:p"))):
+        bms = [
+            bm
+            for bm in p.iter(qn("w:bookmarkStart"))
+            if _MANAGED_TOC_NAME_RE.match(bm.get(qn("w:name")) or "")
+        ]
+        if len(bms) <= 1:
+            continue
+        keep = next(
+            (b for b in bms if (b.get(qn("w:name")) or "") in referenced), bms[0]
+        )
+        for bm in bms:
+            if bm is keep:
+                continue
+            bid = bm.get(qn("w:id"))
+            end = ends.get(bid)
+            _drop(bm)
+            if end is not None:
+                _drop(end)
+            starts.pop(bid, None)
+            ends.pop(bid, None)
+
+    return {"removed": removed, "repaired": repaired}
+
+
+def _entry_text_key(text: str) -> str:
+    """Normalize a list-entry line for anchor matching (strip page number)."""
+    t = re.sub(r"\s+\d+\s*$", "", (text or "").strip())
+    return re.sub(r"\s+", " ", t).strip().lower()
+
+
+def validate_and_repair_list_anchors(doc) -> Dict[str, int]:
+    """Last-line defence: every PAGEREF / w:anchor target in TOC/LoF/LoT must
+    resolve to a real bookmark. Missing targets are re-created on the best
+    matching caption/heading paragraph (matched by entry text)."""
+    body = doc.element.body
+    names = _all_bookmark_names(doc)
+    body_start = find_formatify_body_start_element(doc)
+
+    # Candidate anchor paragraphs: body paragraphs with text
+    candidates = []
+    for para in doc.paragraphs:
+        if _paragraph_is_before_body_start(doc, para, body_start):
+            continue
+        text = (para.text or "").strip()
+        if text:
+            candidates.append((_entry_text_key(text), para))
+
+    repaired = dropped = 0
+    seen_targets = set()
+    for p in list(body.iter(qn("w:p"))):
+        targets = []
+        for instr in p.iter(qn("w:instrText")):
+            targets += re.findall(r"PAGEREF\s+(\S+)", instr.text or "")
+        for hl in p.iter(qn("w:hyperlink")):
+            anc = hl.get(qn("w:anchor"))
+            if anc:
+                targets.append(anc)
+        if not targets:
+            continue
+        entry_key = _entry_text_key(_paragraph_plain_text(p))
+        for tgt in targets:
+            if tgt in names or tgt in seen_targets:
+                continue
+            seen_targets.add(tgt)
+            # find candidate whose text starts with the entry's caption part
+            match = None
+            probe = entry_key[:40]
+            for ckey, cpara in candidates:
+                if probe and (ckey.startswith(probe[:30]) or probe.startswith(ckey[:30])):
+                    match = cpara
+                    break
+            if match is not None:
+                _ensure_bookmark_on_paragraph(
+                    match, tgt, _alloc_bookmark_id(doc)
+                )
+                names.add(tgt)
+                repaired += 1
+            else:
+                dropped += 1
+    return {"repaired": repaired, "dropped": dropped}
+
+
+def repair_list_anchors_in_file(path: str) -> Dict[str, int]:
+    """Open a .docx, run validate_and_repair_list_anchors, save. Returns stats."""
+    from docx import Document
+
+    doc = Document(path)
+    stats = validate_and_repair_list_anchors(doc)
+    doc.save(path)
+    return stats
+
+
 def _calculate_toc_tab_position(doc) -> int:
     """Return right-aligned tab position in twips for TOC dot leaders."""
     try:
@@ -1531,10 +1849,28 @@ def _paragraph_is_before_body_start(doc, para, body_start: Optional[OxmlElement]
     return False
 
 
+def _paragraph_is_table_or_figure_caption(para) -> bool:
+    """True for caption paragraphs (Caption style, SEQ caption, or caption text)
+    so they never appear in the main TOC."""
+    p_el = para._element
+    p_pr = p_el.find(qn("w:pPr"))
+    if p_pr is not None:
+        ps = p_pr.find(qn("w:pStyle"))
+        if ps is not None and (ps.get(qn("w:val")) or "").lower() == "caption":
+            return True
+    text = (para.text or "").strip()
+    if not text:
+        return False
+    if paragraph_has_seq_caption(p_el, "Table") or paragraph_has_seq_caption(
+        p_el, "Figure"
+    ):
+        return True
+    return bool(CAPTION_TEXT_RE.match(text))
+
+
 def _prepare_toc_entries(doc, levels: str = "1-3") -> List[Dict[str, Any]]:
     """Collect TOC source headings, add bookmarks, and exclude meta list headings."""
     min_level, max_level = _parse_toc_level_range(levels)
-    next_bookmark_id = _get_max_bookmark_id(doc) + 1
     entries: List[Dict[str, Any]] = []
     body_start = find_formatify_body_start_element(doc)
     page_map = estimate_body_page_numbers(doc)
@@ -1545,6 +1881,9 @@ def _prepare_toc_entries(doc, levels: str = "1-3") -> List[Dict[str, Any]]:
             continue
         if _paragraph_in_generated_list(para):
             continue
+        # Table/Figure captions are not headings — keep them out of the TOC
+        if _paragraph_is_table_or_figure_caption(para):
+            continue
         level = _heading_level_from_paragraph(para)
         if level is None or level < min_level or level > max_level:
             continue
@@ -1554,8 +1893,7 @@ def _prepare_toc_entries(doc, levels: str = "1-3") -> List[Dict[str, Any]]:
             continue
 
         display_text = _extract_toc_display_text(raw_text)
-        bookmark_name = f"_Toc{next_bookmark_id:09d}"
-        _ensure_bookmark_on_paragraph(para, bookmark_name, next_bookmark_id)
+        bookmark_name = get_or_create_toc_bookmark(doc, para, "toc")
         entries.append({
             "paragraph_index": idx,
             "level": level,
@@ -1564,7 +1902,6 @@ def _prepare_toc_entries(doc, levels: str = "1-3") -> List[Dict[str, Any]]:
             "bookmark": bookmark_name,
             "page": page_map.get(para._element, 1),
         })
-        next_bookmark_id += 1
 
     return entries
 
@@ -1798,7 +2135,6 @@ def _lot_field_is_unpopulated(doc) -> bool:
 
 def _prepare_lof_entries(doc) -> List[Dict[str, Any]]:
     """Collect figure captions from the REPORT BODY only (skip cover / info)."""
-    next_bookmark_id = _get_max_bookmark_id(doc) + 1
     entries: List[Dict[str, Any]] = []
     body_start = find_formatify_body_start_element(doc)
 
@@ -1843,8 +2179,7 @@ def _prepare_lof_entries(doc) -> List[Dict[str, Any]]:
             cap_para, "Figure", description, number=figure_number
         )
 
-        bookmark_name = f"_Toc{next_bookmark_id:09d}"
-        _ensure_bookmark_on_paragraph(cap_para, bookmark_name, next_bookmark_id)
+        bookmark_name = get_or_create_toc_bookmark(doc, cap_para, "lof")
         display = f"Figure {figure_number}: {description}"
         entries.append({
             "paragraph_index": idx,
@@ -1853,7 +2188,6 @@ def _prepare_lof_entries(doc) -> List[Dict[str, Any]]:
             "bookmark": bookmark_name,
             "page": page_map.get(cap_para._element, page_map.get(para._element, 1)),
         })
-        next_bookmark_id += 1
 
     return entries
 
@@ -1875,7 +2209,6 @@ def _prepare_lot_entries(
     applied = apply_numbering_to_table_captions(doc, assignments, formatting_rules)
     by_id = {a["table_id"]: a for a in applied}
 
-    next_bookmark_id = _get_max_bookmark_id(doc) + 1
     entries: List[Dict[str, Any]] = []
     page_map = estimate_body_page_numbers(doc)
     list_pattern = cfg.get("list_of_tables_format") or cfg.get(
@@ -1897,8 +2230,6 @@ def _prepare_lot_entries(
         description = a.get("caption_description") or _caption_description_from_text(
             raw or (cap_para.text or ""), "Table"
         )
-        if not description:
-            description = "Table"
 
         n = int(a["n"]) if a.get("n") is not None else tbl_i
         chapter = a.get("chapter")
@@ -1907,8 +2238,7 @@ def _prepare_lot_entries(
                 cap_para, "Table", description, number=n
             )
 
-        bookmark_name = f"_Toc{next_bookmark_id:09d}"
-        _ensure_bookmark_on_paragraph(cap_para, bookmark_name, next_bookmark_id)
+        bookmark_name = get_or_create_toc_bookmark(doc, cap_para, "lot")
         display = format_table_caption_label(
             pattern=list_pattern,
             n=n,
@@ -1922,7 +2252,6 @@ def _prepare_lot_entries(
             "bookmark": bookmark_name,
             "page": page_map.get(cap_para._element, 1),
         })
-        next_bookmark_id += 1
 
     return entries
 
@@ -2795,6 +3124,7 @@ def generate_document_lists(
     toc_levels: str = "1-3",
     ensure_styles: bool = True,
     ensure_captions: bool = True,
+    skip_table_numbering: bool = False,
 ) -> Dict[str, Any]:
     """
     Full pipeline: heading styles → captions → TOC / LOT / LOF fields.
@@ -2803,6 +3133,8 @@ def generate_document_lists(
     from docx import Document
 
     doc = Document(file_path)
+    # GC stale/malformed managed bookmarks before rebuilding lists
+    result_norm_start = normalize_bookmarks(doc)
     result: Dict[str, Any] = {
         "headings_styled": 0,
         "table_captions_added": 0,
@@ -2811,6 +3143,7 @@ def generate_document_lists(
         "lot_added": False,
         "lof_added": False,
         "entry_count": 0,
+        "bookmarks_normalized_start": result_norm_start,
     }
 
 
@@ -2843,10 +3176,15 @@ def generate_document_lists(
             assign_table_numbers,
         )
 
-        assignments = assign_table_numbers(doc, formatting_rules)
-        applied = apply_numbering_to_table_captions(
-            doc, assignments, formatting_rules
-        )
+        if skip_table_numbering:
+            # Table pipeline already numbered captions in this request;
+            # numbering is idempotent but skip the duplicate pass anyway.
+            applied = []
+        else:
+            assignments = assign_table_numbers(doc, formatting_rules)
+            applied = apply_numbering_to_table_captions(
+                doc, assignments, formatting_rules
+            )
         result["table_captions_added"] = sum(
             1 for a in applied if a.get("caption_created")
         )
@@ -2952,6 +3290,11 @@ def generate_document_lists(
 
     # Final pass: TOC/LOF/LOT titles must never keep leftover section numbers
     sanitize_document_headings_for_lists(doc, formatting_rules)
+
+    # GC stale/malformed managed bookmarks after lists are rebuilt, then
+    # verify every PAGEREF/anchor target still resolves.
+    result["bookmarks_normalized_end"] = normalize_bookmarks(doc)
+    result["anchor_repair"] = validate_and_repair_list_anchors(doc)
 
     doc.save(file_path)
     result.update(analyze_document_lists(doc))

@@ -13,13 +13,13 @@ from docx_tools.docx_fields import (
     rebuild_caption_with_seq,
 )
 from services.table_caption_service import (
+    _uniquify_title,
     ensure_caption_at_position,
-    extract_table_description,
     find_caption_near_table,
+    resolve_table_title,
     set_plain_table_caption_text,
 )
 from services.table_config import format_table_caption_label, get_table_format_config
-from docx_tools.table_processor import _infer_table_description
 
 _CHAPTER_NUM_RE = re.compile(r"^(\d+)")
 
@@ -182,13 +182,17 @@ def apply_numbering_to_table_captions(
     pattern = captioned["caption_format_pattern"]
     scheme = captioned["numbering_scheme"]
     applied: List[Dict[str, Any]] = []
+    used_titles: set = set()
 
     for a in assignments:
         table = a["_table"]
         cap_para, _pos, raw = find_caption_near_table(doc, table)
-        desc = extract_table_description(raw or "") if raw else ""
-        if not desc:
-            desc = _infer_table_description(table)
+        title, source = resolve_table_title(table, doc)
+        desc = _uniquify_title(title, used_titles) if title else ""
+        print(
+            f"[caption] table={a['table_id']} source={source} "
+            f"title={desc or '(none)'}"
+        )
 
         create = require_caption
         cap_para, position, created = ensure_caption_at_position(

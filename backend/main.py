@@ -1214,6 +1214,15 @@ def _prepare_formatted_docx(doc: Any, document_id: int) -> str:
     except Exception as exc:
         print(f"[formatted] frontmatter apply error (non-fatal): {exc}")
 
+    # Last line of defence: every TOC/LoF/LoT anchor must resolve to a bookmark
+    try:
+        from docx_tools.docx_fields import repair_list_anchors_in_file
+        anchor_stats = repair_list_anchors_in_file(output_path)
+        if anchor_stats.get("repaired") or anchor_stats.get("dropped"):
+            print(f"[formatted] list anchor repair doc={document_id}: {anchor_stats}")
+    except Exception as exc:
+        print(f"[formatted] list anchor repair skipped: {exc}")
+
     if not os.path.exists(output_path):
         raise HTTPException(
             status_code=500,
@@ -3902,9 +3911,21 @@ async def apply_all_fixes(
                 toc_levels=str(
                     payload.get("toc_levels") or rules.get("toc_levels", "1-3")
                 ),
+                # Table pipeline already numbered captions above in this request
+                skip_table_numbering=bool(table_result.get("status") == "success"),
             )
         except Exception as exc:
             lists_result = {"status": "error", "message": str(exc)}
+
+        # Last line of defence: every TOC/LoF/LoT anchor must resolve
+        try:
+            from docx_tools.docx_fields import repair_list_anchors_in_file
+            anchor_stats = repair_list_anchors_in_file(working_copy)
+            if anchor_stats.get("repaired") or anchor_stats.get("dropped"):
+                print(f"[apply-all] list anchor repair doc={document_id}: {anchor_stats}")
+                lists_result["anchor_repair"] = anchor_stats
+        except Exception as exc:
+            print(f"[apply-all] list anchor repair skipped: {exc}")
 
     commit = _commit_working_document(document_id, working_copy, doc)
 
