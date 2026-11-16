@@ -4076,7 +4076,7 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
               _green,
             ),
             const SizedBox(height: 16),
-            _buildImageFormatterButton(),
+           
           ],
         ),
       );
@@ -4086,7 +4086,7 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _buildImageFormatterButton(),
+         
           const SizedBox(height: 20),
           if (visible.isNotEmpty) ...[
             _buildInfoBanner(
@@ -4165,87 +4165,7 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
         '${_imageVersion > 0 && !cleanPath.contains('?') ? '?v=$_imageVersion' : ''}';
   }
 
-  Widget _buildImageFormatterButton() {
-    return Container(
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [_blue.withOpacity(0.15), _purple.withOpacity(0.10)],
-          begin: Alignment.centerLeft,
-          end: Alignment.centerRight,
-        ),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: _blue.withOpacity(0.4)),
-      ),
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: _blue.withOpacity(0.2),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Icon(Icons.auto_fix_high, color: _blue, size: 20),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Tr('FYP Image Formatter',
-                      style: TextStyle(
-                        color: _textPri,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    Tr('Academic-standard formatting for all images',
-                      style: TextStyle(color: _textSec, fontSize: 11),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Wrap(
-            spacing: 8,
-            runSpacing: 6,
-            children: [
-              _FeatureChip('• Centre-aligned', _blue),
-              _FeatureChip('• Auto captions', _blue),
-              _FeatureChip('• Figure numbering', _blue),
-              _FeatureChip('• Table of Figures', _blue),
-              _FeatureChip('• Keeps image+caption together', _blue),
-              _FeatureChip('• Aspect-ratio safe', _blue),
-            ],
-          ),
-          const SizedBox(height: 14),
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton.icon(
-              onPressed:
-                  () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder:
-                          (_) => ImageFormatterScreen(
-                            documentId: widget.documentId,
-                            documentName: widget.documentName,
-                          ),
-                    ),
-                  ),
-              icon: const Icon(Icons.auto_fix_high, size: 16),
-              label: const Tr('Open Image Formatter'),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+ 
 
   Widget _buildFormattingIssueCard(Map<String, dynamic> issue) {
     final isCritical = (issue['type'] as String? ?? '') == 'CRITICAL';
