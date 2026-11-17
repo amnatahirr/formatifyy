@@ -1,0 +1,16 @@
+We faced problems relating to dependency management for frontend components. Initially, it was done manually installing
+components. However, that caused a massive inefficiency transferring the software from one computer to another. We
+decided to use bower for frontend dependency management and a single command now gets the job done.
+
+Laravel launches new versions every few months and sometimes the changes can cause incompatibility between different
+modules. Therefore, we decided to stick with a single version of Laravel for development.
+
+Initially, we tried implementing user notifications using AJAX requests and polling the server every few minutes. We learnt
+that this is bad practice and puts extra load on the server side. Therefore, we looked for a better alternative and found Pusher
+API which allows the server to push information to the client using socket programming. This helped optimize our
+notifications system.
+
+Managing media can get unorganized especially in an application where a lot of it is involved. We used Laravel
+Plank/Mediable package to manage our media items. It stores the media and mediables to media relations in the database
+and makes media management much easier. Also allows us to add tags to the media uploaded so we can group it together by
+tags.
