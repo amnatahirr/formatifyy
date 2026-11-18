@@ -43,6 +43,7 @@ class _DocumentReviewScreenState extends State<DocumentReviewScreen> {
   bool _busy = false;
   bool _downloading = false;
   bool _showStyleLabels = false;
+  bool _hideFrontMatter = true; // cover, TOC, lists chhupao
 
   // Page view = real rendered pages (Word look). Analysis view = block view.
   bool _pageMode = true;
@@ -369,6 +370,14 @@ class _DocumentReviewScreenState extends State<DocumentReviewScreen> {
                   ),
                   if (!_pageMode)
                   IconButton(
+    tooltip: _hideFrontMatter ? 'Show cover & contents' : 'Hide cover & contents',
+    onPressed: () => setState(() => _hideFrontMatter = !_hideFrontMatter),
+    icon: Icon(
+      Icons.auto_stories_outlined,
+      color: _hideFrontMatter ? AdminColors.primary : Colors.white,
+    ),
+  ),
+                  IconButton(
                     tooltip: _showStyleLabels ? 'Hide style names' : 'Show style names',
                     onPressed: () => setState(() => _showStyleLabels = !_showStyleLabels),
                     icon: Icon(
@@ -376,6 +385,7 @@ class _DocumentReviewScreenState extends State<DocumentReviewScreen> {
                       color: _showStyleLabels ? AdminColors.primary : Colors.white,
                     ),
                   ),
+
                   IconButton(
                     tooltip: 'Download file',
                     onPressed: (_busy || _downloading) ? null : _downloadFile,
@@ -438,6 +448,8 @@ class _DocumentReviewScreenState extends State<DocumentReviewScreen> {
         );
       }
     }
+    final visibleParagraphs =
+    _hideFrontMatter ? _stripFrontMatter(review.paragraphs) : review.paragraphs;
 
     return AdminPage(
       onRefresh: _loadReview,
@@ -460,7 +472,7 @@ class _DocumentReviewScreenState extends State<DocumentReviewScreen> {
             ],
           ),
           const SizedBox(height: 20),
-          if (review.paragraphs.isEmpty)
+          if (visibleParagraphs.isEmpty)
             const AdminEmptyView(
               icon: Icons.notes_rounded,
               title: 'Nothing to review',
@@ -468,7 +480,7 @@ class _DocumentReviewScreenState extends State<DocumentReviewScreen> {
             )
           else
             _WordPage(
-              paragraphs: _coalesceTocParagraphs(review.paragraphs),
+              paragraphs: _coalesceTocParagraphs(visibleParagraphs),
               showStyleLabels: _showStyleLabels,
               onLongPress: _onParagraphLongPress,
             ),
@@ -615,6 +627,60 @@ List<DocumentParagraphModel> _coalesceTocParagraphs(List<DocumentParagraphModel>
   return out;
 }
 
+const _frontMatterTitles = {
+  'table of contents',
+  'contents',
+  'list of figures',
+  'list of tables',
+  'list of abbreviations',
+  'list of acronyms',
+};
+
+bool _isFrontMatterTitle(String text) {
+  final t = _normalizeTocLine(text).toLowerCase().replaceAll(RegExp(r'[:\.]+$'), '');
+  return _frontMatterTitles.contains(t);
+}
+
+
+
+/// TOC / List of Figures / List of Tables ki line ya khali line?
+bool _isFrontMatterEntry(DocumentParagraphModel p) {
+  final raw = p.text;
+  final t = _normalizeTocLine(raw);
+
+  // Khali line: skip, magar image/table wali block nahi.
+  if (t.isEmpty) return _readImages(p).isEmpty && _readTableRows(p).isEmpty;
+
+  if (_paragraphIsTocish(p) || _isFrontMatterTitle(t)) return true;
+
+  // End mein page number (tab, dots ya 2+ spaces ke baad)
+  final endsWithPage = p.pageNumber != null ||
+      RegExp(r'(\t|\.{2,}|\s{2,})\s*(\d+|[ivxlcdm]+)\s*$', caseSensitive: false)
+          .hasMatch(raw);
+
+  // "1.1. Introduction", "Figure 1:", "Table 2." se shuru hone wali line
+  final looksListed = RegExp(
+    r'^(\d+(\.\d+)*\.?\s|(figure|fig\.|table)\s*\d+\s*[:.\-–—])',
+    caseSensitive: false,
+  ).hasMatch(t);
+
+  return endsWithPage && looksListed;
+}
+
+/// Cover, certificate, TOC, lists hata kar asli body se shuru karta hai.
+List<DocumentParagraphModel> _stripFrontMatter(List<DocumentParagraphModel> all) {
+  final start = all.indexWhere(
+    (p) => _isFrontMatterTitle(p.text) || _paragraphIsTocish(p),
+  );
+  if (start == -1) return all; // TOC mila hi nahi: kuch hide nahi
+
+  var i = start;
+  while (i < all.length && _isFrontMatterEntry(all[i])) {
+    i++;
+  }
+  if (i >= all.length) return all; // safety: sab kuch hide na ho
+  return all.sublist(i);
+}
 String _blockPreviewText(DocumentParagraphModel p) {
   final dynamic d = p;
   final text = _try<String>(() => d.text as String?) ?? '';

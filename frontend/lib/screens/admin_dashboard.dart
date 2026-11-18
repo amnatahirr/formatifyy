@@ -111,13 +111,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
       shortLabel: 'Users',
       icon: Icons.people_rounded,
     ),
-    _AdminNavItem(
-      id: 7,
-      label: 'Universities',
-      shortLabel: 'Unis',
-      icon: Icons.school_rounded,
-      requiresFyp: true,
-    ),
+    
     _AdminNavItem(
       id: 8,
       label: 'Analytics',

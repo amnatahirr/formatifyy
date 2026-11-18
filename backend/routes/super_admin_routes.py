@@ -13,6 +13,14 @@ Real-data additions
 * GET /activity returns the audit trail on its own.
 * Plan list prices live in PLAN_CATALOG below and can be overridden with env vars
   PLAN_PRICE_UNIVERSITY / PLAN_PRICE_ENTERPRISE / PLAN_PRICE_STARTER.
+
+Org deletion
+------------
+DELETE /organizations/{id} hard-deletes the organization AND everything linked
+to it: all users (admins, supervisors, students), their documents, FYP groups,
+collaboration projects, templates, departments, notifications, settings and the
+files on disk. The whole thing runs in one transaction — if anything fails
+(e.g. a user cannot be deleted) everything is rolled back.
 """
 
 from __future__ import annotations
@@ -20,6 +28,7 @@ from __future__ import annotations
 import logging
 import os
 import secrets
+import shutil
 import smtplib
 from datetime import datetime, timezone
 from email.message import EmailMessage
@@ -74,6 +83,27 @@ MODULE_CATALOG: dict[str, dict[str, Any]] = {
 }
 
 _MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+
+# Folders used by the main app for uploaded / generated files.
+UPLOAD_DIR = "uploads"
+OUTPUT_DIR = "outputs"
+
+# Column names that commonly point at users.id. Used (together with real
+# FOREIGN KEY metadata) to sweep every table when an org is deleted.
+USER_REF_COLUMNS = {
+    "user_id",
+    "student_id",
+    "supervisor_id",
+    "created_by",
+    "owner_id",
+    "author_id",
+    "member_id",
+    "sender_id",
+    "reviewer_id",
+    "assigned_by",
+    "requested_by",
+    "invited_by",
+}
 
 
 def _plan_price(plan: str) -> int:
@@ -720,8 +750,19 @@ def toggle_organization(org_id: int, _: None = Depends(_require_super_admin)):
         conn.close()
 
 
+# ---------------------------------------------------------------------------
+# Delete organization (+ everything linked to it)
+# ---------------------------------------------------------------------------
+
+
 @router.delete("/organizations/{org_id}")
 def delete_organization(org_id: int, _: None = Depends(_require_super_admin)):
+    """
+    Permanently delete an organization together with ALL linked data:
+    admins, supervisors, students, their documents/reports, FYP groups,
+    collaboration projects, templates, departments, notifications, settings
+    and the files on disk. Runs in a single transaction (all-or-nothing).
+    """
     if org_id == 1:
         raise HTTPException(
             status_code=400,
@@ -735,10 +776,21 @@ def delete_organization(org_id: int, _: None = Depends(_require_super_admin)):
         if not row:
             raise HTTPException(status_code=404, detail="Organization not found.")
 
+        # Collect file paths BEFORE the rows disappear; delete them only after commit.
+        files = _collect_org_files(cursor, org_id)
+
         summary = _purge_organization_data(cursor, org_id)
         cursor.execute("DELETE FROM organizations WHERE id = ?", (org_id,))
-        _log_activity(cursor, "delete", f"{row['name']} ({row['code']}) was deleted", None)
+        _log_activity(
+            cursor,
+            "delete",
+            f"{row['name']} ({row['code']}) was deleted with {summary.get('users', 0)} user(s)",
+            None,
+        )
         conn.commit()
+
+        _remove_paths(files)
+
         return {
             "success": True,
             "deleted_id": org_id,
@@ -750,6 +802,7 @@ def delete_organization(org_id: int, _: None = Depends(_require_super_admin)):
         raise
     except Exception as exc:
         conn.rollback()
+        logger.exception("Failed to delete organization %s", org_id)
         raise HTTPException(
             status_code=500,
             detail=f"Failed to delete organization and related data: {exc}",
@@ -789,10 +842,95 @@ def _safe_delete(cursor, sql: str, params: tuple = ()) -> int:
         return 0
 
 
+def _collect_org_files(cursor, org_id: int) -> list[str]:
+    """Paths of every uploaded / generated file that belongs to this org's users."""
+    paths: list[str] = []
+    try:
+        cursor.execute(
+            """
+            SELECT d.id, d.file_path, d.formatted_file_path
+            FROM documents d
+            JOIN users u ON u.id = d.user_id
+            WHERE u.org_id = ?
+            """,
+            (org_id,),
+        )
+        for r in cursor.fetchall():
+            did = r["id"]
+            paths += [
+                r["file_path"],
+                r["formatted_file_path"],
+                os.path.join(UPLOAD_DIR, "working", f"doc_{did}_working.docx"),
+                os.path.join(UPLOAD_DIR, "working", f"doc_{did}_heading_decisions.json"),
+                os.path.join(UPLOAD_DIR, "formatted", f"doc_{did}_formatted.docx"),
+                os.path.join(UPLOAD_DIR, "analysis", f"doc_{did}.json"),
+                os.path.join(UPLOAD_DIR, "images", f"doc_{did}"),
+                os.path.join(OUTPUT_DIR, f"export_{did}.docx"),
+                os.path.join(OUTPUT_DIR, f"images_formatted_{did}.docx"),
+                os.path.join(OUTPUT_DIR, f"tables_formatted_{did}.docx"),
+            ]
+    except Exception:  # noqa: BLE001
+        logger.warning("Could not collect document files for org %s", org_id)
+    return [str(p) for p in paths if p]
+
+
+def _remove_paths(paths: list[str]) -> None:
+    """Delete files / folders, ignoring anything already gone."""
+    for p in paths:
+        try:
+            if os.path.isdir(p):
+                shutil.rmtree(p, ignore_errors=True)
+            elif os.path.exists(p):
+                os.remove(p)
+        except OSError:
+            pass
+
+
+def _sweep_user_references(cursor, user_ids: list[int], summary: dict[str, int]) -> None:
+    """
+    Delete rows in ANY table that reference these users — via real FOREIGN KEY
+    metadata and via common column names (USER_REF_COLUMNS). This catches
+    tables that have no org_id column (group members, replies, remarks, ...).
+    """
+    if not user_ids:
+        return
+    ph = ",".join("?" * len(user_ids))
+    params = tuple(user_ids)
+
+    cursor.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+    )
+    tables = [r[0] for r in cursor.fetchall()]
+
+    for t in tables:
+        if t in ("users", "organizations", "super_admin_activity"):
+            continue
+        cols: set[str] = set()
+        try:
+            cursor.execute(f"PRAGMA foreign_key_list({t})")
+            for fk in cursor.fetchall():
+                if fk[2] == "users":  # referenced table
+                    cols.add(fk[3])  # local column
+        except Exception:
+            pass
+        try:
+            cursor.execute(f"PRAGMA table_info({t})")
+            cols |= {r[1] for r in cursor.fetchall() if r[1] in USER_REF_COLUMNS}
+        except Exception:
+            continue
+        for c in cols:
+            n = _safe_delete(cursor, f"DELETE FROM {t} WHERE {c} IN ({ph})", params)
+            if n:
+                summary[t] = summary.get(t, 0) + n
+
+
 def _purge_organization_data(cursor, org_id: int) -> dict[str, int]:
     """
     Hard-delete every tenant-owned row for this org (users, docs, FYP,
     templates, collaboration, settings). Call before deleting organizations.
+
+    Raises if the org's users could not be deleted, so the caller rolls back
+    the whole transaction instead of leaving half-deleted data behind.
     """
     summary: dict[str, int] = {}
 
@@ -1009,7 +1147,7 @@ def _purge_organization_data(cursor, org_id: int) -> dict[str, int]:
             tuple(user_emails),
         )
 
-    # ── Direct org_id tables (catch-all) ────────────────────────────────────
+    # ── Direct org_id tables (catch-all) — "users" is handled last, below ──
     for table in (
         "organization_modules",
         "assignment_requests",
@@ -1023,7 +1161,6 @@ def _purge_organization_data(cursor, org_id: int) -> dict[str, int]:
         "departments",
         "documents",
         "collaboration_projects",
-        "users",
     ):
         if _table_has_column(cursor, table, "org_id"):
             summary[table] = summary.get(table, 0) + _safe_delete(
@@ -1037,6 +1174,16 @@ def _purge_organization_data(cursor, org_id: int) -> dict[str, int]:
             "DELETE FROM admin_settings WHERE key LIKE ?",
             (f"org:{org_id}:%",),
         )
+
+    # ── Sweep every remaining table that points at these users ─────────────
+    _sweep_user_references(cursor, user_ids, summary)
+
+    # ── Users LAST — deliberately NOT silenced: failure rolls everything back
+    cursor.execute("DELETE FROM users WHERE org_id = ?", (org_id,))
+    summary["users"] = int(cursor.rowcount or 0)
+    cursor.execute("SELECT COUNT(*) FROM users WHERE org_id = ?", (org_id,))
+    if int(cursor.fetchone()[0] or 0) > 0:
+        raise RuntimeError("Some users of this organization could not be deleted.")
 
     # Keep only non-zero counts for response clarity
     return {k: v for k, v in summary.items() if v}
