@@ -93,7 +93,6 @@ OUTPUT_DIR = "outputs"
 USER_REF_COLUMNS = {
     "user_id",
     "student_id",
-    "supervisor_id",
     "created_by",
     "owner_id",
     "author_id",
@@ -924,6 +923,135 @@ def _sweep_user_references(cursor, user_ids: list[int], summary: dict[str, int])
                 summary[t] = summary.get(t, 0) + n
 
 
+_GROUP_COL_NAMES = ("group_id", "fyp_group_id")
+
+
+def _user_cols_of(cursor, table: str) -> set[str]:
+    """Columns of `table` that point at users (real FKs + common column names)."""
+    cols: set[str] = set()
+    try:
+        cursor.execute(f"PRAGMA foreign_key_list({table})")
+        for fk in cursor.fetchall():
+            if fk[2] == "users":
+                cols.add(fk[3])
+    except Exception:
+        pass
+    try:
+        cursor.execute(f"PRAGMA table_info({table})")
+        cols |= {r[1] for r in cursor.fetchall() if r[1] in USER_REF_COLUMNS}
+    except Exception:
+        pass
+    return cols
+
+
+def _all_tables(cursor) -> list[str]:
+    cursor.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+    )
+    return [r[0] for r in cursor.fetchall()]
+
+
+def _find_org_group_ids(cursor, org_id: int, user_ids: list[int]) -> list[int]:
+    """
+    FYP groups that belong to an org, found every way we can:
+      * fyp_groups.org_id
+      * fyp_groups columns pointing at the org's users (created_by, student ids, ...)
+      * users.group_id / users.fyp_group_id of the org's users
+      * member-style tables (group_id + a user column) containing the org's users
+    """
+    if not _table_exists(cursor, "fyp_groups"):
+        return []
+    ids: set[int] = set()
+    if _table_has_column(cursor, "fyp_groups", "org_id"):
+        ids |= set(_safe_ids(cursor, "SELECT id FROM fyp_groups WHERE org_id = ?", (org_id,)))
+    if user_ids:
+        ph = ",".join("?" * len(user_ids))
+        upt = tuple(user_ids)
+        for c in _user_cols_of(cursor, "fyp_groups"):
+            ids |= set(_safe_ids(cursor, f"SELECT id FROM fyp_groups WHERE {c} IN ({ph})", upt))
+        for gc in _GROUP_COL_NAMES:
+            if _table_has_column(cursor, "users", gc):
+                ids |= set(_safe_ids(
+                    cursor,
+                    f"SELECT DISTINCT {gc} FROM users WHERE id IN ({ph}) AND {gc} IS NOT NULL",
+                    upt,
+                ))
+        for t in _all_tables(cursor):
+            if t in ("fyp_groups", "users", "organizations"):
+                continue
+            ucols = _user_cols_of(cursor, t)
+            for gc in _GROUP_COL_NAMES:
+                if ucols and _table_has_column(cursor, t, gc):
+                    for uc in ucols:
+                        ids |= set(_safe_ids(
+                            cursor,
+                            f"SELECT DISTINCT {gc} FROM {t} WHERE {uc} IN ({ph}) AND {gc} IS NOT NULL",
+                            upt,
+                        ))
+    return sorted(ids)
+
+
+def _delete_groups_fully(cursor, group_ids: list[int], summary: dict[str, int]) -> None:
+    """Delete the given FYP groups together with every row that hangs off them."""
+    if not group_ids:
+        return
+    gph = ",".join("?" * len(group_ids))
+    gpt = tuple(group_ids)
+
+    # Grandchildren: review paragraphs / comments of the groups' documents
+    if _table_has_column(cursor, "group_documents", "group_id"):
+        gd_ids = _safe_ids(cursor, f"SELECT id FROM group_documents WHERE group_id IN ({gph})", gpt)
+        if gd_ids:
+            gdh = ",".join("?" * len(gd_ids))
+            gdt = tuple(gd_ids)
+            para_ids = _safe_ids(
+                cursor, f"SELECT id FROM document_paragraphs WHERE document_id IN ({gdh})", gdt
+            )
+            if para_ids:
+                pah = ",".join("?" * len(para_ids))
+                summary["document_comments"] = summary.get("document_comments", 0) + _safe_delete(
+                    cursor, f"DELETE FROM document_comments WHERE paragraph_id IN ({pah})",
+                    tuple(para_ids),
+                )
+            summary["document_comments"] = summary.get("document_comments", 0) + _safe_delete(
+                cursor, f"DELETE FROM document_comments WHERE document_id IN ({gdh})", gdt
+            )
+            summary["document_paragraphs"] = summary.get("document_paragraphs", 0) + _safe_delete(
+                cursor, f"DELETE FROM document_paragraphs WHERE document_id IN ({gdh})", gdt
+            )
+
+    # Children: any table with an FK to fyp_groups or a group_id / fyp_group_id column
+    for t in _all_tables(cursor):
+        if t in ("fyp_groups", "organizations", "super_admin_activity"):
+            continue
+        cols: set[str] = set()
+        try:
+            cursor.execute(f"PRAGMA foreign_key_list({t})")
+            for fk in cursor.fetchall():
+                if fk[2] == "fyp_groups":
+                    cols.add(fk[3])
+        except Exception:
+            pass
+        for gc in _GROUP_COL_NAMES:
+            if _table_has_column(cursor, t, gc):
+                cols.add(gc)
+        for c in cols:
+            if t == "users":
+                # never delete users here — just detach them from the group
+                try:
+                    cursor.execute(f"UPDATE users SET {c} = NULL WHERE {c} IN ({gph})", gpt)
+                except Exception:
+                    pass
+                continue
+            n = _safe_delete(cursor, f"DELETE FROM {t} WHERE {c} IN ({gph})", gpt)
+            if n:
+                summary[t] = summary.get(t, 0) + n
+
+    summary["fyp_groups"] = summary.get("fyp_groups", 0) + _safe_delete(
+        cursor, f"DELETE FROM fyp_groups WHERE id IN ({gph})", gpt
+    )
+
+
 def _purge_organization_data(cursor, org_id: int) -> dict[str, int]:
     """
     Hard-delete every tenant-owned row for this org (users, docs, FYP,
@@ -947,11 +1075,7 @@ def _purge_organization_data(cursor, org_id: int) -> dict[str, int]:
         except Exception:
             user_emails = []
 
-    group_ids = (
-        _safe_ids(cursor, "SELECT id FROM fyp_groups WHERE org_id = ?", (org_id,))
-        if _table_has_column(cursor, "fyp_groups", "org_id")
-        else []
-    )
+    group_ids = _find_org_group_ids(cursor, org_id, user_ids)
 
     doc_ids: list[int] = []
     if _table_has_column(cursor, "documents", "org_id"):
@@ -1166,6 +1290,9 @@ def _purge_organization_data(cursor, org_id: int) -> dict[str, int]:
             summary[table] = summary.get(table, 0) + _safe_delete(
                 cursor, f"DELETE FROM {table} WHERE org_id = ?", (org_id,)
             )
+
+    # FYP groups: delete every group linked to this org (any link) + all children
+    _delete_groups_fully(cursor, group_ids, summary)
 
     # Per-org admin settings: org:{id}:*
     if _table_exists(cursor, "admin_settings"):
