@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../../../providers/collaboration_provider.dart';
 
 import '../../../widgets/tr.dart';
+
 /// Version History tab — chronological commits with restore confirmation.
 class ProjectVersionHistoryTab extends StatefulWidget {
   final int projectId;
@@ -22,7 +23,9 @@ class _ProjectVersionHistoryTabState extends State<ProjectVersionHistoryTab> {
   }
 
   Future<void> _load() async {
-    await context.read<CollaborationProvider>().loadProjectHistory(widget.projectId);
+    await context
+        .read<CollaborationProvider>()
+        .loadProjectHistory(widget.projectId);
   }
 
   int _wordCount(String? text) {
@@ -31,14 +34,25 @@ class _ProjectVersionHistoryTabState extends State<ProjectVersionHistoryTab> {
     return t.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).length;
   }
 
+  /// Commits without a section (whole-document edits) are grouped as 'document'.
+  String _sectionKey(Map<String, dynamic> c) =>
+      (c['section_id'] ?? 'document').toString();
+
   String _deltaLabel(List<Map<String, dynamic>> history, int index) {
     final current = history[index];
-    final words = _wordCount(current['content'] as String?);
+    final content = current['content'] as String?;
+
+    // Whole-document commit with no stored text: nothing to count.
+    if (content == null && current['section_id'] == null) {
+      return 'Document updated';
+    }
+
+    final words = _wordCount(content);
     // History is oldest→newest from API; compare to previous commit in same section.
     Map<String, dynamic>? prev;
-    final sectionId = current['section_id'];
+    final key = _sectionKey(current);
     for (var i = index - 1; i >= 0; i--) {
-      if (history[i]['section_id'] == sectionId) {
+      if (_sectionKey(history[i]) == key) {
         prev = history[i];
         break;
       }
@@ -50,7 +64,16 @@ class _ProjectVersionHistoryTabState extends State<ProjectVersionHistoryTab> {
   }
 
   Future<void> _restore(Map<String, dynamic> commit) async {
-    final sectionId = commit['section_id'] as String;
+    final sectionId = commit['section_id']?.toString();
+    if (sectionId == null || sectionId.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Whole-document versions cannot be restored yet'),
+          backgroundColor: Color(0xFFEF4444),
+        ),
+      );
+      return;
+    }
     final sectionName = commit['section_name'] as String? ?? sectionId;
     final commitId = commit['id'] as int;
     final version = commit['version_number'];
@@ -59,7 +82,8 @@ class _ProjectVersionHistoryTabState extends State<ProjectVersionHistoryTab> {
       context: context,
       builder: (_) => AlertDialog(
         backgroundColor: const Color(0xFF1A1F2E),
-        title: const Tr('Restore this version?',
+        title: const Tr(
+          'Restore this version?',
           style: TextStyle(color: Colors.white),
         ),
         content: Text(
@@ -81,6 +105,7 @@ class _ProjectVersionHistoryTabState extends State<ProjectVersionHistoryTab> {
       ),
     );
     if (confirm != true) return;
+    if (!mounted) return;
 
     final vc = context.read<CollaborationProvider>();
     final ok = await vc.rollbackFromProjectHistory(
@@ -119,7 +144,8 @@ class _ProjectVersionHistoryTabState extends State<ProjectVersionHistoryTab> {
     }
     if (history.isEmpty) {
       return const Center(
-        child: Tr('No versions yet',
+        child: Tr(
+          'No versions yet',
           style: TextStyle(color: Color(0xFF94A3B8)),
         ),
       );
@@ -131,6 +157,7 @@ class _ProjectVersionHistoryTabState extends State<ProjectVersionHistoryTab> {
     return RefreshIndicator(
       onRefresh: _load,
       child: ListView.builder(
+        physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.all(16),
         itemCount: history.length,
         itemBuilder: (_, i) {
@@ -138,9 +165,13 @@ class _ProjectVersionHistoryTabState extends State<ProjectVersionHistoryTab> {
           final apiIndex = apiOrder.indexWhere((e) => e['id'] == c['id']);
           final type = c['commit_type'] as String? ?? 'save';
           final typeColor = _typeColor(type);
-          final summary = (c['message'] as String?)?.trim().isNotEmpty == true
-              ? c['message'] as String
-              : _deltaLabel(apiOrder, apiIndex >= 0 ? apiIndex : 0);
+          final message = (c['message'] as String?)?.trim() ?? '';
+          final summary = message.isNotEmpty
+              ? message
+              : (apiIndex >= 0 ? _deltaLabel(apiOrder, apiIndex) : 'Updated');
+          final title =
+              c['section_name'] ?? c['section_id'] ?? 'Whole document';
+          final canRestore = c['section_id'] != null;
 
           return Card(
             color: const Color(0xFF1A1F2E),
@@ -166,7 +197,7 @@ class _ProjectVersionHistoryTabState extends State<ProjectVersionHistoryTab> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              '${c['section_name'] ?? c['section_id']} · v${c['version_number']}',
+                              '$title · v${c['version_number'] ?? '?'}',
                               style: const TextStyle(
                                 color: Colors.white,
                                 fontSize: 13,
@@ -203,25 +234,31 @@ class _ProjectVersionHistoryTabState extends State<ProjectVersionHistoryTab> {
                   const SizedBox(height: 10),
                   Text(
                     summary,
-                    style: const TextStyle(color: Color(0xFFCBD5E1), fontSize: 12),
+                    style: const TextStyle(
+                      color: Color(0xFFCBD5E1),
+                      fontSize: 12,
+                    ),
                   ),
-                  const SizedBox(height: 12),
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: ElevatedButton.icon(
-                      onPressed: () => _restore(c),
-                      icon: const Icon(Icons.restore, size: 14),
-                      label: const Tr('Restore this version',
-                        style: TextStyle(fontSize: 12),
-                      ),
-                      style: ElevatedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 6,
+                  if (canRestore) ...[
+                    const SizedBox(height: 12),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: ElevatedButton.icon(
+                        onPressed: () => _restore(c),
+                        icon: const Icon(Icons.restore, size: 14),
+                        label: const Tr(
+                          'Restore this version',
+                          style: TextStyle(fontSize: 12),
+                        ),
+                        style: ElevatedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 6,
+                          ),
                         ),
                       ),
                     ),
-                  ),
+                  ],
                 ],
               ),
             ),

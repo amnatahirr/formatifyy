@@ -44,12 +44,12 @@ class _DocumentEditorScreenState extends State<DocumentEditorScreen> {
   List<Map<String, dynamic>> _original = [];
   List<Map<String, dynamic>> _edited = [];
   Map<String, dynamic>? _selected;
-
-Map<String, dynamic>? _lastSelected;
+  Map<String, dynamic>? _lastSelected;
 
   final _message = TextEditingController();
   final List<_PendingImage> _images = [];
 
+  /// True only after the user really changed text in the panel.
   bool _dirty = false;
   bool _saving = false;
 
@@ -181,75 +181,92 @@ Map<String, dynamic>? _lastSelected;
 
   // ── images ─────────────────────────────────────────────────────────────────
 
-Future<int?> _chooseAnchorDialog(List<Map<String, dynamic>> o) {
-  return showDialog<int>(
-    context: context,
-    builder: (ctx) => AlertDialog(
-      title: const Text('Insert image after…'),
-      content: SizedBox(
-        width: 520,
-        height: 420,
-        child: ListView(
-          children: [
-            ListTile(
-              leading: const Icon(Icons.vertical_align_bottom),
-              title: const Text('End of document'),
-              onTap: () => Navigator.pop(ctx, -1),
-            ),
-            const Divider(),
-            for (var i = 0; i < o.length; i++)
+  Future<int?> _chooseAnchorDialog(List<Map<String, dynamic>> o) {
+    return showDialog<int>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Insert image after…'),
+        content: SizedBox(
+          width: 520,
+          height: 420,
+          child: ListView(
+            children: [
               ListTile(
-                dense: true,
-                title: Text(
-                  _orig(o[i]),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                onTap: () => Navigator.pop(ctx, i),
+                leading: const Icon(Icons.vertical_align_bottom),
+                title: const Text('End of document'),
+                onTap: () => Navigator.pop(ctx, -1),
               ),
-          ],
+              const Divider(),
+              for (var i = 0; i < o.length; i++)
+                ListTile(
+                  dense: true,
+                  title: Text(
+                    _orig(o[i]),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  onTap: () => Navigator.pop(ctx, i),
+                ),
+            ],
+          ),
         ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+        ],
       ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(ctx),
-          child: const Text('Cancel'),
-        ),
-      ],
-    ),
-  );
-}
-
-Future<void> _pickImage() async {
-  final o = _originalTexts();
-  if (o.isEmpty) {
-    _msg('Document abhi load ho raha hai, thori der baad try karo.');
-    return;
-  }
-  final choice = await _chooseAnchorDialog(o);
-  if (choice == null) return; // cancel
-
-  Map<String, dynamic>? anchor;
-  var label = 'end of document';
-  if (choice >= 0) {
-    final occ = _occurrences(o);
-    final t = _orig(o[choice]);
-    anchor = {'match': t, 'occurrence': occ[choice]};
-    label = 'after "${t.length > 40 ? '${t.substring(0, 40)}…' : t}"';
+    );
   }
 
-  final res = await FilePicker.platform.pickFiles(type: FileType.image);
-  final path = res?.files.single.path;
-  if (path == null) return;
-  setState(() {
-    _images.add(_PendingImage(path, res!.files.single.name, anchor, label));
-  });
-}
+  Future<void> _pickImage() async {
+    final o = _originalTexts();
+    if (o.isEmpty) {
+      _msg('Document abhi load ho raha hai, thori der baad try karo.');
+      return;
+    }
+    final choice = await _chooseAnchorDialog(o);
+    if (choice == null) return; // cancel
+
+    Map<String, dynamic>? anchor;
+    var label = 'end of document';
+    if (choice >= 0) {
+      final occ = _occurrences(o);
+      final t = _orig(o[choice]);
+      anchor = {'match': t, 'occurrence': occ[choice]};
+      label = 'after "${t.length > 40 ? '${t.substring(0, 40)}…' : t}"';
+    }
+
+    final res = await FilePicker.platform.pickFiles(type: FileType.image);
+    final path = res?.files.single.path;
+    if (path == null) return;
+    setState(() {
+      _images.add(_PendingImage(path, res!.files.single.name, anchor, label));
+    });
+  }
 
   // ── actions ────────────────────────────────────────────────────────────────
 
   Future<void> _save() async {
-    final ops = _buildTextOps();
+    // FIX: only diff text when the user actually edited text. If only images
+    // were added, _edited is empty and the diff would delete EVERY paragraph.
+    final ops = (_dirty && _edited.isNotEmpty)
+        ? _buildTextOps()
+        : <Map<String, dynamic>>[];
+
+    // Safety net: never send "delete the whole document" by accident.
+    final originalCount = _originalTexts().length;
+    final deleteCount = ops.where((o) => o['op'] == 'delete').length;
+    final hasInsertOrReplace =
+        ops.any((o) => o['op'] == 'insert_after' || o['op'] == 'replace');
+    if (originalCount > 0 &&
+        deleteCount >= originalCount &&
+        !hasInsertOrReplace) {
+      _msg('Save blocked: this would delete the whole document text.');
+      return;
+    }
+
     for (var i = 0; i < _images.length; i++) {
       ops.add({
         'op': 'insert_image',
@@ -260,6 +277,24 @@ Future<void> _pickImage() async {
     if (ops.isEmpty) {
       _msg('No changes to save');
       return;
+    }
+
+    // Default commit message so Version History shows something meaningful.
+    var message = _message.text.trim();
+    if (message.isEmpty) {
+      final textChanges = ops
+          .where((o) => o['op'] != 'insert_image')
+          .length;
+      final parts = <String>[];
+      if (textChanges > 0) {
+        parts.add('Edited text ($textChanges change${textChanges == 1 ? '' : 's'})');
+      }
+      if (_images.isNotEmpty) {
+        parts.add(
+          'Added ${_images.length} image${_images.length == 1 ? '' : 's'}',
+        );
+      }
+      message = parts.join(' · ');
     }
 
     setState(() => _saving = true);
@@ -273,7 +308,7 @@ Future<void> _pickImage() async {
       );
       req.headers.addAll(ApiConfig.getHeaders());
       req.fields['ops'] = jsonEncode(ops);
-      req.fields['message'] = _message.text.trim();
+      req.fields['message'] = message;
       for (final img in _images) {
         req.files.add(await http.MultipartFile.fromPath('images', img.path));
       }
@@ -395,7 +430,8 @@ Future<void> _pickImage() async {
               ),
             ],
             const SizedBox(height: 6),
-            const Tr('Click a paragraph to edit it. To add an image, click the paragraph it should go after, then "Add image". Tables and existing images stay as they are.',
+            const Tr(
+              'Click a paragraph to edit it. To add an image, click the paragraph it should go after, then "Add image". Tables and existing images stay as they are.',
               style: TextStyle(color: Color(0xFF64748B), fontSize: 11),
             ),
             const SizedBox(height: 10),
@@ -408,7 +444,8 @@ Future<void> _pickImage() async {
                   }
                   if (_source.isEmpty) {
                     return const Center(
-                      child: Tr('Could not load the document for editing.',
+                      child: Tr(
+                        'Could not load the document for editing.',
                         style: TextStyle(color: Color(0xFF94A3B8)),
                       ),
                     );
@@ -429,10 +466,9 @@ Future<void> _pickImage() async {
                       showOriginalInitially: false,
                       onBlocksReady: (b) => _original = b,
                       onBlockSelected: (b) {
-  debugPrint('[editor] onBlockSelected: ${b == null ? "NULL" : (b['text'] ?? b['title'])}');
-  _selected = b;
-  if (b != null) _lastSelected = b;
-},
+                        _selected = b;
+                        if (b != null) _lastSelected = b;
+                      },
                       onBlocksChanged: (b) {
                         _edited = b;
                         if (!_dirty && mounted) setState(() => _dirty = true);
