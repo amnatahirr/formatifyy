@@ -5,7 +5,7 @@ For each threshold: % of lines sent to Claude, accuracy on the lines kept
 locally, and % of the local model's errors that would reach Claude.
 
 Data:
-  - gold-2 (results/real_docs/gold2_template.csv) once 'my_label' is filled.
+  - gold-2 (results/real_docs/gold2_all.csv): only the rows with my_label filled so far.
     This is the real use case (unformatted Word files).
   - gold STRIPPED until then (formatting removed, so every document is flat
     and the flat-document factor is applied).
@@ -67,8 +67,12 @@ def gold_stripped():
 
 
 def gold2(path):
-    rows = list(csv.DictReader(open(path, encoding="utf-8")))
-    if not rows or not all(r["my_label"].strip() in LABELS for r in rows):
+    """Uses only the rows you have labelled so far (my_label = H1/H2/H3/Body/Caption)."""
+    all_rows = list(csv.DictReader(open(path, encoding="utf-8")))
+    rows = [r for r in all_rows if r["my_label"].strip() in LABELS]
+    print(f"gold-2: {len(rows)} of {len(all_rows)} rows labelled "
+          f"({', '.join(sorted({r['file'] for r in rows})) or 'none'})")
+    if not rows:
         return None
     from pipeline.parser import parse_file
     y, pred, conf = [], [], []
@@ -88,12 +92,12 @@ def gold2(path):
 def main():
     OUT.mkdir(parents=True, exist_ok=True)
     result = {}
-    g2 = gold2(HERE / "results/real_docs/gold2_template.csv")
+    g2 = gold2(HERE / "results/real_docs/gold2_all.csv")
     if g2:
         result["gold2"] = table(*g2)
         show("GOLD-2 (your unformatted files)", result["gold2"], len(g2[0]))
     else:
-        print("gold-2 not filled yet (my_label must be H1/H2/H3/Body/Caption on every row) - using gold stripped.")
+        print("gold-2 has no labelled rows yet - using gold stripped only.")
     gs = gold_stripped()
     result["gold_stripped"] = table(*gs)
     show(f"GOLD STRIPPED (flat factor x{FLAT_DOC_CONFIDENCE_FACTOR} applied)", result["gold_stripped"], len(gs[0]))

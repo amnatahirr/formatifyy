@@ -1,4 +1,54 @@
 {
+  "gold2": [
+    {
+      "threshold": 0.5,
+      "sent_to_claude_pct": 2.2,
+      "accuracy_on_kept": 0.8864,
+      "errors_sent_to_claude_pct": 16.7
+    },
+    {
+      "threshold": 0.6,
+      "sent_to_claude_pct": 2.2,
+      "accuracy_on_kept": 0.8864,
+      "errors_sent_to_claude_pct": 16.7
+    },
+    {
+      "threshold": 0.7,
+      "sent_to_claude_pct": 8.9,
+      "accuracy_on_kept": 0.9024,
+      "errors_sent_to_claude_pct": 33.3
+    },
+    {
+      "threshold": 0.75,
+      "sent_to_claude_pct": 13.3,
+      "accuracy_on_kept": 0.9487,
+      "errors_sent_to_claude_pct": 66.7
+    },
+    {
+      "threshold": 0.8,
+      "sent_to_claude_pct": 15.6,
+      "accuracy_on_kept": 0.9737,
+      "errors_sent_to_claude_pct": 83.3
+    },
+    {
+      "threshold": 0.85,
+      "sent_to_claude_pct": 100.0,
+      "accuracy_on_kept": null,
+      "errors_sent_to_claude_pct": 100.0
+    },
+    {
+      "threshold": 0.9,
+      "sent_to_claude_pct": 100.0,
+      "accuracy_on_kept": null,
+      "errors_sent_to_claude_pct": 100.0
+    },
+    {
+      "threshold": 0.95,
+      "sent_to_claude_pct": 100.0,
+      "accuracy_on_kept": null,
+      "errors_sent_to_claude_pct": 100.0
+    }
+  ],
   "gold_stripped": [
     {
       "threshold": 0.5,
