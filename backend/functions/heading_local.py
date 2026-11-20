@@ -32,8 +32,20 @@ PAGE_FOOTER = re.compile(r"^\s*(page\s*\d+|\d+\s+of\s+\d+)\b", re.I)
 TOC_LEADER = re.compile(r"(\.\s*){5,}")
 BULLET = re.compile(r"^\s*([•\-–*●▪◦]|[a-z]\)|\(?[ivx]+\))\s+", re.I)
 
-DEFAULT_MODEL_PATH = Path(__file__).resolve().parents[2] / "brain" / "ml" / "models" / "headings_xgb.json"
-MODEL_PATH = Path(os.getenv("HEADINGS_MODEL_PATH", str(DEFAULT_MODEL_PATH)))
+ML_DIR = Path(__file__).resolve().parents[2] / "brain" / "ml"
+DEFAULT_MODEL_PATH = ML_DIR / "models" / "headings_xgb.json"
+
+
+def _model_path() -> Path:
+    """HEADINGS_MODEL_PATH may be absolute, or relative like 'models/headings_xgb_v2.json'
+    (then it is looked up inside brain/ml/, so it works from any folder)."""
+    p = Path(os.getenv("HEADINGS_MODEL_PATH", str(DEFAULT_MODEL_PATH)))
+    if not p.is_absolute() and not p.exists():
+        p = ML_DIR / p
+    return p
+
+
+MODEL_PATH = _model_path()
 
 
 # ── Shared helpers ───────────────────────────────────────────────────────────
