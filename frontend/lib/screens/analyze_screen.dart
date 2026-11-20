@@ -243,6 +243,8 @@ late final AuthProvider _auth;
   List<Map<String, dynamic>> _templateHeadingMatches = [];
   final Set<String> _applyingTemplateHeadingFixes = {};
   final Set<String> _appliedTemplateHeadingFixes = {};
+  // Level the user picked for a suggested (not-in-template) heading, by paragraph_id
+  final Map<String, int> _extraHeadingLevel = {};
   bool _applyingAllTemplateHeadings = false;
 
   // ── Document lists (TOC / LOT / LOF) state ────────────────────────────────
@@ -492,6 +494,7 @@ void dispose() {
     _addingMissing.clear();
     _flashGhostId = null;
     _appliedTemplateHeadingFixes.clear();
+    _extraHeadingLevel.clear();
     _ignoredIssueIds.clear();
     _resolvedIssueIds.clear();
   }
@@ -584,6 +587,9 @@ void dispose() {
     return out;
   }
 
+  String _detectorName(Map<String, dynamic> match) =>
+      match['detected_by'] == 'model' ? 'heading model' : 'Claude';
+
   int _headingLevelFromMatch(Map<String, dynamic> match) {
     final fromExpected = match['expected_level'];
     if (fromExpected is num) return fromExpected.toInt();
@@ -623,7 +629,7 @@ void dispose() {
     setState(() => _applyingTemplateHeadingFixes.add(pid));
     try {
       final auth = context.read<AuthProvider>();
-      final level = _headingLevelFromMatch(match);
+      final level = _extraHeadingLevel[pid] ?? _headingLevelFromMatch(match);
       final resp = await http.post(
         Uri.parse(
           '$_baseUrl/documents/heading-decision/${widget.documentId}?user_id=${auth.userId}',
@@ -658,8 +664,10 @@ void dispose() {
                 'status': 'ok',
                 'current_type': 'heading',
                 'current_level': level,
+                'level': 'h$level',
+                'expected_level': level,
                 'fix_description':
-                    'Kept as Heading $level (detected by Claude; not in template).',
+                    'Added as Heading $level (${_detectorName(match)} suggestion; not in template).',
               };
             } else {
               _appliedTemplateHeadingFixes.remove(pid);
@@ -702,7 +710,7 @@ void dispose() {
     if (match['source'] == 'claude_only' &&
         (decision == 'pending' || decision.isEmpty || decision == 'discard')) {
       _showSnack(
-        'Confirm this Claude-detected heading with Keep first.',
+        'Add this suggested heading first (choose its level).',
         _yellow,
       );
       return;
@@ -2891,8 +2899,8 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
           if (headingMatches.isNotEmpty) ...[
             _buildInfoBanner(
               'Template Heading Analysis',
-              'Headings are detected by Claude, then cross-checked against your template. '
-                  'Extra headings not in the template need Keep or Discard before styling.',
+              'Headings are detected by the heading model, then matched against your template. '
+                  'Suggested headings are not in the template: choose a level and Add, or Discard.',
               _blue,
             ),
             const SizedBox(height: 12),
@@ -2950,7 +2958,7 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
   Widget _buildTemplateHeadingCard(Map<String, dynamic> match) {
     final pid = match['paragraph_id'] as String? ?? '';
     final text = match['text'] as String? ?? '';
-    final level = _headingLevelFromMatch(match);
+    final level = _extraHeadingLevel[pid] ?? _headingLevelFromMatch(match);
     final matched = match['matched_template_heading'] as String?;
     final source = match['source'] as String? ?? '';
     final userDecision =
@@ -3060,7 +3068,13 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
                         runSpacing: 4,
                         children: [
                           _Tag('H$level', _blue),
-                          if (isClaudeExtra) _Tag('Claude extra', _yellow),
+                          if (isClaudeExtra)
+                            _Tag(
+                              match['detected_by'] == 'model'
+                                  ? 'Suggested by model'
+                                  : 'Suggested by Claude',
+                              _yellow,
+                            ),
                           if (isUnnumberedSub)
                             _Tag('Unnumbered sub-heading', _purple),
                           if (matched != null) _Tag(matched, _purple),
@@ -3089,6 +3103,31 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
             ],
             if (isPendingExtra || isDiscarded) ...[
               const SizedBox(height: 12),
+              Wrap(
+                spacing: 6,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  Text(
+                    'Add as:',
+                    style: TextStyle(color: _textSec, fontSize: 12),
+                  ),
+                  for (final l in const [1, 2, 3, 4])
+                    ChoiceChip(
+                      label: Text('Heading $l'),
+                      selected: level == l,
+                      onSelected: isApplying
+                          ? null
+                          : (_) => setState(() => _extraHeadingLevel[pid] = l),
+                      selectedColor: _blue.withOpacity(0.25),
+                      labelStyle: TextStyle(
+                        color: level == l ? _blue : _textSec,
+                        fontSize: 11,
+                      ),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                ],
+              ),
+              const SizedBox(height: 10),
               Row(
                 children: [
                   Expanded(
@@ -3106,7 +3145,7 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
                               ),
                             )
                           : const Icon(Icons.check, size: 16),
-                      label: Text(isDiscarded ? 'Keep as heading' : 'Keep'),
+                      label: Text('Add as Heading $level'),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: _green,
                         foregroundColor: Colors.white,

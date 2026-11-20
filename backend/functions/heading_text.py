@@ -120,22 +120,27 @@ def text_context_features(texts: Sequence[str]) -> List[List[float]]:
 
 # ── Model + live app entry point ─────────────────────────────────────────────
 
-DEFAULT_V3_PATH = ML_DIR / "models" / "headings_xgb_v3.json"
+# v4 has the same features as v3 (drop-in), trained to also find unnumbered headings.
+DEFAULT_V3_PATH = ML_DIR / "models" / "headings_xgb_v4.json"
 _MODEL = None
 
 
 def load_model_v3(path: Optional[Path] = None):
     global _MODEL
     if _MODEL is None:
-        from xgboost import XGBClassifier
+        # numpy tree walker, NOT xgboost's native lib: in the app xgboost's OpenMP
+        # clashes with torch's and crashes the server (see functions/xgb_numpy.py)
+        from functions.xgb_numpy import NumpyXGBClassifier
         p = Path(path or os.getenv("HEADINGS_V3_MODEL_PATH", str(DEFAULT_V3_PATH)))
         if not p.is_absolute() and not p.exists():
             p = ML_DIR / p
         if not p.exists():
-            raise FileNotFoundError(f"No v3 model at {p}. Run brain/ml/train_headings_v3.py first.")
-        m = XGBClassifier()
-        m.load_model(str(p))
-        _MODEL = m
+            print(f"[heading_text] HEADINGS_V3_MODEL_PATH={p} not found, using {DEFAULT_V3_PATH}")
+            p = DEFAULT_V3_PATH
+        if not p.exists():
+            raise FileNotFoundError(f"No heading model at {p}. Run brain/ml/train_headings_v4.py first.")
+        print(f"[heading_text] loaded heading model {p.name}")
+        _MODEL = NumpyXGBClassifier(p)
     return _MODEL
 
 
@@ -206,3 +211,60 @@ async def detect_headings_text(
     if flat:
         print(f"[heading_text] flat document: confidences x{factor}")
     return await apply_claude_fallback(client, blocks, results, template, threshold)
+
+
+async def heading_candidates(
+    client: Any,
+    blocks: Sequence[Any],
+    template: Optional[Dict[str, Any]] = None,
+    *,
+    threshold: Optional[float] = None,
+) -> List[Dict[str, Any]]:
+    """The model's headings in the shape docx_tools.heading_analysis expects:
+    [{paragraph_id, block_id, level, confidence, text, detector}].
+    detector = "model", or "claude" when the line was below the threshold and
+    Claude decided it."""
+    from engine import THRESHOLDS
+    thr = THRESHOLDS["headings"] if threshold is None else threshold
+    results = await detect_headings_text(client, blocks, template, threshold=thr)
+    out = []
+    for i, (b, r) in enumerate(zip(blocks, results)):
+        label = r.get("label") or ""
+        if not (label.startswith("H") and label[1:].isdigit()):
+            continue
+        out.append({
+            "paragraph_id": getattr(b, "paragraph_id", "") or "",
+            "block_id": getattr(b, "block_id", i),
+            "level": int(label[1:]),
+            "confidence": r.get("confidence") if r.get("confidence") is not None else 0.85,
+            "text": getattr(b, "text", "") or "",
+            "detector": "claude" if r.get("used_fallback") else "model",
+        })
+    return out
+
+
+async def detect_heading_candidates(
+    client: Any,
+    blocks: Sequence[Any],
+    template: Optional[Dict[str, Any]] = None,
+) -> List[Dict[str, Any]]:
+    """ONE place that decides who finds headings, used by every analysis step.
+
+    HEADINGS_DETECTOR=model (default): our heading model; only lines below
+        HEADINGS_THRESHOLD go to Claude (HEADINGS_THRESHOLD=0 -> no Claude at all).
+    HEADINGS_DETECTOR=claude: the old Claude-only detection.
+    If the model cannot run, Claude is used so analysis never breaks.
+    """
+    from functions.heading_detect import detect_headings_with_claude
+    if os.getenv("HEADINGS_DETECTOR", "model").strip().lower() == "claude":
+        return await detect_headings_with_claude(client, blocks, template)
+    try:
+        cands = await heading_candidates(client, blocks, template)
+    except Exception as exc:
+        print(f"[heading_text] heading model failed, using Claude instead "
+              f"(on macOS run `brew install libomp`): {exc}")
+        return await detect_headings_with_claude(client, blocks, template)
+    n_claude = sum(c["detector"] == "claude" for c in cands)
+    print(f"[heading_text] heading model found {len(cands)} heading(s) in {len(blocks)} "
+          f"paragraph(s) ({n_claude} decided by Claude)")
+    return cands

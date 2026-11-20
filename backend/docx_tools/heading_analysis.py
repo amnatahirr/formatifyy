@@ -242,6 +242,14 @@ def _content_tokens(text: str) -> set[str]:
     }
 
 
+def _singular(norm: str) -> str:
+    """'requirements analysis' -> 'requirement analysis' (drop a plural 's')."""
+    return " ".join(
+        w[:-1] if len(w) > 3 and w.endswith("s") and not w.endswith("ss") else w
+        for w in norm.split()
+    )
+
+
 def _text_match_score(text: str, template_name: str) -> float:
     """
     Soft match score between document heading text and an admin template name.
@@ -256,6 +264,9 @@ def _text_match_score(text: str, template_name: str) -> float:
         return 0.0
     if norm_text == norm_name:
         return 1.0
+    # Singular/plural only: "Requirements Analysis" == "Requirement Analysis"
+    if _singular(norm_text) == _singular(norm_name):
+        return 0.95
     if _synonym_match(norm_text, norm_name):
         return 0.9
 
@@ -1062,9 +1073,11 @@ def analyze_headings(
     include_missing: bool = False,
     claude_candidates: Optional[List[Dict[str, Any]]] = None,
     user_decisions: Optional[Dict[str, str]] = None,
+    user_levels: Optional[Dict[str, int]] = None,
 ) -> List[Dict[str, Any]]:
     """
     Detect headings, cross-check against the template, assign levels.
+    user_levels: level the user chose when keeping a suggested heading.
 
     When ``claude_candidates`` is provided, Claude detections are seeded first,
     then Pass A (template) + rule negatives cross-check. Extra Claude headings
@@ -1165,6 +1178,8 @@ def analyze_headings(
             "source": source,
             "user_decision": None,
             "detected_by_claude": bool(claude) and not negative,
+            # "model" = local heading model, "claude" = Claude (API or low-confidence fallback)
+            "detected_by": (claude.get("detector") or "claude") if (claude and not negative) else None,
         }
         if is_heading:
             heading_indices.append(len(results))
@@ -1280,6 +1295,9 @@ def analyze_headings(
         if row.get("source") == "claude_only":
             if decision in ("keep", "discard"):
                 row["user_decision"] = decision
+            chosen = (user_levels or {}).get(str(pid))
+            if decision == "keep" and chosen:
+                row["level"] = _level_label(int(chosen))
             else:
                 row["user_decision"] = "pending"
             if decision == "discard":
@@ -1308,6 +1326,7 @@ def analyze_document_headings(
     include_missing: bool = True,
     claude_candidates: Optional[List[Dict[str, Any]]] = None,
     user_decisions: Optional[Dict[str, str]] = None,
+    user_levels: Optional[Dict[str, int]] = None,
 ) -> List[Dict[str, Any]]:
     """Analyze all paragraphs in a DocumentModel and enrich results for the API."""
     blocks = blocks_from_document(doc)
@@ -1317,6 +1336,7 @@ def analyze_document_headings(
         include_missing=False,
         claude_candidates=claude_candidates,
         user_decisions=user_decisions,
+        user_levels=user_levels,
     )
 
     enriched: List[Dict[str, Any]] = []
@@ -1363,6 +1383,42 @@ async def analyze_document_headings_with_claude(
         include_missing=include_missing,
         claude_candidates=candidates or None,
         user_decisions=user_decisions,
+    )
+
+
+async def analyze_document_headings_with_model(
+    doc: DocumentModel,
+    template: Optional[Dict[str, Any]] = None,
+    client: Any = None,
+    *,
+    include_missing: bool = True,
+    user_decisions: Optional[Dict[str, str]] = None,
+    user_levels: Optional[Dict[str, int]] = None,
+) -> List[Dict[str, Any]]:
+    """
+    Heading analysis driven by our trained heading model (brain/ml, v4).
+
+    1. The model labels every paragraph (text + context only). Lines it is
+       unsure about go to Claude when a client is available.
+    2. Its headings are the candidates for the same template cross-check as
+       the Claude path: headings that match the template take the template
+       level (source="matched"); the rest become suggestions
+       (source="claude_only", detected_by="model") for the user to keep or
+       discard.
+
+    If the model cannot run (e.g. xgboost/libomp missing), falls back to the
+    Claude path so analysis never breaks.
+    """
+    blocks = blocks_from_document(doc)
+    from functions.heading_text import detect_heading_candidates
+    candidates = await detect_heading_candidates(client, blocks, template)
+    return analyze_document_headings(
+        doc,
+        template,
+        include_missing=include_missing,
+        claude_candidates=candidates or None,
+        user_decisions=user_decisions,
+        user_levels=user_levels,
     )
 
 
@@ -1449,6 +1505,11 @@ def heading_plan_from_matches(matches: List[Dict[str, Any]]) -> Dict[int, Dict[s
     return plan
 
 
+def _detector_name(row: Dict[str, Any]) -> str:
+    """Who suggested an extra heading, for user-facing messages."""
+    return "the heading model" if row.get("detected_by") == "model" else "Claude"
+
+
 def _level_to_int(level: Optional[str]) -> Optional[int]:
     if not level or not str(level).lower().startswith("h"):
         return None
@@ -1513,8 +1574,8 @@ def enrich_matches_with_fix_status(
                 "fix_status": "awaiting_confirmation",
                 "fix_needed": False,
                 "fix_description": (
-                    f'Claude detected "{row.get("text", "")}" as a heading, but it is not '
-                    f"in the template outline. Keep it as a heading or discard it."
+                    f'{_detector_name(row).capitalize()} detected "{row.get("text", "")}" as a heading, but it is not '
+                    f"in the template outline. Add it as a heading (choose the level) or discard it."
                 ),
                 "expected_level": expected_level,
                 "current_type": current_type,
@@ -1556,7 +1617,7 @@ def enrich_matches_with_fix_status(
         elif source == "claude_only":
             fix_status = "claude_extra_ok"
             fix_description = (
-                f'Kept as Heading {expected_level} (detected by Claude; not in template).'
+                f'Kept as Heading {expected_level} (detected by {_detector_name(row)}; not in template).'
             )
         elif matched_name is None or source == "inferred":
             fix_status = "unmatched" if source != "inferred" else "inferred_ok"
@@ -1648,7 +1709,7 @@ def heading_matches_to_issues(matches: List[Dict[str, Any]]) -> List[Dict[str, A
         else:
             match_suffix = f' matching "{matched}"' if matched else ""
             if source == "claude_only":
-                extra_note = " (Claude-detected, kept by user)"
+                extra_note = f" ({_detector_name(match)}-detected, kept by user)"
             elif source == "inferred":
                 extra_note = " (structurally inferred)"
             else:

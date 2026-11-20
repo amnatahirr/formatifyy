@@ -136,6 +136,7 @@ from docx_tools.content_fixer import (
 from docx_tools.heading_analysis import (
     analyze_document_headings,
     analyze_document_headings_with_claude,
+    analyze_document_headings_with_model,
     analyze_headings,
     blocks_from_dicts,
     enrich_matches_with_fix_status,
@@ -1110,13 +1111,34 @@ def _load_heading_decisions(document_id: int) -> Dict[str, str]:
     return {}
 
 
-def _save_heading_decision(document_id: int, paragraph_id: str, decision: str) -> Dict[str, str]:
+def _load_heading_levels(document_id: int) -> Dict[str, int]:
+    """Level the user chose when adding a suggested heading (paragraph_id -> 1..4)."""
+    path = _heading_decisions_path(document_id)
+    if not os.path.exists(path):
+        return {}
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            levels = (json.load(f) or {}).get("levels") or {}
+        return {str(k): max(1, min(4, int(v))) for k, v in levels.items()}
+    except Exception as exc:
+        print(f"[heading_decisions] level load error (non-fatal): {exc}")
+    return {}
+
+
+def _save_heading_decision(
+    document_id: int, paragraph_id: str, decision: str, level: Optional[int] = None,
+) -> Dict[str, str]:
     decisions = _load_heading_decisions(document_id)
+    levels = _load_heading_levels(document_id)
     decisions[str(paragraph_id)] = decision
+    if decision == "keep" and level:
+        levels[str(paragraph_id)] = max(1, min(4, int(level)))
+    else:
+        levels.pop(str(paragraph_id), None)
     path = _heading_decisions_path(document_id)
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
-        json.dump({"decisions": decisions}, f, indent=2)
+        json.dump({"decisions": decisions, "levels": levels}, f, indent=2)
     return decisions
 
 
@@ -2325,7 +2347,7 @@ async def analyze_document_endpoint(document_id: int, user_id: int = Query(...))
         except Exception:
             pass
 
-    # Heading analysis — Claude-first detection, then template/rule cross-check
+    # Heading analysis — heading model detection, then template/rule cross-check
     # (body pages only — same front-matter skip as the AI analysis pipeline)
     template_heading_matches: List[Dict[str, Any]] = []
     if doc_model and tmpl:
@@ -2339,7 +2361,18 @@ async def analyze_document_endpoint(document_id: int, user_id: int = Query(...))
             except Exception as exc:
                 print(f"[analyze] AI client unavailable for heading detect: {exc}")
 
-            if client is not None:
+            # HEADINGS_DETECTOR=model (default): our trained heading model finds
+            # the headings, Claude only checks the lines the model is unsure of.
+            # HEADINGS_DETECTOR=claude: the old Claude-first detection.
+            if os.getenv("HEADINGS_DETECTOR", "model").strip().lower() != "claude":
+                template_heading_matches = await analyze_document_headings_with_model(
+                    heading_doc,
+                    tmpl,
+                    client,
+                    user_decisions=decisions,
+                    user_levels=_load_heading_levels(document_id),
+                )
+            elif client is not None:
                 template_heading_matches = await analyze_document_headings_with_claude(
                     heading_doc,
                     tmpl,
@@ -2670,7 +2703,7 @@ async def heading_decision_endpoint(
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
 
-    decisions = _save_heading_decision(document_id, pid, decision)
+    decisions = _save_heading_decision(document_id, pid, decision, body.heading_level)
     result: Dict[str, Any] = {
         "success": True,
         "paragraph_id": pid,

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, Optional
 
-from functions.heading_detect import detect_headings_with_claude
+from functions.heading_text import detect_heading_candidates
 from functions.heading_resolver import resolve_headings, style_level
 
 
@@ -36,10 +36,10 @@ async def build_outline(
     try:
         llm = {
             c["paragraph_id"]: c
-            for c in await detect_headings_with_claude(client, blocks, template)
+            for c in await detect_heading_candidates(client, blocks, template)
         }
     except Exception as exc:
-        print(f"[outline] LLM detection failed, using styles only: {exc}")
+        print(f"[outline] heading detection failed, using styles only: {exc}")
         llm = {}
 
     cands = []
