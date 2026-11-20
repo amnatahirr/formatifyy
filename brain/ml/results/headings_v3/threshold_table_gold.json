@@ -1,51 +1,54 @@
 {
+  "gold2_excluded_files": [
+    "test3.docx"
+  ],
   "gold2": [
     {
       "threshold": 0.5,
-      "sent_to_claude_pct": 2.2,
-      "accuracy_on_kept": 0.8864,
-      "errors_sent_to_claude_pct": 16.7
+      "sent_to_claude_pct": 0.8,
+      "accuracy_on_kept": 0.9533,
+      "errors_sent_to_claude_pct": 6.7
     },
     {
       "threshold": 0.6,
-      "sent_to_claude_pct": 2.2,
-      "accuracy_on_kept": 0.8864,
-      "errors_sent_to_claude_pct": 16.7
+      "sent_to_claude_pct": 4.1,
+      "accuracy_on_kept": 0.9638,
+      "errors_sent_to_claude_pct": 30.0
     },
     {
       "threshold": 0.7,
-      "sent_to_claude_pct": 8.9,
-      "accuracy_on_kept": 0.9024,
-      "errors_sent_to_claude_pct": 33.3
+      "sent_to_claude_pct": 6.4,
+      "accuracy_on_kept": 0.9735,
+      "errors_sent_to_claude_pct": 50.0
     },
     {
       "threshold": 0.75,
-      "sent_to_claude_pct": 13.3,
-      "accuracy_on_kept": 0.9487,
-      "errors_sent_to_claude_pct": 66.7
+      "sent_to_claude_pct": 8.6,
+      "accuracy_on_kept": 0.9783,
+      "errors_sent_to_claude_pct": 60.0
     },
     {
       "threshold": 0.8,
-      "sent_to_claude_pct": 15.6,
-      "accuracy_on_kept": 0.9737,
-      "errors_sent_to_claude_pct": 83.3
+      "sent_to_claude_pct": 10.4,
+      "accuracy_on_kept": 0.9834,
+      "errors_sent_to_claude_pct": 70.0
     },
     {
       "threshold": 0.85,
-      "sent_to_claude_pct": 100.0,
-      "accuracy_on_kept": null,
-      "errors_sent_to_claude_pct": 100.0
+      "sent_to_claude_pct": 18.3,
+      "accuracy_on_kept": 0.9879,
+      "errors_sent_to_claude_pct": 80.0
     },
     {
       "threshold": 0.9,
-      "sent_to_claude_pct": 100.0,
-      "accuracy_on_kept": null,
-      "errors_sent_to_claude_pct": 100.0
+      "sent_to_claude_pct": 21.0,
+      "accuracy_on_kept": 0.9895,
+      "errors_sent_to_claude_pct": 83.3
     },
     {
       "threshold": 0.95,
-      "sent_to_claude_pct": 100.0,
-      "accuracy_on_kept": null,
+      "sent_to_claude_pct": 27.9,
+      "accuracy_on_kept": 1.0,
       "errors_sent_to_claude_pct": 100.0
     }
   ],

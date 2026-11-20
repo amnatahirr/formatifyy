@@ -66,9 +66,14 @@ def gold_stripped():
     return y, [p for p, _ in preds], [c * FLAT_DOC_CONFIDENCE_FACTOR for _, c in preds]
 
 
-def gold2(path):
-    """Uses only the rows you have labelled so far (my_label = H1/H2/H3/Body/Caption)."""
+def gold2(path, exclude=()):
+    """Uses only the rows you have labelled so far (my_label = H1/H2/H3/Body/Caption).
+    exclude: file names to leave out, e.g. ["test3.docx"]."""
     all_rows = list(csv.DictReader(open(path, encoding="utf-8")))
+    if exclude:
+        left_out = sorted({r["file"] for r in all_rows if Path(r["file"]).name in exclude})
+        print(f"gold-2: leaving out {left_out or 'nothing (no file matched)'}")
+        all_rows = [r for r in all_rows if Path(r["file"]).name not in exclude]
     rows = [r for r in all_rows if r["my_label"].strip() in LABELS]
     print(f"gold-2: {len(rows)} of {len(all_rows)} rows labelled "
           f"({', '.join(sorted({r['file'] for r in rows})) or 'none'})")
@@ -90,9 +95,15 @@ def gold2(path):
 
 
 def main():
+    import argparse
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--exclude", action="append", default=[],
+                    help="file name to leave out of gold-2, e.g. --exclude test3.docx (can repeat)")
+    args = ap.parse_args()
+
     OUT.mkdir(parents=True, exist_ok=True)
-    result = {}
-    g2 = gold2(HERE / "results/real_docs/gold2_all.csv")
+    result = {"gold2_excluded_files": args.exclude}
+    g2 = gold2(HERE / "results/real_docs/gold2_all.csv", args.exclude)
     if g2:
         result["gold2"] = table(*g2)
         show("GOLD-2 (your unformatted files)", result["gold2"], len(g2[0]))
