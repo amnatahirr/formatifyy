@@ -36,8 +36,9 @@ from functions.heading_local import FEATURES, LABELS, block_features, body_font_
 THRESHOLDS = [0.50, 0.60, 0.70, 0.80, 0.90, 0.95, 0.99]
 
 
-def load_dataset(labels_path: Path, parsed_dir: Path):
-    """Return {split: (X, y, rows)} for rows whose auto label is one of LABELS."""
+def load_dataset(labels_path: Path, parsed_dir: Path, unsure_as_body: bool = False):
+    """Return {split: (X, y, rows)} for rows whose auto label is one of LABELS.
+    unsure_as_body=True (v2): the 'Unsure' short bold lines are trained as Body."""
     raw = {}           # (report, idx) -> raw block
     body_of = {}       # report -> body font size
     for f in sorted(parsed_dir.glob("*.jsonl")):
@@ -51,7 +52,9 @@ def load_dataset(labels_path: Path, parsed_dir: Path):
     for line in open(labels_path, encoding="utf-8"):
         rec = json.loads(line)
         lab = rec["auto_label"]
-        if lab not in LABELS:                    # Noise / TOC / Front / Unsure are not trained on
+        if lab == "Unsure" and unsure_as_body:
+            lab = "Body"
+        if lab not in LABELS:                   # Noise / TOC / Front / Unsure are not trained on
             skipped[lab] += 1
             continue
         r = raw[(rec["report"], rec["idx"])]
@@ -93,13 +96,15 @@ def main():
     ap.add_argument("--parsed", default=str(HERE / "data/parsed"))
     ap.add_argument("--models", default=str(HERE / "models"))
     ap.add_argument("--results", default=str(HERE / "results/headings"))
+    ap.add_argument("--model_name", default="headings_xgb", help="v2: headings_xgb_v2")
+    ap.add_argument("--unsure_as_body", action="store_true", help="v2: train 'Unsure' lines as Body")
     args = ap.parse_args()
     models_dir, results_dir = Path(args.models), Path(args.results)
     models_dir.mkdir(parents=True, exist_ok=True)
     results_dir.mkdir(parents=True, exist_ok=True)
 
     t0 = time.time()
-    data, skipped = load_dataset(Path(args.labels), Path(args.parsed))
+    data, skipped = load_dataset(Path(args.labels), Path(args.parsed), args.unsure_as_body)
     (Xtr, ytr, mtr), (Xva, yva, mva) = data["train"], data["val"]
     print(f"Loaded in {time.time() - t0:.0f}s. Not trained on: {dict(skipped)}")
     for s in ("train", "val", "test"):
@@ -134,7 +139,8 @@ def main():
     f1, acc, depth, scheme, model = best
     print(f"\nChosen: depth={depth}, weights={scheme}  (val macro-F1 {f1:.4f}, acc {acc:.4f})")
 
-    model.save_model(str(models_dir / "headings_xgb.json"))
+    model_path = models_dir / f"{args.model_name}.json"
+    model.save_model(str(model_path))
     importance = dict(sorted(zip(FEATURES, map(float, model.feature_importances_)), key=lambda kv: -kv[1]))
     meta = {
         "labels": LABELS, "features": FEATURES,
@@ -142,9 +148,10 @@ def main():
                    "n_estimators": int(model.best_iteration + 1)},
         "val": {"macro_f1": round(float(f1), 4), "accuracy": round(float(acc), 4)},
         "feature_importance": {k: round(v, 4) for k, v in importance.items()},
-        "trained_on": "train split only, auto labels (noisy)",
+        "trained_on": "train split only, auto labels (noisy)"
+                      + ("; 'Unsure' lines trained as Body (v2, after one gold-informed fix)" if args.unsure_as_body else ""),
     }
-    (models_dir / "headings_xgb_meta.json").write_text(json.dumps(meta, indent=2))
+    (models_dir / f"{args.model_name}_meta.json").write_text(json.dumps(meta, indent=2))
 
     # Threshold table on VAL (to choose the fallback threshold).
     table = threshold_table(model.predict_proba(Xva), yva)
@@ -158,7 +165,7 @@ def main():
         print(f"  {r['threshold']:>9.2f} | {r['sent_to_claude_pct']:>10.2f}% | "
               f"{r['accuracy_on_kept']:>11.4f} | {r['macro_f1_on_kept']:>13.4f}")
     print("\nTop features:", ", ".join(f"{k} {v:.3f}" for k, v in list(importance.items())[:6]))
-    print(f"\nSaved model -> {models_dir/'headings_xgb.json'}  ({time.time() - t0:.0f}s total)")
+    print(f"\nSaved model -> {model_path}  ({time.time() - t0:.0f}s total)")
 
 
 if __name__ == "__main__":

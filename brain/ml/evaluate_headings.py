@@ -102,6 +102,8 @@ def main():
     ap.add_argument("--results", default=str(HERE / "results/headings"))
     ap.add_argument("--threshold", type=float, default=0.70)
     ap.add_argument("--claude_preds", default=None, help="optional CSV: report,idx,label")
+    ap.add_argument("--model", default=str(HERE / "models/headings_xgb.json"))
+    ap.add_argument("--version", default="v1 (before any gold-informed fix)")
     args = ap.parse_args()
     out = Path(args.results)
     out.mkdir(parents=True, exist_ok=True)
@@ -124,7 +126,7 @@ def main():
         xgb = predict_rows(feats, model)
         return rules, [l for l, _ in xgb], np.array([c for _, c in xgb])
 
-    model = load_model()
+    model = load_model(Path(args.model))
     split_of_group, group_of_report, view_a = {}, {}, []
     for line in open(args.labels, encoding="utf-8"):
         rec = json.loads(line)
@@ -133,7 +135,8 @@ def main():
         if rec["split"] == "test" and rec["auto_label"] in LABELS:
             view_a.append(((rec["report"], rec["idx"]), rec["auto_label"]))
 
-    metrics = {"threshold": args.threshold}
+    metrics = {"version": args.version, "model": Path(args.model).name, "threshold": args.threshold}
+    print(f"=== {args.version} | model {Path(args.model).name} ===")
 
     # ================= View A: test split vs auto labels =================
     keys, y = [k for k, _ in view_a], [lab for _, lab in view_a]
