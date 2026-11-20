@@ -1,0 +1,84 @@
+# Common section heading words/phrases in FYP reports.
+# One per line, lowercase. Lines starting with # are ignored.
+# Edit freely, then retrain v3 (brain/ml/train_headings_v3.py).
+abstract
+acknowledgement
+acknowledgements
+introduction
+background
+overview
+motivation
+problem statement
+problem definition
+objectives
+project objectives
+aims and objectives
+goals
+scope
+project scope
+limitations
+assumptions
+literature review
+related work
+existing system
+existing systems
+proposed system
+proposed solution
+methodology
+research methodology
+approach
+requirements
+requirement analysis
+requirements analysis
+functional requirements
+non functional requirements
+non-functional requirements
+system requirements
+hardware requirements
+software requirements
+use case
+use cases
+use case diagram
+system design
+design
+architecture
+system architecture
+database design
+class diagram
+sequence diagram
+activity diagram
+data flow diagram
+erd
+interface design
+user interface
+implementation
+tools and technologies
+development tools
+modules
+testing
+test cases
+system testing
+unit testing
+evaluation
+results
+results and discussion
+discussion
+conclusion
+conclusions
+future work
+future enhancements
+recommendations
+summary
+references
+bibliography
+appendix
+appendices
+glossary
+feasibility study
+risk analysis
+project plan
+gantt chart
+deployment
+maintenance
+sdlc
+software development life cycle
