@@ -1,0 +1,434 @@
+{
+  "threshold": 0.7,
+  "A_test_vs_auto_labels": {
+    "note": "Auto labels come from the rules, so Rules ~1.0 here by construction. Not the real score.",
+    "models": {
+      "Rules": {
+        "n": 32237,
+        "accuracy": 1.0,
+        "macro_f1": 1.0,
+        "heading_vs_not_f1": 1.0,
+        "per_class": {
+          "H1": {
+            "precision": 1.0,
+            "recall": 1.0,
+            "f1": 1.0,
+            "support": 476
+          },
+          "H2": {
+            "precision": 1.0,
+            "recall": 1.0,
+            "f1": 1.0,
+            "support": 1258
+          },
+          "H3": {
+            "precision": 1.0,
+            "recall": 1.0,
+            "f1": 1.0,
+            "support": 1198
+          },
+          "Body": {
+            "precision": 1.0,
+            "recall": 1.0,
+            "f1": 1.0,
+            "support": 26931
+          },
+          "Caption": {
+            "precision": 1.0,
+            "recall": 1.0,
+            "f1": 1.0,
+            "support": 2374
+          }
+        },
+        "confusion_matrix": {
+          "labels": [
+            "H1",
+            "H2",
+            "H3",
+            "Body",
+            "Caption"
+          ],
+          "matrix": [
+            [
+              476,
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              1258,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              1198,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              0,
+              26931,
+              0
+            ],
+            [
+              0,
+              0,
+              0,
+              0,
+              2374
+            ]
+          ]
+        }
+      },
+      "XGBoost": {
+        "n": 32237,
+        "accuracy": 0.9997,
+        "macro_f1": 0.9991,
+        "heading_vs_not_f1": 0.9988,
+        "per_class": {
+          "H1": {
+            "precision": 0.9979,
+            "recall": 1.0,
+            "f1": 0.999,
+            "support": 476
+          },
+          "H2": {
+            "precision": 0.9952,
+            "recall": 0.9992,
+            "f1": 0.9972,
+            "support": 1258
+          },
+          "H3": {
+            "precision": 0.9992,
+            "recall": 1.0,
+            "f1": 0.9996,
+            "support": 1198
+          },
+          "Body": {
+            "precision": 1.0,
+            "recall": 0.9997,
+            "f1": 0.9999,
+            "support": 26931
+          },
+          "Caption": {
+            "precision": 1.0,
+            "recall": 0.9996,
+            "f1": 0.9998,
+            "support": 2374
+          }
+        },
+        "confusion_matrix": {
+          "labels": [
+            "H1",
+            "H2",
+            "H3",
+            "Body",
+            "Caption"
+          ],
+          "matrix": [
+            [
+              476,
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              1,
+              1257,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              1198,
+              0,
+              0
+            ],
+            [
+              0,
+              6,
+              1,
+              26924,
+              0
+            ],
+            [
+              0,
+              0,
+              0,
+              1,
+              2373
+            ]
+          ]
+        }
+      }
+    },
+    "xgb_confident_only": {
+      "kept_pct": 99.99,
+      "accuracy": 0.9998
+    }
+  },
+  "B_gold": {
+    "note": "Hand-labelled lines from test projects only. THIS is the score to report.",
+    "leakage_check": {
+      "gold_projects": 39,
+      "in_train_or_val": 0,
+      "passed": true
+    },
+    "text_alignment_mismatches": 2,
+    "rows_used": 395,
+    "rows_excluded_by_gold_label": {
+      "Unsure": 1
+    },
+    "gold_label_counts": {
+      "Body": 161,
+      "Caption": 62,
+      "H3": 64,
+      "H1": 60,
+      "H2": 48
+    },
+    "models": {
+      "Rules": {
+        "n": 395,
+        "accuracy": 0.919,
+        "macro_f1": 0.9245,
+        "heading_vs_not_f1": 0.9243,
+        "per_class": {
+          "H1": {
+            "precision": 0.8939,
+            "recall": 0.9833,
+            "f1": 0.9365,
+            "support": 60
+          },
+          "H2": {
+            "precision": 0.7273,
+            "recall": 1.0,
+            "f1": 0.8421,
+            "support": 48
+          },
+          "H3": {
+            "precision": 0.9697,
+            "recall": 1.0,
+            "f1": 0.9846,
+            "support": 64
+          },
+          "Body": {
+            "precision": 0.9924,
+            "recall": 0.8075,
+            "f1": 0.8904,
+            "support": 161
+          },
+          "Caption": {
+            "precision": 0.9394,
+            "recall": 1.0,
+            "f1": 0.9688,
+            "support": 62
+          }
+        },
+        "confusion_matrix": {
+          "labels": [
+            "H1",
+            "H2",
+            "H3",
+            "Body",
+            "Caption"
+          ],
+          "matrix": [
+            [
+              59,
+              0,
+              0,
+              1,
+              0
+            ],
+            [
+              0,
+              48,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              64,
+              0,
+              0
+            ],
+            [
+              7,
+              18,
+              2,
+              130,
+              4
+            ],
+            [
+              0,
+              0,
+              0,
+              0,
+              62
+            ]
+          ]
+        },
+        "accuracy_95ci": [
+          0.8911,
+          0.9443
+        ],
+        "macro_f1_95ci": [
+          0.899,
+          0.9483
+        ]
+      },
+      "XGBoost": {
+        "n": 395,
+        "accuracy": 0.7646,
+        "macro_f1": 0.7974,
+        "heading_vs_not_f1": 0.7945,
+        "per_class": {
+          "H1": {
+            "precision": 0.5128,
+            "recall": 1.0,
+            "f1": 0.678,
+            "support": 60
+          },
+          "H2": {
+            "precision": 0.6154,
+            "recall": 1.0,
+            "f1": 0.7619,
+            "support": 48
+          },
+          "H3": {
+            "precision": 0.9697,
+            "recall": 1.0,
+            "f1": 0.9846,
+            "support": 64
+          },
+          "Body": {
+            "precision": 1.0,
+            "recall": 0.4224,
+            "f1": 0.5939,
+            "support": 161
+          },
+          "Caption": {
+            "precision": 0.9394,
+            "recall": 1.0,
+            "f1": 0.9688,
+            "support": 62
+          }
+        },
+        "confusion_matrix": {
+          "labels": [
+            "H1",
+            "H2",
+            "H3",
+            "Body",
+            "Caption"
+          ],
+          "matrix": [
+            [
+              60,
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              48,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              64,
+              0,
+              0
+            ],
+            [
+              57,
+              30,
+              2,
+              68,
+              4
+            ],
+            [
+              0,
+              0,
+              0,
+              0,
+              62
+            ]
+          ]
+        },
+        "accuracy_95ci": [
+          0.7241,
+          0.8051
+        ],
+        "macro_f1_95ci": [
+          0.7628,
+          0.8315
+        ]
+      }
+    },
+    "Claude": "not run yet (pass --claude_preds)",
+    "accuracy_by_sampled_auto_label": {
+      "Body": {
+        "n": 66,
+        "Rules_acc": 1.0,
+        "XGBoost_acc": 1.0
+      },
+      "Caption": {
+        "n": 66,
+        "Rules_acc": 0.9394,
+        "XGBoost_acc": 0.9394
+      },
+      "H1": {
+        "n": 66,
+        "Rules_acc": 0.8939,
+        "XGBoost_acc": 0.8939
+      },
+      "H2": {
+        "n": 66,
+        "Rules_acc": 0.7273,
+        "XGBoost_acc": 0.7273
+      },
+      "H3": {
+        "n": 66,
+        "Rules_acc": 0.9697,
+        "XGBoost_acc": 0.9697
+      },
+      "Unsure": {
+        "n": 65,
+        "Rules_acc": 0.9846,
+        "XGBoost_acc": 0.0462
+      }
+    },
+    "text_mismatch_examples": [
+      [
+        "SE08_Way to Go",
+        "56"
+      ],
+      [
+        "CS08-Jinnah Institute Website & Accounts Software",
+        "894"
+      ]
+    ],
+    "xgb_with_threshold": {
+      "would_go_to_claude_pct": 13.16,
+      "accuracy_on_confident": 0.8776,
+      "accuracy_on_unsure": 0.0192
+    }
+  }
+}
