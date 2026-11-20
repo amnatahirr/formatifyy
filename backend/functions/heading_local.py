@@ -226,6 +226,12 @@ async def detect_headings_local(
         for b, (label, conf) in zip(blocks, preds)
     ]
 
+    return await apply_claude_fallback(client, blocks, results, template, threshold)
+
+
+async def apply_claude_fallback(client, blocks, results, template, threshold) -> List[Dict[str, Any]]:
+    """Send blocks with confidence < threshold to Claude (shared by v2 and v3)."""
+    texts = [(getattr(b, "text", "") or "") for b in blocks]
     unsure = [i for i, r in enumerate(results) if r["confidence"] < threshold and texts[i].strip()]
     if not unsure or client is None:
         return results

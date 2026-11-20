@@ -48,6 +48,8 @@ async def main():
     ap.add_argument("--show", choices=["all", "headings", "diff"], default="all")
     ap.add_argument("--no-api", action="store_true", help="never call Claude")
     ap.add_argument("--width", type=int, default=60, help="text column width")
+    ap.add_argument("--save-gold2", default=None,
+                    help="write a hand-labelling sheet (file,line_no,text,predicted_label,my_label)")
     args = ap.parse_args()
 
     path = Path(args.docx)
@@ -64,8 +66,9 @@ async def main():
         client = anthropic.AsyncAnthropic(api_key=key)
 
     from functions.heading_local import MODEL_PATH
+    model_name = "v3 text+context (HEADINGS_V3_MODEL_PATH)" if engine.HEADINGS_LOCAL_VERSION == "v3" else MODEL_PATH
     print(f"File: {path.name}  |  {len(blocks)} paragraphs")
-    print(f"Model: {MODEL_PATH}  |  threshold: {engine.THRESHOLDS['headings']}")
+    print(f"Local model: {model_name}  |  threshold: {engine.THRESHOLDS['headings']}")
     print(f"Claude: {'ON' if client else 'OFF (no ANTHROPIC_API_KEY or --no-api)'}\n")
 
     local = await run("local", client, blocks)
@@ -98,6 +101,21 @@ async def main():
     print("Local labels :", dict(Counter(r["label"] for r in local)))
     n_fb = sum(r["used_fallback"] for r in local)
     print(f"Sent to Claude (local mode): {n_fb} of {len(blocks)} lines ({100 * n_fb / max(len(blocks), 1):.1f}%)")
+    if client is None:
+        thr = engine.THRESHOLDS["headings"]
+        n_would = sum(r["confidence"] is not None and r["confidence"] < thr for r in local)
+        print(f"Would go to Claude if a key were set: {n_would} line(s) below {thr}")
+
+    if args.save_gold2:
+        import csv
+        out = Path(args.save_gold2)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        with open(out, "w", newline="", encoding="utf-8") as fh:
+            w = csv.writer(fh)
+            w.writerow(["file", "line_no", "text", "predicted_label", "my_label"])
+            for i, (b, lo) in enumerate(zip(blocks, local)):
+                w.writerow([str(path), i, " ".join(b.text.split()), lo["label"], ""])
+        print(f"Gold-2 sheet -> {out}  (fill my_label with H1/H2/H3/Body/Caption)")
     if api:
         print("API labels   :", dict(Counter(r["label"] for r in api)))
         # Claude never labels captions, so compare heading vs not-heading too.

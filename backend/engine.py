@@ -24,6 +24,10 @@ if ENGINE not in ("api", "local"):
     print(f"[engine] Unknown ENGINE={ENGINE!r}, using 'api'")
     ENGINE = "api"
 
+# Which local heading model: "v3" = text+context (works on unformatted input),
+# "v2" = font size / bold / style (needs a formatted document).
+HEADINGS_LOCAL_VERSION = os.getenv("HEADINGS_LOCAL_VERSION", "v3").strip().lower()
+
 # Below this confidence the local answer is not trusted and Claude is asked.
 # Change here, or with an env variable such as HEADINGS_THRESHOLD=0.8
 THRESHOLDS: Dict[str, float] = {
@@ -61,6 +65,9 @@ async def detect_headings(
     use_style: pass False for PDFs. The PDF parser guesses style_name itself,
     so it must not be treated like a real Word "Heading 1" style.
     """
+    if ENGINE == "local" and HEADINGS_LOCAL_VERSION == "v3":
+        from functions.heading_text import detect_headings_text
+        return await detect_headings_text(client, blocks, template, threshold=THRESHOLDS["headings"])
     if ENGINE == "local":
         from functions.heading_local import detect_headings_local
         return await detect_headings_local(

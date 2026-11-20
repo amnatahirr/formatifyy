@@ -147,3 +147,23 @@ def predict_v3(texts: Sequence[str], model=None):
     proba = (model or load_model_v3()).predict_proba(np.asarray(text_context_features(texts), dtype=float))
     best = proba.argmax(axis=1)
     return [(LABELS[int(k)], float(proba[i, k])) for i, k in enumerate(best)]
+
+
+async def detect_headings_text(
+    client: Any,
+    blocks: Sequence[Any],
+    template: Optional[Dict[str, Any]] = None,
+    *,
+    threshold: float = 0.70,
+) -> List[Dict[str, Any]]:
+    """Live app entry point for v3: label every block from text + context,
+    then ask Claude about blocks below the threshold."""
+    from engine import make_result
+    from functions.heading_local import apply_claude_fallback
+
+    texts = [(getattr(b, "text", "") or "") for b in blocks]
+    results = [
+        make_result(label, conf, paragraph_id=getattr(b, "paragraph_id", "") or "")
+        for b, (label, conf) in zip(blocks, predict_v3(texts))
+    ]
+    return await apply_claude_fallback(client, blocks, results, template, threshold)
