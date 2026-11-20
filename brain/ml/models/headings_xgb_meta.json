@@ -1,0 +1,66 @@
+{
+  "labels": [
+    "H1",
+    "H2",
+    "H3",
+    "Body",
+    "Caption"
+  ],
+  "features": [
+    "size_ratio",
+    "font_known",
+    "bold",
+    "num_level",
+    "is_chapter",
+    "n_words",
+    "n_chars",
+    "upper_ratio",
+    "is_title_case",
+    "ends_period",
+    "ends_colon",
+    "ends_other_punct",
+    "caption_strong",
+    "caption_weak",
+    "dot_leader",
+    "page_like",
+    "starts_bullet",
+    "starts_lower",
+    "style_heading_level",
+    "style_is_caption",
+    "style_is_list"
+  ],
+  "params": {
+    "max_depth": 4,
+    "weights": "sqrt",
+    "learning_rate": 0.1,
+    "n_estimators": 347
+  },
+  "val": {
+    "macro_f1": 0.9993,
+    "accuracy": 0.9998
+  },
+  "feature_importance": {
+    "caption_weak": 0.4743,
+    "bold": 0.1824,
+    "num_level": 0.1362,
+    "size_ratio": 0.0727,
+    "is_chapter": 0.0387,
+    "style_is_caption": 0.0255,
+    "caption_strong": 0.0187,
+    "style_heading_level": 0.0157,
+    "style_is_list": 0.0145,
+    "ends_period": 0.0096,
+    "n_words": 0.0054,
+    "upper_ratio": 0.0025,
+    "n_chars": 0.0012,
+    "is_title_case": 0.0011,
+    "starts_lower": 0.0009,
+    "ends_other_punct": 0.0004,
+    "ends_colon": 0.0002,
+    "font_known": 0.0,
+    "dot_leader": 0.0,
+    "page_like": 0.0,
+    "starts_bullet": 0.0
+  },
+  "trained_on": "train split only, auto labels (noisy)"
+}

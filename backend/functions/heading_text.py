@@ -140,13 +140,22 @@ def load_model_v3(path: Optional[Path] = None):
 
 
 def predict_v3(texts: Sequence[str], model=None):
-    """(label, confidence) per line of one document."""
+    """(label, confidence) per line. Heading-or-not is decided first, on the SUM of
+    the H classes (same as v4 training). The level is only a hint; the template sets the style."""
     import numpy as np
     if not texts:
         return []
-    proba = (model or load_model_v3()).predict_proba(np.asarray(text_context_features(texts), dtype=float))
-    best = proba.argmax(axis=1)
-    return [(LABELS[int(k)], float(proba[i, k])) for i, k in enumerate(best)]
+    proba = (model or load_model_v3()).predict_proba(
+        np.asarray(text_context_features(texts), dtype=float))
+    h_ids = [i for i, l in enumerate(LABELS) if l[0] == "H" and l[1:].isdigit()]
+    o_ids = [i for i in range(len(LABELS)) if i not in h_ids]
+    head = proba[:, h_ids].sum(axis=1)
+    out = []
+    for i, p in enumerate(head):
+        ids = h_ids if p >= 0.5 else o_ids
+        k = ids[int(proba[i, ids].argmax())]
+        out.append((LABELS[k], float(max(p, 1 - p))))
+    return out
 
 
 def formatting_marked_ratio(blocks: Sequence[Any]) -> float:

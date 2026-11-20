@@ -1,0 +1,5 @@
+threshold,sent_to_claude_pct,accuracy_on_kept,heading_f1_on_kept,errors_caught_pct
+0.6,4.03,0.9515,0.6846,27.6
+0.7,8.26,0.9631,0.7247,47.3
+0.8,13.59,0.9733,0.7638,64.1
+0.9,21.44,0.9847,0.8232,81.3
