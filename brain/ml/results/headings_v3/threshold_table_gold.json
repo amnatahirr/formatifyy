@@ -1,0 +1,53 @@
+{
+  "gold_stripped": [
+    {
+      "threshold": 0.5,
+      "sent_to_claude_pct": 2.3,
+      "accuracy_on_kept": 0.9016,
+      "errors_sent_to_claude_pct": 13.6
+    },
+    {
+      "threshold": 0.6,
+      "sent_to_claude_pct": 3.3,
+      "accuracy_on_kept": 0.9031,
+      "errors_sent_to_claude_pct": 15.9
+    },
+    {
+      "threshold": 0.7,
+      "sent_to_claude_pct": 7.6,
+      "accuracy_on_kept": 0.9068,
+      "errors_sent_to_claude_pct": 22.7
+    },
+    {
+      "threshold": 0.75,
+      "sent_to_claude_pct": 12.7,
+      "accuracy_on_kept": 0.9275,
+      "errors_sent_to_claude_pct": 43.2
+    },
+    {
+      "threshold": 0.8,
+      "sent_to_claude_pct": 18.0,
+      "accuracy_on_kept": 0.9383,
+      "errors_sent_to_claude_pct": 54.5
+    },
+    {
+      "threshold": 0.85,
+      "sent_to_claude_pct": 100.0,
+      "accuracy_on_kept": null,
+      "errors_sent_to_claude_pct": 100.0
+    },
+    {
+      "threshold": 0.9,
+      "sent_to_claude_pct": 100.0,
+      "accuracy_on_kept": null,
+      "errors_sent_to_claude_pct": 100.0
+    },
+    {
+      "threshold": 0.95,
+      "sent_to_claude_pct": 100.0,
+      "accuracy_on_kept": null,
+      "errors_sent_to_claude_pct": 100.0
+    }
+  ],
+  "note": "Choosing the threshold from this table is a gold-informed choice."
+}

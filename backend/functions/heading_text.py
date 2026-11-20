@@ -149,6 +149,30 @@ def predict_v3(texts: Sequence[str], model=None):
     return [(LABELS[int(k)], float(proba[i, k])) for i, k in enumerate(best)]
 
 
+def formatting_marked_ratio(blocks: Sequence[Any]) -> float:
+    """Share of short lines (<= 15 words) that carry a formatting mark:
+    bold, a Word 'Heading' style, or a font >= 1pt bigger than the body font.
+    Unknown font size (None) is not counted as a mark."""
+    from functions.heading_local import body_font_size, style_heading_level
+    texts = [(getattr(b, "text", "") or "").strip() for b in blocks]
+    body = body_font_size((t, getattr(b, "font_size", None)) for t, b in zip(texts, blocks))
+    short = [(t, b) for t, b in zip(texts, blocks) if t and len(t.split()) <= LONG]
+    if not short:
+        return 0.0
+    marked = 0
+    for t, b in short:
+        fs = getattr(b, "font_size", None)
+        if getattr(b, "bold", None) or style_heading_level(getattr(b, "style_name", None)) \
+                or (fs and body and fs >= body + 1):
+            marked += 1
+    return marked / len(short)
+
+
+def is_flat_document(blocks: Sequence[Any]) -> bool:
+    from engine import FLAT_DOC_MAX_MARKED
+    return formatting_marked_ratio(blocks) < FLAT_DOC_MAX_MARKED
+
+
 async def detect_headings_text(
     client: Any,
     blocks: Sequence[Any],
@@ -161,9 +185,15 @@ async def detect_headings_text(
     from engine import make_result
     from functions.heading_local import apply_claude_fallback
 
+    from engine import FLAT_DOC_CONFIDENCE_FACTOR
+
     texts = [(getattr(b, "text", "") or "") for b in blocks]
+    flat = is_flat_document(blocks)
+    factor = FLAT_DOC_CONFIDENCE_FACTOR if flat else 1.0
     results = [
-        make_result(label, conf, paragraph_id=getattr(b, "paragraph_id", "") or "")
+        make_result(label, conf * factor, paragraph_id=getattr(b, "paragraph_id", "") or "", flat_document=flat)
         for b, (label, conf) in zip(blocks, predict_v3(texts))
     ]
+    if flat:
+        print(f"[heading_text] flat document: confidences x{factor}")
     return await apply_claude_fallback(client, blocks, results, template, threshold)

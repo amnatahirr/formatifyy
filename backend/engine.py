@@ -40,6 +40,15 @@ THRESHOLDS: Dict[str, float] = {
 }
 
 
+# "Flat document" check (v3): if almost no short line is bold / a Heading style /
+# bigger than the body font, the document has no formatting to confirm the model,
+# so all confidences are multiplied by FLAT_DOC_CONFIDENCE_FACTOR and more
+# borderline lines fall below the threshold and go to Claude.
+# 0.10 = just below the least-formatted val report (0.114), so formatted reports are not flagged.
+FLAT_DOC_MAX_MARKED = float(os.getenv("FLAT_DOC_MAX_MARKED", "0.10"))
+FLAT_DOC_CONFIDENCE_FACTOR = float(os.getenv("FLAT_DOC_CONFIDENCE_FACTOR", "0.85"))
+
+
 def make_result(label: Any, confidence: Optional[float], used_fallback: bool = False, **extra) -> Dict[str, Any]:
     """The one result shape every check returns."""
     return {
