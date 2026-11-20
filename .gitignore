@@ -90,3 +90,7 @@ backend/plagiarism/cache/*
 !backend/plagiarism/cache/.gitkeep
 
 backend/outputs/
+
+# ML data and trained models (large, rebuilt by scripts)
+brain/ml/data/
+brain/ml/models/

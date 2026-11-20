@@ -219,3 +219,7 @@ Return ONLY the JSON object. No markdown, no explanation."""
 
     print(f"[heading_detect] Claude found {len(all_candidates)} heading candidate(s)")
     return all_candidates
+
+
+# Name used by engine.py. Same function, kept as the "Claude" baseline.
+detect_headings_api = detect_headings_with_claude
