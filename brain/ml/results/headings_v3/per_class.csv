@@ -1,0 +1,31 @@
+view,model,class,precision,recall,f1,support
+normal,Rules,H1,0.8939,0.9833,0.9365,60
+normal,Rules,H2,0.7273,1.0,0.8421,48
+normal,Rules,H3,0.9697,1.0,0.9846,64
+normal,Rules,Body,0.9924,0.8075,0.8904,161
+normal,Rules,Caption,0.9394,1.0,0.9688,62
+normal,v2 (format),H1,0.8939,0.9833,0.9365,60
+normal,v2 (format),H2,0.7273,1.0,0.8421,48
+normal,v2 (format),H3,0.9697,1.0,0.9846,64
+normal,v2 (format),Body,0.9924,0.8075,0.8904,161
+normal,v2 (format),Caption,0.9394,1.0,0.9688,62
+normal,v3 (text+context),H1,0.8364,0.7667,0.8,60
+normal,v3 (text+context),H2,0.7759,0.9375,0.8491,48
+normal,v3 (text+context),H3,0.9552,1.0,0.9771,64
+normal,v3 (text+context),Body,0.8993,0.8323,0.8645,161
+normal,v3 (text+context),Caption,0.9394,1.0,0.9688,62
+stripped,Rules,H1,0.8667,0.2167,0.3467,60
+stripped,Rules,H2,0.8491,0.9375,0.8911,48
+stripped,Rules,H3,0.9697,1.0,0.9846,64
+stripped,Rules,Body,0.7436,0.9006,0.8146,161
+stripped,Rules,Caption,0.9394,1.0,0.9688,62
+stripped,v2 (format),H1,0.8667,0.2167,0.3467,60
+stripped,v2 (format),H2,0.8491,0.9375,0.8911,48
+stripped,v2 (format),H3,0.9697,1.0,0.9846,64
+stripped,v2 (format),Body,0.7436,0.9006,0.8146,161
+stripped,v2 (format),Caption,0.9394,1.0,0.9688,62
+stripped,v3 (text+context),H1,0.8364,0.7667,0.8,60
+stripped,v3 (text+context),H2,0.7759,0.9375,0.8491,48
+stripped,v3 (text+context),H3,0.9552,1.0,0.9771,64
+stripped,v3 (text+context),Body,0.8993,0.8323,0.8645,161
+stripped,v3 (text+context),Caption,0.9394,1.0,0.9688,62
