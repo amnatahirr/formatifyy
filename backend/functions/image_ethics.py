@@ -33,11 +33,25 @@ Pipeline issue dicts retain Formatify's existing schema for the Flutter UI.
 from __future__ import annotations
 
 import asyncio
+import os
 import re
 from typing import Any, Dict, List
 
 from models import Batch
 from functions.local_vision import generate_caption_from_b64, image_fingerprint
+from functions.ethics_head import predict_unsafe
+
+# "local"   = trained head + keyword engine (main)
+# "keyword" = purana BLIP + taxonomy engine (baseline)
+ETHICS_ENGINE = os.getenv("ETHICS_ENGINE", "local")
+HEAD_HIGH = 0.6   # is se upar: head ka faisla pakka
+HEAD_LOW = 0.4    # is se neeche: head kehta hai safe
+HEAD_LABELS = {
+    "sexual": "Nudity / Sexual Content",
+    "weapons_violence": "Weapons / Violence",
+}
+# jin categories ko head khud sambhalta hai
+HEAD_COVERED_IDS = {"sexual_content", "graphic_violence", "weapons"}
 
 
 # ======================================================================
@@ -167,6 +181,19 @@ ETHICS_CATEGORIES = [
             "drugs and alcohol", "alcohol next to a pile of pills",
             "alcohol next to pills", "mixing drugs", "drug and alcohol",
             "surrounded by pills", "pills spilled out",
+            "alcohol with pills", "pills with alcohol",
+        ],
+        # co-occurrence: har group ka koi ek lafz caption mein ho (kisi bhi tarteeb mein)
+        # e.g. "a glass of alcohol with pills" -> pills + alcohol
+        "combos": [
+            [["pill", "pills", "tablets", "capsules"],
+             ["alcohol", "beer", "wine", "vodka", "whiskey", "liquor", "drink", "drinks"]],
+            [["pill", "pills", "tablets", "capsules", "powder", "drugs", "drug"],
+             ["syringe", "syringes", "needle", "needles", "spoon", "lighter"]],
+            [["white powder", "powder"],
+             ["line", "lines", "rolled", "straw", "credit card", "razor"]],
+            [["bong", "joint", "joints", "blunt"],
+             ["smoking", "smoke", "lighter", "weed"]],
         ],
         "words": [
             "heroin", "cocaine", "methamphetamine", "meth",
@@ -317,6 +344,22 @@ def _match_words(caption_norm: str, words: list) -> list:
     ]
 
 
+def _match_combos(caption_norm: str, combos: list) -> list:
+    """Each combo is a list of word-groups; it fires when every group has a hit."""
+    hits = []
+    for groups in combos:
+        found = []
+        for group in groups:
+            hit = next((w for w in group
+                        if re.search(rf"\b{re.escape(w)}\b", caption_norm)), None)
+            if hit is None:
+                break
+            found.append(hit)
+        else:
+            hits.append(" + ".join(found))
+    return hits
+
+
 def _is_safe_context(caption_norm: str, category_weight: float) -> bool:
     if any(p in caption_norm for p in SAFE_PHRASES):
         return True
@@ -340,7 +383,8 @@ def score_caption_ethics(caption: str) -> dict:
     for cat in ETHICS_CATEGORIES:
         phrase_hits = _match_phrases(caption_norm, cat.get("phrases", []))
         word_hits = _match_words(caption_norm, cat.get("words", []))
-        hits = phrase_hits + word_hits
+        combo_hits = _match_combos(caption_norm, cat.get("combos", []))
+        hits = phrase_hits + word_hits + combo_hits
         if hits:
             all_matches.extend(hits)
             if cat["weight"] > best_weight:
@@ -384,6 +428,52 @@ def score_caption_ethics(caption: str) -> dict:
     }
 
 
+def _analyze_local(b64: str, caption: str | None = None) -> dict:
+    """Trained head decides sexual / weapons / violence; keyword engine covers
+    self-harm, drugs, hate, offensive and breaks ties in the borderline band."""
+    head = predict_unsafe(b64)
+    p = head["p_unsafe"]
+    if caption is None:
+        caption = generate_caption_from_b64(b64, cache_key=image_fingerprint(b64))
+    kw = score_caption_ethics(caption)
+    kw_unsafe = kw["is_unethical"]
+    kw_covered = kw.get("category_id") in HEAD_COVERED_IDS
+    borderline = HEAD_LOW <= p < HEAD_HIGH
+
+    if p >= HEAD_HIGH:
+        engine, ethical = "head", False
+        category, confidence = HEAD_LABELS[head["top_class"]], p
+    elif kw_unsafe and not kw_covered:
+        engine, ethical = "keyword", False
+        category, confidence = kw["category_label"], float(kw["confidence"])
+    elif borderline and kw_unsafe:
+        engine, ethical = "head+keyword", False
+        category, confidence = kw["category_label"], max(p, float(kw["confidence"]))
+    else:
+        engine, ethical = "head", True
+        category, confidence = "Safe", 1.0 - p
+
+    reason = (f"[{engine}] p_unsafe={p:.2f}, head={head['top_class']}, "
+              f"caption='{caption}', keyword_matches={kw.get('matched_phrases', [])}")
+    print(f"[image_ethics] {'✅ ETHICAL' if ethical else '🚨 UNETHICAL'} | "
+          f"engine={engine} | category={category} | conf={confidence:.2f} | "
+          f"borderline={borderline}")
+    return {
+        "ethical": ethical,
+        "category": category,
+        "confidence": round(float(confidence), 4),
+        "caption": caption,
+        "is_ethical": ethical,
+        "verdict": "ethical" if ethical else "unethical",
+        "reason": reason,
+        "matched_phrases": kw.get("matched_phrases", []),
+        "safe_override": kw.get("safe_override", False),
+        "engine": engine,
+        "borderline": borderline,
+        "p_unsafe": round(p, 4),
+    }
+
+
 def analyze_image_ethics_sync(b64: str, caption: str | None = None) -> dict:
     """
     Full local ethics analysis for one base64 image.
@@ -399,6 +489,9 @@ def analyze_image_ethics_sync(b64: str, caption: str | None = None) -> dict:
             "caption": "",
             "reason": "No image data",
         }
+
+    if ETHICS_ENGINE == "local":
+        return _analyze_local(b64, caption)
 
     # Prefer shared caption (one BLIP pass for ethics + relevance)
     if caption is None:
