@@ -134,7 +134,7 @@ def _clean_mask(test, train, th=TH_DUP):
     return (test @ train.T).max(axis=1) <= th
 
 
-def seed_split(d, seed, scenes_per_class=0):
+def seed_split(d, seed, scenes_per_class=0, medical=True):
     """Ek seed ka train/test. Safe reports ke hisaab se split (GroupShuffleSplit).
 
     scenes_per_class: har Places365 scene se kitni train images safe mein daalni hain
@@ -147,8 +147,9 @@ def seed_split(d, seed, scenes_per_class=0):
     keep = _clean_mask(d["X_safe"][te], d["X_safe"][tr])
     s_te, s_photo = d["X_safe"][te][keep], d["photo_safe"][te][keep]
     x_te = clean(sex_te, sex_tr)
-    parts = [(d["X_safe"][tr], "safe"), (d["neg7"], "safe"),
-             (sample_med(d["med_tr"], d["lab_tr"], seed), "safe")]
+    parts = [(d["X_safe"][tr], "safe"), (d["neg7"], "safe")]
+    if medical:
+        parts.append((sample_med(d["med_tr"], d["lab_tr"], seed), "safe"))
     if scenes_per_class:
         parts.append((sample_med(d["scn_tr"], d["scn_lab_tr"], seed, n=scenes_per_class), "safe"))
     Xtr, ytr = stack(parts + [(sex_tr, "sexual"), (d["wv_tr"], "weapons_violence")])
