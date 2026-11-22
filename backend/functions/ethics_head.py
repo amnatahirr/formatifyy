@@ -1,5 +1,6 @@
 """Trained ethics head (CLIP embedding -> safe / sexual / weapons_violence).
-v3 = v2 + medical hard negatives (brain/ml/train_ethics_v3.py)."""
+v6 = deduplicated data + medical hard negatives + outdoor scene hard negatives
+(brain/ml/train_ethics_v6.py). Metrics: brain/ml/results/ethics/metrics/comparison.md"""
 import os
 import threading
 
@@ -10,7 +11,7 @@ from functions.local_vision import _load_clip, _device, decode_base64_image
 
 _HEAD_PATH = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-    "ml_weights", "ethics_head_v3.joblib",
+    "ml_weights", "ethics_head_v6.joblib",
 )
 _head = None
 _lock = threading.Lock()

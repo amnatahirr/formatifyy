@@ -1,0 +1,77 @@
+{
+  "system": "t5:models/t5_grammar_own",
+  "synthetic": {
+    "article_missing": {
+      "n": 4,
+      "fixed": 0.0,
+      "changed_wrong": 0.0,
+      "missed": 1.0
+    },
+    "ALL": {
+      "n": 60,
+      "fixed": 0.717,
+      "changed_wrong": 0.083,
+      "missed": 0.2
+    },
+    "comma_missing": {
+      "n": 6,
+      "fixed": 0.167,
+      "changed_wrong": 0.167,
+      "missed": 0.667
+    },
+    "verb_agreement": {
+      "n": 2,
+      "fixed": 1.0,
+      "changed_wrong": 0.0,
+      "missed": 0.0
+    },
+    "repeated_word": {
+      "n": 13,
+      "fixed": 0.923,
+      "changed_wrong": 0.077,
+      "missed": 0.0
+    },
+    "preposition": {
+      "n": 3,
+      "fixed": 0.667,
+      "changed_wrong": 0.333,
+      "missed": 0.0
+    },
+    "spelling": {
+      "n": 18,
+      "fixed": 0.833,
+      "changed_wrong": 0.056,
+      "missed": 0.111
+    },
+    "article_wrong": {
+      "n": 1,
+      "fixed": 1.0,
+      "changed_wrong": 0.0,
+      "missed": 0.0
+    },
+    "plural_singular": {
+      "n": 3,
+      "fixed": 0.333,
+      "changed_wrong": 0.0,
+      "missed": 0.667
+    },
+    "capitalization": {
+      "n": 10,
+      "fixed": 0.9,
+      "changed_wrong": 0.1,
+      "missed": 0.0
+    }
+  },
+  "clean": {
+    "n": 60,
+    "false_alarm_rate": 0.067
+  },
+  "sec_per_sentence": 1.6427,
+  "manual": {
+    "with_error_n": 73,
+    "fixed_exactly": 0.014,
+    "detected_any_change": 0.219,
+    "no_error_n": 36,
+    "false_alarm_rate": 0.083
+  }
+}

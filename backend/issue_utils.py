@@ -124,9 +124,13 @@ def normalize_issue(
     image_id = issue.get("image_id") or ""
     para_idx = _para_index(issue.get("paragraph_id") or "")
 
+    default_id = f"{func}_{image_id or issue.get('paragraph_id') or index}"
+    if func == "grammar" and issue.get("char_start") is not None:
+        default_id += f"_{issue.get('char_start')}"  # one id per suggestion, not per paragraph
+
     normalized = dict(issue)
     normalized.update({
-        "issue_id": issue.get("issue_id") or f"{func}_{image_id or issue.get('paragraph_id') or index}",
+        "issue_id": issue.get("issue_id") or default_id,
         "category": FUNCTION_TO_CATEGORY.get(func, func.replace("_", " ").title()),
         "ethics_category": issue.get("ethics_category") or "",
         "description": issue.get("description") or issue.get("reason") or issue.get("explanation") or "",

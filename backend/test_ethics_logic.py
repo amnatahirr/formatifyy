@@ -2,6 +2,8 @@ import os, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import functions.image_ethics as ie
 
+MID = round((ie.HEAD_LOW + ie.HEAD_HIGH) / 2, 2)  # borderline band ke beech
+
 # (p_unsafe, head_class, caption, expected_ethical, expected_engine)
 cases = [
     (0.95, "sexual",           "a person standing in a room",             False, "head"),
@@ -9,9 +11,9 @@ cases = [
     (0.10, "weapons_violence", "a diagram of a network",                  True,  "head"),
     (0.10, "weapons_violence", "a person injecting drugs into their arm", False, "keyword"),
     (0.10, "weapons_violence", "a swastika symbol painted on a wall",     False, "keyword"),
-    (0.50, "weapons_violence", "a table with a bunch of guns and a knife", False, "head+keyword"),
-    (0.50, "weapons_violence", "a diagram of a network",                  True,  "head"),
-    (0.50, "weapons_violence", "a toy gun lying on a colorful playmat",   True,  "head"),
+    (MID,  "weapons_violence", "a table with a bunch of guns and a knife", False, "head+keyword"),
+    (MID,  "weapons_violence", "a diagram of a network",                  True,  "head"),
+    (MID,  "weapons_violence", "a toy gun lying on a colorful playmat",   True,  "head"),
 ]
 
 ie.generate_caption_from_b64 = lambda b64, cache_key=None: current["caption"]

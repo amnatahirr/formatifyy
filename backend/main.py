@@ -48,6 +48,7 @@ import uuid
 from typing import Any, Dict, List, Optional
 from reminders import start_scheduler, stop_scheduler
 import anthropic
+import analysis_progress
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile, Query, Body, Request
 from services.latex_export import latex_zip_response
@@ -833,6 +834,7 @@ async def _run_analysis(
         raise HTTPException(status_code=400, detail=f"Unknown template: {template_id}")
 
     # ── Step 1: Ingest ────────────────────────────────────────────────────────
+    analysis_progress.set_stage("reading", "Reading text and images")
     try:
         if saved_path:
             norm_filename = _filename_for_parse(saved_path, filename)
@@ -866,6 +868,7 @@ async def _run_analysis(
 
     # One document-level heading outline (template-anchored, deterministic levels).
     # Never per batch - batches run in parallel and would disagree.
+    analysis_progress.set_stage("structure", "Detecting headings and sections")
     outline = None
     try:
         from functions.outline import build_outline
@@ -873,6 +876,7 @@ async def _run_analysis(
     except Exception as exc:
         print(f"[analysis] heading outline failed (non-fatal): {exc}")
 
+    analysis_progress.set_stage("grammar", "Running grammar, image and plagiarism checks")
     dispatch_task = asyncio.create_task(
         dispatch_all(client, batches, tmpl, outline=outline)
     )
@@ -891,6 +895,7 @@ async def _run_analysis(
     report = aggregate(raw_issues, doc_model, total_batches=len(batches))
 
     # ── Step 5: Reformat ──────────────────────────────────────────────────────
+    analysis_progress.set_stage("formatting", "Reformatting against the template")
     output_filename = f"formatted_{job_id}.docx"
     output_path = os.path.join(OUTPUT_DIR, output_filename)
     try:
@@ -1973,6 +1978,7 @@ async def _run_analysis_freeform(
             detail="Neither ANTHROPIC_API_KEY nor GEMINI_API_KEY is configured. Set one in backend/.env.",
         )
 
+    analysis_progress.set_stage("reading", "Reading text and images")
     try:
         if saved_path:
             norm_filename = _filename_for_parse(saved_path, filename)
@@ -1998,6 +2004,7 @@ async def _run_analysis_freeform(
 
     from plagiarism.pipeline import check_document_against_fyp_corpus
 
+    analysis_progress.set_stage("grammar", "Running grammar, image and plagiarism checks")
     dispatch_task = asyncio.create_task(dispatch_freeform(client, batches))
     corpus_task = asyncio.create_task(
         check_document_against_fyp_corpus(doc_model, document_id=job_id)
@@ -2086,6 +2093,7 @@ async def analyze_document_freeform_endpoint(document_id: int, user_id: int = Qu
     conn.commit()
     conn.close()
 
+    analysis_progress.set_stage("finalizing", "Building the preview")
     doc_model = None
     document_blocks: List[Dict[str, Any]] = []
     image_paths: Dict[str, str] = {}
@@ -2261,6 +2269,7 @@ async def analyze_document_endpoint(document_id: int, user_id: int = Query(...))
         pass
 
     tmpl = get_template_by_id(doc["template_id"])
+    analysis_progress.set_stage("preparing", "Applying template to a working copy")
     if tmpl and _is_fixable_source(doc["file_path"]):
         # Always rebuild from the upload on Analyze so Tables / style issues
         # reflect the source document, not a previously fixed working copy.
@@ -2292,6 +2301,7 @@ async def analyze_document_endpoint(document_id: int, user_id: int = Query(...))
             print(f"[analyze] project sync error (non-fatal): {exc}")
 
     # Build structured blocks + normalized issues for the Flutter preview UI
+    analysis_progress.set_stage("finalizing", "Building the preview")
     doc_model = None
     document_blocks: List[Dict[str, Any]] = []
     image_paths: Dict[str, str] = {}
@@ -2582,8 +2592,10 @@ def _notify_analysis_result(
 
 async def _analysis_worker(document_id: int, user_id: int, freeform: bool) -> None:
     job = _analysis_jobs[document_id]
+    analysis_progress.bind(job)  # stage/percent updates from inside the pipeline
     try:
         result = await asyncio.to_thread(_analysis_in_thread, document_id, user_id, freeform)
+        analysis_progress.set_stage("finalizing", "Saving results")
         path = _analysis_result_path(document_id)
         tmp = path + ".tmp"
         with open(tmp, "w", encoding="utf-8") as f:
@@ -2591,6 +2603,7 @@ async def _analysis_worker(document_id: int, user_id: int, freeform: bool) -> No
         os.replace(tmp, path)  # atomic auto-save
         finished_at = datetime.datetime.utcnow().isoformat()
         job.update(status="completed", error=None, finished_at=finished_at)
+        job["progress"] = {"stage": "done", "percent": 100, "detail": ""}
         _notify_analysis_result(
             document_id, user_id, ok=True, result=result, finished_at=finished_at
         )
@@ -2637,7 +2650,8 @@ async def analyze_status(document_id: int, user_id: int = Query(...)):
     job = _analysis_jobs.get(document_id)
     if job:
         return {"status": job["status"], "error": job["error"],
-                "started_at": job["started_at"], "finished_at": job["finished_at"]}
+                "started_at": job["started_at"], "finished_at": job["finished_at"],
+                "progress": job.get("progress")}
     if os.path.exists(_analysis_result_path(document_id)):
         return {"status": "completed", "error": None}  # survives server restart
     return {"status": "none", "error": None}

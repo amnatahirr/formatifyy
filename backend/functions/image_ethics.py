@@ -3,27 +3,29 @@ functions/image_ethics.py — Local image ethics / appropriateness detector.
 
 Runs fully offline (no Claude / GPT / Gemini APIs).
 
-Approach
---------
-1. Caption the image with Salesforce BLIP (open-source vision–language model).
-2. Score the caption against an academic ethics taxonomy (phrase + whole-word
-   matching with safe-context overrides).
-3. Corroborate with CLIP zero-shot classification over ethics category labels.
+Approach (ETHICS_ENGINE="local", default)
+-----------------------------------------
+1. Trained head (functions/ethics_head.py): frozen CLIP ViT-B/32 image embedding
+   -> LogisticRegression trained on our own data (transfer learning / linear
+   probing). Classes: safe, sexual, weapons_violence.
+   Model: ml_weights/ethics_head_v6.joblib (brain/ml/train_ethics_v6.py),
+   metrics: brain/ml/results/ethics/metrics/comparison.md.
+2. Keyword engine: BLIP caption scored against an ethics taxonomy (phrases,
+   whole words, co-occurrence combos, safe-context overrides). Covers classes
+   with no training data: drugs, self-harm, hate, offensive.
+3. Decision (_analyze_local):
+   - head p_unsafe >= 0.5               -> unsafe (head category)
+   - keyword hit outside head's classes -> unsafe (keyword category)
+   - 0.4 <= p_unsafe < 0.5 + keyword hit -> unsafe (both agree)
+   - otherwise                          -> safe
 
-Why these models are suitable
------------------------------
-• BLIP (Salesforce/blip-image-captioning-base): lightweight (~990 MB), open-source,
-  purpose-built for image captioning. Captions let us apply a precise, auditable
-  policy taxonomy (nudity, violence, weapons, drugs, hate symbols, …) without
-  sending images to a cloud LLM.
-• CLIP (openai/clip-vit-base-patch32): open-source image–text model that can rank
-  zero-shot labels. Acts as a visual sanity-check when captions under/over-fire.
+ETHICS_ENGINE="keyword" runs the older BLIP + taxonomy engine alone (baseline).
 
 Output contract (module API for callers / tests)
 ------------------------------------------------
 {
   "ethical": false,
-  "category": "Violence / Gore",
+  "category": "Weapons / Violence",
   "confidence": 0.96
 }
 
@@ -44,7 +46,7 @@ from functions.ethics_head import predict_unsafe
 # "local"   = trained head + keyword engine (main)
 # "keyword" = purana BLIP + taxonomy engine (baseline)
 ETHICS_ENGINE = os.getenv("ETHICS_ENGINE", "local")
-HEAD_HIGH = 0.6   # is se upar: head ka faisla pakka
+HEAD_HIGH = 0.5   # is se upar: head ka faisla pakka (v6 ke liye 6-seed eval se chuna)
 HEAD_LOW = 0.4    # is se neeche: head kehta hai safe
 HEAD_LABELS = {
     "sexual": "Nudity / Sexual Content",
@@ -428,6 +430,27 @@ def score_caption_ethics(caption: str) -> dict:
     }
 
 
+# User ko dikhne wala jumla (frontend ethics card). Technical tafseel debug_reason mein.
+_FRIENDLY_REASON = {
+    "Nudity / Sexual Content": "This image appears to contain nudity or sexual content.",
+    "Weapons / Violence": "This image appears to show weapons or violence.",
+    "Weapons": "This image appears to show weapons.",
+    "Violence / Gore": "This image appears to show violence or gore.",
+    "Drugs": "This image appears to show drugs or drug use.",
+    "Self-Harm / Suicide": "This image appears to depict self-harm or suicide.",
+    "Hate / Extremist Symbols": "This image appears to contain hate or extremist symbols.",
+    "Offensive / Obscene Content": "This image appears to contain offensive or obscene content.",
+}
+
+
+def _friendly_reason(ethical: bool, category: str, confidence: float) -> str:
+    if ethical:
+        return "No inappropriate content was detected in this image."
+    text = _FRIENDLY_REASON.get(category, "This image appears to contain inappropriate content.")
+    return (f"{text} Detection confidence: {round(100 * confidence)}%. Images in an "
+            f"academic report should be appropriate for all readers; please replace it.")
+
+
 def _analyze_local(b64: str, caption: str | None = None) -> dict:
     """Trained head decides sexual / weapons / violence; keyword engine covers
     self-harm, drugs, hate, offensive and breaks ties in the borderline band."""
@@ -453,11 +476,12 @@ def _analyze_local(b64: str, caption: str | None = None) -> dict:
         engine, ethical = "head", True
         category, confidence = "Safe", 1.0 - p
 
-    reason = (f"[{engine}] p_unsafe={p:.2f}, head={head['top_class']}, "
-              f"caption='{caption}', keyword_matches={kw.get('matched_phrases', [])}")
+    debug_reason = (f"[{engine}] p_unsafe={p:.2f}, head={head['top_class']}, "
+                    f"caption='{caption}', keyword_matches={kw.get('matched_phrases', [])}")
+    reason = _friendly_reason(ethical, category, confidence)
     print(f"[image_ethics] {'✅ ETHICAL' if ethical else '🚨 UNETHICAL'} | "
           f"engine={engine} | category={category} | conf={confidence:.2f} | "
-          f"borderline={borderline}")
+          f"borderline={borderline} | {debug_reason}")
     return {
         "ethical": ethical,
         "category": category,
@@ -466,6 +490,7 @@ def _analyze_local(b64: str, caption: str | None = None) -> dict:
         "is_ethical": ethical,
         "verdict": "ethical" if ethical else "unethical",
         "reason": reason,
+        "debug_reason": debug_reason,
         "matched_phrases": kw.get("matched_phrases", []),
         "safe_override": kw.get("safe_override", False),
         "engine": engine,
@@ -607,6 +632,7 @@ async def _evaluate_single_image(
         "reason": result["reason"],
         "suggestion": "Replace this image with appropriate academic content.",
         "explanation": result["reason"],
+        "debug_reason": result.get("debug_reason", ""),
         "original": "",
         "current_heading": "",
         "content_belongs_to": "",

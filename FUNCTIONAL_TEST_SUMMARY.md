@@ -974,7 +974,7 @@ Skip pure boilerplate; focus on non-trivial logic.
 
 | Module | Entry | Behavior |
 |--------|-------|----------|
-| `grammar.py` | `check_grammar` | LLM grammar issues |
+| `grammar.py` | `check_grammar` | Local grammar suggestions (pyspellchecker + fine-tuned T5, `grammar_local.py`) |
 | `formatting.py` | `check_formatting` | Template rules + sections |
 | `formatting_freeform.py` | `check_formatting_freeform` | General style + `_suggested_fixes` |
 | `para_relevance.py` | `check_para_relevance` | Relevance to heading |

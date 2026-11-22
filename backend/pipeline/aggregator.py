@@ -45,7 +45,10 @@ def aggregate(
         iid = raw.get("image_id", "")
         itype = raw.get("type", "")
 
-        if pid:
+        if func == "grammar" and pid and raw.get("char_start") is not None:
+            # several grammar suggestions may live in one paragraph
+            dedup_key = f"{func}:{pid}:{raw.get('char_start')}:{raw.get('char_end')}"
+        elif pid:
             dedup_key = f"{func}:{itype}:{pid}"
         elif iid:
             dedup_key = f"{func}:{iid}"

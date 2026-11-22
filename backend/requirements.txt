@@ -21,6 +21,9 @@ transformers>=4.36.0
 safetensors>=0.4.0
 numpy>=1.24.0
 
+# Local grammar suggestions (spell-checker; the T5 model uses torch/transformers above)
+pyspellchecker>=0.8.1
+
 # Hybrid plagiarism detection (local MinHash/LSH + MiniLM/FAISS + optional Google CSE)
 sentence-transformers>=2.2.0
 datasketch>=1.6.0
@@ -31,5 +34,5 @@ google-api-python-client>=2.108.0
 google-auth-httplib2>=0.2.0
 google-auth-oauthlib>=1.2.0
 pypandoc_binary
-scikit-learn
+scikit-learn==1.8.0  # ethics head (.joblib) isi version se bana hai
 joblib

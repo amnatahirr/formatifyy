@@ -1,8 +1,8 @@
 """
 dispatcher.py — Parallel dispatcher for Formatify.
 
-Uses asyncio.gather to fire all 6 analysis functions for every batch
-concurrently. A single failed function never stops the pipeline thanks to
+Uses asyncio.gather to fire all analysis functions for every batch
+concurrently (grammar runs once per document, locally). A single failed function never stops the pipeline thanks to
 return_exceptions=True.
 """
 
@@ -44,10 +44,12 @@ async def dispatch_all(
     tasks: List[asyncio.Task] = []
     run_llm_plagiarism = llm_pattern_plagiarism_enabled()
 
+    # Local grammar model: one call for the whole report (better batching,
+    # one timing log per report) instead of one call per batch.
+    tasks.append(asyncio.ensure_future(
+        _safe_call(check_grammar, client, _whole_document_batch(batches))
+    ))
     for batch in batches:
-        tasks.append(asyncio.ensure_future(
-            _safe_call(check_grammar, client, batch)
-        ))
         tasks.append(asyncio.ensure_future(
             _safe_call_formatting(check_formatting, client, batch, template, outline)
         ))
@@ -88,8 +90,10 @@ async def dispatch_freeform(
     LLM plagiarism-pattern checks (corpus plagiarism is handled in main).
     """
     tasks: List[asyncio.Task] = []
+    tasks.append(asyncio.ensure_future(
+        _safe_call(check_grammar, client, _whole_document_batch(batches))
+    ))
     for batch in batches:
-        tasks.append(asyncio.ensure_future(_safe_call(check_grammar, client, batch)))
         tasks.append(
             asyncio.ensure_future(_safe_call(check_formatting_freeform, client, batch))
         )
@@ -112,6 +116,24 @@ async def dispatch_freeform(
 
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
+
+def _whole_document_batch(batches: List[Batch]) -> Batch:
+    """All paragraphs of the report in one Batch (deduplicated by paragraph_id)."""
+    seen = set()
+    paragraphs = []
+    for b in batches:
+        for p in b.paragraphs:
+            if p.paragraph_id in seen:
+                continue
+            seen.add(p.paragraph_id)
+            paragraphs.append(p)
+    return Batch(
+        batch_index=0,
+        page_start=min((b.page_start for b in batches), default=0),
+        page_end=max((b.page_end for b in batches), default=0),
+        paragraphs=paragraphs,
+    )
+
 
 async def _safe_call(fn, client, batch) -> List[Dict[str, Any]]:
     """Wrap a function call so individual failures return [] instead of raising."""
