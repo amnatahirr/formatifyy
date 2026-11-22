@@ -1,0 +1,32 @@
+# Extra words the spell-checker should accept (one per line, case-insensitive).
+# Add your own technical terms, names or British spellings here; '#' starts a comment.
+# The auto-built list is brain/ml/models/grammar_spell_whitelist.json
+# (rebuild with: cd brain/ml && python3 build_spell_whitelist.py).
+analyser
+centred
+centres
+organisation
+organisations
+organise
+organised
+recognise
+recognised
+utilise
+utilised
+licence
+programme
+modelling
+labelled
+travelling
+cancelled
+favour
+honour
+optimise
+optimised
+customise
+customised
+visualise
+visualisation
+# software terms the auto-whitelist missed
+frontend
+frontends

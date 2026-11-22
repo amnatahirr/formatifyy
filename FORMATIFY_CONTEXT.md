@@ -73,6 +73,18 @@ select their university template, and FORMATIFY does all formatting automaticall
 - Word (.docx), PDF, LaTeX — zero formatting loss
 - Key files: `backend/routers/export.py`, `backend/services/docx_generator.py`
 
+### 10. Grammar Suggestions (local, no LLM API)
+- Grammar tab = hybrid of **pyspellchecker** + fine-tuned **flan-t5-base** (`brain/ml/models/t5_grammar_v3`)
+- Key files: `backend/functions/grammar.py` (pipeline adapter), `backend/functions/grammar_local.py` (service)
+- Spell whitelist: `brain/ml/models/grammar_spell_whitelist.json` (rebuild: `cd brain/ml && python3 build_spell_whitelist.py`);
+  your own extra words: `backend/functions/grammar_extra_words.txt`
+- Output = suggestions only (model F0.5 ≈ 36% on hand-labelled sentences); never auto-applied
+- Runs inside the background analysis job; ~1.5 s per sentence on CPU (cached per sentence)
+- Env: `GRAMMAR_DEVICE` (cpu|mps), `GRAMMAR_USE_MODEL` (false = spell-checker only),
+  `GRAMMAR_MODEL_PATH`, `GRAMMAR_BATCH_SIZE`, `GRAMMAR_EXTRA_WORDS`
+- If the model can't load, grammar falls back to spell-checking only; analysis never fails because of grammar
+- Tests: `cd backend && python -m pytest tests/test_grammar_local.py`
+
 ---
 
 ## Current Pipeline Flow (Target)

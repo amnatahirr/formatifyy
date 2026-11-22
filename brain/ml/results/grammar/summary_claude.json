@@ -1,0 +1,64 @@
+{
+  "system": "claude",
+  "synthetic": {
+    "article_missing": {
+      "n": 2,
+      "fixed": 0.0,
+      "changed_wrong": 0.0,
+      "missed": 1.0
+    },
+    "ALL": {
+      "n": 20,
+      "fixed": 0.0,
+      "changed_wrong": 0.0,
+      "missed": 1.0
+    },
+    "comma_missing": {
+      "n": 3,
+      "fixed": 0.0,
+      "changed_wrong": 0.0,
+      "missed": 1.0
+    },
+    "verb_agreement": {
+      "n": 1,
+      "fixed": 0.0,
+      "changed_wrong": 0.0,
+      "missed": 1.0
+    },
+    "repeated_word": {
+      "n": 5,
+      "fixed": 0.0,
+      "changed_wrong": 0.0,
+      "missed": 1.0
+    },
+    "preposition": {
+      "n": 1,
+      "fixed": 0.0,
+      "changed_wrong": 0.0,
+      "missed": 1.0
+    },
+    "spelling": {
+      "n": 6,
+      "fixed": 0.0,
+      "changed_wrong": 0.0,
+      "missed": 1.0
+    },
+    "article_wrong": {
+      "n": 1,
+      "fixed": 0.0,
+      "changed_wrong": 0.0,
+      "missed": 1.0
+    },
+    "plural_singular": {
+      "n": 1,
+      "fixed": 0.0,
+      "changed_wrong": 0.0,
+      "missed": 1.0
+    }
+  },
+  "clean": {
+    "n": 20,
+    "false_alarm_rate": 0.0
+  },
+  "sec_per_sentence": 1.8045
+}

@@ -28,6 +28,10 @@ class AnalysisJob {
   String? error;
   Map<String, dynamic>? result;
 
+  /// Live progress from GET analyze-status:
+  /// {stage, percent, detail}. Null until the first poll answers.
+  Map<String, dynamic>? progress;
+
   final Completer<Map<String, dynamic>> completer = Completer();
 }
 
@@ -156,12 +160,12 @@ void _safeNotify() {
     return job.completer.future;
   }
 
-  /// Checks the analysis status every three seconds.
+  /// Checks the analysis status (and live progress) every two seconds.
   void _poll(AnalysisJob job, int userId, String base) {
     var busy = false;
 
     _timers[job.documentId] =
-        Timer.periodic(const Duration(seconds: 3), (timer) async {
+        Timer.periodic(const Duration(seconds: 2), (timer) async {
       if (busy) return;
 
       busy = true;
@@ -178,6 +182,12 @@ void _safeNotify() {
 
         final statusData =
             jsonDecode(statusResponse.body) as Map<String, dynamic>;
+
+        final progress = statusData['progress'];
+        if (progress is Map) {
+          job.progress = Map<String, dynamic>.from(progress);
+          _safeNotify();
+        }
 
         if (statusData['status'] == 'completed') {
           final resultResponse = await http.get(

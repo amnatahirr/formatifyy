@@ -1,111 +1,93 @@
 """
-functions/grammar.py — Grammar, spelling, and punctuation checker.
+functions/grammar.py — Grammar, spelling and punctuation SUGGESTIONS.
 
-Model: claude-haiku-4-5-20251001
+Runs fully locally (no LLM API): pyspellchecker + the fine-tuned flan-t5 model
+in brain/ml/models/t5_grammar_v3, via functions/grammar_local.py.
+Suggestions are never auto-applied; the user decides in the Grammar tab.
 """
 
 from __future__ import annotations
 
-import json
-import re
+import asyncio
+import time
 from typing import Any, Dict, List
 
-import anthropic
-
-from models import Batch, Issue
-
-# Import centralized model config — never hardcode the model string
-from config import ANALYSIS_MODEL
+from models import Batch
+from functions import grammar_local
 
 
-async def check_grammar(
-    client: anthropic.AsyncAnthropic,
-    batch: Batch,
-) -> List[Dict[str, Any]]:
-    """
-    Send every paragraph in the batch to Claude for grammar / spelling /
-    punctuation analysis.  Returns a list of raw issue dicts.
-    """
+def _report_progress(done: int, total: int) -> None:
+    try:
+        from analysis_progress import grammar_progress
+        grammar_progress(done, total)
+    except Exception:
+        pass
+
+
+def _is_heading(style: str) -> bool:
+    s = (style or "").lower()
+    return any(s.startswith(h) for h in grammar_local.HEADING_STYLES)
+
+
+def _skip_paragraph(style: str) -> bool:
+    return (style or "").lower().startswith("toc")  # table-of-contents lines
+
+
+def check_paragraphs(paragraphs) -> List[Dict[str, Any]]:
+    """Synchronous core: ParagraphBlock list → Issue-compatible dicts."""
+    paras = [p for p in paragraphs if (p.text or "").strip() and not _skip_paragraph(p.style)]
+    t0 = time.time()
+    try:
+        # Headings/titles/captions: spell-check only (the model is for sentences).
+        heading_units = [i for i, p in enumerate(paras) if _is_heading(p.style)]
+        found = grammar_local.check([p.text for p in paras], progress=_report_progress,
+                                    spell_only_units=heading_units)
+    except Exception as exc:  # grammar must never break the report
+        print(f"[grammar] check failed, returning no suggestions: {exc}")
+        return []
+
+    result: List[Dict[str, Any]] = []
+    for iss in found:
+        p = paras[iss["unit_index"]]
+        result.append({
+            "function": "grammar",
+            "type": "grammar",                       # unchanged: frontend filters on this
+            "severity": "minor",
+            "paragraph_id": p.paragraph_id,
+            "image_id": "",
+            "page": p.page_number,
+            "reason": iss["reason"],
+            "suggestion": iss["suggestion"],
+            "explanation": iss["reason"],
+            "original": iss["original"],
+            "current_heading": "",
+            "content_belongs_to": "",
+            "text_preview": iss["original"][:120],
+            "verdict": "",
+            "confidence": 0,
+            # optional extras (new)
+            "source": iss["source"],                 # spell | model | both
+            "grammar_type": iss["grammar_type"],     # spelling | grammar | punctuation
+            "char_start": iss["char_start"],
+            "char_end": iss["char_end"],
+            "sentence_index": iss["sentence_index"],
+            "sentence": iss["sentence"],
+        })
+
+    n_sent = len({(i["unit_index"], i["sentence_index"]) for i in found})
+    status = grammar_local.model_status()
+    mode = "spell+model" if status["loaded"] else "spell-only"
+    print(
+        f"[grammar] {len(paras)} paragraphs -> {len(result)} suggestions "
+        f"in {n_sent} sentences ({mode}) in {time.time() - t0:.1f}s",
+        flush=True,
+    )
+    return result
+
+
+async def check_grammar(client: Any, batch: Batch) -> List[Dict[str, Any]]:
+    """Same signature as before (`client` is unused now). Runs the CPU-heavy
+    model in a worker thread so the event loop / other checks keep running."""
     if not batch.paragraphs:
         return []
-
-    paragraphs_payload = [
-        {
-            "paragraph_id": p.paragraph_id,
-            "page": p.page_number,
-            "text": p.text,
-        }
-        for p in batch.paragraphs
-    ]
-
-    prompt = f"""You are a professional proofreader for academic documents. Find grammar, spelling, and punctuation errors.
-
-PARAGRAPHS:
-{json.dumps(paragraphs_payload, indent=2)}
-
-RULES:
-1. "original" MUST be an exact verbatim substring copied from the paragraph's "text" field (character-for-character).
-2. "suggestion" is the same substring with only the error corrected.
-3. If an entire sentence is wrong, set "original" to the full sentence and "suggestion" to the corrected sentence.
-4. Every issue MUST include the correct paragraph_id from the input.
-5. Do not flag stylistic preferences — only clear errors.
-
-For each error return:
-- "paragraph_id": from input
-- "page": page number
-- "original": exact substring from paragraph text
-- "suggestion": corrected substring
-- "reason": brief explanation
-- "severity": "major" if meaning changes, else "minor"
-
-Return ONLY valid JSON:
-{{"issues": [...]}}
-
-If no errors: {{"issues": []}}
-
-No markdown, no code fences — raw JSON only."""
-
-    try:
-        response = await client.messages.create(
-            model=ANALYSIS_MODEL,
-            max_tokens=4096,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        raw = response.content[0].text
-        parsed = _safe_parse(raw)
-        issues = parsed.get("issues", [])
-        # Normalise into Issue-compatible dicts
-        result = []
-        for iss in issues:
-            result.append({
-                "function": "grammar",
-                "type": "grammar",
-                "severity": iss.get("severity", "minor"),
-                "paragraph_id": iss.get("paragraph_id", ""),
-                "image_id": "",
-                "page": iss.get("page", 0),
-                "reason": iss.get("reason", ""),
-                "suggestion": iss.get("suggestion", ""),
-                "explanation": iss.get("reason", ""),
-                "original": iss.get("original", ""),
-                "current_heading": "",
-                "content_belongs_to": "",
-                "text_preview": iss.get("original", "")[:120],
-                "verdict": "",
-                "confidence": 0,
-            })
-        return result
-    except Exception as exc:
-        print(f"[grammar] error: {exc}")
-        return []
-
-
-# ─── JSON helpers ─────────────────────────────────────────────────────────────
-
-def _safe_parse(text: str) -> dict:
-    """Strip markdown fences and parse JSON safely."""
-    cleaned = re.sub(r"```(?:json)?\s*", "", text).strip().rstrip("`")
-    try:
-        return json.loads(cleaned)
-    except json.JSONDecodeError:
-        return {"issues": [], "error": True}
+    return await asyncio.to_thread(check_paragraphs, batch.paragraphs)

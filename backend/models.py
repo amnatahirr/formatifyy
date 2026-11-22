@@ -96,6 +96,13 @@ class Issue(BaseModel):
     needs_review: bool = False
     list_detection: str = ""
     para_indices: List[int] = Field(default_factory=list)
+    # Grammar suggestions (local spell-checker + T5 model) — optional extras.
+    # `source` above is reused: "spell" | "model" | "both".
+    grammar_type: str = ""            # spelling | grammar | punctuation
+    char_start: Optional[int] = None  # offsets of `original` inside the paragraph text
+    char_end: Optional[int] = None
+    sentence_index: Optional[int] = None
+    sentence: str = ""
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

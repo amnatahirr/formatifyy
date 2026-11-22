@@ -3,14 +3,14 @@ Accuracy metrics — honest comparison against ground_truth fixtures.
 
 PRODUCTION WIRING (must match main._run_analysis / dispatcher.dispatch_all)
 ---------------------------------------------------------------------------
-  grammar          → functions.grammar.check_grammar          (LLM)
+  grammar          → functions.grammar.check_grammar          (local spell + T5)
   formatting       → functions.formatting.check_formatting    (LLM)
   image_relevance  → functions.image_relevance.analyze_image_relevance_sync (CLIP)
   list_detection   → list_detection.detect_list_groups        (deterministic)
   plagiarism       → plagiarism.detector.detect_plagiarism_sync (+ temp corpus)
   heading/toc      → heading_analysis.analyze_headings + find_missing_template_headings
 
-Requires GEMINI_API_KEY or ANTHROPIC_API_KEY for grammar/formatting.
+Requires GEMINI_API_KEY or ANTHROPIC_API_KEY for formatting (grammar is local).
 Missing keys → SchemaMismatchError (no silent fall-back to naive_grammar_probe).
 
 Standalone:
@@ -308,7 +308,7 @@ def _focus_formatting_issues(actual: Sequence[dict], expected: Sequence[dict]) -
 
 
 def score_grammar(meta: dict) -> Score:
-    """Production: functions.grammar.check_grammar (LLM via /analyze dispatch)."""
+    """Production: functions.grammar.check_grammar (local model via /analyze dispatch)."""
     from tests_full.metrics.production_runners import (
         LLMUnavailableError,
         run_check_grammar,

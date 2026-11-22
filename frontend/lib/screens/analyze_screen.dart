@@ -1138,7 +1138,11 @@ void dispose() {
           'issue_id': issueId,
           'paragraph_id': pid,
           'original': i['original'] ?? i['current'] ?? '',
-          'suggestion': _appliedFixes[pid] ?? i['suggestion'],
+          // Local grammar suggestions are word-level (several per paragraph),
+          // so never reuse another fix's text for the same paragraph.
+          'suggestion': i['char_start'] != null
+              ? i['suggestion']
+              : (_appliedFixes[pid] ?? i['suggestion']),
         });
         grammarCount++;
       }
@@ -2699,16 +2703,19 @@ Widget build(BuildContext context) {
 
  Widget _buildLoading() => Stack(
   children: [
-    AnalyzeProgressPanel(
-      key: ValueKey('analyze_progress_$_analyzeProgressGen'),
-      documentName: widget.documentName,
-      accent: _blue,
-      textPrimary: _textPri,
-      textSecondary: _textSec,
-      surface: _surface,
-      border: _border,
-      track: _surface2,
-      isComplete: _analysisComplete,
+    Consumer<AnalysisJobProvider>(
+      builder: (context, jobs, _) => AnalyzeProgressPanel(
+        key: ValueKey('analyze_progress_$_analyzeProgressGen'),
+        documentName: widget.documentName,
+        accent: _blue,
+        textPrimary: _textPri,
+        textSecondary: _textSec,
+        surface: _surface,
+        border: _border,
+        track: _surface2,
+        isComplete: _analysisComplete,
+        progress: jobs.jobFor(widget.documentId)?.progress,
+      ),
     ),
     Positioned(
       left: 0, right: 0, bottom: 24,
@@ -2845,7 +2852,8 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
                 'Grammar',
                 grammarIssues,
                 Icons.spellcheck,
-                'Checks spelling, punctuation, and grammar errors.',
+                'Spelling, grammar and punctuation suggestions from a local checker. '
+                    'They can be wrong — review each one before applying.',
               ),
               _buildFormattingTab(formattingIssues),
               _buildMissingHeadingsTab(),
@@ -3228,7 +3236,7 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
     if (visible.isEmpty) {
       return _buildEmptyState(
         icon,
-        'No $title issues',
+        title == 'Grammar' ? 'No grammar suggestions' : 'No $title issues',
         description,
         color: _green,
       );
@@ -3702,6 +3710,13 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
     final isBulletFix = issueType == 'missing_bullets';
     final canFix = !isParaRel &&
         (isBulletFix || (pid.isNotEmpty && (suggestion.isNotEmpty || isHeadingFix)));
+    // Local grammar checker: spelling | grammar | punctuation
+    final grammarType = (issue['grammar_type'] as String? ?? '').toLowerCase();
+    final grammarTypeColor = grammarType == 'spelling'
+        ? _orange
+        : grammarType == 'punctuation'
+            ? _purple
+            : _blue;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -3719,6 +3734,10 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
               _Tag(severity.toUpperCase(), borderColor),
               const SizedBox(width: 8),
               _Tag(category.toUpperCase(), _blue),
+              if (grammarType.isNotEmpty) ...[
+                const SizedBox(width: 8),
+                _Tag(grammarType.toUpperCase(), grammarTypeColor),
+              ],
               if ((issue['page'] as num?) != null && (issue['page'] as num) > 0) ...[
                 const Spacer(),
                 Text('Page ${issue['page']}', style: TextStyle(color: _textSec, fontSize: 11)),

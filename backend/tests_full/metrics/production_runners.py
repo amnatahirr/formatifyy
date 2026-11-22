@@ -2,7 +2,8 @@
 Helpers that invoke the SAME production detectors used by main._run_analysis /
 dispatcher.dispatch_all — never stand-ins.
 
-Requires ANTHROPIC_API_KEY or GEMINI_API_KEY for LLM agents (grammar, formatting).
+Requires ANTHROPIC_API_KEY or GEMINI_API_KEY for LLM agents (formatting).
+Grammar runs locally (spell-checker + T5 model) and needs no key.
 """
 from __future__ import annotations
 
@@ -85,14 +86,13 @@ def run_check_grammar(blocks: Sequence[dict]) -> Tuple[List[dict], Dict[str, Any
     """Production: functions.grammar.check_grammar (via dispatcher path)."""
     from functions.grammar import check_grammar
 
-    client, provider = require_llm_client()
     batch = blocks_to_batch(blocks)
 
     async def _run():
-        return await check_grammar(client, batch)
+        return await check_grammar(None, batch)  # local model, no LLM client
 
     issues = asyncio.run(_run())
-    meta = {"provider": provider, "function": "functions.grammar.check_grammar"}
+    meta = {"provider": "local", "function": "functions.grammar.check_grammar"}
     return list(issues or []), meta
 
 

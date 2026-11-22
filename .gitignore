@@ -97,3 +97,14 @@ brain/ml/data/ethics/
 
 
 
+# Large ML models
+brain/ml/models/
+*.safetensors
+*.pt
+*.pth
+*.bin
+
+# Python
+*.pyc
+__pycache__/
+

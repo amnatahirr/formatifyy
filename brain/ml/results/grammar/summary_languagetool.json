@@ -1,0 +1,78 @@
+{
+  "system": "languagetool",
+  "synthetic": {
+    "article_missing": {
+      "n": 80,
+      "fixed": 0.0,
+      "changed_wrong": 0.0,
+      "missed": 1.0
+    },
+    "ALL": {
+      "n": 780,
+      "fixed": 0.603,
+      "changed_wrong": 0.033,
+      "missed": 0.364
+    },
+    "comma_missing": {
+      "n": 36,
+      "fixed": 0.083,
+      "changed_wrong": 0.0,
+      "missed": 0.917
+    },
+    "verb_agreement": {
+      "n": 40,
+      "fixed": 0.275,
+      "changed_wrong": 0.0,
+      "missed": 0.725
+    },
+    "repeated_word": {
+      "n": 165,
+      "fixed": 0.952,
+      "changed_wrong": 0.036,
+      "missed": 0.012
+    },
+    "preposition": {
+      "n": 93,
+      "fixed": 0.011,
+      "changed_wrong": 0.011,
+      "missed": 0.978
+    },
+    "spelling": {
+      "n": 150,
+      "fixed": 0.86,
+      "changed_wrong": 0.107,
+      "missed": 0.033
+    },
+    "article_wrong": {
+      "n": 22,
+      "fixed": 0.955,
+      "changed_wrong": 0.0,
+      "missed": 0.045
+    },
+    "plural_singular": {
+      "n": 51,
+      "fixed": 0.098,
+      "changed_wrong": 0.059,
+      "missed": 0.843
+    },
+    "capitalization": {
+      "n": 143,
+      "fixed": 1.0,
+      "changed_wrong": 0.0,
+      "missed": 0.0
+    }
+  },
+  "clean": {
+    "n": 779,
+    "false_alarm_rate": 0.0
+  },
+  "sec_per_sentence": 0.0288,
+  "note": "clean set LanguageTool se filter hua tha (Step 3), isliye uska false-alarm 0 hona laazmi hai: is number ko compare mat karna.",
+  "manual": {
+    "with_error_n": 73,
+    "fixed_exactly": 0.082,
+    "detected_any_change": 0.726,
+    "no_error_n": 36,
+    "false_alarm_rate": 0.444
+  }
+}
