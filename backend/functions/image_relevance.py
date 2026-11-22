@@ -637,6 +637,7 @@ async def check_images_combined(
                         "reason": ethics["reason"],
                         "suggestion": "Replace this image with appropriate academic content.",
                         "explanation": ethics["reason"],
+                        "debug_reason": ethics.get("debug_reason", ""),
                         "original": "",
                         "current_heading": heading,
                         "content_belongs_to": "",

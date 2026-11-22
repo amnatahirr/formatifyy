@@ -1,185 +1,397 @@
 {
-  "v2": {
-    "model": "ethics_head_v2",
-    "test_size": 1059,
-    "test_counts": {
-      "safe": 540,
-      "sexual": 119,
-      "weapons_violence": 400
+  "deployed_model": "ethics_head_v6 (CLIP ViT-B/32 frozen + LogisticRegression)",
+  "configs": [
+    {
+      "name": "v5_clean",
+      "scenes_per_class": 0,
+      "head_high": 0.6,
+      "head_low": 0.4
     },
-    "accuracy_3class": 0.9906,
-    "macro_f1": 0.9884,
-    "per_class": {
-      "safe": {
-        "precision": 0.9926,
-        "recall": 0.9963,
-        "f1-score": 0.9945,
-        "support": 540.0
-      },
-      "sexual": {
-        "precision": 0.9675,
-        "recall": 1.0,
-        "f1-score": 0.9835,
-        "support": 119.0
-      },
-      "weapons_violence": {
-        "precision": 0.9949,
-        "recall": 0.98,
-        "f1-score": 0.9874,
-        "support": 400.0
-      }
+    {
+      "name": "v6",
+      "scenes_per_class": 25,
+      "head_high": 0.5,
+      "head_low": 0.4
+    }
+  ],
+  "seeds": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    42
+  ],
+  "test_sizes": {
+    "medical": 1227,
+    "scenes": 1101
+  },
+  "mean": {
+    "clip_zero_shot": {
+      "n_test": 915.6667,
+      "train_acc": NaN,
+      "test_acc": NaN,
+      "recall": 0.9601,
+      "false_alarm": 0.0475,
+      "report_photo_false_alarm": 0.5977,
+      "medical_false_alarm": 0.4645,
+      "scene_false_alarm": 0.3397,
+      "borderline": NaN
     },
-    "confusion_matrix": {
-      "labels": [
-        "safe",
-        "sexual",
-        "weapons_violence"
-      ],
-      "matrix": [
-        [
-          538,
-          0,
-          2
-        ],
-        [
-          0,
-          119,
-          0
-        ],
-        [
-          4,
-          4,
-          392
-        ]
-      ]
+    "v5_clean": {
+      "n_test": 915.6667,
+      "train_acc": 0.9928,
+      "test_acc": 0.9843,
+      "recall": 0.9814,
+      "false_alarm": 0.0022,
+      "report_photo_false_alarm": 0.0333,
+      "medical_false_alarm": 0.0217,
+      "scene_false_alarm": 0.1061,
+      "borderline": 0.01
     },
-    "thresholds": [
-      {
-        "threshold": 0.3,
-        "unsafe_recall": 0.9981,
-        "safe_false_alarm": 0.0056
-      },
-      {
-        "threshold": 0.4,
-        "unsafe_recall": 0.9981,
-        "safe_false_alarm": 0.0037
-      },
-      {
-        "threshold": 0.5,
-        "unsafe_recall": 0.9961,
-        "safe_false_alarm": 0.0037
-      },
-      {
-        "threshold": 0.6,
-        "unsafe_recall": 0.9904,
-        "safe_false_alarm": 0.0019
-      },
-      {
-        "threshold": 0.7,
-        "unsafe_recall": 0.9827,
-        "safe_false_alarm": 0.0019
-      }
-    ],
-    "borderline_0.4_0.6": 0.0047,
-    "medical_test": {
-      "n": 1235,
-      "false_alarm_at_0.6": 0.2186,
-      "borderline_0.4_0.6": 0.2219,
-      "mean_p_unsafe": 0.3953
+    "v6": {
+      "n_test": 915.6667,
+      "train_acc": 0.9932,
+      "test_acc": 0.9803,
+      "recall": 0.982,
+      "false_alarm": 0.0025,
+      "report_photo_false_alarm": 0.0419,
+      "medical_false_alarm": 0.0284,
+      "scene_false_alarm": 0.0027,
+      "borderline": 0.0029
     }
   },
-  "v3": {
-    "model": "ethics_head_v3",
-    "test_size": 1059,
-    "test_counts": {
-      "safe": 540,
-      "sexual": 119,
-      "weapons_violence": 400
+  "std": {
+    "clip_zero_shot": {
+      "n_test": 41.2731,
+      "train_acc": NaN,
+      "test_acc": NaN,
+      "recall": 0.0064,
+      "false_alarm": 0.0123,
+      "report_photo_false_alarm": 0.1267,
+      "medical_false_alarm": 0.0,
+      "scene_false_alarm": 0.0,
+      "borderline": NaN
     },
-    "accuracy_3class": 0.9887,
-    "macro_f1": 0.988,
-    "per_class": {
-      "safe": {
-        "precision": 0.9854,
-        "recall": 0.9981,
-        "f1-score": 0.9917,
-        "support": 540.0
-      },
-      "sexual": {
-        "precision": 0.9754,
-        "recall": 1.0,
-        "f1-score": 0.9876,
-        "support": 119.0
-      },
-      "weapons_violence": {
-        "precision": 0.9974,
-        "recall": 0.9725,
-        "f1-score": 0.9848,
-        "support": 400.0
-      }
+    "v5_clean": {
+      "n_test": 41.2731,
+      "train_acc": 0.0006,
+      "test_acc": 0.002,
+      "recall": 0.0016,
+      "false_alarm": 0.0026,
+      "report_photo_false_alarm": 0.038,
+      "medical_false_alarm": 0.002,
+      "scene_false_alarm": 0.0096,
+      "borderline": 0.0028
     },
-    "confusion_matrix": {
-      "labels": [
-        "safe",
-        "sexual",
-        "weapons_violence"
-      ],
-      "matrix": [
-        [
-          539,
-          0,
-          1
-        ],
-        [
-          0,
-          119,
-          0
-        ],
-        [
-          8,
-          3,
-          389
-        ]
-      ]
-    },
-    "thresholds": [
-      {
-        "threshold": 0.3,
-        "unsafe_recall": 0.9961,
-        "safe_false_alarm": 0.0037
-      },
-      {
-        "threshold": 0.4,
-        "unsafe_recall": 0.9904,
-        "safe_false_alarm": 0.0037
-      },
-      {
-        "threshold": 0.5,
-        "unsafe_recall": 0.9846,
-        "safe_false_alarm": 0.0019
-      },
-      {
-        "threshold": 0.6,
-        "unsafe_recall": 0.9807,
-        "safe_false_alarm": 0.0019
-      },
-      {
-        "threshold": 0.7,
-        "unsafe_recall": 0.9653,
-        "safe_false_alarm": 0.0019
-      }
-    ],
-    "borderline_0.4_0.6": 0.0057,
-    "medical_test": {
-      "n": 1235,
-      "false_alarm_at_0.6": 0.0227,
-      "borderline_0.4_0.6": 0.0332,
-      "mean_p_unsafe": 0.1139
+    "v6": {
+      "n_test": 41.2731,
+      "train_acc": 0.0004,
+      "test_acc": 0.0013,
+      "recall": 0.0008,
+      "false_alarm": 0.0024,
+      "report_photo_false_alarm": 0.0344,
+      "medical_false_alarm": 0.0011,
+      "scene_false_alarm": 0.0006,
+      "borderline": 0.0013
     }
   },
-  "clip_zero_shot": {
-    "unsafe_recall": 0.9499,
-    "safe_false_alarm": 0.1574,
-    "medical_false_alarm": 0.4623
+  "per_seed": [
+    {
+      "method": "v5_clean",
+      "threshold": 0.6,
+      "seed": 1,
+      "n_test": 918,
+      "train_acc": 0.994,
+      "test_acc": 0.9815,
+      "recall": 0.9824,
+      "false_alarm": 0.0049,
+      "report_photo_false_alarm": 0.0833,
+      "medical_false_alarm": 0.0236,
+      "scene_false_alarm": 0.1244,
+      "borderline": 0.012
+    },
+    {
+      "method": "v6",
+      "threshold": 0.5,
+      "seed": 1,
+      "n_test": 918,
+      "train_acc": 0.9932,
+      "test_acc": 0.9782,
+      "recall": 0.9824,
+      "false_alarm": 0.0049,
+      "report_photo_false_alarm": 0.0833,
+      "medical_false_alarm": 0.0277,
+      "scene_false_alarm": 0.0027,
+      "borderline": 0.0033
+    },
+    {
+      "method": "clip_zero_shot",
+      "threshold": NaN,
+      "seed": 1,
+      "n_test": 918,
+      "train_acc": NaN,
+      "test_acc": NaN,
+      "recall": 0.9608,
+      "false_alarm": 0.0392,
+      "report_photo_false_alarm": 0.4167,
+      "medical_false_alarm": 0.4645,
+      "scene_false_alarm": 0.3397,
+      "borderline": NaN
+    },
+    {
+      "method": "v5_clean",
+      "threshold": 0.6,
+      "seed": 2,
+      "n_test": 909,
+      "train_acc": 0.9922,
+      "test_acc": 0.9857,
+      "recall": 0.9824,
+      "false_alarm": 0.0025,
+      "report_photo_false_alarm": 0.0667,
+      "medical_false_alarm": 0.0228,
+      "scene_false_alarm": 0.109,
+      "borderline": 0.0055
+    },
+    {
+      "method": "v6",
+      "threshold": 0.5,
+      "seed": 2,
+      "n_test": 909,
+      "train_acc": 0.9925,
+      "test_acc": 0.9813,
+      "recall": 0.9824,
+      "false_alarm": 0.0,
+      "report_photo_false_alarm": 0.0,
+      "medical_false_alarm": 0.0302,
+      "scene_false_alarm": 0.0036,
+      "borderline": 0.0022
+    },
+    {
+      "method": "clip_zero_shot",
+      "threshold": NaN,
+      "seed": 2,
+      "n_test": 909,
+      "train_acc": NaN,
+      "test_acc": NaN,
+      "recall": 0.9647,
+      "false_alarm": 0.0376,
+      "report_photo_false_alarm": 0.6,
+      "medical_false_alarm": 0.4645,
+      "scene_false_alarm": 0.3397,
+      "borderline": NaN
+    },
+    {
+      "method": "v5_clean",
+      "threshold": 0.6,
+      "seed": 3,
+      "n_test": 871,
+      "train_acc": 0.9929,
+      "test_acc": 0.9828,
+      "recall": 0.9824,
+      "false_alarm": 0.0055,
+      "report_photo_false_alarm": 0.05,
+      "medical_false_alarm": 0.0228,
+      "scene_false_alarm": 0.1017,
+      "borderline": 0.0126
+    },
+    {
+      "method": "v6",
+      "threshold": 0.5,
+      "seed": 3,
+      "n_test": 871,
+      "train_acc": 0.9935,
+      "test_acc": 0.9793,
+      "recall": 0.9824,
+      "false_alarm": 0.0055,
+      "report_photo_false_alarm": 0.05,
+      "medical_false_alarm": 0.0293,
+      "scene_false_alarm": 0.0027,
+      "borderline": 0.0046
+    },
+    {
+      "method": "clip_zero_shot",
+      "threshold": NaN,
+      "seed": 3,
+      "n_test": 871,
+      "train_acc": NaN,
+      "test_acc": NaN,
+      "recall": 0.9608,
+      "false_alarm": 0.0416,
+      "report_photo_false_alarm": 0.5,
+      "medical_false_alarm": 0.4645,
+      "scene_false_alarm": 0.3397,
+      "borderline": NaN
+    },
+    {
+      "method": "v5_clean",
+      "threshold": 0.6,
+      "seed": 4,
+      "n_test": 876,
+      "train_acc": 0.9926,
+      "test_acc": 0.9852,
+      "recall": 0.9784,
+      "false_alarm": 0.0,
+      "report_photo_false_alarm": 0.0,
+      "medical_false_alarm": 0.0187,
+      "scene_false_alarm": 0.099,
+      "borderline": 0.008
+    },
+    {
+      "method": "v6",
+      "threshold": 0.5,
+      "seed": 4,
+      "n_test": 876,
+      "train_acc": 0.9932,
+      "test_acc": 0.9806,
+      "recall": 0.9824,
+      "false_alarm": 0.0,
+      "report_photo_false_alarm": 0.0,
+      "medical_false_alarm": 0.0277,
+      "scene_false_alarm": 0.0018,
+      "borderline": 0.0011
+    },
+    {
+      "method": "clip_zero_shot",
+      "threshold": NaN,
+      "seed": 4,
+      "n_test": 876,
+      "train_acc": NaN,
+      "test_acc": NaN,
+      "recall": 0.951,
+      "false_alarm": 0.071,
+      "report_photo_false_alarm": 0.6667,
+      "medical_false_alarm": 0.4645,
+      "scene_false_alarm": 0.3397,
+      "borderline": NaN
+    },
+    {
+      "method": "v5_clean",
+      "threshold": 0.6,
+      "seed": 5,
+      "n_test": 982,
+      "train_acc": 0.9929,
+      "test_acc": 0.9868,
+      "recall": 0.9804,
+      "false_alarm": 0.0,
+      "report_photo_false_alarm": 0.0,
+      "medical_false_alarm": 0.0196,
+      "scene_false_alarm": 0.1026,
+      "borderline": 0.0102
+    },
+    {
+      "method": "v6",
+      "threshold": 0.5,
+      "seed": 5,
+      "n_test": 982,
+      "train_acc": 0.9938,
+      "test_acc": 0.9817,
+      "recall": 0.9804,
+      "false_alarm": 0.0021,
+      "report_photo_false_alarm": 0.0625,
+      "medical_false_alarm": 0.0277,
+      "scene_false_alarm": 0.0027,
+      "borderline": 0.0041
+    },
+    {
+      "method": "clip_zero_shot",
+      "threshold": NaN,
+      "seed": 5,
+      "n_test": 982,
+      "train_acc": NaN,
+      "test_acc": NaN,
+      "recall": 0.9686,
+      "false_alarm": 0.0466,
+      "report_photo_false_alarm": 0.625,
+      "medical_false_alarm": 0.4645,
+      "scene_false_alarm": 0.3397,
+      "borderline": NaN
+    },
+    {
+      "method": "v5_clean",
+      "threshold": 0.6,
+      "seed": 42,
+      "n_test": 938,
+      "train_acc": 0.9925,
+      "test_acc": 0.984,
+      "recall": 0.9824,
+      "false_alarm": 0.0,
+      "report_photo_false_alarm": 0.0,
+      "medical_false_alarm": 0.0228,
+      "scene_false_alarm": 0.0999,
+      "borderline": 0.0117
+    },
+    {
+      "method": "v6",
+      "threshold": 0.5,
+      "seed": 42,
+      "n_test": 938,
+      "train_acc": 0.9931,
+      "test_acc": 0.9808,
+      "recall": 0.9824,
+      "false_alarm": 0.0023,
+      "report_photo_false_alarm": 0.0556,
+      "medical_false_alarm": 0.0277,
+      "scene_false_alarm": 0.0027,
+      "borderline": 0.0021
+    },
+    {
+      "method": "clip_zero_shot",
+      "threshold": NaN,
+      "seed": 42,
+      "n_test": 938,
+      "train_acc": NaN,
+      "test_acc": NaN,
+      "recall": 0.9549,
+      "false_alarm": 0.0491,
+      "report_photo_false_alarm": 0.7778,
+      "medical_false_alarm": 0.4645,
+      "scene_false_alarm": 0.3397,
+      "borderline": NaN
+    }
+  ],
+  "per_class_all_seeds": {
+    "safe": {
+      "precision": 0.9689,
+      "recall": 0.9979,
+      "f1-score": 0.9832,
+      "support": 2434.0
+    },
+    "sexual": {
+      "precision": 0.9652,
+      "recall": 0.9985,
+      "f1-score": 0.9815,
+      "support": 666.0
+    },
+    "weapons_violence": {
+      "precision": 0.9974,
+      "recall": 0.9574,
+      "f1-score": 0.977,
+      "support": 2394.0
+    }
+  },
+  "confusion_matrix_all_seeds": {
+    "labels": [
+      "safe",
+      "sexual",
+      "weapons_violence"
+    ],
+    "matrix": [
+      [
+        2429,
+        0,
+        5
+      ],
+      [
+        0,
+        665,
+        1
+      ],
+      [
+        78,
+        24,
+        2292
+      ]
+    ]
   }
 }

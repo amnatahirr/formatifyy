@@ -34,5 +34,5 @@ google-api-python-client>=2.108.0
 google-auth-httplib2>=0.2.0
 google-auth-oauthlib>=1.2.0
 pypandoc_binary
-scikit-learn
+scikit-learn==1.8.0  # ethics head (.joblib) isi version se bana hai
 joblib
