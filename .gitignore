@@ -108,3 +108,6 @@ brain/ml/models/
 *.pyc
 __pycache__/
 
+
+backend/brain/
+backend/.cache/
