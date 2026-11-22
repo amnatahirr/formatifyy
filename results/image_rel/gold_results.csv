@@ -1,0 +1,6 @@
+method,auc,macro_f1,acc,prec_relevant,rec_relevant
+"CLIP zero-shot cosine (thr 0.262, val-tuned)",0.6944,0.6663,0.7086,0.5698,0.5269
+"CLIP zero-shot cosine (thr 0.22, current live)",0.6944,0.4614,0.4676,0.3721,0.8602
+MiniLM caption~heading only (thr 0.270),0.762,0.7133,0.759,0.6757,0.5376
+Trained scorer (caption available),0.8341,0.7529,0.7806,0.6739,0.6667
+Trained scorer (caption hidden),0.763,0.6849,0.7194,0.5806,0.5806

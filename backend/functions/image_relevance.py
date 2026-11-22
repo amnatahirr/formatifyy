@@ -8,7 +8,13 @@ document (plus nearest heading), using CLIP + BLIP caption signals.
 from __future__ import annotations
 
 import asyncio
+import base64
+import io
+import os
 import re
+import tempfile
+import threading
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from models import Batch, ImageBlock, ParagraphBlock
@@ -310,6 +316,93 @@ def surrounding_context_for_image(
 
 
 
+# ======================================================================
+# ENGINE=local : our trained model (backend/image_rel_local, trained in brain/ml/image_rel)
+#   ENGINE=api (default) keeps the original CLIP-threshold code below untouched.
+# ======================================================================
+
+_LOCAL_SCORER = None
+_LOCAL_LOCK = threading.Lock()
+
+
+def _use_local_engine() -> bool:
+    return os.getenv("ENGINE", "api").strip().lower() == "local"
+
+
+def _get_local_scorer():
+    """Load the trained bundle once (CLIP + MiniLM + XGBoost), reuse for every image."""
+    global _LOCAL_SCORER
+    with _LOCAL_LOCK:
+        if _LOCAL_SCORER is None:
+            from image_rel_local.local_scorer import LocalImageRelevance
+            _LOCAL_SCORER = LocalImageRelevance()
+    return _LOCAL_SCORER
+
+
+def _local_analyze(
+    b64: str,
+    heading: str,
+    paragraph: str,
+    caption: str | None,
+    before_text: str,
+    after_text: str,
+    figure_caption: str,
+    threshold: float,
+) -> Optional[dict]:
+    """Score one image with the trained model. Returns the same dict shape as
+    analyze_image_relevance_sync, or None if anything fails (caller then uses the old path)."""
+    try:
+        from PIL import Image
+
+        raw = base64.b64decode(b64.split(",", 1)[-1])
+        if before_text or after_text:
+            section = _build_section_text(heading, before_text, after_text)
+        else:
+            section = _build_section_text(heading, paragraph, "")
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "img.png"
+            Image.open(io.BytesIO(raw)).convert("RGB").save(path)
+            r = _get_local_scorer().score(
+                str(path), heading or "", figure_caption or "", "", section
+            )
+    except Exception as exc:
+        print(f"[image_relevance] local model failed, using old path: {exc}")
+        return None
+
+    score, relevant, review = r["score"], bool(r["relevant"]), bool(r["needs_review"])
+    if relevant:
+        reason = f"Image matches the section (local model score {score:.2f})."
+    elif review:
+        reason = (
+            f"This image may not match the section '{(heading or '')[:60]}' "
+            f"(local model score {score:.2f}, not fully sure) - please check it."
+        )
+    else:
+        reason = (
+            f"This image does not seem to match the section '{(heading or '')[:60]}' "
+            f"(local model score {score:.2f})."
+        )
+    print(f"[image_relevance] LOCAL {'RELEVANT' if relevant else 'IRRELEVANT'} | score={score:.3f} | review={review} | heading='{(heading or '')[:50]}'")
+    return {
+        "similarity": round(score, 4),
+        "clip_similarity": round(score, 4),
+        "caption_alignment": 0.0,
+        "relevant": relevant,
+        "is_relevant": relevant,
+        "verdict": "relevant" if relevant else "irrelevant",
+        "confidence": round(float(r["confidence"]), 4),
+        "threshold": threshold,
+        "caption": figure_caption or caption or "",
+        "heading": heading,
+        "before_text": before_text,
+        "after_text": after_text,
+        "keyword_matches": [],
+        "needs_review": review,
+        "engine": "local",
+        "reason": reason,
+    }
+
+
 def analyze_image_relevance_sync(
     b64: str,
     heading: str = "",
@@ -339,6 +432,14 @@ def analyze_image_relevance_sync(
             "before_text": before_text,
             "after_text": after_text,
         }
+
+    # ENGINE=local: trained model handles every image (diagrams included).
+    if _use_local_engine():
+        local = _local_analyze(
+            b64, heading, paragraph, caption, before_text, after_text, figure_caption, threshold
+        )
+        if local is not None:
+            return local
 
     # Diagrams (use case, class, ER, DFD, flowcharts...) cannot be judged by
     # CLIP — treat them as relevant instead of flagging them falsely.
@@ -508,13 +609,17 @@ def _issue_from_relevance(
     return {
         "function": "image_relevance",
         "type": "image_relevance",
-        "severity": "major",
+        "severity": "minor" if result.get("needs_review") else "major",
         "paragraph_id": "",
         "image_id": image_id,
         "page": page,
         "reason": result["reason"],
-        "suggestion": "Replace this image with one that matches the surrounding content "
-        "(text before and after the figure).",
+        "suggestion": (
+            "Please check that this image belongs in this section."
+            if result.get("needs_review")
+            else "Replace this image with one that matches the surrounding content "
+            "(text before and after the figure)."
+        ),
         "explanation": result["reason"],
         "original": "",
         "current_heading": heading,
@@ -527,6 +632,7 @@ def _issue_from_relevance(
         "similarity": result["similarity"],
         "confidence": conf_pct,
         "relevant": False,
+        "needs_review": bool(result.get("needs_review")),
         "_replace_image": True,
     }
 

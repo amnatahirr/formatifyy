@@ -1,0 +1,38 @@
+{
+  "drops_and_counts": {
+    "reports_used": 265,
+    "img_block_without_path": 0,
+    "images_found": 10672,
+    "drop_before_first_heading": 497,
+    "drop_front_or_back_matter": 133,
+    "drop_dup_same_split": 1087,
+    "drop_dup_other_split": 260
+  },
+  "final_images": 8695,
+  "per_split": {
+    "test": {
+      "images": 1514,
+      "pairs": 4542,
+      "pos": 1514,
+      "neg": 3028,
+      "caption_pct": 73.0,
+      "reports": 39
+    },
+    "val": {
+      "images": 1225,
+      "pairs": 3675,
+      "pos": 1225,
+      "neg": 2450,
+      "caption_pct": 78.1,
+      "reports": 39
+    },
+    "train": {
+      "images": 5956,
+      "pairs": 17846,
+      "pos": 5956,
+      "neg": 11890,
+      "caption_pct": 72.1,
+      "reports": 181
+    }
+  }
+}

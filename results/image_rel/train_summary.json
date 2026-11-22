@@ -1,0 +1,65 @@
+{
+  "features": [
+    "clip_img_head",
+    "clip_img_cap",
+    "mini_cap_head",
+    "mini_cap_sec",
+    "has_caption",
+    "cap_len",
+    "head_len",
+    "has_sec",
+    "t_diagram",
+    "t_screen",
+    "t_chart",
+    "t_photo",
+    "t_table",
+    "aspect",
+    "ocr_overlap",
+    "has_ocr",
+    "blip_head_sim",
+    "has_blip"
+  ],
+  "t_dec": 0.3630000054836273,
+  "band_half_width": 0.2,
+  "band_reached_target": true,
+  "feature_meta": {
+    "backend": "real",
+    "clip": "openai/clip-vit-base-patch32",
+    "ocr": true,
+    "blip": false
+  },
+  "max_depth": 6,
+  "val_metrics": {
+    "auc": 0.8596,
+    "macro_f1": 0.7692,
+    "acc": 0.8041,
+    "prec_relevant": 0.7473,
+    "rec_relevant": 0.6229
+  },
+  "trained": "2026-11-22T20:03:01",
+  "feature_importance": {
+    "clip_img_head": 0.10933967679738998,
+    "clip_img_cap": 0.05693565309047699,
+    "mini_cap_head": 0.24946990609169006,
+    "mini_cap_sec": 0.050429683178663254,
+    "has_caption": 0.0467936173081398,
+    "cap_len": 0.06366601586341858,
+    "head_len": 0.048051755875349045,
+    "has_sec": 0.07002758979797363,
+    "t_diagram": 0.050239164382219315,
+    "t_screen": 0.02532266639173031,
+    "t_chart": 0.026152580976486206,
+    "t_photo": 0.03238780051469803,
+    "t_table": 0.023950710892677307,
+    "aspect": 0.029204264283180237,
+    "ocr_overlap": 0.07772234827280045,
+    "has_ocr": 0.04030652716755867,
+    "blip_head_sim": 0.0,
+    "has_blip": 0.0
+  },
+  "band_row": {
+    "half_width": 0.2,
+    "pct_to_claude": 27.5,
+    "local_acc": 0.8739
+  }
+}
