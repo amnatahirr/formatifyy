@@ -23,6 +23,7 @@ from functions.local_vision import (
     generate_caption_from_b64,
     image_fingerprint,
     is_diagram_like_from_b64,
+    tidy_caption,
 )
 
 
@@ -605,6 +606,19 @@ def _issue_from_relevance(
     irr_conf = max(0.0, min(1.0, 1.0 - conf))
     conf_pct = int(round(irr_conf * 100))
     surrounding = _build_section_text(heading, before, after)
+    # UI: same as the Image Ethics card -> image caption on the paperclip line and a
+    # plain-language reason. Technical scores stay in debug_reason (and the terminal log).
+    caption_display = tidy_caption(result.get("caption") or "")
+    if result.get("needs_review"):
+        reason = (
+            "This image may not be related to the surrounding text in this section. "
+            "Please check that it belongs here."
+        )
+    else:
+        reason = (
+            "This image does not appear to be related to the surrounding text in this section. "
+            "Please replace it with an image that matches the content, or remove it."
+        )
 
     return {
         "function": "image_relevance",
@@ -613,21 +627,22 @@ def _issue_from_relevance(
         "paragraph_id": "",
         "image_id": image_id,
         "page": page,
-        "reason": result["reason"],
+        "reason": reason,
+        "debug_reason": result["reason"],
         "suggestion": (
             "Please check that this image belongs in this section."
             if result.get("needs_review")
             else "Replace this image with one that matches the surrounding content "
             "(text before and after the figure)."
         ),
-        "explanation": result["reason"],
+        "explanation": reason,
         "original": "",
         "current_heading": heading,
         "content_belongs_to": "",
         "surrounding_text": surrounding[:400],
         "text_before": (before or "")[:200],
         "text_after": (after or "")[:200],
-        "text_preview": surrounding[:120],
+        "text_preview": caption_display[:120] or surrounding[:120],
         "verdict": "irrelevant",
         "similarity": result["similarity"],
         "confidence": conf_pct,
@@ -747,7 +762,7 @@ async def check_images_combined(
                         "original": "",
                         "current_heading": heading,
                         "content_belongs_to": "",
-                        "text_preview": caption[:120],
+                        "text_preview": tidy_caption(caption)[:120],
                         "verdict": "unethical",
                         "ethics_category": ethics["category"],
                         "confidence": conf_pct,

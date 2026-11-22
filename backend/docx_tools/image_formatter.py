@@ -1,5 +1,9 @@
 """
-image_formatter.py — Auto-format images in DOCX: resize, center, add AI captions.
+image_formatter.py — Auto-format images in DOCX: resize, center, add figure captions.
+
+Captions are generated locally with BLIP (functions/local_vision.py), the same
+caption the Image Ethics / Image Relevance tabs show. No external API is used.
+A caption the student already wrote under the image is kept as it is.
 """
 
 from __future__ import annotations
@@ -9,8 +13,6 @@ import os
 import re
 import shutil
 from typing import Any, Dict, List, Optional, Tuple
-
-from config import ANALYSIS_MODEL
 
 FIGURE_CAPTION_RE = re.compile(r"^Figure\s+(\d+)\s*:", re.IGNORECASE)
 BLIP_TAG = "{http://schemas.openxmlformats.org/drawingml/2006/main}blip"
@@ -213,17 +215,7 @@ async def fix_image_captions(
             except Exception:
                 pass
 
-        surrounding = _surrounding_text(doc.paragraphs, img_idx)
-        if client:
-            caption = await _generate_caption(client, b64, fig_num, surrounding)
-        else:
-            nxt_text = ""
-            if img_idx + 1 < len(doc.paragraphs):
-                nxt_text = doc.paragraphs[img_idx + 1].text.strip()
-            if FIGURE_CAPTION_RE.match(nxt_text):
-                caption = nxt_text
-            else:
-                caption = f"Figure {fig_num}: Illustration related to the document content."
+        caption = await _caption_for_image(doc, para, img_idx, b64, fig_num, client)
 
         _ensure_caption_below_image(doc, img_idx, caption)
         fixed += 1
@@ -286,8 +278,7 @@ async def format_document_images(
             except Exception:
                 pass
 
-        surrounding = _surrounding_text(doc.paragraphs, img_idx)
-        caption = await _generate_caption(client, b64, fig_num, surrounding)
+        caption = await _caption_for_image(doc, para, img_idx, b64, fig_num, client)
         captions_added += 1
 
         para.paragraph_format.alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -329,39 +320,107 @@ def _surrounding_text(paragraphs, idx: int) -> str:
     return "\n".join(parts)[:1500]
 
 
+PLACEHOLDER_DESCRIPTION = "Illustration related to the document content."
+
+
+def is_placeholder_description(desc: str) -> bool:
+    """True for the old auto-filled text, so it gets replaced by a real caption."""
+    return (desc or "").strip().rstrip(".").lower() == PLACEHOLDER_DESCRIPTION.rstrip(".").lower()
+
+
+def _existing_caption_description(doc, img_para) -> str:
+    """
+    Description of a figure caption the student already wrote under this image
+    (before the next image), e.g. 'Use Case Diagram' from 'Figure 3.2: Use Case Diagram'.
+    Returns '' when there is none, or when it is only the old placeholder text.
+    """
+    from docx_tools.docx_fields import (
+        CAPTION_TEXT_RE,
+        _LOOSE_FIGURE_CAPTION_RE,
+        _next_body_paragraphs,
+        paragraph_has_image,
+        paragraph_is_figure_caption,
+    )
+
+    for cand in _next_body_paragraphs(doc, img_para, limit=12):
+        if paragraph_has_image(cand):
+            break
+        if not paragraph_is_figure_caption(cand):
+            continue
+        text = (cand.text or "").strip()
+        desc = ""
+        m = _LOOSE_FIGURE_CAPTION_RE.match(text)
+        if m and (m.group(2) or "").strip():
+            desc = m.group(2).strip()
+        else:
+            cm = CAPTION_TEXT_RE.match(text)
+            if cm and cm.group(3).strip():
+                desc = cm.group(3).strip()
+        return "" if is_placeholder_description(desc) else desc
+    return ""
+
+
 async def _generate_caption(client, b64: str, fig_num: int, surrounding: str) -> str:
-    default = f"Figure {fig_num}: Illustration related to the document content."
-    if not b64 or client is None:
+    """
+    'Figure N: <description>' from the local BLIP caption of the image.
+
+    Same (cached) BLIP caption the Image Ethics / Relevance tabs use, cleaned with
+    tidy_caption. `client` and `surrounding` are kept for signature compatibility
+    and are not used (no external API).
+    """
+    import asyncio
+    from functions.local_vision import generate_caption_from_b64, image_fingerprint, tidy_caption
+
+    default = f"Figure {fig_num}: {PLACEHOLDER_DESCRIPTION}"
+    if not b64:
         return default
-
-    media_type = "image/jpeg" if b64.startswith("/9j/") else "image/png"
-    prompt = f"""Generate a concise academic figure caption for this image.
-Surrounding document text:
-\"\"\"{surrounding[:800]}\"\"\"
-
-Return ONLY valid JSON:
-{{"caption": "Figure {fig_num}: <short descriptive caption under 20 words>"}}"""
-
     try:
-        response = await client.messages.create(
-            model=ANALYSIS_MODEL,
-            max_tokens=256,
-            messages=[{
-                "role": "user",
-                "content": [
-                    {"type": "image", "source": {"type": "base64", "media_type": media_type, "data": b64}},
-                    {"type": "text", "text": prompt},
-                ],
-            }],
+        raw = await asyncio.to_thread(
+            generate_caption_from_b64, b64, image_fingerprint(b64)
         )
-        raw = response.content[0].text
-        cleaned = re.sub(r"```(?:json)?\s*", "", raw).strip().rstrip("`")
-        import json
-        parsed = json.loads(cleaned)
-        cap = parsed.get("caption", default)
-        if not cap.lower().startswith("figure"):
-            cap = f"Figure {fig_num}: {cap}"
-        return cap
+        desc = tidy_caption(raw)
+        if not desc:
+            return default
+        print(f"[image_formatter] Figure {fig_num}: BLIP '{raw}' -> '{desc}'")
+        return f"Figure {fig_num}: {desc}"
     except Exception as exc:
         print(f"[image_formatter] caption error: {exc}")
         return default
+
+
+_NUMBERED_HEADING_RE = re.compile(r"^\s*\d+(?:\.\d+)*\.?\s+(\S.*)$")
+
+
+def _heading_fallback_description(doc, img_idx: int) -> str:
+    """
+    For drawings with no picture file (Word shapes / SmartArt) BLIP has nothing
+    to read: use the nearest heading at or above the drawing, e.g.
+    '9.2. Methodology' -> 'Methodology'. Returns '' when none is found.
+    """
+    paragraphs = doc.paragraphs
+    for j in range(img_idx, max(-1, img_idx - 6), -1):
+        para = paragraphs[j]
+        text = (para.text or "").strip()
+        if not text or len(text) > 80 or FIGURE_CAPTION_RE.match(text):
+            continue
+        style = (getattr(para.style, "name", "") or "").lower()
+        m = _NUMBERED_HEADING_RE.match(text)
+        if style.startswith("heading") or m:
+            return (m.group(1) if m else text).strip().rstrip(".:")
+    return ""
+
+
+async def _caption_for_image(doc, para, img_idx: int, b64: str, fig_num: int, client) -> str:
+    """Student's own caption if present, else BLIP caption, else nearest heading."""
+    existing = _existing_caption_description(doc, para)
+    if existing:
+        return f"Figure {fig_num}: {existing}"
+    surrounding = _surrounding_text(doc.paragraphs, img_idx)
+    caption = await _generate_caption(client, b64, fig_num, surrounding)
+    if not b64 and is_placeholder_description(caption.split(":", 1)[-1]):
+        heading = _heading_fallback_description(doc, img_idx)
+        if heading:
+            print(f"[image_formatter] Figure {fig_num}: no picture file (drawing), "
+                  f"using heading '{heading}'")
+            return f"Figure {fig_num}: {heading}"
+    return caption

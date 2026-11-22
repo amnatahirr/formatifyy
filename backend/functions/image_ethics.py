@@ -40,7 +40,7 @@ import re
 from typing import Any, Dict, List
 
 from models import Batch
-from functions.local_vision import generate_caption_from_b64, image_fingerprint
+from functions.local_vision import generate_caption_from_b64, image_fingerprint, tidy_caption
 from functions.ethics_head import predict_unsafe
 
 # "local"   = trained head + keyword engine (main)
@@ -636,7 +636,7 @@ async def _evaluate_single_image(
         "original": "",
         "current_heading": "",
         "content_belongs_to": "",
-        "text_preview": result.get("caption", "")[:120],
+        "text_preview": tidy_caption(result.get("caption", ""))[:120],
         "verdict": "unethical",
         "ethics_category": result["category"],
         "confidence": conf_pct,

@@ -526,6 +526,11 @@ def _move_paragraph_after(ref_para, move_para) -> None:
     ref_para._element.addnext(move_el)
 
 
+def _is_placeholder_caption_desc(desc: str | None) -> bool:
+    """Old auto-filled caption text; a real (BLIP / student) description replaces it."""
+    return (desc or "").strip().rstrip(".").lower() == "illustration related to the document content"
+
+
 def attach_figure_caption_below_image(
     doc,
     img_para,
@@ -581,10 +586,11 @@ def attach_figure_caption_below_image(
             if paragraph_is_figure_caption(cand):
                 m = _LOOSE_FIGURE_CAPTION_RE.match((cand.text or "").strip())
                 if m and (m.group(2) or "").strip():
-                    desc = m.group(2).strip()
+                    if not _is_placeholder_caption_desc(m.group(2)):
+                        desc = m.group(2).strip()
                 else:
                     cm = CAPTION_TEXT_RE.match((cand.text or "").strip())
-                    if cm and cm.group(3).strip():
+                    if cm and cm.group(3).strip() and not _is_placeholder_caption_desc(cm.group(3)):
                         desc = cm.group(3).strip()
                 _move_paragraph_after(img_para, cand)
                 cap_para = cand
@@ -595,11 +601,18 @@ def attach_figure_caption_below_image(
         rebuild_caption_with_seq(cap_para, "Figure", desc)
     elif not paragraph_has_seq_caption(cap_para._element, "Figure"):
         m = CAPTION_TEXT_RE.match((cap_para.text or "").strip())
-        if m and m.group(1).lower() == "figure":
+        if m and m.group(1).lower() == "figure" and not _is_placeholder_caption_desc(m.group(3)):
             desc = m.group(3).strip() or desc
         rebuild_caption_with_seq(cap_para, "Figure", desc)
     elif preferred_caption_text and desc:
         rebuild_caption_with_seq(cap_para, "Figure", desc)
+    elif not _is_placeholder_caption_desc(desc):
+        # Existing caption is only the old placeholder -> use the real description.
+        cur = (cap_para.text or "").strip()
+        lm = _LOOSE_FIGURE_CAPTION_RE.match(cur)
+        cur_desc = (lm.group(2) if lm else "") or ""
+        if _is_placeholder_caption_desc(cur_desc):
+            rebuild_caption_with_seq(cap_para, "Figure", desc)
 
     # Remove duplicate captions further down (same description), stop at next image.
     for cand in list(_next_body_paragraphs(doc, cap_para, limit=20)):
@@ -852,13 +865,28 @@ def ensure_figure_captions_for_lists(doc) -> Dict[str, Any]:
         and not _paragraph_is_before_body_start(doc, p, body_start)
     ]
 
+    # Drawings made of Word shapes (no picture file) never get a BLIP caption from
+    # the image formatter; give them the nearest heading instead of the placeholder.
+    from docx_tools.image_formatter import _heading_fallback_description
+
+    all_paras = doc.paragraphs
+    para_index = {p._element: i for i, p in enumerate(all_paras)}
+
     for para in image_paras:
         had_immediate = False
         followers = list(_next_body_paragraphs(doc, para, limit=1))
         if followers and paragraph_is_figure_caption(followers[0]):
             had_immediate = True
 
-        attach_figure_caption_below_image(doc, para)
+        heading_desc = ""
+        if not list(para._element.iter(qn("a:blip"))):
+            idx = para_index.get(para._element)
+            if idx is not None:
+                heading_desc = _heading_fallback_description(doc, idx)
+        if heading_desc:
+            attach_figure_caption_below_image(doc, para, description=heading_desc)
+        else:
+            attach_figure_caption_below_image(doc, para)
         if not had_immediate:
             added += 1
 

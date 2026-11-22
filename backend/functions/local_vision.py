@@ -16,6 +16,7 @@ import numpy as np
 import base64
 import hashlib
 import io
+import re
 import threading
 from typing import Tuple
 
@@ -148,6 +149,57 @@ def generate_caption(image: Image.Image, max_new_tokens: int = 30) -> str:
     inputs = processor(images=image, return_tensors="pt").to(_device)
     out = model.generate(**inputs, max_new_tokens=max_new_tokens)
     return processor.decode(out[0], skip_special_tokens=True).strip()
+
+
+_CAPTION_TRAILING_WORDS = {
+    "a", "an", "the", "and", "or", "with", "of", "on", "in", "at", "to", "for",
+    "by", "from", "as", "is", "are",
+}
+
+
+def tidy_caption(caption: str) -> str:
+    """
+    Clean a raw BLIP caption for display (figure captions, UI).
+
+    BLIP sometimes loops ("a handgun with am am am am ...") or doubles a phrase
+    ("pills and pills"). This only cleans the text for people to read; the raw
+    caption is still what the ethics keyword engine and relevance scoring use.
+
+      "a handgun and a handgun with am am am am"  -> "A handgun"
+      "a glass of alcohol with pills and pills"   -> "A glass of alcohol with pills"
+    """
+    text = " ".join((caption or "").split())
+    if not text:
+        return ""
+    # Quoted OCR fragments: "a page with the text, ' i defed as '"
+    text = re.sub(r",?\s*['\"][^'\"]*(?:['\"]|$)", "", text).strip()
+
+    # A word repeated 3+ times in a row is a decoding loop: drop the whole run.
+    # Exactly twice in a row: keep one.
+    words, out, i = text.split(), [], 0
+    while i < len(words):
+        j = i
+        while j + 1 < len(words) and words[j + 1].lower() == words[i].lower():
+            j += 1
+        if j - i + 1 < 3:
+            out.append(words[i])
+        i = j + 1
+    text = " ".join(out)
+
+    # "X and X" / "X and a X" with the same phrase (1-4 words) -> "X"
+    prev = None
+    while prev != text:
+        prev = text
+        text = re.sub(r"\b((?:\w+\s+){0,3}\w+)\s+and\s+(?:an?\s+)?\1\b", r"\1",
+                      text, flags=re.IGNORECASE)
+        text = re.sub(r"\b(an?\s+)((?:\w+\s+){0,3}\w+)\s+and\s+\1\2\b", r"\1\2",
+                      text, flags=re.IGNORECASE)
+
+    words = text.split()
+    while words and words[-1].lower().strip(",.;:") in _CAPTION_TRAILING_WORDS:
+        words.pop()
+    text = " ".join(words).strip(" ,.;:-")
+    return text[:1].upper() + text[1:] if text else ""
 
 
 def generate_caption_from_b64(b64: str, cache_key: str | None = None) -> str:
