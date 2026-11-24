@@ -37,6 +37,10 @@ def aggregate(
     # Track per-function scores for averaging
     compliance_scores: List[float] = []
     risk_scores: List[float] = []
+    # Corpus similarity index (% of document matching previous reports).
+    # When present it IS the plagiarism %, instead of a mean of per-sentence risks.
+    plagiarism_coverage: Optional[float] = None
+    plagiarism_sources: List[Dict[str, Any]] = []
 
     for raw in raw_issues:
         # Build dedup key
@@ -48,6 +52,9 @@ def aggregate(
         if func == "grammar" and pid and raw.get("char_start") is not None:
             # several grammar suggestions may live in one paragraph
             dedup_key = f"{func}:{pid}:{raw.get('char_start')}:{raw.get('char_end')}"
+        elif func == "plagiarism" and pid and raw.get("original"):
+            # Several sentences of one paragraph can each match a report.
+            dedup_key = f"{func}:{itype}:{pid}:{hash(raw.get('original'))}"
         elif pid:
             dedup_key = f"{func}:{itype}:{pid}"
         elif iid:
@@ -65,6 +72,9 @@ def aggregate(
             compliance_scores.append(float(raw["_compliance_score"]))
         if "_risk_score" in raw:
             risk_scores.append(float(raw["_risk_score"]))
+        if raw.get("_plagiarism_coverage") is not None:
+            plagiarism_coverage = float(raw["_plagiarism_coverage"])
+            plagiarism_sources = list(raw.get("_plagiarism_sources") or [])
 
         # Strip private keys before creating the Issue
         clean = {k: v for k, v in raw.items() if not k.startswith("_")}
@@ -127,9 +137,12 @@ def aggregate(
         avg_formatting_compliance=round(
             sum(compliance_scores) / len(compliance_scores), 1
         ) if compliance_scores else 100.0,
-        avg_plagiarism_risk=round(
-            sum(risk_scores) / len(risk_scores), 1
-        ) if risk_scores else 0.0,
+        avg_plagiarism_risk=(
+            round(plagiarism_coverage, 1) if plagiarism_coverage is not None
+            else round(sum(risk_scores) / len(risk_scores), 1) if risk_scores
+            else 0.0
+        ),
+        plagiarism_sources=plagiarism_sources,
     )
 
     doc_info = DocumentInfo(

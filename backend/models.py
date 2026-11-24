@@ -120,7 +120,11 @@ class Stats(BaseModel):
     major_issues: int = 0
     minor_issues: int = 0
     avg_formatting_compliance: float = 0.0
+    # Document plagiarism %: corpus similarity index (share of checked words
+    # matching previous FYP reports). Name kept for API compatibility.
     avg_plagiarism_risk: float = 0.0
+    # Per-source share of the document: [{source, coverage (%), matched_words, sentences}]
+    plagiarism_sources: List[Dict[str, Any]] = Field(default_factory=list)
 
 
 class DocumentInfo(BaseModel):

@@ -96,14 +96,67 @@ def filter_checkable_sentences(
     return out
 
 
-def overall_plagiarism_score(flagged: Sequence[Dict[str, Any]]) -> float:
+def _word_count(text: str) -> int:
+    return len(tokenize(text))
+
+
+def overall_plagiarism_score(local_results: Sequence[LocalSentenceResult]) -> float:
     """
-    Document-level score in [0, 1]: mean of flagged local scores, or 0 if none.
+    Document-level similarity index in [0, 1] — *coverage*, Turnitin-style:
+
+        words in sentences that count as matched  /  words in all checked sentences
+
+    A single 95% match in a 300-sentence report is ~0.3%, not 95%. Boilerplate,
+    quoted and cited sentences are excluded from the numerator.
     """
-    if not flagged:
+    total = sum(_word_count(r.sentence) for r in local_results)
+    if total == 0:
         return 0.0
-    scores = [float(f.get("local_suspicion_score", 0.0)) for f in flagged]
+    matched = sum(
+        _word_count(r.sentence) for r in local_results if r.counts_toward_score
+    )
+    return round(matched / total, 4)
+
+
+def mean_match_similarity(local_results: Sequence[LocalSentenceResult]) -> float:
+    """Average similarity of the counted matches (how close the copies are)."""
+    scores = [r.local_suspicion_score for r in local_results if r.counts_toward_score]
+    if not scores:
+        return 0.0
     return round(sum(scores) / len(scores), 4)
+
+
+def source_breakdown(local_results: Sequence[LocalSentenceResult]) -> List[Dict[str, Any]]:
+    """
+    Per-source share of the document: ``[{source, coverage, matched_words,
+    sentences}]`` sorted by coverage (highest first). Coverage is in [0, 1].
+    """
+    total = sum(_word_count(r.sentence) for r in local_results)
+    if total == 0:
+        return []
+    by_source: Dict[str, Dict[str, Any]] = {}
+    for r in local_results:
+        if not r.counts_toward_score:
+            continue
+        src = r.matched_corpus_source or "unknown"
+        row = by_source.setdefault(src, {"source": src, "matched_words": 0, "sentences": 0})
+        row["matched_words"] += _word_count(r.sentence)
+        row["sentences"] += 1
+    rows = list(by_source.values())
+    for row in rows:
+        row["coverage"] = round(row["matched_words"] / total, 4)
+    rows.sort(key=lambda r: r["coverage"], reverse=True)
+    return rows
+
+
+def _exclusion_reason(result: LocalSentenceResult) -> Optional[str]:
+    if result.boilerplate:
+        return "common_phrase"
+    if result.quoted:
+        return "quoted"
+    if result.cited:
+        return "cited"
+    return None
 
 
 def select_web_candidates(
@@ -114,9 +167,11 @@ def select_web_candidates(
 ) -> List[LocalSentenceResult]:
     """
     Pick the top-K Stage-1 hits for Stage 2. Returns [] → Stage 2 skipped.
+    Only sentences that actually count as matches are worth a web call.
     """
     eligible = [
-        r for r in local_results if r.local_suspicion_score > score_threshold
+        r for r in local_results
+        if r.counts_toward_score and r.local_suspicion_score > score_threshold
     ]
     eligible.sort(key=lambda r: r.local_suspicion_score, reverse=True)
     limit = min(top_k, max_calls)
@@ -133,18 +188,16 @@ def _local_to_flagged_dict(result: LocalSentenceResult) -> Dict[str, Any]:
             match_type = "exact"
         else:
             match_type = "semantic"
-        if (
-            result.exact.score >= config.LSH_THRESHOLD
-            and result.semantic.score > config.SEMANTIC_SIMILARITY_THRESHOLD
-        ):
-            match_type = "both"
 
     return {
         "sentence": result.sentence,
         "chunk_id": result.chunk_id,
         "local_suspicion_score": round(result.local_suspicion_score, 4),
+        "exact_score": round(result.exact.score, 4),
+        "semantic_score": round(result.semantic.score, 4),
         "match_type": match_type,
         "matched_corpus_source": result.matched_corpus_source,
+        "matched_text": result.matched_text,
         "web_verified": None,
         "web_source_url": None,
     }
@@ -156,14 +209,25 @@ def build_report(
     web_by_chunk: Dict[str, WebVerifyResult],
     corpus_size: int,
     web_checks_performed: int,
-    flag_threshold: float = config.FLAG_SCORE_THRESHOLD,
 ) -> Dict[str, Any]:
-    """Assemble the structured JSON plagiarism report."""
+    """
+    Assemble the structured JSON plagiarism report.
+
+    ``flagged_sentences`` holds only matches that count toward the score;
+    ``excluded_sentences`` holds matches skipped as common phrasing, quotes or
+    cited text (kept for transparency, not counted).
+    """
     flagged: List[Dict[str, Any]] = []
+    excluded: List[Dict[str, Any]] = []
     for result in local_results:
-        if result.local_suspicion_score < flag_threshold:
+        if not result.flagged:
             continue
         row = _local_to_flagged_dict(result)
+        reason = _exclusion_reason(result)
+        if reason is not None:
+            row["excluded_reason"] = reason
+            excluded.append(row)
+            continue
         web = web_by_chunk.get(result.chunk_id)
         if web is not None:
             row["web_verified"] = web.web_verified
@@ -174,13 +238,19 @@ def build_report(
 
     # Highest suspicion first in the report.
     flagged.sort(key=lambda r: r["local_suspicion_score"], reverse=True)
+    excluded.sort(key=lambda r: r["local_suspicion_score"], reverse=True)
 
     return {
         "document_id": document_id,
-        "overall_plagiarism_score": overall_plagiarism_score(flagged),
+        # Similarity index: share of checked words that match the corpus.
+        "overall_plagiarism_score": overall_plagiarism_score(local_results),
+        "mean_match_similarity": mean_match_similarity(local_results),
+        "source_breakdown": source_breakdown(local_results),
         "flagged_sentences": flagged,
+        "excluded_sentences": excluded,
         "corpus_size": corpus_size,
         "sentences_checked": len(local_results),
+        "words_checked": sum(_word_count(r.sentence) for r in local_results),
         "web_checks_performed": web_checks_performed,
     }
 

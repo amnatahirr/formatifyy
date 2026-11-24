@@ -9,6 +9,7 @@ the rest of analysis.
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -16,6 +17,28 @@ from models import DocumentModel
 from plagiarism import config
 from plagiarism.corpus_index import split_into_sentences, tokenize
 from plagiarism.detector import detect_plagiarism
+
+
+# "Chapter 7: References" · "7. References" · "Appendix A" · "REFERENCES"
+_EXCLUDED_HEADING_RE = re.compile(
+    r"^\W*(?:chapter\s+[\w]+\W*)?(?:\d+(?:\.\d+)*\.?\s*)?(?:"
+    + "|".join(config.EXCLUDED_SECTION_PATTERNS)
+    + r")",
+    re.IGNORECASE,
+)
+
+
+def is_excluded_heading(text: str) -> bool:
+    """True for front/back-matter headings whose sections are not scored."""
+    text = (text or "").strip()
+    if not text or len(text.split()) > 8:
+        return False
+    return bool(_EXCLUDED_HEADING_RE.match(text))
+
+
+def _heading_level(style: str) -> int:
+    match = re.search(r"(\d+)", style or "")
+    return int(match.group(1)) if match else 1
 
 
 # Process-wide corpus index handle (built lazily on first analysis).
@@ -74,14 +97,23 @@ def document_to_chunks(doc: DocumentModel) -> Tuple[List[Dict[str, str]], Dict[s
     """
     chunks: List[Dict[str, str]] = []
     meta: Dict[str, Dict[str, Any]] = {}
+    # Inside References / Appendix / Declaration … until the next top-level heading.
+    in_excluded_section = False
 
     for para in doc.paragraphs:
         style = (para.style or "Normal").lower()
+        text = (para.text or "").strip()
         # Skip obvious headings; body + caption-like styles are checked.
         if style.startswith("heading"):
+            if is_excluded_heading(text):
+                in_excluded_section = True
+            elif _heading_level(style) <= 1:
+                in_excluded_section = False
             continue
-        text = (para.text or "").strip()
         if not text:
+            continue
+        # PDFs / unstyled docs: fall back to the paragraph's nearest heading.
+        if in_excluded_section or is_excluded_heading(para.heading_context or ""):
             continue
 
         sentences = split_into_sentences(text)
@@ -108,7 +140,13 @@ def report_to_issues(
 ) -> List[Dict[str, Any]]:
     """Map detector flagged_sentences → Issue-shaped dicts for the aggregator."""
     issues: List[Dict[str, Any]] = []
+    # Coverage-based similarity index in [0, 1] (share of checked words matched).
     overall = float(report.get("overall_plagiarism_score") or 0.0)
+    coverage_pct = round(overall * 100, 1)
+    sources = [
+        {**row, "coverage": round(float(row.get("coverage") or 0) * 100, 1)}
+        for row in report.get("source_breakdown") or []
+    ]
 
     for row in report.get("flagged_sentences") or []:
         chunk_id = str(row.get("chunk_id") or "")
@@ -129,6 +167,9 @@ def report_to_issues(
             "Rewrite in your own words and cite the original source if you reused ideas."
         )
         explanation = reason
+        matched_text = str(row.get("matched_text") or "").strip()
+        if matched_text:
+            explanation += f' Matched text: "{matched_text[:300]}"'
         if web_verified:
             explanation += f" Also verified on the web: {web_url or 'match found'}."
 
@@ -159,7 +200,11 @@ def report_to_issues(
             "source": "fyp_corpus",
             "surrounding_text": str(source),
             "_risk_score": risk,
-            "_overall_risk": int(round(overall * 100)),
+            "_overall_risk": coverage_pct,
+            # Aggregator uses this (not the mean of _risk_score) as the
+            # document's plagiarism percentage.
+            "_plagiarism_coverage": coverage_pct,
+            "_plagiarism_sources": sources,
         })
 
     return issues
@@ -209,8 +254,9 @@ async def check_document_against_fyp_corpus(
 
     issues = report_to_issues(report, meta)
     print(
-        f"[plagiarism] corpus check done: score={report.get('overall_plagiarism_score')} "
-        f"flagged={len(issues)} / checked={report.get('sentences_checked')} "
+        f"[plagiarism] corpus check done: similarity={report.get('overall_plagiarism_score')} "
+        f"flagged={len(issues)} excluded={len(report.get('excluded_sentences') or [])} "
+        f"/ checked={report.get('sentences_checked')} "
         f"corpus_docs={report.get('corpus_size')}"
     )
     return issues

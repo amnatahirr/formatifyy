@@ -65,12 +65,51 @@ SEMANTIC_SIMILARITY_THRESHOLD = float(
 )
 
 # How many FAISS nearest neighbours to retrieve per query sentence.
-FAISS_TOP_K = 3
+# Kept > 3 so we can count how many *different* reports a sentence matches
+# (boilerplate detection below).
+FAISS_TOP_K = 10
 
 # ── Combining local signals ──────────────────────────────────────────────────
-# local_suspicion_score = max(exact_jaccard, semantic_cosine).
-# Sentences below this are omitted from flagged_sentences in the report.
-FLAG_SCORE_THRESHOLD = float(os.getenv("PLAGIARISM_FLAG_THRESHOLD", "0.5"))
+# local_suspicion_score = max(exact_jaccard, semantic_cosine) — reported only.
+# A sentence is FLAGGED when either signal crosses its *own* threshold:
+#   exact Jaccard  >= EXACT_FLAG_THRESHOLD
+#   semantic cosine >= SEMANTIC_SIMILARITY_THRESHOLD
+# (Applying one 0.5 bar to max() let topically-similar sentences with cosine
+# ~0.6 through as "plagiarism".)
+EXACT_FLAG_THRESHOLD = float(os.getenv("PLAGIARISM_EXACT_THRESHOLD", "0.5"))
+
+# Back-compat alias (older env files / tests). Used as the exact threshold.
+FLAG_SCORE_THRESHOLD = float(
+    os.getenv("PLAGIARISM_FLAG_THRESHOLD", str(EXACT_FLAG_THRESHOLD))
+)
+
+# ── Boilerplate / common phrasing ────────────────────────────────────────────
+# A sentence that matches this many *different* corpus reports is treated as
+# common FYP phrasing (template text, standard definitions) and not counted.
+BOILERPLATE_MIN_SOURCES = int(os.getenv("PLAGIARISM_BOILERPLATE_SOURCES", "3"))
+
+# Headings whose sections are excluded from plagiarism scoring entirely.
+# Matched at the *start* of the heading (after an optional "Chapter 7" /
+# "7.1" prefix) so a body section like "Approval Workflow" is not skipped.
+EXCLUDED_SECTION_PATTERNS = (
+    r"references?",
+    r"bibliography",
+    r"works\s+cited",
+    r"appendi(?:x|ces)\b",
+    r"declaration",
+    r"certificate",
+    r"certificate\s+of\s+approval",
+    r"approval\s+(?:sheet|page|certificate|form)",
+    r"acknowledge?ments?",
+    r"dedication",
+    r"undertaking",
+    r"(?:table\s+of\s+)?contents$",
+    r"list\s+of\s+(?:figures|tables|abbreviations|acronyms|symbols)",
+    r"(?:abbreviations|acronyms)$",
+)
+
+# A sentence whose words are mostly inside quotation marks is a quote.
+QUOTE_MIN_FRACTION = 0.6
 
 # ── Stage 2 — Selective web verification ─────────────────────────────────────
 # Only sentences with local_suspicion_score above this enter Stage 2.

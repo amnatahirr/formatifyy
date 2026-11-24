@@ -11,8 +11,9 @@ Why Stage 1 exists (FYP):
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
-from typing import List, Optional, Sequence
+from typing import List, Optional, Sequence, Set
 
 from plagiarism import config
 from plagiarism.corpus_index import (
@@ -31,6 +32,8 @@ class ExactMatchResult:
     matched_source: Optional[str]
     matched_text: Optional[str]
     candidate_count: int = 0
+    # Distinct corpus reports matched at/above the exact flag threshold.
+    source_count: int = 0
 
 
 @dataclass
@@ -39,7 +42,9 @@ class SemanticMatchResult:
     score: float  # Cosine similarity vs best neighbour [0, 1]
     matched_source: Optional[str]
     matched_text: Optional[str]
-    flagged: bool = False  # True when score > SEMANTIC_SIMILARITY_THRESHOLD
+    flagged: bool = False  # True when score >= SEMANTIC_SIMILARITY_THRESHOLD
+    # Distinct corpus reports matched at/above the semantic threshold.
+    source_count: int = 0
 
 
 @dataclass
@@ -52,6 +57,60 @@ class LocalSentenceResult:
     local_suspicion_score: float
     match_type: str  # "exact" | "semantic" | "both" | "none"
     matched_corpus_source: Optional[str]
+    # Crossed its own signal threshold (exact OR semantic).
+    flagged: bool = False
+    # Matches many different reports → common FYP phrasing, not counted.
+    boilerplate: bool = False
+    # Quotation / in-text citation → reported but not counted.
+    quoted: bool = False
+    cited: bool = False
+    matched_text: Optional[str] = None
+
+    @property
+    def counts_toward_score(self) -> bool:
+        """Only flagged sentences that are not boilerplate, quoted or cited count."""
+        return self.flagged and not (self.boilerplate or self.quoted or self.cited)
+
+
+# ── Sentence-level exemptions (pure, unit-testable) ──────────────────────────
+
+_QUOTED_SPAN_RE = re.compile(r"[\"“”]([^\"“”]+)[\"“”]")
+
+# [12] · [3, 4] · [5-7] · (Ali, 2021) · (Smith et al., 2019) · Ali and Raza (2020)
+_CITATION_RE = re.compile(
+    r"\[\s*\d+(?:\s*[,–-]\s*\d+)*\s*\]"
+    r"|\(\s*[A-Z][A-Za-z'\-]+(?:\s+et\s+al\.?|\s*(?:&|and)\s*[A-Z][A-Za-z'\-]+)?"
+    r",?\s*(?:19|20)\d{2}[a-z]?\s*\)"
+    r"|[A-Z][A-Za-z'\-]+(?:\s+et\s+al\.?|\s+(?:&|and)\s+[A-Z][A-Za-z'\-]+)?\s*\(\s*(?:19|20)\d{2}[a-z]?\s*\)"
+)
+
+
+def is_quoted(sentence: str, min_fraction: float = config.QUOTE_MIN_FRACTION) -> bool:
+    """True when most of the sentence's words sit inside quotation marks."""
+    total = len(tokenize(sentence))
+    if total == 0:
+        return False
+    quoted = sum(len(tokenize(m.group(1))) for m in _QUOTED_SPAN_RE.finditer(sentence))
+    return quoted / total >= min_fraction
+
+
+def has_citation(sentence: str) -> bool:
+    """True when the sentence carries an IEEE / APA style in-text citation."""
+    return bool(_CITATION_RE.search(sentence or ""))
+
+
+def is_flagged(
+    exact: "ExactMatchResult",
+    semantic: "SemanticMatchResult",
+    exact_threshold: Optional[float] = None,
+    semantic_threshold: Optional[float] = None,
+) -> bool:
+    """Each signal is judged against its own threshold (never a shared max())."""
+    if exact_threshold is None:
+        exact_threshold = config.FLAG_SCORE_THRESHOLD
+    if semantic_threshold is None:
+        semantic_threshold = config.SEMANTIC_SIMILARITY_THRESHOLD
+    return exact.score >= exact_threshold or semantic.score >= semantic_threshold
 
 
 # ── Exact / near-exact ───────────────────────────────────────────────────────
@@ -76,6 +135,7 @@ def check_exact_match(sentence: str, corpus: CorpusIndex) -> ExactMatchResult:
     best_score = 0.0
     best_source: Optional[str] = None
     best_text: Optional[str] = None
+    hit_sources: Set[str] = set()
 
     for key in keys:
         entry = corpus.minhash_by_key.get(key)
@@ -83,6 +143,8 @@ def check_exact_match(sentence: str, corpus: CorpusIndex) -> ExactMatchResult:
             continue
         source, text, corpus_mh = entry
         score = jaccard_from_minhash(query_mh, corpus_mh)
+        if score >= config.FLAG_SCORE_THRESHOLD:
+            hit_sources.add(source)
         if score > best_score:
             best_score = score
             best_source = source
@@ -95,6 +157,7 @@ def check_exact_match(sentence: str, corpus: CorpusIndex) -> ExactMatchResult:
         matched_source=best_source,
         matched_text=best_text,
         candidate_count=len(keys),
+        source_count=len(hit_sources),
     )
 
 
@@ -122,31 +185,9 @@ def check_semantic_similarity(
             score=0.0, matched_source=None, matched_text=None, flagged=False
         )
 
-    query_vec = embed_texts([sentence], normalize=True)
-    k = min(top_k, corpus.faiss_index.ntotal)
-    scores, indices = corpus.faiss_index.search(query_vec, k)
-
-    best_score = 0.0
-    best_source: Optional[str] = None
-    best_text: Optional[str] = None
-
-    for score, idx in zip(scores[0], indices[0]):
-        if idx < 0:
-            continue
-        sim = float(score)
-        # Clamp floating-point noise outside [0, 1] for cosine of unit vectors.
-        sim = max(0.0, min(1.0, sim))
-        if sim > best_score:
-            best_score = sim
-            best_source = corpus.sentence_sources[idx]
-            best_text = corpus.sentence_texts[idx]
-
-    return SemanticMatchResult(
-        score=best_score,
-        matched_source=best_source,
-        matched_text=best_text,
-        flagged=best_score > threshold,
-    )
+    return check_semantic_similarity_batch(
+        [sentence], corpus, threshold=threshold, top_k=top_k
+    )[0]
 
 
 def check_semantic_similarity_batch(
@@ -188,10 +229,14 @@ def check_semantic_similarity_batch(
         best_score = 0.0
         best_source: Optional[str] = None
         best_text: Optional[str] = None
+        hit_sources: Set[str] = set()
         for score, idx in zip(scores_mat[i], indices_mat[i]):
             if idx < 0:
                 continue
+            # Clamp floating-point noise outside [0, 1] for cosine of unit vectors.
             sim = max(0.0, min(1.0, float(score)))
+            if sim >= threshold:
+                hit_sources.add(corpus.sentence_sources[idx])
             if sim > best_score:
                 best_score = sim
                 best_source = corpus.sentence_sources[idx]
@@ -202,7 +247,8 @@ def check_semantic_similarity_batch(
                 score=best_score,
                 matched_source=best_source,
                 matched_text=best_text,
-                flagged=best_score > threshold,
+                flagged=best_score >= threshold,
+                source_count=len(hit_sources),
             )
         )
     return results
@@ -225,8 +271,8 @@ def combine_local_scores(
     """
     score = max(exact.score, semantic.score)
 
-    exact_hit = exact.score >= config.LSH_THRESHOLD
-    semantic_hit = semantic.score > semantic_threshold
+    exact_hit = exact.score >= config.FLAG_SCORE_THRESHOLD
+    semantic_hit = semantic.score >= semantic_threshold
 
     if exact_hit and semantic_hit:
         match_type = "both"
@@ -266,6 +312,15 @@ def analyze_sentence_local(
         semantic = check_semantic_similarity(sentence, corpus)
 
     suspicion, match_type, source = combine_local_scores(exact, semantic)
+    flagged = is_flagged(exact, semantic)
+    if exact.score >= semantic.score:
+        matched_text = exact.matched_text or semantic.matched_text
+    else:
+        matched_text = semantic.matched_text or exact.matched_text
+    # Same sentence found in many different reports → template / common phrasing.
+    boilerplate = (
+        max(exact.source_count, semantic.source_count) >= config.BOILERPLATE_MIN_SOURCES
+    )
     return LocalSentenceResult(
         sentence=sentence,
         chunk_id=chunk_id,
@@ -274,6 +329,11 @@ def analyze_sentence_local(
         local_suspicion_score=suspicion,
         match_type=match_type,
         matched_corpus_source=source,
+        flagged=flagged,
+        boilerplate=flagged and boilerplate,
+        quoted=flagged and is_quoted(sentence),
+        cited=flagged and has_citation(sentence),
+        matched_text=matched_text,
     )
 
 

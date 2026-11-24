@@ -1994,9 +1994,8 @@ def _analysis_summary(report: dict[str, Any]) -> dict[str, Any]:
     grammar_issues = int(stats.get("grammar_issues") or summary.get("grammar") or 0)
     plagiarism_issues = int(stats.get("plagiarism_issues") or summary.get("plagiarism") or 0)
     plagiarism_score = float(stats.get("avg_plagiarism_risk") or 0)
-    # Prefer 0–100 risk; if values look like 0–1, scale up
-    if 0 < plagiarism_score <= 1:
-        plagiarism_score = round(plagiarism_score * 100, 1)
+    # Already on a 0-100 scale (corpus similarity index %). Do not rescale:
+    # a genuine 0.8% match must not become 80%.
     compliance = float(report.get("compliance_score") or structure.get("score") or stats.get("avg_formatting_compliance") or 0)
     return {
         "grammar_issues": grammar_issues,

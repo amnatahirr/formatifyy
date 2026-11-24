@@ -1487,8 +1487,6 @@ def create_final_submission(
                 report = json.loads(report_json) if report_json else {}
                 stats = report.get("stats", {})
                 plagiarism_score = float(stats.get("avg_plagiarism_risk") or 0)
-                if 0 < plagiarism_score <= 1:
-                    plagiarism_score = round(plagiarism_score * 100, 1)
                 if plagiarism_score > 30:  # Threshold for high plagiarism
                     pending_notifications.append({
                         "org_id": notify_org_id,
@@ -1536,8 +1534,6 @@ def create_final_submission(
             plag_raw = stats.get("avg_plagiarism_risk")
             try:
                 plag_score = float(plag_raw) if plag_raw is not None else None
-                if plag_score is not None and 0 < plag_score <= 1:
-                    plag_score = round(plag_score * 100, 1)
             except (TypeError, ValueError):
                 plag_score = None
             grammar_count = sum(
@@ -1665,8 +1661,6 @@ def _plagiarism_payload_from_report(
     matches = _matches_from_plagiarism_issues(issues)
 
     score = float(stats.get("avg_plagiarism_risk") or 0)
-    if 0 < score <= 1:
-        score = round(score * 100, 1)
 
     keys = group_row.keys() if hasattr(group_row, "keys") else []
     flagged = bool(group_row["plagiarism_flagged"]) if "plagiarism_flagged" in keys else False
@@ -1889,8 +1883,6 @@ def _analysis_summary_from_report_row(row) -> dict[str, Any]:
     summary = structure.get("summary") if isinstance(structure.get("summary"), dict) else {}
     issues = report.get("issues") if isinstance(report.get("issues"), list) else []
     plagiarism_score = float(stats.get("avg_plagiarism_risk") or 0)
-    if 0 < plagiarism_score <= 1:
-        plagiarism_score = round(plagiarism_score * 100, 1)
 
     return {
         "grammar_issues": int(stats.get("grammar_issues") or summary.get("grammar") or 0),
