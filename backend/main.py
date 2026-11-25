@@ -4309,10 +4309,17 @@ async def replace_image(
         f.write(content)
 
     tmpl = get_template_by_id(doc["template_id"])
-    if not tmpl:
+    existing_copy = _working_copy_path(document_id)
+    if tmpl:
+        working_copy = _ensure_formatted_working_copy(doc, tmpl)
+    elif os.path.exists(existing_copy):
+        working_copy = existing_copy
+    elif str(doc["file_path"] or "").lower().endswith(".docx") and os.path.exists(doc["file_path"]):
+        os.makedirs(os.path.dirname(existing_copy), exist_ok=True)
+        shutil.copy2(doc["file_path"], existing_copy)
+        working_copy = existing_copy
+    else:
         raise HTTPException(status_code=400, detail="Template not found")
-
-    working_copy = _ensure_formatted_working_copy(doc, tmpl)
 
     surrounding_text = ""
     validation = {"is_relevant": True, "confidence": 0.8, "verdict": "relevant", "reason": ""}
@@ -4323,23 +4330,42 @@ async def replace_image(
         from docx import Document as DocxDoc
         from functions.image_relevance import evaluate_image_relevance
 
+        import io as _io
         docx = DocxDoc(working_copy)
         blip_ns = "{http://schemas.openxmlformats.org/drawingml/2006/main}blip"
         r_ns = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}embed"
+        # Count blips exactly like the preview (preview_elements._para_images),
+        # so image_index from the preview points at the same picture.
         found = 0
         img_para_idx = None
         for pi, para in enumerate(docx.paragraphs):
-            blips = list(para._element.iter(blip_ns))
-            if not blips:
-                continue
-            if found == image_index:
-                img_para_idx = pi
-                embed = blips[0].get(r_ns)
-                if embed and embed in docx.part.related_parts:
-                    part = docx.part.related_parts[embed]
-                    part._blob = content
+            for blip in para._element.iter(blip_ns):
+                embed = blip.get(r_ns)
+                if not embed or embed not in docx.part.related_parts:
+                    continue
+                if found == image_index:
+                    img_para_idx = pi
+                    # Add the new picture as its own image part (correct format,
+                    # not shared with other pictures) and point this blip at it.
+                    new_rid, new_img = docx.part.get_or_add_image(_io.BytesIO(content))
+                    blip.set(r_ns, new_rid)
+                    # Keep the displayed width, fix height to the new aspect ratio.
+                    anchor_el = blip
+                    while anchor_el is not None and not anchor_el.tag.endswith(("}inline", "}anchor")):
+                        anchor_el = anchor_el.getparent()
+                    if anchor_el is not None and new_img.px_width:
+                        ratio = new_img.px_height / float(new_img.px_width)
+                        for ext in anchor_el.iter():
+                            if ext.tag.endswith("}extent") or ext.tag.endswith("}ext"):
+                                cx = ext.get("cx")
+                                if cx:
+                                    ext.set("cy", str(int(int(cx) * ratio)))
+                    break
+                found += 1
+            if img_para_idx is not None:
                 break
-            found += 1
+        if img_para_idx is None:
+            raise HTTPException(status_code=404, detail=f"Image #{image_index} not found in document")
 
         if img_para_idx is not None:
             before_parts = []
@@ -4393,6 +4419,8 @@ async def replace_image(
 
         commit = _commit_working_document(document_id, working_copy, doc)
 
+    except HTTPException:
+        raise
     except Exception as exc:
         print(f"[replace-image] docx update warning: {exc}")
         raise HTTPException(status_code=500, detail=f"Failed to update document image: {exc}")

@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:provider/provider.dart';
 import '../theme/app_theme.dart';
 import '../models/json_parse.dart';
@@ -50,8 +51,6 @@ class DocumentPreviewPanel extends StatefulWidget {
   final double bodyPt;
   final Map<int, double> headingPt;
   final double lineSpacing;
-
- 
 
   /// Collaboration preview: no editing, no ribbon.
   final bool readOnly;
@@ -345,7 +344,7 @@ void _announceReady() {
     return b.replaceFirst(RegExp(r'/api$'), '');
   }
 
-  List<String> _imageUrls(String rawPath) {
+  List<String> _imageUrls(String rawPath, [Object? version]) {
     if (rawPath.isEmpty) return const [];
     if (rawPath.startsWith('http://') || rawPath.startsWith('https://')) return [rawPath];
     var p = rawPath.replaceAll('\\', '/');
@@ -360,7 +359,7 @@ void _announceReady() {
       '$base/static/uploads/$rel',
       '$base/api/files/$rel',
       '$base/files/$rel',
-    }.map((u) => '$u?v=$_cacheBust').toList();
+    }.map((u) => '$u?v=$_cacheBust${version == null ? '' : '-$version'}').toList();
   }
 
   String _imageUrl(String rawPath) {
@@ -712,9 +711,67 @@ void _announceReady() {
     _notify();
   }
 
+  Future<PlatformFile?> _pickImage() async {
+    final res = await FilePicker.platform.pickFiles(
+      type: FileType.image,
+      withData: true,
+    );
+    if (res == null || res.files.isEmpty) return null;
+    final f = res.files.first;
+    if (f.bytes == null) return null;
+    return f;
+  }
+
+  /// Inserts a new image block below the selected block (or at the end).
+  /// The image is stored as base64 in `image_base64` so undo/redo and
+  /// `onBlocksChanged` keep working; the parent can upload it from there.
+  Future<void> _insertImage() async {
+    final f = await _pickImage();
+    if (f == null || !mounted) return;
+    _pushUndo();
+    final sel = _sel;
+    int idx;
+    int page;
+    if (sel != null) {
+      idx = _blocks.indexOf(sel) + 1;
+      page = _num(sel['page'])?.toInt() ?? 1;
+    } else {
+      idx = _blocks.length;
+      page = _blocks.isEmpty ? 1 : (_num(_blocks.last['page'])?.toInt() ?? 1);
+    }
+    final nb = <String, dynamic>{
+      '_uid': _newUid(),
+      'type': 'image',
+      'image_base64': base64Encode(f.bytes!),
+      'image_name': f.name,
+      'caption': '',
+      'page': page,
+      'is_new': true,
+    };
+    setState(() {
+      _blocks.insert(idx, nb);
+      _selectedUid = nb['_uid'] as String;
+      _editingUid = null;
+    });
+    _editFocus.unfocus();
+    _notify();
+  }
+
+  /// Replaces a locally-added (not yet uploaded) image with another file.
+  Future<void> _replaceLocalImage(Map<String, dynamic> block) async {
+    final f = await _pickImage();
+    if (f == null || !mounted) return;
+    _pushUndo();
+    setState(() {
+      block['image_base64'] = base64Encode(f.bytes!);
+      block['image_name'] = f.name;
+    });
+    _notify();
+  }
+
   void _deleteSelected() {
     final b = _sel;
-    if (b == null || _type(b) == 'image') return;
+    if (b == null) return;
     if (_isGhost(b)) return;
     _pushUndo();
     setState(() {
@@ -724,6 +781,185 @@ void _announceReady() {
     });
     _editFocus.unfocus();
     _notify();
+  }
+
+  // ───────────────────────── Image move / drag helpers ─────────────────────────
+
+  /// Moves a block before/after another block (adopting that block's page).
+  void _moveBlock(String srcUid, {Map<String, dynamic>? before, Map<String, dynamic>? afterBlock}) {
+    final srcIdx = _blocks.indexWhere((b) => b['_uid'] == srcUid);
+    if (srcIdx < 0) return;
+    final src = _blocks[srcIdx];
+    if (identical(src, before) || identical(src, afterBlock)) return;
+    _pushUndo();
+    setState(() {
+      _blocks.removeAt(srcIdx);
+      int idx;
+      if (before != null) {
+        idx = _blocks.indexOf(before);
+        src['page'] = before['page'] ?? 1;
+      } else if (afterBlock != null) {
+        idx = _blocks.indexOf(afterBlock) + 1;
+        src['page'] = afterBlock['page'] ?? 1;
+      } else {
+        idx = _blocks.length;
+      }
+      _blocks.insert(idx < 0 ? _blocks.length : idx, src);
+      _selectedUid = srcUid;
+    });
+    _notify();
+  }
+
+  /// Up / Down arrows: move one step. Swapping with a block on another page
+  /// moves the image to that page too.
+  void _nudgeBlock(Map<String, dynamic> b, int dir) {
+    final i = _blocks.indexOf(b);
+    final j = i + dir;
+    if (i < 0 || j < 0 || j >= _blocks.length) return;
+    _pushUndo();
+    setState(() {
+      final other = _blocks[j];
+      _blocks[i] = other;
+      _blocks[j] = b;
+      b['page'] = other['page'] ?? b['page'];
+    });
+    _notify();
+  }
+
+  /// Drop zone above every block: dropping here inserts the dragged block before it.
+  Widget _dropZone(Map<String, dynamic> target, Widget child) {
+    if (widget.readOnly) return child;
+    return DragTarget<String>(
+      onWillAcceptWithDetails: (d) => d.data != target['_uid'],
+      onAcceptWithDetails: (d) => _moveBlock(d.data, before: target),
+      builder: (ctx, cand, rej) => Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (cand.isNotEmpty)
+            Container(height: 3, margin: const EdgeInsets.symmetric(vertical: 2), color: _blue),
+          child,
+        ],
+      ),
+    );
+  }
+
+  /// Drop zone at the end of a page (after the last block).
+  Widget _endDropZone(Map<String, dynamic> last, double s) {
+    if (widget.readOnly) return SizedBox(height: 24 * s);
+    return DragTarget<String>(
+      onWillAcceptWithDetails: (d) => d.data != last['_uid'],
+      onAcceptWithDetails: (d) => _moveBlock(d.data, afterBlock: last),
+      builder: (ctx, cand, rej) => Container(
+        height: 24 * s,
+        alignment: Alignment.center,
+        child: cand.isNotEmpty ? Container(height: 3, color: _blue) : null,
+      ),
+    );
+  }
+
+  Widget _imageToolbar(Map<String, dynamic> block) {
+    // Parent callbacks expect an "issue" map; this image has no flagged issue.
+    final issue = <String, dynamic>{
+      'image_index': block['image_index'],
+      'image_id': block['image_id'],
+    };
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 4),
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+        decoration: BoxDecoration(
+          color: _ribbonBg,
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: _ribbonLine),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.drag_indicator, size: 18, color: Colors.black45),
+            const SizedBox(width: 2),
+            const Text('Hold & drag',
+                style: TextStyle(color: Colors.black54, fontSize: 11)),
+            Container(
+              width: 1,
+              height: 20,
+              margin: const EdgeInsets.symmetric(horizontal: 6),
+              color: _ribbonLine,
+            ),
+            _rb(
+              Icons.image_search,
+              'Replace image',
+              (block['image_base64'] as String? ?? '').isNotEmpty
+                  ? () => _replaceLocalImage(block)
+                  : () => _showReplaceDialog(block, issue),
+            ),
+            _rb(Icons.arrow_upward, 'Move up', () => _nudgeBlock(block, -1)),
+            _rb(Icons.arrow_downward, 'Move down', () => _nudgeBlock(block, 1)),
+            _rb(Icons.delete_outline, 'Delete image', _deleteSelected, color: _red),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Makes an image selectable + draggable (Word-style).
+  Widget _imageShell(Map<String, dynamic> block, List<Map<String, dynamic>> issues, double s) {
+    final inner = _buildWordImage(block, issues, s);
+    if (widget.readOnly) return inner;
+
+    final uid = block['_uid'] as String;
+    final selected = _selectedUid == uid;
+
+    final body = GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () => _select(uid),
+      child: Container(
+        decoration: BoxDecoration(
+          border: Border.all(
+            color: selected ? _blue : Colors.transparent,
+            width: 2,
+          ),
+        ),
+        child: inner,
+      ),
+    );
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (selected) _imageToolbar(block),
+        LongPressDraggable<String>(
+          data: uid,
+          delay: const Duration(milliseconds: 150),
+          onDragStarted: () => _select(uid),
+          feedback: Material(
+            color: Colors.transparent,
+            child: Opacity(
+              opacity: 0.75,
+              child: Container(
+                width: 180,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  border: Border.all(color: _blue, width: 2),
+                ),
+                child: (block['image_base64'] as String? ?? '').isNotEmpty
+                    ? Image.memory(
+                        base64Decode(block['image_base64'] as String),
+                        height: 120,
+                        fit: BoxFit.contain,
+                      )
+                    : _FallbackImage(
+                        urls: _imageUrls(_rawImagePath(block), block['image_version']),
+                        height: 120,
+                      ),
+              ),
+            ),
+          ),
+          childWhenDragging: Opacity(opacity: 0.3, child: body),
+          child: body,
+        ),
+      ],
+    );
   }
 
   Map<String, dynamic> _newBlockLike(Map<String, dynamic> b, String text) {
@@ -948,6 +1184,20 @@ void _announceReady() {
         currentImagePath: block['image_path'] as String? ?? block['path'] as String? ?? '',
         service: _replacementService,
         onSuccess: (result) {
+          if (!mounted) return;
+          // The server already swapped the picture inside the DOCX; show the
+          // new file here right away (same image_index, so saving later keeps it).
+          final newPath = (result['image_path'] ?? '').toString();
+          setState(() {
+            if (newPath.isNotEmpty) {
+              block['image_path'] = newPath;
+              for (final k in const ['path', 'url', 'image_url', 'src']) {
+                block.remove(k);
+              }
+            }
+            block.remove('image_base64');
+            block['image_version'] = DateTime.now().millisecondsSinceEpoch;
+          });
           widget.onImageReplaced?.call(result, issue);
         },
         onError: (e) {
@@ -1087,7 +1337,7 @@ void _announceReady() {
       clipBehavior: Clip.antiAlias,
       child: url.isEmpty
           ? Center(child: Icon(Icons.broken_image, color: _textSec))
-          : _FallbackImage(urls: _imageUrls(rawPath.toString()), height: 120),
+          : _FallbackImage(urls: _imageUrls(rawPath, block['image_version']), height: 120),
     );
   }
 
@@ -1382,10 +1632,11 @@ void _announceReady() {
                 active: isList && listStyle == 'number'),
             sep,
             _rb(Icons.playlist_add, 'Add paragraph below', _insertParagraph),
+            _rb(Icons.add_photo_alternate_outlined, 'Insert image', _insertImage),
             _rb(
               Icons.delete_outline,
-              'Delete paragraph',
-              (b != null && _type(b) != 'image') ? _deleteSelected : null,
+              'Delete paragraph / image',
+              b != null ? _deleteSelected : null,
               color: _red,
             ),
           ],
@@ -1445,7 +1696,7 @@ void _announceReady() {
       } else {
         n = 0;
       }
-      children.add(_buildWordBlock(b, s, number: n));
+      children.add(_dropZone(b, _buildWordBlock(b, s, number: n)));
     }
     return Container(
       margin: const EdgeInsets.only(bottom: 24),
@@ -1466,7 +1717,7 @@ void _announceReady() {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           ...children,
-          SizedBox(height: 24 * s),
+          if (blocks.isNotEmpty) _endDropZone(blocks.last, s) else SizedBox(height: 24 * s),
           Center(
             child: Text(
               '$number / $total',
@@ -1513,7 +1764,7 @@ void _announceReady() {
     }
 
     if (type == 'image') {
-      return _buildWordImage(block, blockIssues, s);
+      return _imageShell(block, blockIssues, s);
     }
     if (type == 'table') {
       return _buildWordTable(block, _fontOf(block), s);
@@ -1791,6 +2042,7 @@ void _announceReady() {
     final rawPath = _rawImagePath(block);
     final imageUrl = _imageUrl(rawPath);
     final caption = block['caption'] as String? ?? '';
+    final b64 = block['image_base64'] as String? ?? '';
     final ethics = blockIssues.where((i) => (i['function'] as String? ?? '') == 'image_ethics').toList();
     final irrelevant = blockIssues.where((i) => (i['function'] as String? ?? '') == 'image_relevance').toList();
     final isUnethical = ethics.isNotEmpty;
@@ -1825,7 +2077,9 @@ void _announceReady() {
           Center(
             child: ConstrainedBox(
               constraints: BoxConstraints(maxHeight: 320 * s),
-              child: imageUrl.isEmpty
+              child: b64.isNotEmpty
+                  ? Image.memory(base64Decode(b64), fit: BoxFit.contain, gaplessPlayback: true)
+                  : imageUrl.isEmpty
                   ? Container(
                       height: 160,
                       width: double.infinity,
@@ -1845,7 +2099,7 @@ void _announceReady() {
                         ],
                       ),
                     )
-                  : _FallbackImage(urls: _imageUrls(rawPath.toString()), height: 160),
+                  : _FallbackImage(urls: _imageUrls(rawPath, block['image_version']), height: 160),
             ),
           ),
           if (caption.isNotEmpty)
@@ -1971,6 +2225,12 @@ class _FallbackImage extends StatefulWidget {
 
 class _FallbackImageState extends State<_FallbackImage> {
   int _i = 0;
+
+  @override
+  void didUpdateWidget(covariant _FallbackImage old) {
+    super.didUpdateWidget(old);
+    if (old.urls.join('|') != widget.urls.join('|')) _i = 0;
+  }
   @override
   Widget build(BuildContext context) {
     if (_i >= widget.urls.length) {
