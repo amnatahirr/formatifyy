@@ -42,6 +42,7 @@ class NotificationType:
     
     # Supervisor notifications
     NEW_ASSIGNMENT_REQUEST = "new_assignment_request"
+    SUPERVISOR_CHANGED = "supervisor_changed"
     STUDENT_SUBMITTED = "student_submitted"
     STUDENT_RESUBMITTED = "student_resubmitted"
     PLAGIARISM_HIGH = "plagiarism_high"

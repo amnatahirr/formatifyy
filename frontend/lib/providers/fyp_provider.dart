@@ -338,6 +338,10 @@ class FypProvider extends ChangeNotifier {
     required List<String> memberNames,
     int? departmentId,
     String? cosupervisorName,
+    /// When set, the student is switching supervisor; backend removes the
+    /// previous supervisor and notifies them with this reason.
+    String? changeReasonCategory,
+    String? changeReason,
   }) async {
     _isSubmitting = true;
     _errorMessage = null;
@@ -356,13 +360,28 @@ class FypProvider extends ChangeNotifier {
           'department_id': departmentId,
           if (cosupervisorName != null && cosupervisorName.trim().isNotEmpty)
             'cosupervisor_name': cosupervisorName.trim(),
+          if (changeReason != null && changeReason.trim().isNotEmpty) ...{
+            'change_supervisor': true,
+            'change_reason_category': changeReasonCategory,
+            'change_reason': changeReason.trim(),
+          },
         }),
       );
       final body = response.body.isEmpty ? null : jsonDecode(response.body);
       if (response.statusCode >= 200 && response.statusCode < 300) {
         final map = Map<String, dynamic>.from(body as Map);
         final request = Map<String, dynamic>.from(map['request'] as Map);
-        _requests = [request, ..._requests];
+        final replacedIds = ((map['replaced'] as List?) ?? const [])
+            .map((e) => '${(e as Map)['request_id']}')
+            .toSet();
+        _requests = [
+          request,
+          ..._requests.map((r) => replacedIds.contains('${r['id']}')
+              ? {...r, 'status': 'withdrawn'}
+              : r),
+        ];
+        // Old group (if any) is gone; new request is pending.
+        _fypGroupId = null;
         // Immediately mark as chosen so Choose Supervisor disappears from nav.
         _assignmentStatus = {
           'found': true,
@@ -375,6 +394,8 @@ class FypProvider extends ChangeNotifier {
           'cosupervisor_name': request['cosupervisor_name'] ?? cosupervisorName ?? '',
           'fyp_group_id': null,
           'rejection_reason': '',
+          'is_leader': true,
+          'can_change_supervisor': true,
         };
         return request;
       }

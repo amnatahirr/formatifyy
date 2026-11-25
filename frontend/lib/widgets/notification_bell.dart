@@ -350,6 +350,8 @@ class _NotificationTile extends StatelessWidget {
         return Icons.cancel_outlined;
       case 'new_assignment_request':
         return Icons.person_add_outlined;
+      case 'supervisor_changed':
+        return Icons.swap_horiz_rounded;
       case 'student_submitted':
         return Icons.upload_file_outlined;
       case 'supervisor_comment':

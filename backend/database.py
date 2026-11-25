@@ -465,6 +465,13 @@ def init_db():
         cursor.execute(
             "ALTER TABLE assignment_requests ADD COLUMN cosupervisor_name TEXT"
         )
+    # Supervisor change: reason the student gave + link to the request it replaced
+    if "change_reason" not in assignment_columns:
+        cursor.execute("ALTER TABLE assignment_requests ADD COLUMN change_reason TEXT")
+    if "replaces_request_id" not in assignment_columns:
+        cursor.execute(
+            "ALTER TABLE assignment_requests ADD COLUMN replaces_request_id INTEGER"
+        )
 
     # 12b. In-app notifications (student / supervisor alerts)
     cursor.execute("""

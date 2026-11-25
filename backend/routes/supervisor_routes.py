@@ -382,6 +382,7 @@ def _get_screen_for_type(notification_type: str) -> str:
         NotificationType.SUPERVISOR_COMMENT: "analyze",
         NotificationType.PLAGIARISM_HIGH: "analyze",
         NotificationType.GROUP_DISCARDED: "assignment_requests",
+        NotificationType.SUPERVISOR_CHANGED: "assignment_requests",
     }
     return screen_map.get(notification_type, "notifications")
 
@@ -408,6 +409,7 @@ def _serialize_assignment_request(row) -> dict[str, Any]:
         "department_code": row["department_code"] or "",
         "status": row["status"],
         "rejection_reason": row["rejection_reason"] or "",
+        "change_reason": (row["change_reason"] or "") if "change_reason" in keys else "",
         "fyp_group_id": row["fyp_group_id"],
         "created_at": row["created_at"],
         "resolved_at": row["resolved_at"],

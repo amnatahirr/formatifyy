@@ -12,7 +12,15 @@ class SupervisorSelectionScreen extends StatefulWidget {
   /// Called after a request is submitted successfully (e.g. switch to My Supervisor).
   final VoidCallback? onRequestSubmitted;
 
-  const SupervisorSelectionScreen({super.key, this.onRequestSubmitted});
+  /// Switching from an existing (pending/accepted) supervisor. Requires a reason;
+  /// the backend removes the previous supervisor and notifies them.
+  final bool changeMode;
+
+  const SupervisorSelectionScreen({
+    super.key,
+    this.onRequestSubmitted,
+    this.changeMode = false,
+  });
 
   @override
   State<SupervisorSelectionScreen> createState() =>
@@ -41,6 +49,38 @@ class _SupervisorSelectionScreenState extends State<SupervisorSelectionScreen> {
   final _leaderName = TextEditingController();
   final _leaderEmail = TextEditingController();
   final _members = <_MemberFields>[];
+  final _changeReason = TextEditingController();
+  String? _changeCategory;
+
+  static const changeCategories = <String>[
+    'Research area mismatch',
+    'Project topic changed',
+    'Supervisor unavailable / on leave',
+    'Communication or scheduling issues',
+    'Department / co-supervisor advice',
+    'Other',
+  ];
+
+  /// Mirrors backend _validate_change_reason so students get instant feedback.
+  static String? validateChangeReason(String? v) {
+    final text = (v ?? '').trim().replaceAll(RegExp(r'\s+'), ' ');
+    if (text.length < 30) {
+      return 'Explain the reason in at least 30 characters';
+    }
+    if (text.length > 1000) return 'Max 1000 characters';
+    final words = RegExp(r'[A-Za-z؀-ۿ]{2,}')
+        .allMatches(text)
+        .map((m) => m.group(0)!.toLowerCase())
+        .toList();
+    if (words.length < 6) return 'Write at least 6 meaningful words';
+    if (words.toSet().length < 4) {
+      return 'Reason looks repetitive — describe the actual reason';
+    }
+    if (RegExp(r'(.)\1{4,}').hasMatch(text)) return 'Remove repeated characters';
+    final letters = RegExp(r'[A-Za-z؀-ۿ]').allMatches(text).length;
+    if (letters < text.length * 0.6) return 'Use words, not symbols or numbers';
+    return null;
+  }
 
   int? _departmentId;
   int? _supervisorId;
@@ -62,6 +102,11 @@ class _SupervisorSelectionScreenState extends State<SupervisorSelectionScreen> {
     if (!_prefilled) {
       _leaderName.text = auth.currentUser ?? '';
       _leaderEmail.text = auth.userEmail ?? auth.email ?? '';
+      if (widget.changeMode) {
+        final current = context.read<FypProvider>().assignmentStatus;
+        _groupName.text = (current?['group_name'] ?? '').toString();
+        _projectTitle.text = (current?['project_title'] ?? '').toString();
+      }
       _prefilled = true;
     }
     if (userId == null) return;
@@ -78,6 +123,7 @@ class _SupervisorSelectionScreenState extends State<SupervisorSelectionScreen> {
     _projectTitle.dispose();
     _leaderName.dispose();
     _leaderEmail.dispose();
+    _changeReason.dispose();
     for (final m in _members) {
       m.dispose();
     }
@@ -169,6 +215,58 @@ class _SupervisorSelectionScreenState extends State<SupervisorSelectionScreen> {
     if (userId == null) return;
 
     final fyp = context.read<FypProvider>();
+
+    if (widget.changeMode) {
+      if (_changeCategory == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Tr('Select a reason category for changing supervisor'),
+            backgroundColor: Color(0xFFEF4444),
+          ),
+        );
+        return;
+      }
+      final current = fyp.assignmentStatus;
+      final currentName = (current?['supervisor_name'] ??
+              (current?['supervisor'] as Map?)?['name'] ??
+              'your current supervisor')
+          .toString();
+      final accepted =
+          (current?['status'] ?? '').toString().toLowerCase() == 'accepted';
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          backgroundColor: _p.surface,
+          title: Text(
+            'Change supervisor?',
+            style: TextStyle(color: _p.textPrimary),
+          ),
+          content: Text(
+            accepted
+                ? '$currentName will be removed as your supervisor and notified with your reason. '
+                    'Your group will leave their My Groups, and the new supervisor must accept your request.'
+                : 'Your pending request to $currentName will be withdrawn and they will be notified with your reason.',
+            style: TextStyle(color: _p.textSecondary, height: 1.45),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Tr('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFEF4444),
+                foregroundColor: Colors.white,
+              ),
+              child: const Tr('Yes, change'),
+            ),
+          ],
+        ),
+      );
+      if (ok != true || !mounted) return;
+    }
+
     String? cosupervisorName;
     if (_cosupervisorId != null) {
       final match = fyp.supervisors.where((s) => s['id'] == _cosupervisorId);
@@ -187,19 +285,25 @@ class _SupervisorSelectionScreenState extends State<SupervisorSelectionScreen> {
       memberNames: _buildMemberPayload(),
       departmentId: _departmentId,
       cosupervisorName: cosupervisorName,
+      changeReasonCategory: widget.changeMode ? _changeCategory : null,
+      changeReason: widget.changeMode ? _changeReason.text.trim() : null,
     );
 
     if (!mounted) return;
     if (result != null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Tr('Request sent — waiting for supervisor approval'),
+        SnackBar(
+          content: Tr(widget.changeMode
+              ? 'Supervisor changed — previous supervisor notified. Waiting for new supervisor approval'
+              : 'Request sent — waiting for supervisor approval'),
           backgroundColor: Color(0xFF10B981),
         ),
       );
       _groupName.clear();
       _projectTitle.clear();
+      _changeReason.clear();
       setState(() {
+        _changeCategory = null;
         _supervisorId = null;
         _cosupervisorId = null;
         for (final m in _members) {
@@ -224,6 +328,8 @@ class _SupervisorSelectionScreenState extends State<SupervisorSelectionScreen> {
         return const Color(0xFF10B981);
       case 'rejected':
         return const Color(0xFFEF4444);
+      case 'withdrawn':
+        return const Color(0xFF94A3B8);
       default:
         return const Color(0xFFF59E0B);
     }
@@ -256,11 +362,94 @@ class _SupervisorSelectionScreenState extends State<SupervisorSelectionScreen> {
     );
   }
 
+  Widget _changeBanner(FypProvider fyp) {
+    final current = fyp.assignmentStatus;
+    final name = (current?['supervisor_name'] ??
+            (current?['supervisor'] as Map?)?['name'] ??
+            '')
+        .toString();
+    final accepted =
+        (current?['status'] ?? '').toString().toLowerCase() == 'accepted';
+    return Container(
+      margin: const EdgeInsets.only(bottom: 14),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF59E0B).withOpacity(0.12),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFF59E0B).withOpacity(0.5)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.swap_horiz_rounded, color: Color(0xFFF59E0B)),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              'Current supervisor: ${name.isEmpty ? '—' : name} '
+              '(${accepted ? 'assigned' : 'request pending'}).\n'
+              'Once you submit, they will be removed automatically and notified with your reason.',
+              style: TextStyle(
+                color: _p.textPrimary,
+                fontSize: 12.5,
+                height: 1.45,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  List<Widget> _reasonSection() {
+    return [
+      const SizedBox(height: 22),
+      _sectionTitle(
+        'Reason for changing supervisor',
+        subtitle:
+            'Required. Your previous supervisor will see this reason, so be specific and respectful.',
+      ),
+      const SizedBox(height: 14),
+      DropdownButtonFormField<String>(
+        value: _changeCategory,
+        isExpanded: true,
+        dropdownColor: _p.surface,
+        style: TextStyle(color: _p.textPrimary, fontSize: 14),
+        decoration: _dec('Reason category'),
+        items: changeCategories
+            .map((c) => DropdownMenuItem<String>(value: c, child: Text(c)))
+            .toList(),
+        validator: (v) => v == null ? 'Select a reason category' : null,
+        onChanged: (v) => setState(() => _changeCategory = v),
+      ),
+      const SizedBox(height: 12),
+      TextFormField(
+        controller: _changeReason,
+        minLines: 3,
+        maxLines: 6,
+        maxLength: 1000,
+        style: TextStyle(color: _p.textPrimary),
+        decoration: _dec(
+          'Explain the reason',
+          hint:
+              'e.g. Our project moved from web development to computer vision, which better matches the new supervisor\'s research area.',
+        ),
+        validator: validateChangeReason,
+      ),
+    ];
+  }
+
   @override
   Widget build(BuildContext context) {
     final fyp = context.watch<FypProvider>();
     final compact = isCompact(context);
-    final filteredSupervisors = fyp.supervisorsForDepartment(_departmentId);
+    final currentSupervisorId = widget.changeMode
+        ? '${fyp.assignmentStatus?['supervisor_id'] ?? ''}'
+        : '';
+    final filteredSupervisors = fyp
+        .supervisorsForDepartment(_departmentId)
+        .where((s) =>
+            currentSupervisorId.isEmpty || '${s['id']}' != currentSupervisorId)
+        .toList();
     final coOptions = filteredSupervisors
         .where((s) => s['id'] != _supervisorId)
         .toList();
@@ -281,7 +470,10 @@ class _SupervisorSelectionScreenState extends State<SupervisorSelectionScreen> {
           compact ? 100 : 40,
         ),
         children: [
-          Tr('Request an FYP supervisor for your group. Your request stays pending until they accept.',
+          if (widget.changeMode) _changeBanner(fyp),
+          Tr(widget.changeMode
+              ? 'Choose a new supervisor. Only one supervisor can be active at a time.'
+              : 'Request an FYP supervisor for your group. Your request stays pending until they accept.',
             style: TextStyle(
               color: _p.textSecondary,
               fontSize: 13,
@@ -608,6 +800,7 @@ class _SupervisorSelectionScreenState extends State<SupervisorSelectionScreen> {
                       ),
                     ),
                   ],
+                  if (widget.changeMode) ..._reasonSection(),
                   const SizedBox(height: 22),
                   SizedBox(
                     width: double.infinity,
@@ -625,7 +818,11 @@ class _SupervisorSelectionScreenState extends State<SupervisorSelectionScreen> {
                             )
                           : const Icon(Icons.send_rounded, size: 18),
                       label: Text(
-                        fyp.isSubmitting ? 'Submitting…' : 'Send request',
+                        fyp.isSubmitting
+                            ? 'Submitting…'
+                            : (widget.changeMode
+                                ? 'Change supervisor'
+                                : 'Send request'),
                         style: const TextStyle(fontWeight: FontWeight.w700),
                       ),
                       style: ElevatedButton.styleFrom(
@@ -724,6 +921,19 @@ class _SupervisorSelectionScreenState extends State<SupervisorSelectionScreen> {
                                   fontSize: 12,
                                 ),
                               ),
+                            if (status.toLowerCase() == 'withdrawn' &&
+                                (r['change_reason'] ?? '')
+                                    .toString()
+                                    .isNotEmpty) ...[
+                              const SizedBox(height: 6),
+                              Text(
+                                'Changed: ${r['change_reason']}',
+                                style: TextStyle(
+                                  color: _p.textMuted,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
                             if ((r['rejection_reason'] ?? '')
                                 .toString()
                                 .isNotEmpty) ...[

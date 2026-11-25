@@ -320,6 +320,7 @@ def _serialize_assignment_request(row) -> dict[str, Any]:
         "department_code": data.get("department_code") or "",
         "status": data.get("status") or "pending",
         "rejection_reason": data.get("rejection_reason") or "",
+        "change_reason": data.get("change_reason") or "",
         "fyp_group_id": data.get("fyp_group_id"),
         "created_at": data.get("created_at"),
         "resolved_at": data.get("resolved_at"),
@@ -848,7 +849,14 @@ def get_assignment_request_status(
             "department_id": data.get("department_id"),
             "created_at": data.get("created_at"),
             "resolved_at": data.get("resolved_at"),
+            "supervisor_name": data.get("supervisor_name") or "",
+            "supervisor_email": data.get("supervisor_email") or "",
         }
+        leader_email = (data.get("student_leader_email") or "").strip().lower()
+        is_leader = bool(leader_email) and leader_email == lookup_email
+        result["is_leader"] = is_leader
+        # Only the group leader can switch supervisor (pending or accepted).
+        result["can_change_supervisor"] = is_leader and status in ("pending", "accepted")
         if status == "accepted":
             result["supervisor"] = {
                 "id": data.get("supervisor_id"),
@@ -903,6 +911,126 @@ def list_student_assignment_requests(user_id: Annotated[int | None, Query()] = N
         return {"requests": rows, "count": len(rows)}
     finally:
         conn.close()
+
+
+SUPERVISOR_CHANGE_CATEGORIES = (
+    "Research area mismatch",
+    "Project topic changed",
+    "Supervisor unavailable / on leave",
+    "Communication or scheduling issues",
+    "Department / co-supervisor advice",
+    "Other",
+)
+
+
+def _validate_change_reason(category: Any, details: Any) -> str:
+    """
+    Require a real, specific reason before a student may switch supervisors.
+    Returns the normalized reason text ("Category: details").
+    """
+    import re
+
+    category_text = str(category or "").strip()
+    details_text = re.sub(r"\s+", " ", str(details or "")).strip()
+
+    if category_text and category_text not in SUPERVISOR_CHANGE_CATEGORIES:
+        raise HTTPException(status_code=400, detail="Invalid reason category.")
+    if not category_text:
+        raise HTTPException(
+            status_code=400,
+            detail="Select a reason category for changing your supervisor.",
+        )
+    if len(details_text) < 30:
+        raise HTTPException(
+            status_code=400,
+            detail="Please explain the reason for changing your supervisor (at least 30 characters).",
+        )
+    if len(details_text) > 1000:
+        raise HTTPException(
+            status_code=400,
+            detail="Reason is too long (max 1000 characters).",
+        )
+    words = re.findall(r"[A-Za-z؀-ۿ]{2,}", details_text)
+    if len(words) < 6:
+        raise HTTPException(
+            status_code=400,
+            detail="Please write a proper reason in at least 6 meaningful words.",
+        )
+    if len({w.lower() for w in words}) < 4:
+        raise HTTPException(
+            status_code=400,
+            detail="The reason looks repetitive. Please describe the actual reason.",
+        )
+    if re.search(r"(.)\1{4,}", details_text):
+        raise HTTPException(
+            status_code=400,
+            detail="The reason contains repeated characters. Please write a valid reason.",
+        )
+    letters = sum(ch.isalpha() for ch in details_text)
+    if letters < len(details_text) * 0.6:
+        raise HTTPException(
+            status_code=400,
+            detail="The reason must be written in words, not symbols or numbers.",
+        )
+    return f"{category_text}: {details_text}"
+
+
+def _active_supervision_requests(cursor, leader_email: str, org_id: int) -> list:
+    """Pending or accepted (with an active group) requests led by this student."""
+    cursor.execute(
+        """
+        SELECT ar.id, ar.status, ar.supervisor_id, ar.fyp_group_id, ar.group_name,
+               ar.project_title, s.name AS supervisor_name, s.email AS supervisor_email,
+               g.status AS group_status
+        FROM assignment_requests ar
+        JOIN supervisors s ON s.id = ar.supervisor_id
+        LEFT JOIN fyp_groups g ON g.id = ar.fyp_group_id
+        WHERE LOWER(TRIM(ar.student_leader_email)) = LOWER(?)
+          AND COALESCE(s.org_id, 1) = ?
+          AND (
+                LOWER(TRIM(ar.status)) = 'pending'
+             OR (LOWER(TRIM(ar.status)) = 'accepted'
+                 AND ar.fyp_group_id IS NOT NULL
+                 AND LOWER(COALESCE(g.status, '')) = 'accepted')
+          )
+        ORDER BY ar.id DESC
+        """,
+        (leader_email, org_id),
+    )
+    return cursor.fetchall()
+
+
+def _sync_supervisor_slots(cursor, supervisor_id: int) -> None:
+    cursor.execute(
+        "SELECT COUNT(*) FROM fyp_groups WHERE supervisor_id = ? AND status = 'accepted'",
+        (supervisor_id,),
+    )
+    count = int(cursor.fetchone()[0] or 0)
+    cursor.execute(
+        "UPDATE supervisors SET current_groups = ? WHERE id = ?",
+        (count, supervisor_id),
+    )
+
+
+def _supervisor_notify_target(cursor, supervisor_email: str | None, org_id: int):
+    """Return (user_id, org_id) for a supervisor's login account."""
+    email = (supervisor_email or "").strip()
+    if not email:
+        return None, org_id
+    cursor.execute(
+        "SELECT id, org_id FROM users WHERE LOWER(email) = LOWER(?) AND COALESCE(org_id, 1) = ?",
+        (email, org_id),
+    )
+    row = cursor.fetchone()
+    if not row:
+        return None, org_id
+    return row["id"], int(row["org_id"] or org_id)
+
+
+@router.get("/supervisor-change-reasons")
+def list_supervisor_change_reasons():
+    """Reason categories a student can pick when changing supervisor."""
+    return {"categories": list(SUPERVISOR_CHANGE_CATEGORIES)}
 
 
 @router.post("/assignment-requests")
@@ -988,24 +1116,75 @@ def create_assignment_request(
         if department_id is None:
             department_id = supervisor["department_id"]
 
-        # Avoid duplicate pending requests to the same supervisor from this student
-        cursor.execute(
-            """
-            SELECT ar.id
-            FROM assignment_requests ar
-            JOIN supervisors s ON s.id = ar.supervisor_id
-            WHERE ar.supervisor_id = ?
-              AND LOWER(TRIM(ar.student_leader_email)) = LOWER(?)
-              AND ar.status = 'pending'
-              AND COALESCE(s.org_id, 1) = ?
-            """,
-            (supervisor_id, student_email, org_id),
-        )
-        if cursor.fetchone():
-            raise HTTPException(
-                status_code=409,
-                detail="You already have a pending request with this supervisor.",
+        # ── One supervisor at a time ─────────────────────────────────────
+        # Group members (non-leaders) of an active group cannot switch on their own.
+        active = _active_supervision_requests(cursor, student_email, org_id)
+        if not active:
+            member_group = _find_accepted_group_for_email(cursor, student_email, org_id=org_id)
+            if member_group is not None:
+                raise HTTPException(
+                    status_code=403,
+                    detail=(
+                        "You are already in a supervised group. Only your group leader "
+                        "can change the supervisor."
+                    ),
+                )
+
+        change_reason: str | None = None
+        if active:
+            wants_change = bool(payload.get("change_supervisor")) or bool(
+                str(payload.get("change_reason") or "").strip()
             )
+            if not wants_change:
+                raise HTTPException(
+                    status_code=409,
+                    detail=(
+                        "You already have a supervisor (or a pending request). "
+                        "Use 'Change Supervisor' and give a reason to switch."
+                    ),
+                )
+            if any(int(r["supervisor_id"]) == supervisor_id for r in active):
+                raise HTTPException(
+                    status_code=400,
+                    detail="This is already your current supervisor. Choose a different one.",
+                )
+            change_reason = _validate_change_reason(
+                payload.get("change_reason_category"),
+                payload.get("change_reason"),
+            )
+
+        resolved_at = datetime.utcnow().isoformat(sep=" ", timespec="seconds")
+        replaced: list[dict[str, Any]] = []
+        for old in active:
+            old_status = (old["status"] or "").strip().lower()
+            old_group_id = old["fyp_group_id"]
+            if old_status == "accepted" and old_group_id is not None:
+                cursor.execute(
+                    "UPDATE fyp_groups SET status = 'discarded' WHERE id = ? AND status = 'accepted'",
+                    (old_group_id,),
+                )
+            cursor.execute(
+                """
+                UPDATE assignment_requests
+                SET status = 'withdrawn', change_reason = ?, resolved_at = ?,
+                    fyp_group_id = NULL
+                WHERE id = ?
+                """,
+                (change_reason, resolved_at, old["id"]),
+            )
+            _sync_supervisor_slots(cursor, int(old["supervisor_id"]))
+            replaced.append(
+                {
+                    "request_id": int(old["id"]),
+                    "supervisor_id": int(old["supervisor_id"]),
+                    "supervisor_name": old["supervisor_name"] or "",
+                    "supervisor_email": old["supervisor_email"] or "",
+                    "was_accepted": old_status == "accepted",
+                    "group_id": old_group_id,
+                    "group_name": old["group_name"] or group_name,
+                }
+            )
+        replaces_request_id = replaced[0]["request_id"] if replaced else None
 
         has_ar_org = _table_has_column(cursor, "assignment_requests", "org_id")
         if has_ar_org:
@@ -1014,8 +1193,9 @@ def create_assignment_request(
                 INSERT INTO assignment_requests
                     (supervisor_id, group_name, project_title, student_leader_name,
                      student_leader_email, member_names, cosupervisor_name,
-                     department_id, status, fyp_group_id, org_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', NULL, ?)
+                     department_id, status, fyp_group_id, change_reason,
+                     replaces_request_id, org_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', NULL, ?, ?, ?)
                 """,
                 (
                     supervisor_id,
@@ -1026,6 +1206,8 @@ def create_assignment_request(
                     member_names_json,
                     cosupervisor_name or None,
                     department_id,
+                    change_reason,
+                    replaces_request_id,
                     org_id,
                 ),
             )
@@ -1035,8 +1217,9 @@ def create_assignment_request(
                 INSERT INTO assignment_requests
                     (supervisor_id, group_name, project_title, student_leader_name,
                      student_leader_email, member_names, cosupervisor_name,
-                     department_id, status, fyp_group_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', NULL)
+                     department_id, status, fyp_group_id, change_reason,
+                     replaces_request_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', NULL, ?, ?)
                 """,
                 (
                     supervisor_id,
@@ -1047,10 +1230,52 @@ def create_assignment_request(
                     member_names_json,
                     cosupervisor_name or None,
                     department_id,
+                    change_reason,
+                    replaces_request_id,
                 ),
             )
         request_id = cursor.lastrowid
         conn.commit()
+
+        # Notify previous supervisor(s) that the student switched, with the reason
+        student_display = student_leader_name or (student.get("username") or "A student").strip()
+        for old in replaced:
+            try:
+                notify_user_id, notify_org_id = _supervisor_notify_target(
+                    cursor, old["supervisor_email"], org_id
+                )
+                if old["was_accepted"]:
+                    body = (
+                        f"{student_display} has changed supervisor for group "
+                        f"'{old['group_name']}'. The group has been removed from your "
+                        f"My Groups and your slot is freed. Reason — {change_reason}"
+                    )
+                else:
+                    body = (
+                        f"{student_display} withdrew the supervision request for group "
+                        f"'{old['group_name']}' and chose another supervisor. "
+                        f"Reason — {change_reason}"
+                    )
+                from services.notification_service import notify, NotificationType
+                notify(
+                    org_id=notify_org_id,
+                    user_id=notify_user_id,
+                    type=NotificationType.SUPERVISOR_CHANGED,
+                    title="Student changed supervisor",
+                    body=body,
+                    entity_type="assignment_request",
+                    entity_id=old["request_id"],
+                    payload={
+                        "screen": "assignment_requests",
+                        "request_id": old["request_id"],
+                        "group_id": old["group_id"],
+                        "reason": change_reason,
+                    },
+                )
+            except Exception:
+                logger.exception(
+                    "Failed to notify previous supervisor for request_id=%s", old["request_id"]
+                )
 
         # Notify the supervisor of the new assignment request
         try:
@@ -1074,6 +1299,8 @@ def create_assignment_request(
                     message_text = f"{student_name} requested supervision for '{project_title}'."
                 else:
                     message_text = f"{student_name} submitted a supervision request for group '{group_name}'."
+                if change_reason:
+                    message_text += " (The group is switching from their previous supervisor.)"
 
                 from services.notification_service import notify, NotificationType
                 notify(
@@ -1108,6 +1335,14 @@ def create_assignment_request(
         return {
             "success": True,
             "request": _serialize_assignment_request(row),
+            "replaced": [
+                {
+                    "request_id": r["request_id"],
+                    "supervisor_name": r["supervisor_name"],
+                    "was_accepted": r["was_accepted"],
+                }
+                for r in replaced
+            ],
         }
     finally:
         conn.close()

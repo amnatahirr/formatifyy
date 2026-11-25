@@ -345,6 +345,8 @@ class _NotificationListItem extends StatelessWidget {
         return Icons.cancel_outlined;
       case 'new_assignment_request':
         return Icons.person_add_outlined;
+      case 'supervisor_changed':
+        return Icons.swap_horiz_rounded;
       case 'assignment_accepted':
         return Icons.check_circle_outline;
       case 'assignment_rejected':

@@ -7,6 +7,7 @@ import '../../providers/fyp_provider.dart';
 import '../../theme/app_theme.dart';
 
 import '../../widgets/tr.dart';
+import 'supervisor_selection_screen.dart';
 /// Shows the student's latest assignment_requests status (email-matched).
 class MySupervisorScreen extends StatefulWidget {
   /// Opens the Choose Supervisor tab (e.g. after rejection).
@@ -290,16 +291,69 @@ class _MySupervisorScreenState extends State<MySupervisorScreen> {
     );
   }
 
+  bool _canChange(Map<String, dynamic> data) =>
+      data['can_change_supervisor'] == true;
+
+  Future<void> _openChangeSupervisor() async {
+    final p = context.read<ThemeProvider>().palette;
+    final changed = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (routeCtx) => Scaffold(
+          backgroundColor: p.scaffold,
+          appBar: AppBar(
+            backgroundColor: p.surface,
+            foregroundColor: p.textPrimary,
+            elevation: 0,
+            title: const Tr('Change Supervisor'),
+          ),
+          body: SupervisorSelectionScreen(
+            changeMode: true,
+            onRequestSubmitted: () => Navigator.of(routeCtx).pop(true),
+          ),
+        ),
+      ),
+    );
+    if (changed == true && mounted) await _load();
+  }
+
+  Widget _changeSupervisorButton() {
+    return OutlinedButton.icon(
+      onPressed: _openChangeSupervisor,
+      icon: const Icon(Icons.swap_horiz_rounded, size: 18),
+      label: const Tr('Change Supervisor'),
+      style: OutlinedButton.styleFrom(
+        foregroundColor: const Color(0xFFF59E0B),
+        side: const BorderSide(color: Color(0xFFF59E0B)),
+      ),
+    );
+  }
+
+  Widget _memberOnlyNote() {
+    return Tr(
+      'Only your group leader can change the supervisor.',
+      style: TextStyle(color: _p.textMuted, fontSize: 12),
+    );
+  }
+
   Widget _pendingCard(Map<String, dynamic> data) {
+    final supName = (data['supervisor_name'] ?? '').toString().trim();
     return _statusShell(
       accent: const Color(0xFFF59E0B),
       title: 'Request pending',
       subtitle:
           'Waiting for ${(data['project_title'] ?? data['group_name'] ?? 'your group').toString()} to be reviewed.',
-      child: Text(
-        'Group: ${data['group_name'] ?? '—'}\n'
-        'Project: ${data['project_title'] ?? '—'}',
-        style: TextStyle(color: _p.textSecondary, height: 1.5),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Group: ${data['group_name'] ?? '—'}\n'
+            'Project: ${data['project_title'] ?? '—'}'
+            '${supName.isNotEmpty ? '\nRequested supervisor: $supName' : ''}',
+            style: TextStyle(color: _p.textSecondary, height: 1.5),
+          ),
+          const SizedBox(height: 16),
+          if (_canChange(data)) _changeSupervisorButton() else _memberOnlyNote(),
+        ],
       ),
     );
   }
@@ -364,14 +418,25 @@ class _MySupervisorScreenState extends State<MySupervisorScreen> {
           ),
           _infoRow('Group ID', groupId?.toString() ?? '—'),
           const SizedBox(height: 8),
-          ElevatedButton.icon(
-            onPressed: () => _openSendReportDialog(groupId),
-            icon: const Icon(Icons.send_rounded, size: 18),
-            label: const Tr('Send Report to Supervisor'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: _p.accent,
-              foregroundColor: Colors.white,
-            ),
+          Wrap(
+            spacing: 12,
+            runSpacing: 10,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              ElevatedButton.icon(
+                onPressed: () => _openSendReportDialog(groupId),
+                icon: const Icon(Icons.send_rounded, size: 18),
+                label: const Tr('Send Report to Supervisor'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: _p.accent,
+                  foregroundColor: Colors.white,
+                ),
+              ),
+              if (_canChange(data))
+                _changeSupervisorButton()
+              else
+                _memberOnlyNote(),
+            ],
           ),
         ],
       ),
