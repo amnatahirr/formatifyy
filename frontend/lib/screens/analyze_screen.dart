@@ -737,6 +737,8 @@ void dispose() {
           'fix_type': 'heading',
           'paragraph_id': pid,
           'heading_level': level,
+          // lets the backend re-find the paragraph if indices moved
+          'original': match['text'] ?? '',
         }),
       );
 
@@ -805,6 +807,7 @@ void dispose() {
             'fix_type': 'heading',
             'paragraph_id': pid,
             'heading_level': level,
+            'original': match['text'] ?? '',
           }),
         );
 
@@ -887,6 +890,9 @@ void dispose() {
       body['para_indices'] = issue['para_indices'] ??
           (issue['fix_details'] as Map<String, dynamic>?)?['para_indices'] ??
           [];
+      final texts = issue['list_texts'] ??
+          (issue['fix_details'] as Map<String, dynamic>?)?['texts'];
+      if (texts != null) body['list_texts'] = texts;
     }
     try {
       final resp = await http.post(
@@ -1082,13 +1088,19 @@ void dispose() {
       if ((fn.contains('format') || fn.contains('style')) &&
           (itype == 'heading_style' || itype == 'heading')) {
         if (pid.isEmpty) continue;
+        // Only issues that carry an explicit target level (heading resolver /
+        // template analysis) become "make this a Heading N" fixes. Never guess a
+        // level from free text — that turned body sentences into headings.
+        final rawLevel = i['heading_level'];
+        final level = rawLevel is num ? rawLevel.toInt() : 0;
+        if (level < 1 || level > 4) continue;
         fixes.add({
           'issue_id': issueId,
           'paragraph_id': pid,
           'fix_type': 'heading',
           'type': 'heading_style',
-          'heading_level': i['heading_level'] ??
-              _inferHeadingLevel(i['suggestion'] as String? ?? ''),
+          'heading_level': level,
+          'original': i['original'] ?? i['text_preview'] ?? '',
         });
         headingCount++;
         continue;
@@ -1132,7 +1144,13 @@ void dispose() {
           'fix_type': 'apply_section_bullets',
           'type': itype.isEmpty ? 'missing_bullets' : itype,
           'para_indices': indices,
-          'fix_details': {'para_indices': indices},
+          'fix_details': {
+            'para_indices': indices,
+            if (details is Map && details['texts'] != null)
+              'texts': details['texts'],
+          },
+          if (i['list_texts'] != null) 'list_texts': i['list_texts'],
+          if (i['original'] != null) 'original': i['original'],
         });
         bulletCount++;
         continue;
@@ -1175,6 +1193,7 @@ void dispose() {
         'heading_level':
             match['expected_level'] ?? match['heading_level'] ?? 1,
         'source': match['source'],
+        'original': match['text'] ?? '',
       });
       headingCount++;
     }
@@ -6616,7 +6635,15 @@ class _BulletsTabContentState extends State<_BulletsTabContent> {
           '?user_id=${widget.userId}&fix_type=apply_section_bullets',
         ),
         headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'para_indices': paraIndices}),
+        body: jsonEncode({
+          'para_indices': paraIndices,
+          // backend re-finds items by text if the indices moved
+          if (groupItems.every((it) => it['index'] is int && it['text'] is String))
+            'texts': groupItems
+                .where((it) => it['index'] is int)
+                .map((it) => it['text'])
+                .toList(),
+        }),
       );
       if (resp.statusCode == 200) {
         try {

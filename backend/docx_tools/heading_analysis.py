@@ -728,6 +728,36 @@ def detect_unnumbered_subheading(
     return True, round(min(1.0, score), 3), parent_level, parent_idx
 
 
+def _is_sibling_after_body(
+    blocks: List[AnalysisBlock],
+    results: List[Dict[str, Any]],
+    prev_idx: int,
+    idx: int,
+    prev_level: int,
+) -> bool:
+    """
+    An unnumbered label is a SIBLING (same level) of the previous heading —
+    not its child — when body text sits between them and the previous heading is
+      * an unnumbered sub-heading we already inferred (a series of labels), or
+      * a numbered heading at the deepest numbered level (3, e.g. "2.2.1."):
+        the template only numbers H1–H3, so a label after its body is the next
+        item of the series that lost its number, not an H4.
+    A label directly under a heading (no body in between) stays its child, and
+    a label after the body of an H1/H2 stays a child (e.g. 2.2 → body → label = H3).
+    """
+    has_body = any(
+        (blocks[k].text or "").strip() and not results[k].get("is_heading")
+        for k in range(prev_idx + 1, idx)
+    )
+    if not has_body:
+        return False
+    prev_row = results[prev_idx]
+    if prev_row.get("heading_kind") == "unnumbered_subheading":
+        return True
+    depth = _reliable_numbering_depth(blocks[prev_idx].numbering_prefix)
+    return depth is not None and depth >= 3 and prev_level >= 3
+
+
 def _detect_unnumbered_subheadings(
     blocks: List[AnalysisBlock],
     results: List[Dict[str, Any]],
@@ -756,6 +786,10 @@ def _detect_unnumbered_subheadings(
             and next_text
             and _is_bullet_or_list(next_text)
         ):
+            child_level = parent_level
+        elif _is_sibling_after_body(blocks, results, parent_idx, idx, parent_level):
+            # "2.2.1. Students" → body → "FYP Supervisors" → body → ...:
+            # the label continues the same series, it is not a child of 2.2.1.
             child_level = parent_level
 
         already_heading = bool(results[idx].get("is_heading"))
@@ -1313,6 +1347,24 @@ def analyze_headings(
                 row["fix_needed"] = False
                 row["fix_status"] = "discarded_by_user"
 
+    # A level the user picked in the Analysis tab wins for ANY paragraph
+    # (template-matched or inferred), so analysis shows what the export applies.
+    for idx, block in enumerate(blocks):
+        pid = str(block.paragraph_id or "")
+        chosen = (user_levels or {}).get(pid)
+        if not chosen or decisions.get(pid) != "keep":
+            continue
+        row = results[idx]
+        row.update({
+            "is_heading": True,
+            "level": _level_label(max(1, min(4, int(chosen)))),
+            "user_decision": "keep",
+            "user_level": int(chosen),
+        })
+        row.pop("fix_status", None)
+        if not row.get("source"):
+            row["source"] = "inferred"
+
     if include_missing:
         results.extend(find_missing_template_headings(results, outline))
 
@@ -1360,6 +1412,7 @@ async def analyze_document_headings_with_claude(
     *,
     include_missing: bool = True,
     user_decisions: Optional[Dict[str, str]] = None,
+    user_levels: Optional[Dict[str, int]] = None,
 ) -> List[Dict[str, Any]]:
     """
     Claude-first heading analysis for the document analyze API.
@@ -1383,6 +1436,7 @@ async def analyze_document_headings_with_claude(
         include_missing=include_missing,
         claude_candidates=candidates or None,
         user_decisions=user_decisions,
+        user_levels=user_levels,
     )
 
 

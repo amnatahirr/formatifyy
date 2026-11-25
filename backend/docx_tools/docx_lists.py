@@ -159,7 +159,13 @@ def make_bullet(doc, para, level: int = 0) -> None:
     try:
         para.style = para.part.document.styles["List Paragraph"]
     except Exception:
-        pass
+        # No List Paragraph style in this document: at least never leave a list
+        # item on a Heading style (it would keep heading font + outline numbering).
+        try:
+            if (para.style.name or "").lower().startswith(("heading", "title")):
+                para.style = para.part.document.styles["Normal"]
+        except Exception:
+            pass
 
 
 def apply_bullets_to_indices(doc, indices, level: int = 0, skip_headings: bool = True) -> int:

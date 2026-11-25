@@ -49,7 +49,10 @@ _INCOMPLETE_HEADING_TAIL_RE = re.compile(
     re.IGNORECASE,
 )
 # Accidental outline numbers pasted onto body prose ("6. Long paragraph…")
-_LEADING_OUTLINE_NUM_RE = re.compile(r"^\s*(\d{1,3})\.\s+(\S.*)$")
+# "6. The processing module ..." and "1.5.1. The project also covers ..." — an
+# outline / heading number left on body prose (e.g. after a false heading was
+# demoted). Trailing dot required, so "1.5 million users ..." is never touched.
+_LEADING_OUTLINE_NUM_RE = re.compile(r"^\s*(\d{1,3}(?:\.\d{1,3})*)\.\s+(\S.*)$")
 
 # Image detection tags (modern DrawingML + legacy VML)
 BLIP_TAG = "{http://schemas.openxmlformats.org/drawingml/2006/main}blip"

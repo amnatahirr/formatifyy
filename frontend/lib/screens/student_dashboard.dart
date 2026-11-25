@@ -5032,15 +5032,18 @@ class _StudentDashboardState extends State<StudentDashboard> {
     );
   }
 
-  void _handleDelete(Map<String, dynamic> doc) {
-    showDialog(
-      context: context,
-      builder: (context) => Dialog(
-        backgroundColor: _p.surface,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(_p.isDark ? _p.cardRadius : 12),
-        ),
-        child: Container(
+ void _handleDelete(Map<String, dynamic> doc) {
+  showDialog(
+    context: context,
+    builder: (context) => Dialog(
+      backgroundColor: _p.surface,
+      insetPadding: EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(_p.isDark ? _p.cardRadius : 12),
+      ),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxWidth: 400),
+        child: Padding(
           padding: EdgeInsets.all(24),
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -5096,9 +5099,9 @@ class _StudentDashboardState extends State<StudentDashboard> {
           ),
         ),
       ),
-    );
-  }
-
+    ),
+  );
+}
   void _performDelete(Map<String, dynamic> doc) async {
     try {
       final auth = context.read<AuthProvider>();

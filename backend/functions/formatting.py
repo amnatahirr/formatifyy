@@ -44,14 +44,8 @@ def _template_to_prompt_block(template: Union[str, Dict[str, Any]]) -> str:
 # Main check
 # --------------------------------------------------------------------------
 
-_SAFE_LIST_DETECTIONS = frozenset({
-    "infinitive",
-    "gerund",
-    "trigger_line",
-    "trigger_follower",
-    "marker",
-    "bullet_marker",
-})
+# Shared with reformatter export + bulk-fix endpoint (includes heading_context)
+from docx_tools.list_detection import HIGH_CONFIDENCE_DETECTIONS as _SAFE_LIST_DETECTIONS
 
 
 async def check_formatting(
@@ -247,8 +241,13 @@ Return ONLY a valid JSON object. No markdown, no explanation, no code fences. Ju
 
         for iss in issues:
             issue_type = iss.get("type", "formatting")
-            if issue_type in ("heading_style", "section_order", "missing_section"):
-                continue  # resolved deterministically by functions/outline.py
+            if issue_type in (
+                "heading_style", "heading", "heading_level", "section_order", "missing_section",
+            ):
+                # Heading levels are resolved deterministically (functions/outline.py,
+                # heading analysis). An LLM "heading" issue would become a
+                # "make this a Heading N" fix in Apply All -> drop it here.
+                continue
             suggestion = iss.get("suggestion", "") or iss.get("problem", "")
             reason = iss.get("reason", "") or iss.get("problem", "")
             pid = iss.get("paragraph_id", "")
@@ -282,7 +281,7 @@ Return ONLY a valid JSON object. No markdown, no explanation, no code fences. Ju
                 "source": "llm_formatting",
                 "_compliance_score": int(float(compliance_score or 0)),
             })
-        return result
+        return _drop_isolated_llm_list_issues(result, batch.paragraphs)
     except Exception as exc:
         print(f"[formatting] error: {exc}")
         # Still return deterministic list findings if the LLM call fails
@@ -305,6 +304,40 @@ Return ONLY a valid JSON object. No markdown, no explanation, no code fences. Ju
                 "para_indices": det.get("para_indices") or [],
             })
         return fallback
+
+
+def _drop_isolated_llm_list_issues(result: list, paragraphs) -> list:
+    """
+    The LLM sometimes flags ONE paragraph as a list item (e.g. "Administrative
+    User. Manage ...: create departments, add ..." under its own heading). A
+    single paragraph is not a list: Apply All would give it a lone bullet. Keep an
+    LLM list_formatting issue only when a neighbouring paragraph is also a list
+    item (flagged or already a Word list). Pre-pass issues are left untouched.
+    """
+    from docx_tools.list_detection import drop_isolated_list_targets
+
+    pos = {getattr(p, "paragraph_id", ""): i for i, p in enumerate(paragraphs or [])}
+    flagged = {
+        pos[r["paragraph_id"]]
+        for r in result
+        if r.get("type") == "list_formatting" and r.get("paragraph_id") in pos
+    }
+    if not flagged:
+        return result
+    _, dropped = drop_isolated_list_targets(list(paragraphs), flagged)
+    dropped_pids = {getattr(paragraphs[i], "paragraph_id", "") for i in dropped}
+    out = [
+        r for r in result
+        if not (
+            r.get("type") == "list_formatting"
+            and r.get("source") in ("llm_formatting", "formatting_freeform")
+            and r.get("paragraph_id") in dropped_pids
+        )
+    ]
+    if len(out) != len(result):
+        print(f"[formatting] dropped {len(result) - len(out)} isolated LLM list item(s): "
+              f"{sorted(dropped_pids)}")
+    return out
 
 
 def _safe_parse(text: str) -> dict:

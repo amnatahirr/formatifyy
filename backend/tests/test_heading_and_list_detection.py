@@ -349,3 +349,165 @@ if __name__ == "__main__":
             print(f"  FAIL  {fn.__name__}: {exc}")
     print(f"\n{len(tests) - failed}/{len(tests)} passed")
     raise SystemExit(failed)
+
+
+# ── heading_context lists + list protection (bullet consistency fix) ─────────
+
+def test_heading_context_assumptions_become_list():
+    from docx_tools.list_detection import detect_list_groups
+    blocks = [{"index": 0, "text": "1.4.1. Assumptions", "type": "heading"}] + [
+        {"index": i, "text": t} for i, t in enumerate([
+            "The organization administrator is assumed to configure templates.",
+            "Users are assumed to have a stable internet connection.",
+            "AI text analysis depends on the external language model API.",
+            "LMS integrations such as Moodle or Blackboard are not implemented.",
+        ], start=1)
+    ] + [{"index": 5, "text": "1.4.2. Constraints", "type": "heading"}]
+    groups = detect_list_groups(blocks)
+    assert [(g.detection, g.indices) for g in groups] == [("heading_context", [1, 2, 3, 4])]
+
+
+def test_heading_context_ignores_non_list_sections_and_label_subheadings():
+    from docx_tools.list_detection import detect_list_groups
+    plain = [{"index": 0, "text": "2. Background", "type": "heading"}] + [
+        {"index": i, "text": f"Short sentence number {i} here."} for i in range(1, 5)
+    ]
+    assert detect_list_groups(plain) == []
+    with_label = [
+        {"index": 0, "text": "3.1. Limitations", "type": "heading"},
+        {"index": 1, "text": "Hardware limitations"},
+        {"index": 2, "text": "The device has little memory."},
+        {"index": 3, "text": "Battery life is short."},
+        {"index": 4, "text": "Screens are small."},
+    ]
+    assert detect_list_groups(with_label) == []
+
+
+def test_heading_styled_objective_stays_in_trigger_list():
+    from docx_tools.list_detection import detect_list_groups, is_heading_paragraph
+    item = "To provide Google Drive integration and QR-based mobile document upload."
+    blocks = [
+        {"index": 0, "text": "The specific objectives of FORMATIFY are:"},
+        {"index": 1, "text": "To develop an AI-based document analysis engine."},
+        {"index": 2, "text": item, "style": "Heading 2", "type": "heading"},
+        {"index": 3, "text": "To provide a Flutter-based interface for students."},
+    ]
+    groups = detect_list_groups(blocks)
+    assert groups and groups[0].indices == [1, 2, 3]
+    assert is_heading_paragraph(item, "Heading 2") is False
+    assert is_heading_paragraph("1.4. " + item, "Heading 2") is False
+    assert is_heading_paragraph("1.4. Assumptions & Constraints", "Heading 2") is True
+
+
+# ── unnumbered sibling sub-headings + user-chosen levels ─────────────────────
+
+def _stakeholder_blocks(first_numbered=True):
+    from docx_tools.heading_analysis import blocks_from_dicts
+    body = "Primary User. Review and accept or reject supervision requests and review documents."
+    raw = [
+        {"text": "2.2. Stakeholders List", "style_name": "Heading 2"},
+        {"text": "The project's stakeholders are both the direct and indirect users of the system."},
+        {"text": ("2.2.1. " if first_numbered else "") + "Students (FYP Group Members)",
+         "style_name": "Heading 3" if first_numbered else None},
+        {"text": body},
+    ]
+    for h in ["FYP Supervisors", "Organization / Department Administrators", "University / FYP Committee"]:
+        raw += [{"text": h}, {"text": body}]
+    for i, r in enumerate(raw):
+        r["block_id"] = i
+        r["paragraph_id"] = f"p{i}"
+    return blocks_from_dicts(raw)
+
+
+def test_unnumbered_labels_after_numbered_h3_are_siblings():
+    from docx_tools.heading_analysis import analyze_headings
+    for first_numbered in (True, False):
+        rows = analyze_headings(_stakeholder_blocks(first_numbered), {"required_sections": []})
+        levels = {i: r["level"] for i, r in enumerate(rows) if r.get("is_heading")}
+        assert [levels[i].lower() for i in (2, 4, 6, 8)] == ["h3"] * 4, levels
+
+
+def test_user_level_wins_in_analysis():
+    from docx_tools.heading_analysis import analyze_headings
+    rows = analyze_headings(
+        _stakeholder_blocks(), {"required_sections": []},
+        user_decisions={"p4": "keep"}, user_levels={"p4": 4},
+    )
+    assert rows[4]["is_heading"] and rows[4]["level"].lower() == "h4"
+
+
+# ── body prose must never become a numbered heading ("1.5.1. The project ...") ──
+
+def test_heading_fix_refuses_body_sentence_and_cleanup_strips_number(tmp_path):
+    from docx import Document
+    from docx_tools.content_fixer import apply_heading_fix
+    from docx_tools.docx_fields import strip_accidental_body_outline_numbering
+    prose = ("The project also covers institutional administration through configurable "
+             "templates and organization-level management for all users.")
+    d = Document()
+    d.add_paragraph("1.5. Project Scope", style="Heading 2")
+    d.add_paragraph(prose)
+    d.add_paragraph("1.5.1. " + prose)  # damage left by an earlier export
+    path = str(tmp_path / "t.docx")
+    d.save(path)
+
+    ok, _ = apply_heading_fix(path, "p1", 3, renumber=True)
+    assert ok is False
+    assert Document(path).paragraphs[1].style.name == "Normal"
+    assert Document(path).paragraphs[1].text == prose
+
+    doc = Document(path)
+    strip_accidental_body_outline_numbering(doc)
+    assert doc.paragraphs[2].text == prose
+
+
+# ── a single paragraph between headings never gets a lone bullet ─────────────
+
+def test_isolated_bullet_targets_are_dropped():
+    from docx_tools.list_detection import drop_isolated_list_targets
+    blocks = [
+        {"index": 0, "text": "2.2.3. Organization / Department Administrators", "type": "heading"},
+        {"index": 1, "text": "Administrative User. Manage organization-level configuration: create departments."},
+        {"index": 2, "text": "2.2.4. University / FYP Committee", "type": "heading"},
+        {"index": 3, "text": "External Stakeholder. Sets the broader academic structure."},
+        {"index": 4, "text": "2.2.5. Constraints", "type": "heading"},
+        {"index": 5, "text": "LMS integrations are not implemented."},
+        {"index": 6, "text": "Offline usage is not supported."},
+        {"index": 7, "text": "Existing bullet.", "has_numpr": True},
+        {"index": 8, "text": "One more item next to an existing list."},
+    ]
+    kept, dropped = drop_isolated_list_targets(blocks, [1, 3, 5, 6, 8])
+    assert dropped == [1, 3]
+    assert kept == [5, 6, 8]
+
+
+# ── stale analysis indices are re-found by text ──────────────────────────────
+
+def test_remap_indices_by_text_follows_moved_paragraphs():
+    import main as m
+    now = [m._norm_para_text(t) for t in [
+        "2.2.3. Organization / Department Administrators",
+        "Administrative User. Manage organization-level configuration.",
+        "Commercial Word Processors: Microsoft Word and Google Docs.",
+        "LaTeX and Overleaf: Overleaf is a cloud-based editor.",
+    ]]
+    # analysis saw the two label items at 0 and 1; the working copy moved them
+    got, lost = m._remap_indices_by_text(
+        now, [0, 1],
+        ["Commercial Word Processors: Microsoft Word and Google Docs.",
+         "LaTeX and Overleaf: Overleaf is a cloud-based editor."],
+    )
+    assert got == [2, 3] and lost == []
+    got, lost = m._remap_indices_by_text(now, [1], ["A paragraph that no longer exists."])
+    assert got == [] and lost == [1]
+
+
+def test_isolation_ignores_heading_targets():
+    from docx_tools.list_detection import drop_isolated_list_targets
+    blocks = [
+        {"index": 0, "text": "Administrative User. Manage organization-level configuration."},
+        {"index": 1, "text": "2.2.4. University / FYP Committee", "type": "heading"},
+        {"index": 2, "text": "External Stakeholder. Sets the broader academic structure."},
+    ]
+    kept, dropped = drop_isolated_list_targets(blocks, [0, 1, 2])
+    assert 0 in dropped and 2 in dropped

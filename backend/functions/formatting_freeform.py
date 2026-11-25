@@ -73,19 +73,12 @@ async def check_formatting_freeform(
         return []
 
     from docx_tools.list_detection import (
+        HIGH_CONFIDENCE_DETECTIONS as _SAFE,
         build_list_hint_payload,
         detect_list_groups,
         list_groups_to_issues,
     )
 
-    _SAFE = {
-        "infinitive",
-        "gerund",
-        "trigger_line",
-        "trigger_follower",
-        "marker",
-        "bullet_marker",
-    }
     list_groups = detect_list_groups(batch.paragraphs)
     confirmed = [g for g in list_groups if (g.detection or "").lower() in _SAFE]
     candidates = [g for g in list_groups if (g.detection or "").lower() not in _SAFE]
@@ -321,6 +314,10 @@ If no issues: {{"issues": [], "suggested_fixes": [], "suggested_manual_notes": [
                 "_compliance_score": int(float(compliance_score or 0)),
             }
         )
+
+    # A single paragraph is never a list (same rule as template formatting)
+    from functions.formatting import _drop_isolated_llm_list_issues
+    result = _drop_isolated_llm_list_issues(result, batch.paragraphs)
 
     # Attach freeform metadata once (picked up by analyze-freeform aggregator)
     if result:

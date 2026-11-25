@@ -45,7 +45,7 @@ import random
 import re
 import shutil
 import uuid
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 from reminders import start_scheduler, stop_scheduler
 import anthropic
 import analysis_progress
@@ -1141,21 +1141,178 @@ def _load_heading_levels(document_id: int) -> Dict[str, int]:
     return {}
 
 
+def _load_heading_texts(document_id: int) -> Dict[str, str]:
+    """Paragraph text at the time the user decided (guards against index drift)."""
+    path = _heading_decisions_path(document_id)
+    if not os.path.exists(path):
+        return {}
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            texts = (json.load(f) or {}).get("texts") or {}
+        return {str(k): str(v) for k, v in texts.items()}
+    except Exception as exc:
+        print(f"[heading_decisions] text load error (non-fatal): {exc}")
+    return {}
+
+
 def _save_heading_decision(
-    document_id: int, paragraph_id: str, decision: str, level: Optional[int] = None,
+    document_id: int,
+    paragraph_id: str,
+    decision: str,
+    level: Optional[int] = None,
+    text: Optional[str] = None,
 ) -> Dict[str, str]:
     decisions = _load_heading_decisions(document_id)
     levels = _load_heading_levels(document_id)
-    decisions[str(paragraph_id)] = decision
+    texts = _load_heading_texts(document_id)
+    pid = str(paragraph_id)
+    decisions[pid] = decision
     if decision == "keep" and level:
-        levels[str(paragraph_id)] = max(1, min(4, int(level)))
+        levels[pid] = max(1, min(4, int(level)))
     else:
-        levels.pop(str(paragraph_id), None)
+        levels.pop(pid, None)
+    if text and text.strip():
+        texts[pid] = text.strip()
     path = _heading_decisions_path(document_id)
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
-        json.dump({"decisions": decisions, "levels": levels}, f, indent=2)
+        json.dump({"decisions": decisions, "levels": levels, "texts": texts}, f, indent=2)
     return decisions
+
+
+def _paragraph_text_at(docx_path: str, paragraph_id: str) -> str:
+    """Text of paragraph pN in a DOCX ('' when unavailable)."""
+    m = re.match(r"p(\d+)$", str(paragraph_id or ""))
+    if not m or not docx_path or not str(docx_path).endswith(".docx") or not os.path.exists(docx_path):
+        return ""
+    try:
+        from docx import Document as DocxDoc
+        paras = DocxDoc(docx_path).paragraphs
+        idx = int(m.group(1))
+        return (paras[idx].text or "").strip() if idx < len(paras) else ""
+    except Exception:
+        return ""
+
+
+def _norm_para_text(t: str) -> str:
+    """Comparable paragraph text: no bullet glyph / stale heading number, single spaces."""
+    from docx_tools.list_detection import strip_stale_item_number
+    t = re.sub(r"^\s*[•●○◦▪■‣⁃·*\-–—]\s+", "", (t or "").strip())
+    t = strip_stale_item_number(t)
+    t = re.sub(r"^\d+(?:\.\d+)*\.\s+(?=\S)", "", t) if len(t.split()) > 8 else t
+    return re.sub(r"\s+", " ", t).strip().lower()
+
+
+def _docx_norm_texts(docx_path: str) -> List[str]:
+    try:
+        from docx import Document as DocxDoc
+        return [_norm_para_text(p.text) for p in DocxDoc(docx_path).paragraphs]
+    except Exception:
+        return []
+
+
+def _remap_indices_by_text(
+    norm_texts: List[str],
+    indices: List[int],
+    texts: Optional[List[str]],
+) -> Tuple[List[int], List[int]]:
+    """
+    Paragraph indices from an analysis can be stale: the working copy may have
+    gained/lost paragraphs since (cleanup of empty gaps, cover/TOC, captions).
+    With the analysed texts at hand, keep an index only when its text still
+    matches; otherwise re-find that text (nearest match) or drop it.
+    Returns (resolved_indices, unresolved_original_indices).
+    """
+    if not norm_texts or not texts or len(texts) != len(indices):
+        return [int(i) for i in indices], []
+    out: List[int] = []
+    lost: List[int] = []
+    used: set = set()
+    for idx, txt in zip(indices, texts):
+        idx = int(idx)
+        want = _norm_para_text(str(txt or ""))
+        if not want:
+            out.append(idx)
+            continue
+        if 0 <= idx < len(norm_texts) and norm_texts[idx] == want and idx not in used:
+            out.append(idx)
+            used.add(idx)
+            continue
+        hits = [i for i, t in enumerate(norm_texts) if t == want and i not in used]
+        if hits:
+            best = min(hits, key=lambda i: abs(i - idx))
+            out.append(best)
+            used.add(best)
+        else:
+            lost.append(idx)
+    return out, lost
+
+
+def _remap_pid_by_text(norm_texts: List[str], pid: str, text: Optional[str]) -> Optional[str]:
+    """Same as _remap_indices_by_text for one 'pN'. None = text not found."""
+    m = re.match(r"p(\d+)$", str(pid or ""))
+    if not m or not text:
+        return pid
+    got, lost = _remap_indices_by_text(norm_texts, [int(m.group(1))], [text])
+    return f"p{got[0]}" if got else None
+
+
+def _heading_overrides_for(
+    document_id: int,
+    docx_path: str,
+    extra_levels: Optional[Dict[str, int]] = None,
+) -> Dict[int, Optional[int]]:
+    """
+    User heading choices -> {paragraph index in ``docx_path``: level, or None = body}.
+
+    Every reformat (apply-content-fix, apply-all, re-analysis rebuild, export) passes
+    these to the reformatter so a manual "Heading 3" is never re-classified away.
+    The stored text is checked against the paragraph at that index; if a cover page
+    / TOC shifted the indices, the paragraph is found again by its text.
+    """
+    decisions = _load_heading_decisions(document_id)
+    levels = _load_heading_levels(document_id)
+    texts = _load_heading_texts(document_id)
+    for pid, lvl in (extra_levels or {}).items():
+        levels[str(pid)] = max(1, min(4, int(lvl)))
+        decisions.setdefault(str(pid), "keep")
+    if not levels and not any(v == "discard" for v in decisions.values()):
+        return {}
+    try:
+        from docx import Document as DocxDoc
+        from docx_tools.heading_analysis import strip_typed_prefixes
+        paras = DocxDoc(docx_path).paragraphs
+    except Exception as exc:
+        print(f"[heading_overrides] could not read {docx_path}: {exc}")
+        return {}
+
+    def _norm(t: str) -> str:
+        return (strip_typed_prefixes(t or "") or (t or "")).strip().lower()
+
+    normed = [_norm(p.text) for p in paras]
+    out: Dict[int, Optional[int]] = {}
+    for pid, decision in decisions.items():
+        m = re.match(r"p(\d+)$", pid)
+        if not m:
+            continue
+        if decision == "keep" and pid in levels:
+            value: Optional[int] = levels[pid]
+        elif decision == "discard":
+            value = None
+        else:
+            continue
+        idx = int(m.group(1))
+        want = _norm(texts.get(pid, ""))
+        if want and (idx >= len(paras) or normed[idx] != want):
+            hits = [i for i, t in enumerate(normed) if t == want]
+            if len(hits) != 1:
+                print(f"[heading_overrides] {pid} not found by text, skipped")
+                continue
+            idx = hits[0]
+        elif idx >= len(paras):
+            continue
+        out[idx] = value
+    return out
 
 
 def _export_copy_path(document_id: int) -> str:
@@ -1230,6 +1387,7 @@ def _prepare_formatted_docx(doc: Any, document_id: int) -> str:
             report,
             tmpl["formatting_rules"],
             tmpl.get("required_sections", []),
+            heading_overrides=_heading_overrides_for(document_id, doc["file_path"]),
         )
         os.makedirs(os.path.dirname(working_copy), exist_ok=True)
         shutil.copy2(output_path, working_copy)
@@ -1344,6 +1502,7 @@ def _ensure_formatted_working_copy(
             report,
             tmpl["formatting_rules"],
             tmpl.get("required_sections", []),
+            heading_overrides=_heading_overrides_for(int(doc["id"]), original),
         )
         print(
             f"[working_copy] built doc={doc['id']} "
@@ -1355,25 +1514,32 @@ def _ensure_formatted_working_copy(
             ensure_frontmatter_pages(int(doc["id"]), working_copy)
         except Exception as exc:
             print(f"[working_copy] frontmatter apply skipped: {exc}")
-    else:
-        # Existing copies: collapse duplicate page breaks + strip empty body gaps.
-        try:
-            from docx import Document as DocxDoc
-            from docx_tools.docx_fields import _collapse_consecutive_page_breaks
-            from docx_tools.reformatter import remove_empty_body_paragraph_gaps
-
-            d = DocxDoc(working_copy)
-            removed = _collapse_consecutive_page_breaks(d)
-            removed_gaps = remove_empty_body_paragraph_gaps(d)
-            if removed or removed_gaps:
-                d.save(working_copy)
-                print(
-                    f"[working_copy] cleaned doc={doc['id']}: "
-                    f"page_breaks={removed}, empty_gaps={removed_gaps}"
-                )
-        except Exception as exc:
-            print(f"[working_copy] cleanup skipped: {exc}")
+    # Collapse duplicate page breaks + strip empty body gaps — on a FRESH build
+    # too. Analysis reads paragraph indices (pN) from this file; if the cleanup
+    # only ran on later calls, it would delete paragraphs after analysis and shift
+    # every index, so bullet/heading fixes landed on the wrong paragraphs.
+    _clean_working_copy(working_copy, doc["id"])
     return working_copy
+
+
+def _clean_working_copy(working_copy: str, doc_id: Any) -> None:
+    """Idempotent cleanup: duplicate page breaks + empty body gaps."""
+    try:
+        from docx import Document as DocxDoc
+        from docx_tools.docx_fields import _collapse_consecutive_page_breaks
+        from docx_tools.reformatter import remove_empty_body_paragraph_gaps
+
+        d = DocxDoc(working_copy)
+        removed = _collapse_consecutive_page_breaks(d)
+        removed_gaps = remove_empty_body_paragraph_gaps(d)
+        if removed or removed_gaps:
+            d.save(working_copy)
+            print(
+                f"[working_copy] cleaned doc={doc_id}: "
+                f"page_breaks={removed}, empty_gaps={removed_gaps}"
+            )
+    except Exception as exc:
+        print(f"[working_copy] cleanup skipped: {exc}")
 
 
 def _commit_working_document(document_id: int, working_copy: str, doc: Any) -> Dict[str, Any]:
@@ -1532,8 +1698,7 @@ def apply_section_bullets_to_file(docx_path: str, para_indices: list[int]):
     from docx import Document as DocxDoc
     from docx.oxml import OxmlElement as _OE
     from docx.oxml.ns import qn
-    import random
-    from docx_tools.list_detection import is_heading_paragraph
+    from docx_tools.list_detection import is_heading_paragraph, strip_stale_item_number
     
     docx = DocxDoc(docx_path)
     paras = docx.paragraphs
@@ -1586,75 +1751,17 @@ def apply_section_bullets_to_file(docx_path: str, para_indices: list[int]):
         _parent.remove(_p_el)
         
     paras = docx.paragraphs
-    
-    try:
-        num_part = docx.part.numbering_part.numbering_definitions._numbering
-        abstract_id = len(num_part.findall(qn('w:abstractNum')))
-        num_id = len(num_part.findall(qn('w:num'))) + 1
-    except Exception:
-        from lxml import etree as _etree
-        from docx.opc.part import Part as _OpcPart
-        from docx.opc.packuri import PackURI as _PackURI
 
-        _NUM_CT  = ('application/vnd.openxmlformats-officedocument'
-                    '.wordprocessingml.numbering+xml')
-        _NUM_RT  = ('http://schemas.openxmlformats.org/officeDocument'
-                    '/2006/relationships/numbering')
-        _num_xml = (
-            b'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
-            b'<w:numbering xmlns:w="http://schemas.openxmlformats.org/'
-            b'wordprocessingml/2006/main"/>'
-        )
-        num_opc = _OpcPart(
-            _PackURI('/word/numbering.xml'),
-            _NUM_CT,
-            _num_xml,
-            docx.part.package,
-        )
-        docx.part.relate_to(num_opc, _NUM_RT)
-        num_part    = _etree.fromstring(_num_xml)
-        abstract_id = 0
-        num_id      = 1
-        
-    nsid_val = ''.join(random.choices('0123456789ABCDEF', k=8))
-    tmpl_val = ''.join(random.choices('0123456789ABCDEF', k=8))
-
-    abstractNum = _OE('w:abstractNum')
-    abstractNum.set(qn('w:abstractNumId'), str(abstract_id))
-    nsid = _OE('w:nsid'); nsid.set(qn('w:val'), nsid_val)
-    ml   = _OE('w:multiLevelType'); ml.set(qn('w:val'), 'singleLevel')
-    tmpl = _OE('w:tmpl'); tmpl.set(qn('w:val'), tmpl_val)
-    abstractNum.extend([nsid, ml, tmpl])
-
-    lvl    = _OE('w:lvl');     lvl.set(qn('w:ilvl'), '0')
-    start  = _OE('w:start');   start.set(qn('w:val'), '1')
-    nFmt   = _OE('w:numFmt');  nFmt.set(qn('w:val'), 'bullet')
-    lvlTxt = _OE('w:lvlText'); lvlTxt.set(qn('w:val'), '•')
-    lvlJc  = _OE('w:lvlJc');   lvlJc.set(qn('w:val'), 'left')
-    pPr_abs = _OE('w:pPr')
-    tabs    = _OE('w:tabs'); tab = _OE('w:tab')
-    tab.set(qn('w:val'), 'num'); tab.set(qn('w:pos'), '360')
-    tabs.append(tab); pPr_abs.append(tabs)
-    ind = _OE('w:ind'); ind.set(qn('w:left'), '360'); ind.set(qn('w:hanging'), '180')
-    pPr_abs.append(ind)
-    lvl.extend([start, nFmt, lvlTxt, lvlJc, pPr_abs])
-    abstractNum.append(lvl)
-
-    first_num_e = num_part.find(qn('w:num'))
-    if first_num_e is not None:
-        first_num_e.addprevious(abstractNum)
-    else:
-        num_part.append(abstractNum)
-
-    num_elem = _OE('w:num'); num_elem.set(qn('w:numId'), str(num_id))
-    an = _OE('w:abstractNumId'); an.set(qn('w:val'), str(abstract_id))
-    num_elem.append(an); num_part.append(num_elem)
+    # Same bullets as the reformatter export: one shared "FormatifyBullets"
+    # definition (created once, max+1 ids), 720/360 hanging indent, 9 levels.
+    from docx_tools.docx_lists import ensure_bullet_numbering, make_bullet
+    ensure_bullet_numbering(docx)
 
     applied = []
     skipped = []
     import re
     _LEADING_MARKER = re.compile(r'^\s*(?:[•○■▪\-–→»*]|\(?\d+[.)](?!\d)|\(?[A-Za-z][.)]|\(?[ivxlcdmIVXLCDM]+[.)])\s+')
-    
+
     for idx in para_indices:
         if idx < 0 or idx >= len(paras):
             skipped.append(idx)
@@ -1666,34 +1773,28 @@ def apply_section_bullets_to_file(docx_path: str, para_indices: list[int]):
             continue
 
         style_name = (p.style.name or "") if p.style is not None else ""
-        # NEVER bullet a heading (e.g. "3.2. Proposed Solution")
+        # NEVER bullet a heading (e.g. "3.2. Proposed Solution"). Objective items
+        # ("To provide ...") wrongly styled as Heading are list items, not headings.
         if is_heading_paragraph(text, style_name):
             print(f"[bullets] skip heading-like paragraph p{idx}: {text[:60]}")
             skipped.append(idx)
             continue
-            
+
+        # "1.4. To provide ..." left by an earlier wrong heading promotion
+        cleaned = strip_stale_item_number(p.text)
         if p.runs:
-            p.runs[0].text = _LEADING_MARKER.sub("", p.runs[0].text or "", count=1)
+            first = p.runs[0].text or ""
+            if cleaned != (p.text or "").strip():
+                first = strip_stale_item_number(first)
+            p.runs[0].text = _LEADING_MARKER.sub("", first, count=1)
         else:
-            p.text = _LEADING_MARKER.sub("", p.text or "", count=1)
-            
-        pPr = p._element.get_or_add_pPr()
-        for tag in (qn('w:numPr'), qn('w:ind')):
-            ex = pPr.find(tag)
-            if ex is not None:
-                pPr.remove(ex)
-                
-        numPr   = _OE('w:numPr')
-        ilvl    = _OE('w:ilvl');  ilvl.set(qn('w:val'), '0')
-        numId_e = _OE('w:numId'); numId_e.set(qn('w:val'), str(num_id))
-        numPr.extend([ilvl, numId_e]); pPr.insert(0, numPr)
-        
-        pStyle = pPr.find(qn('w:pStyle'))
-        if pStyle is None:
-            pStyle = _OE('w:pStyle'); pPr.insert(0, pStyle)
-        pStyle.set(qn('w:val'), 'ListParagraph')
+            p.text = _LEADING_MARKER.sub("", cleaned, count=1)
+
+        # make_bullet replaces any heading/outline numPr, drops direct indents
+        # and sets List Paragraph (also reverting a wrongly applied Heading style).
+        make_bullet(docx, p, 0)
         applied.append(idx)
-        
+
     docx.save(docx_path)
     return applied, skipped
 
@@ -2376,6 +2477,16 @@ async def analyze_document_endpoint(document_id: int, user_id: int = Query(...))
             from docx_tools.review_blocks import strip_frontmatter_from_document
             heading_doc = strip_frontmatter_from_document(doc_model)
             decisions = _load_heading_decisions(document_id)
+            # User-chosen levels, re-mapped onto the (possibly rebuilt) working copy
+            user_levels: Dict[str, int] = {}
+            try:
+                if str(file_path).endswith(".docx"):
+                    for _i, _l in _heading_overrides_for(document_id, file_path).items():
+                        decisions[f"p{_i}"] = "keep" if _l else "discard"
+                        if _l:
+                            user_levels[f"p{_i}"] = _l
+            except Exception as exc:
+                print(f"[analyze] user heading levels skipped: {exc}")
             client = None
             try:
                 client = await _get_ai_client()
@@ -2391,7 +2502,7 @@ async def analyze_document_endpoint(document_id: int, user_id: int = Query(...))
                     tmpl,
                     client,
                     user_decisions=decisions,
-                    user_levels=_load_heading_levels(document_id),
+                    user_levels=user_levels,
                 )
             elif client is not None:
                 template_heading_matches = await analyze_document_headings_with_claude(
@@ -2399,12 +2510,14 @@ async def analyze_document_endpoint(document_id: int, user_id: int = Query(...))
                     tmpl,
                     client,
                     user_decisions=decisions,
+                    user_levels=user_levels,
                 )
             else:
                 template_heading_matches = analyze_document_headings(
                     heading_doc,
                     tmpl,
                     user_decisions=decisions,
+                    user_levels=user_levels,
                 )
 
             template_heading_matches = enrich_matches_with_fix_status(
@@ -2740,7 +2853,15 @@ async def heading_decision_endpoint(
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
 
-    decisions = _save_heading_decision(document_id, pid, decision, body.heading_level)
+    _decision_text = ""
+    try:
+        _wc = _working_copy_path(document_id)
+        _decision_text = _paragraph_text_at(_wc, pid)
+    except Exception:
+        pass
+    decisions = _save_heading_decision(
+        document_id, pid, decision, body.heading_level, _decision_text,
+    )
     result: Dict[str, Any] = {
         "success": True,
         "paragraph_id": pid,
@@ -3435,6 +3556,7 @@ def apply_all_style_fixes(document_id: int, user_id: int = Query(...)):
     reformat_document(
         file_path, working_copy, report,
         tmpl["formatting_rules"], tmpl.get("required_sections", []),
+        heading_overrides=_heading_overrides_for(document_id, file_path),
     )
 
     try:
@@ -3473,6 +3595,11 @@ async def apply_fix(
     para_indices = payload.get("para_indices", [])
     if not para_indices and "para_index" in payload:
         para_indices = [payload["para_index"]]
+    para_indices, _lost = _remap_indices_by_text(
+        _docx_norm_texts(working_copy),
+        [int(i) for i in para_indices],
+        payload.get("texts") or payload.get("list_texts"),
+    )
 
     if fix_type == "apply_section_bullets":
         applied, skipped = apply_section_bullets_to_file(working_copy, para_indices)
@@ -3522,18 +3649,32 @@ async def apply_content_fix(
 
     fix_type = payload.get("fix_type", "text")
     if fix_type == "heading":
-        level = int(payload.get("heading_level", 1) or 1)
-        ok, msg = apply_heading_fix(working_copy, payload.get("paragraph_id", ""), level)
+        level = max(1, min(4, int(payload.get("heading_level", 1) or 1)))
+        pid = _remap_pid_by_text(
+            _docx_norm_texts(working_copy),
+            str(payload.get("paragraph_id", "")),
+            payload.get("original"),
+        )
+        if pid is None:
+            raise HTTPException(
+                status_code=409,
+                detail="This paragraph changed since the analysis. Re-run Analysis and try again.",
+            )
+        para_text = _paragraph_text_at(working_copy, pid)
+        ok, msg = apply_heading_fix(working_copy, pid, level)
         if ok:
-            m = re.match(r"p(\d+)", str(payload.get("paragraph_id", "")))
+            # Persist the user's choice: every later reformat (apply-all, re-analysis,
+            # export) re-applies it instead of re-classifying the paragraph.
+            _save_heading_decision(document_id, pid, "keep", level, para_text)
+            m = re.match(r"p(\d+)", pid)
             if plan is not None and m:
-                # User ka fix plan mein daalo, warna export use body bana dega
-                plan[int(m.group(1))] = {"level": max(1, min(4, level)), "source": "user"}
+                plan[int(m.group(1))] = {"level": level, "source": "user"}
             apply_template_reformat(
                 working_copy,
                 tmpl["formatting_rules"],
                 tmpl.get("required_sections", []),
                 heading_plan=plan,
+                heading_overrides=_heading_overrides_for(document_id, working_copy),
             )
     elif fix_type in ("bullets", "apply_section_bullets"):
         para_indices = payload.get("para_indices", [])
@@ -3541,9 +3682,17 @@ async def apply_content_fix(
             m = re.match(r"p(\d+)", str(payload.get("paragraph_id", "")))
             if m:
                 para_indices = [int(m.group(1))]
+        texts = payload.get("list_texts")
         if payload.get("fix_details") and isinstance(payload["fix_details"], dict):
             para_indices = payload["fix_details"].get("para_indices", para_indices)
+            texts = payload["fix_details"].get("texts") or texts
+        if not texts and len(para_indices) == 1 and payload.get("original"):
+            texts = [payload["original"]]
+        para_indices, _lost = _remap_indices_by_text(
+            _docx_norm_texts(working_copy), [int(i) for i in para_indices], texts,
+        )
         applied, skipped = apply_section_bullets_to_file(working_copy, para_indices)
+        skipped = list(skipped) + list(_lost)
         ok = len(applied) > 0
         msg = f"Bullets applied to {len(applied)} paragraph(s)." if ok else "No bullets applied."
     elif fix_type == "formatting":
@@ -3552,6 +3701,7 @@ async def apply_content_fix(
             tmpl["formatting_rules"],
             tmpl.get("required_sections", []),
             heading_plan=plan,
+            heading_overrides=_heading_overrides_for(document_id, working_copy),
         )
     else:
         suggestion = payload.get("suggestion", "")
@@ -3798,6 +3948,7 @@ async def apply_all_fixes(
     # What the UI may clear after this call
     resolved_issue_ids: List[str] = []
     resolved_heading_pids: List[str] = []
+    applied_heading_levels: Dict[str, int] = {}
     bullet_fix_meta: List[tuple] = []  # (issue_id, [para indices])
     template_reformat_applied = False
     table_result: Dict[str, Any] = {"status": "skipped"}
@@ -3806,22 +3957,40 @@ async def apply_all_fixes(
     heading_fixes = []
     bullet_fix_indices: list = []
     text_fixes = []
+    # Analysis indices can be stale (working copy changed since) — every heading /
+    # bullet target is re-checked against the text it had at analysis time.
+    _norm_texts = _docx_norm_texts(working_copy) if working_copy.endswith(".docx") else []
     for fix in fixes:
         ftype = (fix.get("fix_type") or "text").lower()
         itype = (fix.get("type") or "").lower()
         if ftype in ("heading", "heading_style") or itype == "heading_style":
-            heading_fixes.append(fix)
+            _pid = _remap_pid_by_text(_norm_texts, fix.get("paragraph_id", ""), fix.get("original"))
+            if _pid is None:
+                print(f"[apply-all] heading fix {fix.get('paragraph_id')} skipped: "
+                      f"text no longer found")
+                continue
+            heading_fixes.append({**fix, "paragraph_id": _pid, "_orig_pid": fix.get("paragraph_id", "")})
         elif ftype in ("bullets", "apply_section_bullets", "list_formatting") or itype in (
             "missing_bullets", "list_formatting",
         ):
+            details = fix.get("fix_details") if isinstance(fix.get("fix_details"), dict) else {}
             indices = fix.get("para_indices") or []
-            if not indices and isinstance(fix.get("fix_details"), dict):
-                indices = fix["fix_details"].get("para_indices") or []
+            if not indices:
+                indices = details.get("para_indices") or []
+            texts = details.get("texts") or fix.get("list_texts")
             if not indices and fix.get("paragraph_id"):
                 m = re.match(r"p(\d+)", str(fix.get("paragraph_id", "")))
                 if m:
                     indices = [int(m.group(1))]
-            int_indices = [int(i) for i in indices]
+                    texts = [fix["original"]] if fix.get("original") else None
+            elif len(indices) == 1 and not texts and fix.get("original"):
+                texts = [fix["original"]]
+            int_indices, _lost = _remap_indices_by_text(
+                _norm_texts, [int(i) for i in indices], texts,
+            )
+            if _lost:
+                print(f"[apply-all] bullet fix {fix.get('issue_id')}: {len(_lost)} item(s) "
+                      f"no longer found by text, skipped")
             bullet_fix_indices.extend(int_indices)
             bullet_fix_meta.append((str(fix.get("issue_id") or ""), int_indices))
         else:
@@ -3838,7 +4007,11 @@ async def apply_all_fixes(
             )
             if ok:
                 text_result["applied"] += 1
-                resolved_heading_pids.append(str(fix.get("paragraph_id", "")))
+                # the UI knows the paragraph by its analysis id
+                resolved_heading_pids.append(str(fix.get("_orig_pid") or fix.get("paragraph_id", "")))
+                applied_heading_levels[str(fix.get("paragraph_id", ""))] = max(
+                    1, min(4, int(fix.get("heading_level", 1) or 1))
+                )
                 if fix.get("issue_id"):
                     resolved_issue_ids.append(str(fix["issue_id"]))
             else:
@@ -3859,38 +4032,22 @@ async def apply_all_fixes(
         try:
             from docx import Document as DocxDoc
             from docx.oxml.ns import qn
-            from docx_tools.list_detection import detect_list_groups, groups_needing_numpr
-
-            _SAFE_APPLY_DETECTIONS = {
-                "infinitive",
-                "gerund",
-                "trigger_line",
-                "trigger_follower",
-                "marker",
-                "bullet_marker",
-            }
+            from docx_tools.list_detection import (
+                HIGH_CONFIDENCE_DETECTIONS as _SAFE_APPLY_DETECTIONS,
+                detect_list_groups,
+                groups_needing_numpr,
+            )
+            from docx_tools.reformatter import _list_detection_blocks
 
             docx = DocxDoc(working_copy)
-            blocks = []
-            for idx, p in enumerate(docx.paragraphs):
-                text = (p.text or "").strip()
-                if not text:
-                    continue
-                style_name = (p.style.name or "").lower() if p.style else ""
-                has_numpr = p._element.find(f".//{qn('w:numPr')}") is not None
-                btype = "paragraph"
-                if has_numpr or "list" in style_name:
-                    btype = "list_item"
-                elif "heading" in style_name:
-                    btype = "heading"
-                blocks.append({
-                    "index": idx,
-                    "type": btype,
-                    "text": text,
-                    "style": style_name,
-                    "has_numpr": has_numpr,
-                    "paragraph_id": f"p{idx}",
-                })
+            # Same blocks + detections as the reformatter export (incl. heading_context);
+            # cover/info pages before the body bookmark are hidden from detection.
+            try:
+                from docx_tools.docx_fields import find_formatify_body_start_element
+                _body_start = find_formatify_body_start_element(docx)
+            except Exception:
+                _body_start = None
+            blocks = _list_detection_blocks(docx, _body_start)
             groups = groups_needing_numpr(detect_list_groups(blocks))
             safe_indices = {
                 i
@@ -3898,7 +4055,16 @@ async def apply_all_fixes(
                 if (g.detection or "").lower() in _SAFE_APPLY_DETECTIONS
                 for i in g.indices
             }
-            all_indices = sorted(safe_indices | set(bullet_fix_indices))
+            # A single paragraph between headings is not a list: drop payload
+            # targets with no list neighbour (detector groups always have 2+).
+            from docx_tools.list_detection import drop_isolated_list_targets
+            _kept, _isolated = drop_isolated_list_targets(
+                blocks, safe_indices | set(bullet_fix_indices),
+            )
+            if _isolated:
+                print(f"[apply-all] skipped {len(_isolated)} isolated bullet target(s): "
+                      f"{['p%d' % i for i in _isolated]}")
+            all_indices = sorted(_kept)
             if all_indices:
                 applied, skipped = apply_section_bullets_to_file(working_copy, all_indices)
                 bullet_result = {
@@ -3924,10 +4090,15 @@ async def apply_all_fixes(
         except Exception as exc:
             print(f"[apply-all] strip heading bullets error (non-fatal): {exc}")
 
+    # Headings applied in THIS request + levels the user chose earlier must survive
+    # the re-classification inside the template reformat.
     template_reformat_applied, _reformat_msg = apply_template_reformat(
         working_copy,
         tmpl["formatting_rules"],
         tmpl.get("required_sections", []),
+        heading_overrides=_heading_overrides_for(
+            document_id, working_copy, extra_levels=applied_heading_levels,
+        ) if working_copy.endswith(".docx") else None,
     )
 
     # After reformat, headings may reappear with leftover bullets — clean again

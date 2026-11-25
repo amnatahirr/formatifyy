@@ -299,6 +299,33 @@ def apply_heading_fix(
 
     level = max(1, min(4, int(heading_level)))
     para = doc.paragraphs[idx]
+
+    # Never promote a member of a detected list group (e.g. an objective item
+    # "To provide ..." that an AI/heading suggestion mistook for a heading).
+    try:
+        from docx_tools.reformatter import _protected_list_indices
+        if idx in _protected_list_indices(doc):
+            return False, (
+                f"Paragraph {paragraph_id} is part of a detected list; "
+                "not converted to a heading."
+            )
+    except Exception as exc:
+        print(f"[apply_heading_fix] list guard skipped (non-fatal): {exc}")
+
+    # Never promote body prose (e.g. a 31-word sentence ending in "."): the same
+    # hard-negative rule the heading analysis uses. Otherwise renumbering writes
+    # "1.5.1." into the sentence and a later reformat demotes only the style.
+    try:
+        from docx_tools.heading_analysis import _is_hard_negative_heading, strip_typed_prefixes
+        _txt = (para.text or "").strip()
+        if _txt and _is_hard_negative_heading(strip_typed_prefixes(_txt) or _txt):
+            return False, (
+                f"Paragraph {paragraph_id} is body text (long sentence / caption / "
+                "list item); not converted to a heading."
+            )
+    except Exception as exc:
+        print(f"[apply_heading_fix] body-text guard skipped (non-fatal): {exc}")
+
     style_name = force_heading_style(para, doc, level)
 
     # Headings must never keep list bullets
@@ -424,6 +451,7 @@ def apply_template_reformat(
     formatting_rules: Dict[str, Any],
     required_sections: List[Dict[str, Any]],
     heading_plan: Optional[Dict[int, Dict[str, Any]]] = None,
+    heading_overrides: Optional[Dict[int, Optional[int]]] = None,
 ) -> Tuple[bool, str]:
     """
     Re-apply admin template styles to an existing working DOCX in place.
@@ -450,6 +478,7 @@ def apply_template_reformat(
             formatting_rules,
             required_sections or [],
             heading_plan=heading_plan,
+            heading_overrides=heading_overrides,
         )
         shutil.move(tmp_path, file_path)
         return True, "Template formatting applied."

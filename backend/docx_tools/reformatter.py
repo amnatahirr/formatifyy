@@ -317,6 +317,21 @@ def _paragraph_has_heading_style(para) -> bool:
     return bool(re.match(r"^heading\s*\d$", name))
 
 
+def _is_body_prose_heading(text: str) -> bool:
+    """A Heading-styled paragraph that is really body prose (long sentence ending
+    in '.', caption, list item, 'To ...' objective) — never keep it as a heading."""
+    try:
+        from docx_tools.heading_analysis import _is_hard_negative_heading
+        body = strip_typed_prefixes(text or "") or (text or "")
+        return bool(body.strip()) and _is_hard_negative_heading(body)
+    except Exception:
+        return False
+
+
+# Heading number written into the text by renumbering ("1.5.1. The project ...")
+_HEADING_NUMBER_TEXT_RE = re.compile(r"^\s*\d{1,3}(?:\.\d{1,3})*\.\s+(?=\S)")
+
+
 def _demote_to_body(doc, para) -> None:
     """Reset a wrongly-promoted Heading paragraph to Normal body text."""
     from docx.oxml.ns import qn
@@ -332,6 +347,10 @@ def _demote_to_body(doc, para) -> None:
     # Leftover from a previous export: "2. 2) System Design" -> "2) System Design"
     original = para.text or ""
     fixed = _STALE_HEADING_NUMBER_RE.sub("", original, count=1)
+    # The heading number renumbering typed into body prose:
+    # "1.5.1. The project also covers ..." -> "The project also covers ..."
+    if fixed == original and _is_body_prose_heading(original):
+        fixed = _HEADING_NUMBER_TEXT_RE.sub("", original, count=1)
     if fixed != original and fixed.strip():
         _set_paragraph_text_preserve_style(para, fixed.strip())
 
@@ -762,21 +781,13 @@ def _apply_pagination_rules(doc, body_start=None) -> None:
 
 # Same high-confidence detections that formatting.py auto-seeds. "label_colon"
 # groups are deliberately excluded (too many false positives on prose).
-_SAFE_LIST_DETECTIONS = frozenset({
-    "infinitive", "gerund", "trigger_line", "trigger_follower",
-    "marker", "bullet_marker",
-})
+from docx_tools.list_detection import HIGH_CONFIDENCE_DETECTIONS as _SAFE_LIST_DETECTIONS
 
 
-def _apply_detected_lists(doc, body_start=None) -> int:
-    """
-    Detect parallel lists in the document (list_detection.py) and convert them to
-    REAL Word bullets (docx_lists.make_bullet). Idempotent: items that already have
-    numbering are skipped. Returns the number of paragraphs converted.
-    """
-    from docx_tools.list_detection import detect_list_groups
-    from docx_tools.docx_lists import apply_bullets_to_indices, has_numbering
-    _ensure_bullet_cache(doc)
+def _list_detection_blocks(doc, body_start=None) -> List[Dict[str, Any]]:
+    """doc.paragraphs as list_detection blocks. Cover/info pages get empty text so
+    they are never touched; images and tables mark a list break."""
+    from docx_tools.docx_lists import has_numbering
 
     skip_before = None
     if body_start is not None:
@@ -793,6 +804,7 @@ def _apply_detected_lists(doc, body_start=None) -> int:
         except Exception:
             style_name = ""
         in_cover = bool(skip_before and body_start is not None and skip_before(doc, p, body_start))
+        prev_el = p._element.getprevious()
         blocks.append({
             "index": i,
             "paragraph_id": f"p{i}",
@@ -801,8 +813,33 @@ def _apply_detected_lists(doc, body_start=None) -> int:
             "style": style_name,
             "has_numpr": has_numbering(p),
             "type": "heading" if style_name.lower().startswith(("heading", "title")) else "",
+            "breaks_list": _para_has_drawing(p)
+            or (prev_el is not None and prev_el.tag == _w_tag("tbl")),
         })
+    return blocks
 
+
+def _protected_list_indices(doc, body_start=None) -> set:
+    """Paragraph indices in high-confidence list groups — never heading targets."""
+    try:
+        from docx_tools.list_detection import protected_list_indices
+        return protected_list_indices(_list_detection_blocks(doc, body_start))
+    except Exception as exc:
+        print(f"[reformatter] list protection skipped (non-fatal): {exc}")
+        return set()
+
+
+def _apply_detected_lists(doc, body_start=None) -> int:
+    """
+    Detect parallel lists in the document (list_detection.py) and convert them to
+    REAL Word bullets (docx_lists.make_bullet). Idempotent: items that already have
+    numbering are skipped. Returns the number of paragraphs converted.
+    """
+    from docx_tools.list_detection import detect_list_groups
+    from docx_tools.docx_lists import apply_bullets_to_indices
+    _ensure_bullet_cache(doc)
+
+    blocks = _list_detection_blocks(doc, body_start)
     total = 0
     for group in detect_list_groups(blocks):
         if (group.detection or "").lower() not in _SAFE_LIST_DETECTIONS:
@@ -831,6 +868,7 @@ def reformat_document(
     rules_input: str | Dict[str, Any],
     required_sections: Optional[List[Dict[str, Any]]] = None,
     heading_plan: Optional[Dict[int, Dict[str, Any]]] = None,
+    heading_overrides: Optional[Dict[int, Optional[int]]] = None,
 ) -> str:
     """
     Apply formatting corrections to a DOCX file based on the analysis report
@@ -841,13 +879,18 @@ def reformat_document(
     the export applies exactly these headings and demotes every other
     Heading-styled paragraph.
 
+    ``heading_overrides`` = {paragraph index: level 1-4, or None = body text}:
+    levels the USER chose in the Analysis tab. They win over the plan and the
+    classifier, so a manual "make this Heading 3" survives every re-export.
+
     For non-DOCX inputs (PDF/TXT), creates a new DOCX from scratch.
     """
     ext = os.path.splitext(input_path)[1].lower()
 
     if ext == ".docx":
         return _reformat_docx(
-            input_path, output_path, report, rules_input, required_sections, heading_plan
+            input_path, output_path, report, rules_input, required_sections, heading_plan,
+            heading_overrides,
         )
     else:
         # For PDF/TXT → create a basic formatted DOCX
@@ -861,6 +904,7 @@ def _reformat_docx(
     rules_input: str | Dict[str, Any],
     required_sections: Optional[List[Dict[str, Any]]] = None,
     heading_plan: Optional[Dict[int, Dict[str, Any]]] = None,
+    heading_overrides: Optional[Dict[int, Optional[int]]] = None,
 ) -> str:
     """Reformat an existing DOCX — copy first, then apply styles without altering text."""
     import shutil
@@ -945,6 +989,18 @@ def _reformat_docx(
         except Exception as exc:
             print(f"[reformatter] heading classification fallback (non-fatal): {exc}")
 
+    # User-chosen levels (Analysis tab) win over plan + classification.
+    forced_body: set = set()
+    for _oi, _ol in (heading_overrides or {}).items():
+        _oi = int(_oi)
+        if _ol:
+            heading_map[_oi] = {"level": max(1, min(4, int(_ol))), "source": "user"}
+        else:
+            heading_map.pop(_oi, None)
+            forced_body.add(_oi)
+    if heading_overrides:
+        print(f"[reformatter] applying {len(heading_overrides)} user heading override(s)")
+
     prev_was_heading = False
     number_tracker = _HeadingNumberTracker() if numbering_style == "decimal" else None
     # Even when decimal numbering is off, rewrite broken 0.x prefixes (e.g. "0.1 Abstract").
@@ -973,6 +1029,11 @@ def _reformat_docx(
     n_demoted = 0
     n_kept_lists = 0
     _ensure_bullet_cache(doc)
+    # Detect lists BEFORE heading decisions: members of a high-confidence list group
+    # (trigger_follower / infinitive / gerund / marker / heading_context) are never
+    # promoted, and a Heading style an earlier step put on them is reverted.
+    protected_lists = _protected_list_indices(doc, body_start)
+    n_protected = 0
     for para_idx, para in enumerate(doc.paragraphs):
         if body_start is not None and _paragraph_is_before_body_start(doc, para, body_start):
             prev_was_heading = False
@@ -989,11 +1050,17 @@ def _reformat_docx(
                 max(1, min(4, int(classified.get("level") or 1)))
                 if classified else None
             )
-            if level is None and _paragraph_has_heading_style(para):
+            if para_idx in forced_body:
+                pass  # handled below for both branches
+            elif level is None and _paragraph_has_heading_style(para):
                 # A previous export (or the author) styled this as a heading, but
                 # the analysis says it is body text / a list item. Only demote when
                 # we hold the analysis plan, or when it clearly reads as a list item.
-                if heading_plan is not None or _LISTISH_RE.match(text):
+                if (
+                    heading_plan is not None
+                    or _LISTISH_RE.match(text)
+                    or _is_body_prose_heading(text)
+                ):
                     _demote_to_body(doc, para)
                     n_demoted += 1
                     text = para.text.strip()
@@ -1005,6 +1072,23 @@ def _reformat_docx(
                         level = max(1, min(4, int(_m.group(1))))
         else:
             level = _detect_heading_level(para, text, section_map, classified)
+        if para_idx in forced_body:
+            level = None  # user discarded this heading -> body text
+            if _paragraph_has_heading_style(para):
+                _demote_to_body(doc, para)
+                n_demoted += 1
+                text = para.text.strip()
+        if para_idx in protected_lists:
+            if level is not None or _paragraph_has_heading_style(para):
+                n_protected += 1
+            level = None
+            if _paragraph_has_heading_style(para):
+                _demote_to_body(doc, para)  # also drops heading numPr
+            from docx_tools.list_detection import strip_stale_item_number
+            cleaned = strip_stale_item_number(para.text)
+            if cleaned and cleaned != (para.text or "").strip():
+                _set_paragraph_text_preserve_style(para, cleaned)  # "1.4. To ..." -> "To ..."
+            text = para.text.strip()
         if level is not None and _is_list_item_not_heading(para):
             # Short bullet items ("Planning", "Design") look like headings to the
             # classifier; keep them as list items so their bullets survive export.
@@ -1059,6 +1143,8 @@ def _reformat_docx(
 
     if n_kept_lists:
         print(f"[reformatter] kept {n_kept_lists} list item(s) as bullets (not headings)")
+    if n_protected:
+        print(f"[reformatter] blocked heading promotion of {n_protected} detected list item(s)")
     if n_demoted:
         print(f"[reformatter] demoted {n_demoted} wrongly-styled heading(s) to body text")
 
