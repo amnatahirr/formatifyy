@@ -1,9 +1,10 @@
 """
 image_formatter.py — Auto-format images in DOCX: resize, center, add figure captions.
 
-Captions are generated locally with BLIP (functions/local_vision.py), the same
-caption the Image Ethics / Image Relevance tabs show. No external API is used.
-A caption the student already wrote under the image is kept as it is.
+Captions are generated locally with BLIP (functions/local_vision.py) using beam
+search, so they don't loop; logos use the institution named in the document.
+No external API is used. A caption the student already wrote under the image is
+kept as it is (old auto-generated captions are upgraded).
 """
 
 from __future__ import annotations
@@ -154,8 +155,13 @@ def _parse_figure_caption(caption: str) -> tuple[str, str]:
     return "Figure", caption.strip()
 
 
-def _ensure_caption_below_image(doc, img_idx: int, caption: str) -> None:
-    """Place SEQ-based caption paragraph directly under the image paragraph."""
+def _ensure_caption_below_image(
+    doc, img_idx: int, caption: str, *, force: bool = False
+) -> None:
+    """Place SEQ-based caption paragraph directly under the image paragraph.
+
+    force=True overwrites any existing caption text (used after an image replace).
+    """
     from docx.enum.text import WD_ALIGN_PARAGRAPH
     from docx_tools.docx_fields import attach_figure_caption_below_image
 
@@ -172,6 +178,7 @@ def _ensure_caption_below_image(doc, img_idx: int, caption: str) -> None:
         img_para,
         description=description or "Illustration related to the document content.",
         preferred_caption_text=caption,
+        force_description=force,
     )
     cap_para.paragraph_format.alignment = WD_ALIGN_PARAGRAPH.CENTER
     # label kept for API compatibility / future use
@@ -182,12 +189,20 @@ async def fix_image_captions(
     file_path: str,
     client: Any = None,
     formatting_rules: Optional[Dict[str, Any]] = None,
+    regenerate_embeds: Optional[set] = None,
 ) -> Dict[str, Any]:
-    """Reposition/create captions directly below each inline image."""
+    """Reposition/create captions directly below each inline image.
+
+    regenerate_embeds: relationship ids (r:embed) of pictures the student just
+    replaced. Those images get a fresh BLIP caption that overwrites the old
+    caption text; every other image keeps its existing caption as before.
+    """
     from docx import Document
 
     if not file_path.endswith(".docx") or not os.path.exists(file_path):
         return {"status": "skipped", "captions_fixed": 0}
+    regenerate = {e for e in (regenerate_embeds or set()) if e}
+    regenerated: Dict[str, str] = {}
 
     doc = Document(file_path)
     _remove_floating_figure_captions(doc)
@@ -215,13 +230,39 @@ async def fix_image_captions(
             except Exception:
                 pass
 
-        caption = await _caption_for_image(doc, para, img_idx, b64, fig_num, client)
-
-        _ensure_caption_below_image(doc, img_idx, caption)
+        replaced_embed = next(
+            (b.get(EMBED_ATTR) for b in blips if b.get(EMBED_ATTR) in regenerate),
+            None,
+        )
+        if replaced_embed:
+            # Caption the NEW picture; ignore the caption written for the old one.
+            new_b64 = ""
+            if replaced_embed in doc.part.related_parts:
+                try:
+                    new_b64 = base64.b64encode(
+                        doc.part.related_parts[replaced_embed].blob
+                    ).decode("utf-8")
+                except Exception:
+                    pass
+            caption = await _generate_caption(
+                client, new_b64, fig_num, _surrounding_text(doc.paragraphs, img_idx), doc=doc
+            )
+            print(f"[image_formatter] replaced image -> new caption '{caption}'")
+            _ensure_caption_below_image(doc, img_idx, caption, force=True)
+            regenerated[replaced_embed] = caption
+        else:
+            caption, overwrite = await _caption_for_image_ex(
+                doc, para, img_idx, b64, fig_num, client
+            )
+            _ensure_caption_below_image(doc, img_idx, caption, force=overwrite)
         fixed += 1
 
     doc.save(file_path)
-    return {"status": "success", "captions_fixed": fixed}
+    return {
+        "status": "success",
+        "captions_fixed": fixed,
+        "regenerated_captions": regenerated,
+    }
 
 
 async def format_document_images(
@@ -278,11 +319,13 @@ async def format_document_images(
             except Exception:
                 pass
 
-        caption = await _caption_for_image(doc, para, img_idx, b64, fig_num, client)
+        caption, overwrite = await _caption_for_image_ex(
+            doc, para, img_idx, b64, fig_num, client
+        )
         captions_added += 1
 
         para.paragraph_format.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        _ensure_caption_below_image(doc, img_idx, caption)
+        _ensure_caption_below_image(doc, img_idx, caption, force=overwrite)
 
         results.append({
             "fig_num": fig_num,
@@ -324,8 +367,73 @@ PLACEHOLDER_DESCRIPTION = "Illustration related to the document content."
 
 
 def is_placeholder_description(desc: str) -> bool:
-    """True for the old auto-filled text, so it gets replaced by a real caption."""
-    return (desc or "").strip().rstrip(".").lower() == PLACEHOLDER_DESCRIPTION.rstrip(".").lower()
+    """True for the old auto-filled text or a looping BLIP caption — both get replaced."""
+    from docx_tools.caption_text import caption_is_degenerate
+
+    text = (desc or "").strip()
+    if text.rstrip(".").lower() == PLACEHOLDER_DESCRIPTION.rstrip(".").lower():
+        return True
+    return caption_is_degenerate(text)
+
+
+_LOGO_WORDS_RE = re.compile(r"\b(logo|emblem|crest|insignia|seal|badge|monogram)\b", re.IGNORECASE)
+_INSTITUTION_WORDS_RE = re.compile(r"\b(university|college|institute|school|academy)\b", re.IGNORECASE)
+_INSTITUTION_NAME_RE = re.compile(
+    r"\b(?:[A-Z][\w&.'-]*\s+){1,4}(?:University|Institute|College|Academy)"
+    r"(?:\s+(?:of\s+)?[A-Z][\w.'-]+){0,3}\b"
+    r"|\b(?:University|Institute|College)\s+of\s+(?:[A-Z][\w.'-]+\s*){1,4}"
+)
+_W_P = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}p"
+
+
+def _document_institution_name(doc) -> str:
+    """
+    Most frequent institution name written in the document (cover page, title
+    page, headers in body), e.g. 'COMSATS University Islamabad'. Figure
+    captions are ignored so an old wrong BLIP caption can't vote for itself.
+    """
+    from collections import Counter
+
+    if doc is None:
+        return ""
+    counts: Counter = Counter()
+    seen = 0
+    for p_el in doc.element.body.iter(_W_P):
+        text = " ".join("".join(t.text or "" for t in p_el.iter(W_T)).split())
+        if not text or FIGURE_CAPTION_RE.match(text) or text.lower().startswith(("figure", "fig.")):
+            continue
+        for m in _INSTITUTION_NAME_RE.finditer(text):
+            name = m.group(0).strip(" ,.;:")
+            if len(name.split()) >= 2:
+                counts[name] += 1
+        seen += 1
+        if seen > 600:
+            break
+    if not counts:
+        return ""
+    best, n = counts.most_common(1)[0]
+    # Prefer a longer variant that contains the best one (adds the city, etc.)
+    for name, c in counts.most_common():
+        if c >= max(2, n // 2) and best in name and len(name) > len(best):
+            best = name
+    return best
+
+
+def _logo_description(desc: str, doc) -> str:
+    """
+    BLIP recognises a logo but invents the name ('the logo for the university
+    of california'). Use the institution named in the document instead, or drop
+    the invented name when the document names none.
+    """
+    if not _LOGO_WORDS_RE.search(desc or ""):
+        return desc
+    if not _INSTITUTION_WORDS_RE.search(desc):
+        return desc  # e.g. a brand logo BLIP named itself — leave it
+    name = _document_institution_name(doc)
+    if name:
+        return f"Logo of {name}"
+    kind = _INSTITUTION_WORDS_RE.search(desc).group(1).lower()
+    return f"Logo of the {kind}"
 
 
 def _existing_caption_description(doc, img_para) -> str:
@@ -360,27 +468,54 @@ def _existing_caption_description(doc, img_para) -> str:
     return ""
 
 
-async def _generate_caption(client, b64: str, fig_num: int, surrounding: str) -> str:
+async def _is_old_auto_caption(existing: str, b64: str) -> bool:
     """
-    'Figure N: <description>' from the local BLIP caption of the image.
-
-    Same (cached) BLIP caption the Image Ethics / Relevance tabs use, cleaned with
-    tidy_caption. `client` and `surrounding` are kept for signature compatibility
-    and are not used (no external API).
+    True when `existing` is exactly the caption the previous (greedy BLIP)
+    captioner wrote for this very picture — not something a student typed —
+    so it may be upgraded to the better caption. Uses the cached ethics caption,
+    so normally no extra model pass.
     """
     import asyncio
     from functions.local_vision import generate_caption_from_b64, image_fingerprint, tidy_caption
+
+    if not existing or not b64:
+        return False
+    try:
+        raw = await asyncio.to_thread(generate_caption_from_b64, b64, image_fingerprint(b64))
+    except Exception:
+        return False
+    norm = lambda s: " ".join((s or "").lower().split()).strip(" .")  # noqa: E731
+    return norm(existing) in {norm(tidy_caption(raw)), norm(raw)}
+
+
+async def _generate_caption(
+    client, b64: str, fig_num: int, surrounding: str, doc=None
+) -> str:
+    """
+    'Figure N: <description>' from a local BLIP caption of the image.
+
+    Uses beam search (no repetition loops) and tidy_caption. Logos get the
+    institution name from the document instead of a BLIP guess. `client` and
+    `surrounding` are kept for signature compatibility (no external API).
+    """
+    import asyncio
+    from functions.local_vision import (
+        generate_figure_caption_from_b64,
+        image_fingerprint,
+        tidy_caption,
+    )
 
     default = f"Figure {fig_num}: {PLACEHOLDER_DESCRIPTION}"
     if not b64:
         return default
     try:
         raw = await asyncio.to_thread(
-            generate_caption_from_b64, b64, image_fingerprint(b64)
+            generate_figure_caption_from_b64, b64, image_fingerprint(b64)
         )
         desc = tidy_caption(raw)
-        if not desc:
+        if not desc or is_placeholder_description(desc):
             return default
+        desc = _logo_description(desc, doc)
         print(f"[image_formatter] Figure {fig_num}: BLIP '{raw}' -> '{desc}'")
         return f"Figure {fig_num}: {desc}"
     except Exception as exc:
@@ -412,15 +547,27 @@ def _heading_fallback_description(doc, img_idx: int) -> str:
 
 async def _caption_for_image(doc, para, img_idx: int, b64: str, fig_num: int, client) -> str:
     """Student's own caption if present, else BLIP caption, else nearest heading."""
+    caption, _ = await _caption_for_image_ex(doc, para, img_idx, b64, fig_num, client)
+    return caption
+
+
+async def _caption_for_image_ex(
+    doc, para, img_idx: int, b64: str, fig_num: int, client
+) -> tuple[str, bool]:
+    """
+    (caption, overwrite). overwrite=True when an old auto-generated caption is
+    being upgraded, so the caption writer replaces its text instead of keeping it.
+    """
     existing = _existing_caption_description(doc, para)
-    if existing:
-        return f"Figure {fig_num}: {existing}"
+    upgrade = bool(existing) and await _is_old_auto_caption(existing, b64)
+    if existing and not upgrade:
+        return f"Figure {fig_num}: {existing}", False
     surrounding = _surrounding_text(doc.paragraphs, img_idx)
-    caption = await _generate_caption(client, b64, fig_num, surrounding)
+    caption = await _generate_caption(client, b64, fig_num, surrounding, doc=doc)
     if not b64 and is_placeholder_description(caption.split(":", 1)[-1]):
         heading = _heading_fallback_description(doc, img_idx)
         if heading:
             print(f"[image_formatter] Figure {fig_num}: no picture file (drawing), "
                   f"using heading '{heading}'")
-            return f"Figure {fig_num}: {heading}"
-    return caption
+            return f"Figure {fig_num}: {heading}", upgrade
+    return caption, upgrade

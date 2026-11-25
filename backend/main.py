@@ -4322,6 +4322,7 @@ async def replace_image(
         raise HTTPException(status_code=400, detail="Template not found")
 
     surrounding_text = ""
+    new_caption = ""
     validation = {"is_relevant": True, "confidence": 0.8, "verdict": "relevant", "reason": ""}
     commit: Dict[str, Any] = {}
 
@@ -4338,6 +4339,7 @@ async def replace_image(
         # so image_index from the preview points at the same picture.
         found = 0
         img_para_idx = None
+        new_rid = None
         for pi, para in enumerate(docx.paragraphs):
             for blip in para._element.iter(blip_ns):
                 embed = blip.get(r_ns)
@@ -4385,9 +4387,27 @@ async def replace_image(
 
         docx.save(working_copy)
 
+        # Caption the NEW picture (overwrites the caption of the replaced one).
+        # Runs on its own so a caption problem never blocks the relevance recheck
+        # and vice versa. Captions are local BLIP — no AI client needed.
+        try:
+            cap_result = await fix_image_captions(
+                working_copy, None, {}, regenerate_embeds={new_rid} if new_rid else None
+            )
+            new_caption = (cap_result.get("regenerated_captions") or {}).get(new_rid, "")
+        except Exception as cap_fix_exc:
+            print(f"[replace-image] caption regenerate warning: {cap_fix_exc}")
+
+        # The List of Figures (front matter) must show the new caption too.
+        try:
+            from docx_tools.docx_fields import refresh_list_of_figures
+            lof = refresh_list_of_figures(working_copy)
+            print(f"[replace-image] list of figures refreshed: {lof}")
+        except Exception as lof_exc:
+            print(f"[replace-image] list of figures refresh warning: {lof_exc}")
+
         try:
             client = await _get_ai_client()
-            await fix_image_captions(working_copy, client, {})
             from functions.image_relevance import recheck_image
             recheck = await recheck_image(
                 client,
@@ -4440,6 +4460,7 @@ async def replace_image(
         "image_id": image_id,
         "image_index": image_index,
         "image_path": rel_path,
+        "caption": new_caption,
         "message": "Image replaced and validated successfully" if is_relevant else "Image replaced but may still be irrelevant",
         "analysis_details": {
             "verdict": validation.get("verdict", "relevant"),

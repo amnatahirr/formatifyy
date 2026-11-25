@@ -530,8 +530,15 @@ def _move_paragraph_after(ref_para, move_para) -> None:
 
 
 def _is_placeholder_caption_desc(desc: str | None) -> bool:
-    """Old auto-filled caption text; a real (BLIP / student) description replaces it."""
-    return (desc or "").strip().rstrip(".").lower() == "illustration related to the document content"
+    """Old auto-filled caption text (or a looping BLIP caption) that a real description replaces."""
+    text = (desc or "").strip()
+    if text.rstrip(".").lower() == "illustration related to the document content":
+        return True
+    try:
+        from docx_tools.caption_text import caption_is_degenerate
+    except Exception:
+        return False
+    return caption_is_degenerate(text)
 
 
 def attach_figure_caption_below_image(
@@ -540,12 +547,16 @@ def attach_figure_caption_below_image(
     *,
     description: str = "Illustration related to the document content.",
     preferred_caption_text: str | None = None,
+    force_description: bool = False,
 ) -> Paragraph:
     """
     Guarantee a SEQ Figure caption is the paragraph immediately under the image.
 
     Handles layouts where body text (or a stray '.') sits between the picture
     and an existing 'Figure N: …' caption — moves that caption up.
+
+    force_description=True (image was replaced): never keep the text of an
+    existing caption — it described the old picture — always write the new one.
 
     Cover / Project Details images are never captioned (returns img_para unchanged).
     """
@@ -588,7 +599,9 @@ def attach_figure_caption_below_image(
                 break
             if paragraph_is_figure_caption(cand):
                 m = _LOOSE_FIGURE_CAPTION_RE.match((cand.text or "").strip())
-                if m and (m.group(2) or "").strip():
+                if force_description:
+                    pass  # old caption text belongs to the replaced picture
+                elif m and (m.group(2) or "").strip():
                     if not _is_placeholder_caption_desc(m.group(2)):
                         desc = m.group(2).strip()
                 else:
@@ -604,8 +617,15 @@ def attach_figure_caption_below_image(
         rebuild_caption_with_seq(cap_para, "Figure", desc)
     elif not paragraph_has_seq_caption(cap_para._element, "Figure"):
         m = CAPTION_TEXT_RE.match((cap_para.text or "").strip())
-        if m and m.group(1).lower() == "figure" and not _is_placeholder_caption_desc(m.group(3)):
+        if (
+            not force_description
+            and m
+            and m.group(1).lower() == "figure"
+            and not _is_placeholder_caption_desc(m.group(3))
+        ):
             desc = m.group(3).strip() or desc
+        rebuild_caption_with_seq(cap_para, "Figure", desc)
+    elif force_description:
         rebuild_caption_with_seq(cap_para, "Figure", desc)
     elif preferred_caption_text and desc:
         rebuild_caption_with_seq(cap_para, "Figure", desc)
@@ -3142,6 +3162,33 @@ def analyze_document_lists(doc) -> Dict[str, Any]:
 # ═══════════════════════════════════════════════════════════════════════════════
 # ORCHESTRATION
 # ═══════════════════════════════════════════════════════════════════════════════
+
+
+def refresh_list_of_figures(file_path: str) -> Dict[str, Any]:
+    """
+    After a figure caption changed (e.g. image replaced): renumber figure
+    captions and rebuild the List of Figures entries — only if the document
+    already has a List of Figures. TOC, List of Tables, headings and tables are
+    not touched (unlike generate_document_lists).
+    """
+    from docx import Document
+
+    doc = Document(file_path)
+    has_lof = _find_section_heading_paragraph(doc, _LOF_HEADING_RE) is not None or any(
+        _paragraph_has_field(p._element, LOF_FIELD_RE) for p in doc.paragraphs
+    )
+    # Also renumbers each body caption's visible SEQ number (1, 2, 3 …).
+    entries = _prepare_lof_entries(doc)
+    rebuilt = False
+    if has_lof and entries:
+        _remove_lof_field_block(doc)
+        heading = _find_section_heading_paragraph(doc, _LOF_HEADING_RE)
+        insert_lof_field(doc, heading_para=heading, entries=entries)
+        normalize_bookmarks(doc)
+        validate_and_repair_list_anchors(doc)
+        rebuilt = True
+    doc.save(file_path)
+    return {"lof_rebuilt": rebuilt, "figure_count": len(entries)}
 
 
 def generate_document_lists(

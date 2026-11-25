@@ -151,6 +151,48 @@ def generate_caption(image: Image.Image, max_new_tokens: int = 30) -> str:
     return processor.decode(out[0], skip_special_tokens=True).strip()
 
 
+@torch.inference_mode()
+def generate_figure_caption(image: Image.Image, max_new_tokens: int = 30) -> str:
+    """
+    BLIP caption tuned for document figure captions.
+
+    Beam search + no-repeat n-grams stop the greedy decoding loops
+    ("the different types of the different types of ..."). Only used for the
+    'Figure N:' text — the Ethics / Relevance engines keep using
+    generate_caption() so their scoring is unchanged.
+    """
+    processor, model = _load_blip()
+    inputs = processor(images=image, return_tensors="pt").to(_device)
+    out = model.generate(
+        **inputs,
+        max_new_tokens=max_new_tokens,
+        num_beams=4,
+        no_repeat_ngram_size=3,
+        repetition_penalty=1.3,
+    )
+    return processor.decode(out[0], skip_special_tokens=True).strip()
+
+
+def generate_figure_caption_from_b64(b64: str, cache_key: str | None = None) -> str:
+    """Cached figure caption (separate cache slot from the ethics caption)."""
+    key = "fig:" + (cache_key or image_fingerprint(b64))
+    with _caption_lock:
+        cached = _caption_cache.get(key)
+    if cached is not None:
+        return cached
+    image = decode_base64_image(b64, for_inference=True)
+    caption = generate_figure_caption(image)
+    with _caption_lock:
+        _caption_cache[key] = caption
+        if len(_caption_cache) > 256:
+            for old in list(_caption_cache.keys())[:128]:
+                _caption_cache.pop(old, None)
+    return caption
+
+
+from docx_tools.caption_text import caption_is_degenerate, collapse_repeated_phrases as _collapse_repeated_phrases  # noqa: E402
+
+
 _CAPTION_TRAILING_WORDS = {
     "a", "an", "the", "and", "or", "with", "of", "on", "in", "at", "to", "for",
     "by", "from", "as", "is", "are",
@@ -184,7 +226,8 @@ def tidy_caption(caption: str) -> str:
         if j - i + 1 < 3:
             out.append(words[i])
         i = j + 1
-    text = " ".join(out)
+    # Repeated multi-word phrases: keep one copy.
+    text = " ".join(_collapse_repeated_phrases(out))
 
     # "X and X" / "X and a X" with the same phrase (1-4 words) -> "X"
     prev = None
