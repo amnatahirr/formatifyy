@@ -16,10 +16,12 @@ source ("spell"|"model"|"both"), reason.
 
 Env vars (all optional):
     GRAMMAR_MODEL_PATH    model folder (default brain/ml/models/t5_grammar_v3)
-    GRAMMAR_DEVICE        cpu (default) | mps | cuda
     GRAMMAR_USE_MODEL     true (default) | false  -> spell-checker only
-    GRAMMAR_BATCH_SIZE    sentences per model call (default 8)
+    GRAMMAR_BEAMS         beam search width (default 1 = greedy; 4 was ~2.6x slower, same quality)
+    GRAMMAR_BATCH_SIZE    sentences per model call (default 16; sentences are sorted by length first)
+    GRAMMAR_THREADS       torch CPU threads (default 4)
     GRAMMAR_EXTRA_WORDS   user word list (default functions/grammar_extra_words.txt)
+The model always runs on CPU (no mps/cuda).
 """
 
 from __future__ import annotations
@@ -45,7 +47,9 @@ DEFAULT_EXTRA_WORDS = Path(__file__).resolve().parent / "grammar_extra_words.txt
 PREFIX = "Fix grammar: "          # must match training exactly
 INPUT_MAX_LENGTH = 160
 MAX_NEW_TOKENS = 128
-NUM_BEAMS = 4
+DEFAULT_BEAMS = 1
+DEFAULT_BATCH_SIZE = 16
+DEFAULT_THREADS = 4
 
 MIN_WORDS = 4                     # shorter sentences are skipped
 MAX_WORDS = 80
@@ -62,9 +66,32 @@ def _env_bool(name: str, default: bool) -> bool:
     return v.strip().lower() in ("1", "true", "yes", "on")
 
 
+def _env_int(name: str, default: int) -> int:
+    try:
+        return max(1, int(os.getenv(name, str(default))))
+    except ValueError:
+        return default
+
+
 def _log(msg: str) -> None:
     # Never log sentence text here — only counts / timings / errors.
     print(f"[grammar] {msg}", flush=True)
+
+
+def num_beams() -> int:
+    return _env_int("GRAMMAR_BEAMS", DEFAULT_BEAMS)
+
+
+def configure_torch_threads() -> None:
+    """torch.set_num_threads(GRAMMAR_THREADS, default 4). Called at server
+    startup and again before the model loads (cheap, idempotent)."""
+    try:
+        import torch
+        n = _env_int("GRAMMAR_THREADS", DEFAULT_THREADS)
+        if torch.get_num_threads() != n:
+            torch.set_num_threads(n)
+    except Exception as exc:
+        _log(f"could not set torch threads: {exc}")
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -419,17 +446,15 @@ class GrammarModel:
                         _log("WARNING: tie_word_embeddings is true in config.json — outputs may be garbage")
             except Exception:
                 pass
-            dev = os.getenv("GRAMMAR_DEVICE", "cpu").strip().lower() or "cpu"
-            if dev == "mps" and not (getattr(torch.backends, "mps", None) and torch.backends.mps.is_available()):
-                _log("GRAMMAR_DEVICE=mps not available, using cpu")
-                dev = "cpu"
-            if dev.startswith("cuda") and not torch.cuda.is_available():
-                _log("GRAMMAR_DEVICE=cuda not available, using cpu")
-                dev = "cpu"
+            configure_torch_threads()
+            dev = "cpu"  # CPU only (no Apple GPU on the target Mac; mps not used)
+            if os.getenv("GRAMMAR_DEVICE", "cpu").strip().lower() not in ("", "cpu"):
+                _log("GRAMMAR_DEVICE is ignored; the grammar model always runs on cpu")
             self._tok = AutoTokenizer.from_pretrained(str(path), local_files_only=True)
             self._model = AutoModelForSeq2SeqLM.from_pretrained(str(path), local_files_only=True).to(dev).eval()
             self._device = dev
-            _log(f"model loaded from {path.name} on {dev} in {time.time() - t0:.1f}s")
+            _log(f"model loaded from {path.name} on {dev} ({torch.get_num_threads()} threads, "
+                 f"beams={num_beams()}) in {time.time() - t0:.1f}s")
             return True
         except Exception as exc:
             self.failed = True
@@ -442,15 +467,23 @@ class GrammarModel:
     def _key(s: str) -> str:
         return hashlib.sha1(s.encode("utf-8")).hexdigest()
 
-    def correct(self, sentences: Sequence[str], batch_size: int = 8,
-                progress: Optional[Callable[[int, int], None]] = None) -> Optional[List[Optional[str]]]:
-        """Corrected sentence per input (None where generation failed).
-        Returns None if the model is unavailable."""
+    def correct(self, sentences: Sequence[str], batch_size: int = DEFAULT_BATCH_SIZE,
+                progress: Optional[Callable[[int, int], None]] = None,
+                on_batch: Optional[Callable[[List[int], List[str]], None]] = None,
+                cancelled: Optional[Callable[[], bool]] = None) -> Optional[List[Optional[str]]]:
+        """Corrected sentence per input, in input order (None where generation
+        failed). Returns None if the model is unavailable.
+
+        Uncached sentences are sorted by length and run in batches of
+        `batch_size` (less padding); results are written back by original index.
+        `on_batch(indices, outputs)` is called for cached sentences first, then
+        after every batch, so callers can stream results."""
         with self._lock:  # one generate() at a time; torch already uses all cores
             if not self._ensure_loaded():
                 return None
             import torch
 
+            beams = num_beams()
             results: List[Optional[str]] = [None] * len(sentences)
             todo: List[int] = []
             for i, s in enumerate(sentences):
@@ -460,15 +493,22 @@ class GrammarModel:
                     results[i] = self._cache[k]
                 else:
                     todo.append(i)
+            todo.sort(key=lambda i: len(sentences[i]))  # stable → equal lengths keep document order
             total = len(sentences)
+            cached = [i for i in range(total) if results[i] is not None]
+            if cached and on_batch is not None:
+                on_batch(cached, [results[i] for i in cached])
             _notify(progress, total - len(todo), total)   # cached sentences are already done
             for b in range(0, len(todo), batch_size):
+                if cancelled is not None and cancelled():
+                    _log("model pass cancelled (a newer analysis started)")
+                    break
                 idxs = todo[b: b + batch_size]
                 try:
                     enc = self._tok([PREFIX + sentences[i] for i in idxs], return_tensors="pt",
                                     padding=True, truncation=True, max_length=INPUT_MAX_LENGTH).to(self._device)
                     with torch.no_grad():
-                        gen = self._model.generate(**enc, num_beams=NUM_BEAMS, max_new_tokens=MAX_NEW_TOKENS)
+                        gen = self._model.generate(**enc, num_beams=beams, max_new_tokens=MAX_NEW_TOKENS)
                     outs = self._tok.batch_decode(gen, skip_special_tokens=True)
                 except Exception as exc:
                     _log(f"generation failed for a batch of {len(idxs)} (spell-check only there): {exc}")
@@ -478,6 +518,8 @@ class GrammarModel:
                     self._cache[self._key(sentences[i])] = o
                 while len(self._cache) > CACHE_SIZE:
                     self._cache.popitem(last=False)
+                if on_batch is not None:
+                    on_batch(list(idxs), list(outs))
                 _notify(progress, total - len(todo) + min(b + batch_size, len(todo)), total)
             return results
 
@@ -627,6 +669,8 @@ def check(
     batch_size: Optional[int] = None,
     progress: Optional[Callable[[int, int], None]] = None,
     spell_only_units: Optional[Iterable[int]] = None,
+    on_update: Optional[Callable[[List[Dict[str, Any]], int, int], None]] = None,
+    cancelled: Optional[Callable[[], bool]] = None,
 ) -> List[Dict[str, Any]]:
     """Check one text or a list of texts (sentences or paragraphs).
 
@@ -634,6 +678,10 @@ def check(
     Offsets (char_start/char_end) are relative to the unit's original text.
     Never raises because of the model — on failure it falls back to spell-check.
     `progress(done, total)` is called as model sentences finish (optional).
+    `on_update(issues, done, total)` (optional) receives the full current issue
+    list: first the spell-checker results (before the model runs), then again
+    after every model batch, with model suggestions merged in for the sentences
+    the model has finished. `done`/`total` count model sentences.
     Units in `spell_only_units` (e.g. headings) and short lines/labels are only
     spell-checked; the model never sees them.
     """
@@ -642,10 +690,7 @@ def check(
     if use_model is None:
         use_model = _env_bool("GRAMMAR_USE_MODEL", True)
     if batch_size is None:
-        try:
-            batch_size = max(1, int(os.getenv("GRAMMAR_BATCH_SIZE", "8")))
-        except ValueError:
-            batch_size = 8
+        batch_size = _env_int("GRAMMAR_BATCH_SIZE", DEFAULT_BATCH_SIZE)
 
     spell = get_spell()
     # 1) collect checkable sentences
@@ -672,33 +717,22 @@ def check(
                           "model_ok": full and is_checkable(clean, for_model=True),
                           "title_line": not full})
 
-    # 2) model in batches (cached per sentence)
-    model_outs: List[Optional[str]] = [None] * len(sents)
-    model_used = False
-    model_idx = [i for i, x in enumerate(sents) if x["model_ok"]]
-    if use_model and model_idx:
-        try:
-            res = _MODEL.correct([sents[i]["src"] for i in model_idx], batch_size=batch_size,
-                                 progress=progress)
-            if res is not None:
-                for i, o in zip(model_idx, res):
-                    model_outs[i] = o
-                model_used = True
-        except Exception as exc:  # absolutely never break the report
-            _log(f"model crashed, spell-checker only: {exc}")
+    # 2) spell-check every sentence now (fast) → first result set, before the model
+    for x in sents:
+        x["toks"] = tokenize(x["src"])
+        x["hits"] = _spell_hits_for(x["src"], x["toks"], spell, title_line=x["title_line"])
 
-    # 3) spell-check + merge, map offsets back to the unit's raw text
-    issues: List[Dict[str, Any]] = []
-    for x, mo in zip(sents, model_outs):
-        src, cmap = x["src"], x["cmap"]
-        toks = tokenize(src)
-        hits = _spell_hits_for(src, toks, spell, title_line=x["title_line"])
-        for ed in merge_sentence(src, toks, hits, mo, spell):
+    def sentence_issues(x: Dict[str, Any], mo: Optional[str], model_used: bool) -> List[Dict[str, Any]]:
+        # merge_sentence may tag hits (source="both"), so give it fresh copies
+        hits = [dict(h) for h in x["hits"]]
+        out = []
+        for ed in merge_sentence(x["src"], x["toks"], hits, mo, spell):
             raw = units[x["unit"]] or ""
+            cmap = x["cmap"]
             rs, re_ = cmap[ed["start"]], cmap[ed["end"] - 1] + 1
             # suggestion keeps the raw text's surrounding characters intact
             rs, re_, sugg = _unique_span(raw, rs, re_, ed["suggestion"], *x["span"])
-            issues.append({
+            out.append({
                 "unit_index": x["unit"],
                 "sentence_index": x["sentence_index"],
                 "char_start": rs,
@@ -711,7 +745,42 @@ def check(
                 "sentence": raw[x["span"][0]: x["span"][1]],
                 "model_used": model_used,
             })
-    return issues
+        return out
+
+    per_sentence = [sentence_issues(x, None, False) for x in sents]
+
+    def flat() -> List[Dict[str, Any]]:
+        return [iss for lst in per_sentence for iss in lst]
+
+    model_idx = [i for i, x in enumerate(sents) if x["model_ok"]] if use_model else []
+    model_done = 0
+    if on_update is not None:
+        try:
+            on_update(flat(), 0, len(model_idx))
+        except Exception as exc:
+            _log(f"on_update failed: {exc}")
+
+    # 3) model in length-sorted batches (cached per sentence); re-merge each
+    #    finished sentence and push the updated list to the caller
+    if model_idx:
+        def on_batch(idxs: List[int], outs: List[str]) -> None:
+            nonlocal model_done
+            for j, o in zip(idxs, outs):
+                si = model_idx[j]
+                per_sentence[si] = sentence_issues(sents[si], o, True)
+            model_done += len(idxs)
+            if on_update is not None:
+                try:
+                    on_update(flat(), model_done, len(model_idx))
+                except Exception as exc:
+                    _log(f"on_update failed: {exc}")
+
+        try:
+            _MODEL.correct([sents[i]["src"] for i in model_idx], batch_size=batch_size,
+                           progress=progress, on_batch=on_batch, cancelled=cancelled)
+        except Exception as exc:  # absolutely never break the report
+            _log(f"model crashed, spell-checker only: {exc}")
+    return flat()
 
 
 def model_status() -> Dict[str, Any]:

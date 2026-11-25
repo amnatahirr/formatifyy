@@ -49,6 +49,7 @@ from typing import Any, Dict, List, Optional
 from reminders import start_scheduler, stop_scheduler
 import anthropic
 import analysis_progress
+import grammar_stream
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile, Query, Body, Request
 from services.latex_export import latex_zip_response
@@ -199,6 +200,16 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.on_event("startup")
+def _configure_grammar_threads():
+    """torch.set_num_threads(GRAMMAR_THREADS, default 4) before any model runs."""
+    try:
+        from functions.grammar_local import configure_torch_threads
+        configure_torch_threads()
+    except Exception:
+        logger.exception("Could not configure torch threads")
+
 
 @app.on_event("startup")
 def _start_reminders():
@@ -2593,14 +2604,17 @@ def _notify_analysis_result(
 async def _analysis_worker(document_id: int, user_id: int, freeform: bool) -> None:
     job = _analysis_jobs[document_id]
     analysis_progress.bind(job)  # stage/percent updates from inside the pipeline
+    grammar_stream.bind(document_id)  # grammar model suggestions stream in after the report
     try:
         result = await asyncio.to_thread(_analysis_in_thread, document_id, user_id, freeform)
         analysis_progress.set_stage("finalizing", "Saving results")
+        result["grammar_stream"] = grammar_stream.meta(document_id)
         path = _analysis_result_path(document_id)
         tmp = path + ".tmp"
         with open(tmp, "w", encoding="utf-8") as f:
             json.dump(result, f, default=str)
         os.replace(tmp, path)  # atomic auto-save
+        grammar_stream.attach_result(document_id, path)  # final model suggestions patch this file
         finished_at = datetime.datetime.utcnow().isoformat()
         job.update(status="completed", error=None, finished_at=finished_at)
         job["progress"] = {"stage": "done", "percent": 100, "detail": ""}
@@ -2655,6 +2669,15 @@ async def analyze_status(document_id: int, user_id: int = Query(...)):
     if os.path.exists(_analysis_result_path(document_id)):
         return {"status": "completed", "error": None}  # survives server restart
     return {"status": "none", "error": None}
+
+
+@app.get("/api/documents/grammar-stream/{document_id}", tags=["Documents"])
+async def grammar_stream_status(document_id: int, user_id: int = Query(...), since: int = Query(-1)):
+    """Grammar-model suggestions streamed after the report is shown:
+    {status: running|done|failed|none, done, total, version, error, issues?}.
+    `issues` (the full current grammar list) is sent only when version > since."""
+    _assert_doc_owner(document_id, user_id)
+    return grammar_stream.snapshot(document_id, since)
 
 
 @app.get("/api/documents/analyze-result/{document_id}", tags=["Documents"])

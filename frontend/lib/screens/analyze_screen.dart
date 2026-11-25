@@ -226,6 +226,12 @@ late final AuthProvider _auth;
   List<Map<String, dynamic>> _previewBlocks = [];
   int _imageVersion = 0; // replace ke baad image URLs ka cache todne ke liye
   List<Map<String, dynamic>> _pipelineIssues = [];
+
+  /// Grammar-model suggestions stream in after the report is shown
+  /// (GET documents/grammar-stream). {run_id, status, done, total, error}
+  Map<String, dynamic>? _grammarStream;
+  Timer? _grammarStreamTimer;
+  int _grammarStreamVersion = -1;
   final Map<String, String> _appliedFixes = {};
   final Set<String> _ignoredIssueIds = {};
   final Set<String> _resolvedIssueIds = {};
@@ -326,6 +332,7 @@ _auth = context.read<AuthProvider>();
         _seedFromAnalysis(data);
         _analysisComplete = true;
       });
+      _startGrammarStream(data);
       _loadTables();
       _startAutoSaveTimer();
       _markDirty();
@@ -358,6 +365,7 @@ void dispose() {
   // Auto-save timers band karo
   _autoSaveDebounce?.cancel();
   _autoSavePeriodic?.cancel();
+  _grammarStreamTimer?.cancel();
 
   // Aakhri pending save (best effort). dispose mein setState nahi chalta,
   // isliye yahan _autoSave ki jagah seedha provider call karte hain.
@@ -2848,13 +2856,7 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
             controller: _tabController,
             children: [
               _buildReviewTab(),
-              _buildFunctionTab(
-                'Grammar',
-                grammarIssues,
-                Icons.spellcheck,
-                'Spelling, grammar and punctuation suggestions from a local checker. '
-                    'They can be wrong — review each one before applying.',
-              ),
+              _buildGrammarTab(grammarIssues),
               _buildFormattingTab(formattingIssues),
               _buildMissingHeadingsTab(),
               _buildImageEthicsTab(imageEthicsIssues),
@@ -3220,6 +3222,203 @@ final grammarIssues = _visibleIssues(_issuesForFunction(oldIssues, 'grammar'));
         ),
       ),
     );
+  }
+
+  // ── Grammar stream (model suggestions arrive after the report) ───────────
+
+  bool _isGrammarIssue(dynamic i) =>
+      ((i as Map)['function'] as String? ?? '').toLowerCase() == 'grammar';
+
+  void _startGrammarStream(Map<String, dynamic> data) {
+    _grammarStreamTimer?.cancel();
+    _grammarStreamTimer = null;
+    _grammarStreamVersion = -1;
+    final meta = data['grammar_stream'];
+    setState(() {
+      _grammarStream = meta is Map ? Map<String, dynamic>.from(meta) : null;
+    });
+    if (_grammarStream?['status'] != 'running') return;
+    var busy = false;
+    _grammarStreamTimer =
+        Timer.periodic(const Duration(seconds: 2), (_) async {
+      if (busy || !mounted) return;
+      busy = true;
+      try {
+        await _pollGrammarStream(data);
+      } catch (_) {
+        // temporary network error: keep polling
+      } finally {
+        busy = false;
+      }
+    });
+  }
+
+  Future<void> _pollGrammarStream(Map<String, dynamic> data) async {
+    final userId = _auth.userId;
+    if (userId == null) return;
+    final resp = await http.get(
+      Uri.parse('$_baseUrl/documents/grammar-stream/${widget.documentId}'
+          '?user_id=$userId&since=$_grammarStreamVersion'),
+      headers: ApiConfig.getHeaders(),
+    );
+    if (resp.statusCode != 200 || !mounted) return;
+    final s = jsonDecode(resp.body) as Map<String, dynamic>;
+    final status = s['status'] as String? ?? 'none';
+    final myRun = _grammarStream?['run_id'];
+    if (status == 'none' || (myRun != null && s['run_id'] != myRun)) {
+      // Server restarted or a newer analysis replaced this run.
+      _grammarStreamTimer?.cancel();
+      _grammarStreamTimer = null;
+      setState(() => _grammarStream = {...?_grammarStream, 'status': 'stopped'});
+      return;
+    }
+    final incoming = s['issues'];
+    setState(() {
+      _grammarStream = {
+        'run_id': s['run_id'],
+        'status': status,
+        'done': s['done'],
+        'total': s['total'],
+        'error': s['error'] ?? '',
+      };
+      if (incoming is List) {
+        _applyStreamedGrammar(data, incoming);
+        _grammarStreamVersion = jsonIntOr(s['version'], _grammarStreamVersion);
+      }
+    });
+    if (status != 'running') {
+      _grammarStreamTimer?.cancel();
+      _grammarStreamTimer = null;
+      try {
+        _docs.cacheAnalysisReport(widget.documentId, data);
+      } catch (_) {}
+    }
+  }
+
+  /// Replaces the grammar issues (report data, preview issues) with the
+  /// streamed list. Applied/ignored state is kept by issue_id; new model
+  /// suggestions for a paragraph the user already fixed are skipped, because
+  /// their offsets refer to the old paragraph text.
+  void _applyStreamedGrammar(Map<String, dynamic> data, List<dynamic> incoming) {
+    final current = (data['issues'] as List<dynamic>? ?? []);
+    final known = <String>{
+      for (final i in current.where(_isGrammarIssue))
+        ((i as Map)['issue_id'] as String? ?? ''),
+    };
+    final editedParas = <String>{
+      for (final i in _pipelineIssues.where(_isGrammarIssue))
+        if (_resolvedIssueIds.contains(i['issue_id']))
+          (i['paragraph_id'] as String? ?? ''),
+    };
+    final fresh = incoming
+        .map((e) => Map<String, dynamic>.from(e as Map))
+        .where((m) =>
+            known.contains(m['issue_id']) ||
+            !editedParas.contains(m['paragraph_id']))
+        .toList();
+
+    List<T> swap<T>(List<T> list, T Function(Map<String, dynamic>) wrap) {
+      final firstGrammar = list.indexWhere(_isGrammarIssue);
+      final before = firstGrammar < 0
+          ? 0
+          : list.take(firstGrammar).where((i) => !_isGrammarIssue(i)).length;
+      final rest = list.where((i) => !_isGrammarIssue(i)).toList();
+      return [
+        ...rest.take(before),
+        ...fresh.map(wrap),
+        ...rest.skip(before),
+      ];
+    }
+
+    data['issues'] = swap<dynamic>(current, (m) => m);
+    final content = data['content_issues'];
+    if (content is List) {
+      data['content_issues'] = swap<dynamic>(content, (m) => m);
+    }
+    _pipelineIssues = swap<Map<String, dynamic>>(
+        _pipelineIssues, (m) => Map<String, dynamic>.from(m));
+  }
+
+  Widget? _grammarStreamBanner() {
+    final s = _grammarStream;
+    if (s == null) return null;
+    final status = s['status'] as String? ?? '';
+    final error = s['error'] as String? ?? '';
+    if (status == 'running') {
+      final done = jsonIntOr(s['done'], 0);
+      final total = jsonIntOr(s['total'], 0);
+      return Container(
+        margin: const EdgeInsets.fromLTRB(24, 16, 24, 0),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: _blue.withOpacity(0.06),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: _blue.withOpacity(0.2)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                SizedBox(
+                  width: 14,
+                  height: 14,
+                  child: CircularProgressIndicator(strokeWidth: 2, color: _blue),
+                ),
+                const SizedBox(width: 10),
+                Text(
+                  total > 0
+                      ? 'Grammar model: $done of $total sentences checked'
+                      : 'Grammar model starting…',
+                  style: TextStyle(
+                    color: _blue,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Spelling suggestions are shown now. Grammar suggestions are '
+              'added here as each group of sentences is checked.',
+              style: TextStyle(color: _textSec, fontSize: 11),
+            ),
+            const SizedBox(height: 8),
+            LinearProgressIndicator(
+              value: total > 0 ? done / total : null,
+              backgroundColor: _border,
+              valueColor: AlwaysStoppedAnimation(_blue),
+            ),
+          ],
+        ),
+      );
+    }
+    String? note;
+    if (status == 'stopped') {
+      note = 'Grammar model results are not available (the server restarted '
+          'or a newer analysis started). Run Analyze again for grammar suggestions.';
+    } else if (error.isNotEmpty) {
+      note = error;
+    }
+    if (note == null) return null;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
+      child: _buildInfoBanner('Grammar model', note, _yellow),
+    );
+  }
+
+  Widget _buildGrammarTab(List<dynamic> grammarIssues) {
+    final tab = _buildFunctionTab(
+      'Grammar',
+      grammarIssues,
+      Icons.spellcheck,
+      'Spelling, grammar and punctuation suggestions from a local checker. '
+          'They can be wrong — review each one before applying.',
+    );
+    final banner = _grammarStreamBanner();
+    if (banner == null) return tab;
+    return Column(children: [banner, Expanded(child: tab)]);
   }
 
   Widget _buildFunctionTab(
