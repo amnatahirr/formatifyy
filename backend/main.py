@@ -1547,6 +1547,17 @@ def _commit_working_document(document_id: int, working_copy: str, doc: Any) -> D
     export_path = _export_copy_path(document_id)
     shutil.copy2(working_copy, export_path)
 
+    # A previously saved "Formatted" copy (My Reports / download-formatted) must
+    # follow every committed fix — otherwise e.g. a removed image stays in it.
+    saved_path = _saved_formatted_path(document_id)
+    if os.path.exists(saved_path):
+        try:
+            export_path = _prepare_formatted_docx(doc, document_id)
+            shutil.copy2(export_path, saved_path)
+            encrypt_file(saved_path)
+        except Exception as exc:
+            print(f"[commit_working] saved formatted refresh error (non-fatal): {exc}")
+
     document_blocks: List[Dict[str, Any]] = []
     try:
         norm_filename = _filename_for_parse(working_copy, doc["filename"])

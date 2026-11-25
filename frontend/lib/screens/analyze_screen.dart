@@ -1028,6 +1028,9 @@ void dispose() {
         }
       }
     });
+    // Document changed on the server — always schedule a save of the
+    // formatted copy (even when no preview blocks came back).
+    _markDirty();
     _showSnack('Image removed from document', _green);
   }
 
