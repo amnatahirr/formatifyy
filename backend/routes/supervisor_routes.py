@@ -992,14 +992,20 @@ def discard_group(
             "UPDATE fyp_groups SET status = 'discarded' WHERE id = ?",
             (group_id,),
         )
-        # Linked assignment request no longer maps to an active group
+        # Linked assignment request no longer maps to an active group. Mark it
+        # 'discarded' so the student's My Supervisor stops showing it as assigned
+        # and they can book another supervisor.
+        resolved_at = datetime.utcnow().isoformat(sep=" ", timespec="seconds")
         cursor.execute(
             """
             UPDATE assignment_requests
-            SET fyp_group_id = NULL
+            SET fyp_group_id = NULL,
+                status = 'discarded',
+                rejection_reason = ?,
+                resolved_at = ?
             WHERE fyp_group_id = ? AND supervisor_id = ?
             """,
-            (group_id, supervisor_id),
+            (reason or None, resolved_at, group_id, supervisor_id),
         )
 
         slots_used = _sync_supervisor_current_groups(cursor, supervisor_id)
@@ -1012,10 +1018,11 @@ def discard_group(
                 _create_notification(
                     cursor,
                     recipient_email=student_email,
-                    title="Group discarded by supervisor",
+                    title="Supervisor discarded your group",
                     message=(
-                        f"{supervisor_name} discarded group '{group_title}'. "
-                        f"This frees their supervision slot.{note_suffix}"
+                        f"{supervisor_name} has discarded your group '{group_title}' "
+                        f"from their supervision. You now need to book another "
+                        f"supervisor to continue your project supervision.{note_suffix}"
                     ),
                     notification_type="group_discarded",
                     related_type="fyp_group",

@@ -306,6 +306,11 @@ def _serialize_assignment_request(row) -> dict[str, Any]:
     members = _parse_member_names(data.get("member_names"))
     if not members and data.get("student_leader_name"):
         members = [str(data["student_leader_name"])]
+    status = (data.get("status") or "pending").strip().lower()
+    if status == "accepted" and not data.get("fyp_group_id"):
+        # Legacy discard: group unlinked but request never marked discarded
+        status = "discarded"
+    data["status"] = status
     return {
         "id": data.get("id"),
         "group_name": data.get("group_name") or "",
@@ -836,6 +841,13 @@ def get_assignment_request_status(
         # If request row is missing status but group exists, treat as accepted
         if not status and data.get("fyp_group_id"):
             status = "accepted"
+        # Supervisor discarded the group (also covers rows discarded before the
+        # request status was updated: accepted but group unlinked/discarded).
+        group_status = (data.get("group_status") or "").strip().lower()
+        if status == "accepted" and (
+            not data.get("fyp_group_id") or group_status == "discarded"
+        ):
+            status = "discarded"
         result: dict[str, Any] = {
             "found": True,
             "email": lookup_email,

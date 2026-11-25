@@ -330,6 +330,8 @@ class _SupervisorSelectionScreenState extends State<SupervisorSelectionScreen> {
         return const Color(0xFFEF4444);
       case 'withdrawn':
         return const Color(0xFF94A3B8);
+      case 'discarded':
+        return const Color(0xFFEF4444);
       default:
         return const Color(0xFFF59E0B);
     }

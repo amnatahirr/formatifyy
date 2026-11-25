@@ -137,6 +137,8 @@ class _MySupervisorScreenState extends State<MySupervisorScreen> {
             _rejectedCard(statusMap!)
           else if (status == 'accepted')
             _acceptedCard(statusMap!)
+          else if (status == 'discarded')
+            _discardedCard(statusMap!)
           else
             _genericCard(statusMap!),
         ],
@@ -381,6 +383,45 @@ class _MySupervisorScreenState extends State<MySupervisorScreen> {
               foregroundColor: Colors.white,
             ),
           ),
+        ],
+      ),
+    );
+  }
+
+  Widget _discardedCard(Map<String, dynamic> data) {
+    final reason = (data['rejection_reason'] ?? '').toString().trim();
+    final supName = (data['supervisor_name'] ?? '').toString().trim();
+    return _statusShell(
+      accent: const Color(0xFFEF4444),
+      title: 'Group discarded by supervisor',
+      subtitle:
+          '${supName.isNotEmpty ? supName : 'Your supervisor'} has discarded your group '
+          '"${(data['group_name'] ?? '').toString()}" from their supervision.',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Tr(
+            'You now need to book another supervisor to continue your project supervision.',
+            style: TextStyle(color: _p.textPrimary, height: 1.45),
+          ),
+          if (reason.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Text(
+              'Reason: $reason',
+              style: TextStyle(color: _p.textSecondary, height: 1.45),
+            ),
+          ],
+          const SizedBox(height: 16),
+          if (widget.onChooseSupervisor != null)
+            ElevatedButton.icon(
+              onPressed: widget.onChooseSupervisor,
+              icon: const Icon(Icons.school_outlined, size: 18),
+              label: const Tr('Book another supervisor'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _p.accent,
+                foregroundColor: Colors.white,
+              ),
+            ),
         ],
       ),
     );

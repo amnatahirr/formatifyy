@@ -174,6 +174,9 @@ class FypProvider extends ChangeNotifier {
           _fypGroupId = groupId;
         } else if (status == 'accepted' && groupId != null) {
           _fypGroupId = int.tryParse(groupId.toString());
+        } else {
+          // Discarded / rejected / pending / none: no active group any more.
+          _fypGroupId = null;
         }
         return data;
       }
